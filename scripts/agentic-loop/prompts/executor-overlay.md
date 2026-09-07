@@ -69,3 +69,10 @@ adapter is present.
 
 If you touch any shader source, **recompile shaders** before trusting a rendered
 measurement. Stale SPIR-V is a known trap — see `docs/shader-build-pipeline.md`.
+
+## Blocked tasks in this repo
+
+The shared `- [b]` protocol applies unchanged. The blocker that comes up most
+here is "not reachable from a test": device-loss simulation, driver-specific
+behaviour, anything needing a second GPU. Mark those `- [b]` with the reason
+rather than faking a test around them.

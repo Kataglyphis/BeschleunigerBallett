@@ -5,6 +5,16 @@
 
 from pathlib import Path
 
+# Project-local stylesheet, loaded AFTER the shared brand one so its rules win.
+#
+# css/custom.css is a SYMLINK to DocumANTation's generated brand stylesheet
+# (see docs/source/_static/css/beschleunigerballett.css for the full story); it
+# is generated from style/brand.json and must not be forked. Anything specific
+# to this project goes in the file below instead, which is why every branch
+# under here appends it - drop it from one branch and that branch silently
+# renders without the project rules.
+PROJECT_CSS_FILE = "css/beschleunigerballett.css"
+
 # Import the shared Sphinx baseline from ContainerHub's vendored DocumANTation.
 #
 # The shared docs tooling lives in DocumANTation, which ContainerHub declares as
@@ -31,7 +41,7 @@ if CONTAINER_HUB_CONF.exists():
         html_theme = conf_base.HTML_THEME
         html_theme_options = conf_base.HTML_THEME_OPTIONS.copy()
         html_static_path = conf_base.HTML_STATIC_PATH
-        html_css_files = conf_base.HTML_CSS_FILES
+        html_css_files = [*conf_base.HTML_CSS_FILES, PROJECT_CSS_FILE]
     else:
         extensions = ["myst_parser", "sphinx_design"]
         html_theme = "sphinx_book_theme"
@@ -42,7 +52,7 @@ if CONTAINER_HUB_CONF.exists():
             "navigation_with_keys": True,
         }
         html_static_path = ["_static"]
-        html_css_files = ["css/custom.css"]
+        html_css_files = ["css/custom.css", PROJECT_CSS_FILE]
 else:
     extensions = ["myst_parser", "sphinx_design"]
     html_theme = "sphinx_book_theme"
@@ -53,7 +63,7 @@ else:
         "navigation_with_keys": True,
     }
     html_static_path = ["_static"]
-    html_css_files = ["css/custom.css"]
+    html_css_files = ["css/custom.css", PROJECT_CSS_FILE]
 
 DOCS_SOURCE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = DOCS_SOURCE_DIR.parent.parent

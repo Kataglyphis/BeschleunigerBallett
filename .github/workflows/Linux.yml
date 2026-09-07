@@ -97,37 +97,216 @@ env:
 # flags happens once rather than eleven times.
 jobs:
   # ---------------------------------------------------------------------------
-  # Lint gates, entirely ContainerHub's: shellcheck over this repo's bash and
-  # actionlint over its workflows, both using the pinned, SHA-verified binaries
-  # ContainerHub bootstraps rather than a second set installed here.
+  # Lint gates, entirely ContainerHub's: shellcheck over this repo's bash,
+  # actionlint over its workflows and gitleaks over its tracked tree, all using
+  # the pinned, SHA-verified binaries ContainerHub bootstraps rather than a
+  # second set installed here.
   #
   # Cheap and first-to-finish (~2 min, no image pull, no build), and it covers a
   # class the rest of this lane cannot: `yaml.safe_load` proves a workflow is
   # valid YAML, not valid Actions, and bash only reports a quoting or
   # undefined-function bug when the line finally executes - which for a
   # gcc-lane script can be an hour in.
+  #
+  # Both file lists below are derived from `git ls-files`, with third_party/
+  # removed, and both refuse to run on an empty list. That construction is the
+  # point of this job: every gate here previously named its own scope by hand,
+  # and a hand-written scope drifts silently the moment a file lands outside it.
   # ---------------------------------------------------------------------------
   lint:
-    name: shell + workflow lint
+    name: shell + workflow + secret lint
     runs-on: ${{ inputs.runner }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          # ContainerHub is a TOP-LEVEL submodule and the only one these gates
-          # read, so this deliberately does not recurse - the full recursive
-          # tree costs minutes for no benefit here.
+          # ContainerHub is a TOP-LEVEL submodule and it is the one these gates
+          # EXECUTE - all three lint scripts live inside it - so this
+          # deliberately does not recurse; the full recursive tree costs minutes
+          # for no benefit here. The other top-level submodules come along with
+          # it, and nothing below GRADES them: both scopes drop third_party/.
           submodules: true
           fetch-depth: 1
 
+      # The file list comes from `git ls-files`, NOT from a glob. The two globs
+      # this replaced - `scripts/linux/*.sh scripts/linux/lib/*.sh` - do not
+      # recurse and only named the two directories somebody remembered: measured
+      # 2026-09-07 they expanded to 19 of the 21 tracked first-party scripts,
+      # silently missing scripts/agentic-loop/Run-AgenticLoop.sh and the
+      # repo-root bump-version.sh. A gate that grades 19 files while reading
+      # like it grades all of them is worse than no gate, and the next script
+      # under the next new directory would have joined them unannounced.
+      #
+      # third_party/ is dropped because the vendored trees - the submodules plus
+      # the in-tree KTX copy, 8 more .sh between them - are linted in their own
+      # repos, at their own ratchet.
+      #
+      # The empty-list guard is load-bearing, not decoration: lint-shell.sh
+      # invoked with ZERO file arguments falls back to its OWN default scope,
+      # which is ContainerHub's linux/ tree - it would pass, green, having
+      # checked none of this repository's scripts.
       - name: Lint shell scripts (ContainerHub shellcheck gate)
-        run: >-
-          bash third_party/ContainerHub/linux/scripts/lint-shell.sh
-          scripts/linux/*.sh scripts/linux/lib/*.sh
+        run: |
+          mapfile -t sh_files < <(git ls-files '*.sh' | grep -v '^third_party/')
+          if [ "${#sh_files[@]}" -eq 0 ]; then
+            echo "::error::no tracked *.sh outside third_party/ - the list driving this gate is empty; refusing to report green over nothing" >&2
+            exit 1
+          fi
+          printf 'shellcheck scope (%d file(s)):\n' "${#sh_files[@]}"
+          printf '  %s\n' "${sh_files[@]}"
+          bash third_party/ContainerHub/linux/scripts/lint-shell.sh "${sh_files[@]}"
 
       - name: Lint workflows (ContainerHub actionlint gate)
         run: >-
           bash third_party/ContainerHub/linux/scripts/lint-workflows.sh
           "${{ github.workspace }}"
+
+      # The third ContainerHub gate this job carries, and the one class none of
+      # the others covers: a committed credential. shellcheck and actionlint both
+      # read only syntax, and a leaked key is perfectly valid syntax.
+      #
+      # SCOPE: this repository's own tracked tree, NOT ${{ github.workspace }}.
+      # The checkout above brings in every top-level submodule, and handing the
+      # whole workspace to gitleaks graded all of them. Measured 2026-09-07 at
+      # the current pins: 82 findings, every one a generic-api-key false
+      # positive in vendored code (GLM's generated doxygen HTML, IMGUI's
+      # CHANGELOG and imgui.cpp), and ZERO in a file this repository owns. The
+      # same run over the scope below - 585 tracked files, 581 MB, 24.5 s - is
+      # clean.
+      #
+      # Why not the other repair, a .gitleaks.toml here: it would take ~82
+      # allowlist entries for code this repository neither wrote nor can fix,
+      # which is a blanket suppression wearing a costume. And at the pinned
+      # ContainerHub it would not even be READ - lint-secrets.sh resolves
+      # `--config "${REPO_ROOT}/.gitleaks.toml"` against ITS OWN root, i.e. the
+      # submodule, so a config at this repo's root is never loaded. (An earlier
+      # revision of this comment claimed the opposite. It was wrong.) Vendored
+      # trees are graded in their own repositories, exactly as the shellcheck
+      # scope above already assumes.
+      #
+      # The paths are ABSOLUTE, and that is load-bearing rather than tidy:
+      # lint-secrets.sh cd's into the ContainerHub checkout before scanning, so
+      # a relative "Src" resolves to third_party/ContainerHub/Src. Measured:
+      # that path does not exist, gitleaks scans nothing and the step exits 0 -
+      # a green gate over an empty tree.
+      #
+      # third_party/CMakeLists.txt is scanned deliberately: it is this repo's
+      # own file that happens to live in that directory, and dropping the whole
+      # prefix would have excluded it. Only the vendored SUBTREES are skipped.
+      #
+      # ENFORCING, not advisory, and deliberately without continue-on-error: the
+      # gate's own header records that its first run was clean, so there is no
+      # adoption ramp to pay here. A finding is either a real leak - rotate the
+      # credential and purge it - or a false positive that earns ONE narrow,
+      # justified allowlist entry upstream, never a softening of this step.
+      - name: Scan for secrets (ContainerHub gitleaks gate)
+        env:
+          LINT_SECRETS: third_party/ContainerHub/linux/scripts/lint-secrets.sh
+        run: |
+          # Self-test first. It proves the three things the loop below cannot
+          # prove about itself: that the pinned gitleaks bootstraps and RUNS,
+          # that a planted credential is actually DETECTED, and that the
+          # scan-root argument is honoured rather than ignored in favour of the
+          # submodule's own tree. A secret gate that reports green having
+          # scanned nothing is the failure this step is most exposed to, so it
+          # is asserted, not assumed.
+          #
+          # Both halves assert on the gate's DETECTION signal, never on "it
+          # exited non-zero". lint-secrets.sh routes every failure through one
+          # err() -> exit 1: no gitleaks asset for the arch, a failed download,
+          # a SHA256 mismatch and a real finding are all exit 1, so reading any
+          # non-zero exit as proof of detection accepts a gate that never
+          # started - the exact hole this self-test exists to close. Measured in
+          # the family image against the pinned gitleaks 8.30.1: a clean tree is
+          # exit 0 + "secret scan: clean"; a finding is exit 1 and a Fingerprint
+          # line "<file>:<rule>:<line>"; a path that does NOT exist is exit 0
+          # with gitleaks skipping it - green over nothing, which is why the
+          # canary is matched by path and not merely by outcome.
+          canary_dir="${RUNNER_TEMP}/gitleaks-canary"
+          clean_dir="${RUNNER_TEMP}/gitleaks-clean"
+          log_dir="${RUNNER_TEMP}/gitleaks-selftest"
+          mkdir -p "${canary_dir}" "${clean_dir}" "${log_dir}"
+
+          # (1) Positive control: an empty tree must come back CLEAN and exit 0.
+          # This is what separates "the gate ran and found nothing" from "the
+          # gate could not start", and it runs BEFORE the canary so a bootstrap
+          # failure is reported as itself instead of masquerading as detection.
+          clean_rc=0
+          bash "${LINT_SECRETS}" "${clean_dir}" > "${log_dir}/clean.log" 2>&1 || clean_rc=$?
+          if [ "${clean_rc}" -ne 0 ] || ! grep -qF 'secret scan: clean' "${log_dir}/clean.log"; then
+            cat "${log_dir}/clean.log" >&2
+            echo "::error::secret-gate self-test failed: the gate could not complete a scan of an empty tree (exit ${clean_rc}). gitleaks did not bootstrap or could not run, so every result below would be meaningless; fix the gate before trusting it." >&2
+            exit 1
+          fi
+
+          # (2) Canary: a planted GitHub PAT must be REPORTED, at the path that
+          # was passed in. The fingerprint line carries file, rule and line in
+          # one string, so matching it asserts the detection itself - and the
+          # path in it is what proves the scan-root argument was honoured rather
+          # than silently replaced by the submodule's own tree.
+          #
+          # The credential is GENERATED here rather than written literally, so
+          # this workflow file stays clean under the very scan it configures,
+          # and it is planted under RUNNER_TEMP - outside the workspace - so it
+          # cannot leak into the real scan below.
+          alnum='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+          tok=""
+          for _ in $(seq 1 36); do tok="${tok}${alnum:RANDOM%62:1}"; done
+          canary_file="${canary_dir}/planted-credential.txt"
+          printf 'token = "ghp_%s"\n' "${tok}" > "${canary_file}"
+          canary_rc=0
+          bash "${LINT_SECRETS}" "${canary_dir}" > "${log_dir}/canary.log" 2>&1 || canary_rc=$?
+          if ! grep -qF "${canary_file}:github-pat:" "${log_dir}/canary.log"; then
+            cat "${log_dir}/canary.log" >&2
+            echo "::error::secret-gate self-test failed: the gate did not report the planted GitHub token at ${canary_file} (exit ${canary_rc}). It scanned a different tree, the github-pat rule is allowlisted away, or it never ran; fix it before trusting the scan below." >&2
+            exit 1
+          fi
+          if [ "${canary_rc}" -eq 0 ]; then
+            cat "${log_dir}/canary.log" >&2
+            echo "::error::secret-gate self-test failed: the gate REPORTED the planted GitHub token and still exited 0 - a finding is not fatal, so the scan below could not fail on a real leak." >&2
+            exit 1
+          fi
+          rm -rf "${canary_dir}" "${clean_dir}" "${log_dir}"
+          echo "self-test: the gate bootstraps, scans the path it is given, detects a planted credential and exits non-zero on it"
+
+          # Scope: every tracked top-level entry except third_party/, plus the
+          # tracked plain FILES directly under third_party/ (this repo's own
+          # CMakeLists.txt there). The vendored subtrees - submodule gitlinks
+          # and the in-tree KTX copy - are directories, so the -f test is what
+          # separates ours from theirs. Untracked build output is excluded for
+          # free, because the list is tracked paths.
+          mapfile -t scan_paths < <(
+            {
+              git ls-files | sed 's|/.*||' | grep -vx 'third_party'
+              git ls-files 'third_party/*' | awk -F/ 'NF == 2'
+            } | sort -u
+          )
+          scope=()
+          for p in "${scan_paths[@]}"; do
+            case "${p}" in
+              third_party/*) [ -f "${p}" ] || continue ;;
+            esac
+            scope+=("${p}")
+          done
+          if [ "${#scope[@]}" -eq 0 ]; then
+            echo "::error::no tracked first-party paths - the list driving this gate is empty; refusing to report green over nothing" >&2
+            exit 1
+          fi
+          printf 'secret-scan scope (%d path(s)):\n' "${#scope[@]}"
+          printf '  %s\n' "${scope[@]}"
+
+          # One invocation per path: lint-secrets.sh reads only its FIRST
+          # argument, so passing the whole list at once would grade one path and
+          # ignore the rest without saying so. Failures are collected instead of
+          # aborting on the first, so a triage round names every offending path.
+          failed=()
+          for p in "${scope[@]}"; do
+            bash "${LINT_SECRETS}" "${{ github.workspace }}/${p}" || failed+=("${p}")
+          done
+          if [ "${#failed[@]}" -gt 0 ]; then
+            echo "::error::gitleaks found potential secrets under: ${failed[*]}" >&2
+            exit 1
+          fi
+          echo "secret scan: clean over ${#scope[@]} first-party path(s)"
 
   # ---------------------------------------------------------------------------
   # clang: the plain Debug build and the unit/integration suite.

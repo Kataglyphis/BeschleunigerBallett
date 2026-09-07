@@ -32,6 +32,25 @@ build*/
 
 opencode.json
 
+# NOT ignored, deliberately: .opencode/agents/. Those two role prompts were
+# removed from tracking and ignored here on 2026-09-07 on the premise that the
+# loop regenerates them at start-up from ContainerHub's
+# shared/agentic-loop/system-prompts/<role>.md plus this repo's
+# scripts/agentic-loop/prompts/<role>-overlay.md. No such generator exists at
+# the pinned submodule commit: there is no Write-AgenticOpenCodeAgentFile (or
+# any other writer of .opencode/) anywhere in ContainerHub, and the Bash half's
+# invoke_opencode goes straight to `opencode run --agent <role>`, which resolves
+# .opencode/agents/<role>.md out of the checkout. Ignoring them therefore left a
+# FRESH CLONE on `engine: opencode` running both roles with no role prompt at
+# all - and a clone without the submodule with no way to reconstruct one.
+#
+# They stay tracked until a generator actually exists AND runs before the first
+# opencode invocation. The drift that motivated the delete is real, but the cure
+# is a gate, not a deletion: the tracked copies hold the COMPOSED
+# shared-prompt + overlay text, and scripts/windows/tests/
+# AgenticLoop.PromptOverlays.Tests.ps1 fails if either stops containing the
+# shared role prompt or this repo's overlay verbatim. Edit the overlay.
+
 # Prerequisites
 *.d
 

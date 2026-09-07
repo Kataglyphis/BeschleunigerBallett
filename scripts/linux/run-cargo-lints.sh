@@ -15,10 +15,15 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
-CARGO_FMT_CLIPPY_SH="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh"
+# containerhub_path (from lib/containerhub.sh, sourced by lib/common.sh) instead
+# of a "${REPO_ROOT}/third_party/ContainerHub/..." literal: it resolves against
+# CONTAINERHUB_DIR, which the literal ignored, and it already fails naming the
+# probed path AND the fix - so the hand-rolled -f guard that stood here is gone
+# rather than duplicated. This driver is EXEC'd, not sourced, hence _path and
+# not _source.
+CARGO_FMT_CLIPPY_SH="$(containerhub_path linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh)"
 
 [[ -d "${RUST_PROJECT_DIR}" ]] || err "Rust project dir not found at ${RUST_PROJECT_DIR} (is the OxidANT submodule checked out?)"
-[[ -f "${CARGO_FMT_CLIPPY_SH}" ]] || err "cargo_fmt_clippy.sh not found at ${CARGO_FMT_CLIPPY_SH} (is the ContainerHub submodule checked out?)"
 
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 # The image ships CARGO_HOME=/usr/local/cargo owned by root, and the

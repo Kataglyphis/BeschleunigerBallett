@@ -2,20 +2,19 @@
 # cmake-configure-build.sh - project wrapper around ContainerHub's generic
 # CMake build driver. Everything reusable (arg parsing, cargo/ccache/sccache
 # writability fallbacks, Vulkan env, parallelism, configure+build) lives in
-# third_party/ContainerHub/linux/scripts/lib/cmake-build.sh; only
-# this project's defaults and its Slang pre-build step live here.
+# ContainerHub's linux/scripts/lib/cmake-build.sh; only this project's defaults
+# and its Slang pre-build step live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CMAKE_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh"
-if [[ ! -f "${CMAKE_BUILD_LIB}" ]]; then
-  err "Shared cmake-build library not found at '${CMAKE_BUILD_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/cmake-build.sh
-source "${CMAKE_BUILD_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# not honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/cmake-build.sh
 
 CMAKE_BUILD_DEFAULT_PRESET="linux-debug-clang"
 CMAKE_BUILD_DEFAULT_BUILD_DIR="build"

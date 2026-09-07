@@ -620,9 +620,10 @@ queue must be fully drained before the planner adds new tasks; tasks marked
 Two engines are selectable via `engine` in
 `scripts/agentic-loop/AgenticLoop.config.json`, `-Engine`/`--engine`, or the
 `AGENTIC_ENGINE` env var: **`claude`** (default — Claude Code CLI, Opus 5
-planner with Fable 5 fallback, Sonnet executor, system-prompt overlays in
-`scripts/agentic-loop/prompts/`) and **`opencode`** (GLM 5.2 planner, DeepSeek v4
-Flash executor, agents in `.opencode/agents/`).
+planner with Fable 5 fallback, Sonnet executor) and **`opencode`** (GLM 5.2
+planner, DeepSeek v4 Flash executor). Both read the same role prompt, composed
+from ContainerHub's shared prompt plus this repo's overlays in
+`scripts/agentic-loop/prompts/`.
 
 **Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
@@ -633,10 +634,22 @@ requires `jq`). Prompts are single-sourced in ContainerHub: the planner/executor
 module and the Bash library read them) and the role **system** prompts at
 `shared/agentic-loop/system-prompts/*.md`. This repo owns only a per-role
 delta — `scripts/agentic-loop/prompts/planner-overlay.md` and
-`executor-overlay.md`, wired via `plannerPromptOverlayFile` /
-`executorPromptOverlayFile` and appended below the shared system prompt into
-one composed file at startup (Windows module only; the Bash library has no
-overlay support yet). What this repo configures, and its runners and overlays:
+`executor-overlay.md`, declared in the config's top-level `promptOverlays` block
+**and mirrored under `engines.claude`**, because the pinned
+`Resolve-AgenticEngine` reads those keys from `engines.<engine>` and nowhere
+else; a top-level-only declaration is read by no one, silently. The overlay is
+appended below the shared system prompt into one composed file at startup, which
+is delivered to `claude` via `--append-system-prompt-file` and stored as
+`.opencode/agents/<role>.md` for `opencode`, which takes no prompt file on its
+command line. Those two files are **tracked**: nothing in the pinned
+ContainerHub generates them, so deleting them (2026-09-07) left a fresh clone on
+`engine: opencode` with no role prompt at all. They hold composed output all the
+same — edit the overlay, never them; a Pester suite fails if either stops
+containing the shared prompt or the overlay verbatim. Both runners preflight the
+overlays and refuse to start when a declared overlay does not reach the agent,
+which today means `Run-AgenticLoop.sh --engine claude` exits 1: the Bash library
+has never implemented the overlay keys.
+What this repo configures, and its runners and overlays:
 [`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:
 [agentic-loop-build-matrix.md](third_party/ContainerHub/docs/agentic-loop-build-matrix.md);

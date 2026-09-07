@@ -35,10 +35,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SLANG_ROOT="${REPO_ROOT}/Resources/ShadersSlang"
 BUILD_ROOT="${SLANG_ROOT}/build"
 
-SLANG_COMPILE_LIB="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/lib/slang-compile.sh"
-[[ -f "${SLANG_COMPILE_LIB}" ]] || err "Slang compile driver not found at ${SLANG_COMPILE_LIB} (is the ContainerHub submodule checked out?)"
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/slang-compile.sh
-source "${SLANG_COMPILE_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${REPO_ROOT}/third_party/ContainerHub/..." literal this replaces could not
+# honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/slang-compile.sh
 
 # Paths only - the driver holds the behaviour.
 SLANG_COMPILE_MANIFEST="${SLANG_ROOT}/shader-manifest.json"

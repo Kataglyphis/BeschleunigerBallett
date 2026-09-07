@@ -1,0 +1,45 @@
+/* Project-local docs rules for BeschleunigerBallett.
+ *
+ * The shared look lives in css/custom.css, which is a SYMLINK to the generated
+ * brand stylesheet in DocumANTation
+ * (third_party/ContainerHub/third_party/DocumANTation/docs-tooling/
+ *  source_templates/sphinx-book/custom.css). That file is generated from
+ * style/brand.json - never edit or fork it. This file is the supported place
+ * for project rules and is loaded AFTER it (see html_css_files in
+ * docs/source/conf.py), so the declarations below win.
+ *
+ * History: custom.css used to be a hand-written fork of that generated file. It
+ * rotted ~559 lines behind, declared 6 of the 34 brand tokens and hardcoded the
+ * rest, painted links #1ca06a where brand.json says #0e7490, and had never
+ * picked up the sticky sidebar, the mobile column collapse or the primary
+ * sidebar modal fix. Everything in the fork except the dark-mode hero treatment
+ * below was a byte-for-byte (or worse) copy of what the generated file already
+ * ships, so only that treatment is kept here.
+ *
+ * Use brand tokens, never literals - a literal is how the fork drifted.
+ */
+
+/* Dark-mode hero: BeschleunigerBallett paints the landing hero (index.rst,
+ * `.. rst-class:: hero-section`) DARK in dark mode. The brand default keeps the
+ * light card gradient with black text (--brand-dark-hero-text), which is what
+ * every other Kataglyphis site shows; this is the one deliberate local
+ * departure, so all four declarations that make it readable live together here.
+ *
+ * The fork used the literals #1a2a22 / #0d1a14 for the gradient and #2b4a3a /
+ * #e7efe9 / #b8cbc0 for border and text. The last three ARE brand tokens
+ * (--brand-dark-code-border, --brand-dark-text-base, --brand-dark-text-muted)
+ * and are now referenced as such; the gradient moves to the brand's dark
+ * surface pair, which is a slightly deeper green-black than the fork's.
+ *
+ * !important mirrors the generated file's own dark-mode rules: pydata's theme
+ * variables are set on html[data-theme="dark"] and would otherwise win.
+ */
+html[data-theme="dark"] .hero-section {
+  background: linear-gradient(140deg, var(--brand-dark-surface-gradient-from) 10%, var(--brand-dark-surface-gradient-to) 100%) !important;
+  border-color: var(--brand-dark-code-border) !important;
+  color: var(--brand-dark-text-base) !important;
+}
+
+html[data-theme="dark"] .hero-section p {
+  color: var(--brand-dark-text-muted) !important;
+}

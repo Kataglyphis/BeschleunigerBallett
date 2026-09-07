@@ -5,12 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-APP_RUNNER_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh"
-if [[ ! -f "${APP_RUNNER_LIB}" ]]; then
-  err "Shared app-runner library not found at '${APP_RUNNER_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/app-runner.sh
-source "${APP_RUNNER_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# not honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/app-runner.sh
 
 APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"
 APP_RUNNER_DEFAULT_BUILD_DIR="build"
@@ -45,16 +44,25 @@ check_vulkan() {
   return 1
 }
 
-# Try to install Vulkan SDK using the ContainerHub helper script bundled in third_party
+# Try to install Vulkan SDK using ContainerHub's setup-dependencies.sh.
 install_vulkan_via_containerhub() {
   local sd
-  # Prefer the 02-toolchain helper if present, fallback to top-level helper
-  sd="${PROJECT_ROOT}/third_party/ContainerHub/linux/scripts/02-toolchain/setup-dependencies.sh"
-  if [[ ! -f "${sd}" ]]; then
-    sd="${PROJECT_ROOT}/third_party/ContainerHub/linux/scripts/setup-dependencies.sh"
-  fi
-  if [[ ! -f "${sd}" ]]; then
-    warn "No ContainerHub setup-dependencies.sh found under third_party/ContainerHub; cannot auto-install Vulkan."
+  # containerhub_path resolves against CONTAINERHUB_DIR (env-overridable) and,
+  # on a miss, prints the probed path AND the submodule fix itself - strictly
+  # more than the warn it replaces said.
+  #
+  # The second candidate the old code fell back to - linux/scripts/
+  # setup-dependencies.sh, without the 02-toolchain/ segment - does not exist in
+  # ContainerHub, so that branch could only ever turn "the submodule is not
+  # checked out" into a message naming a path that was never right anyway. It is
+  # gone rather than translated.
+  #
+  # A miss stays a warn-and-return here on purpose: this is an OPTIONAL
+  # convenience for a dev box with no Vulkan SDK, and the caller
+  # (app_runner_post_vulkan_hook) already decides what a failed auto-install
+  # means. Nothing in CI reaches it.
+  if ! sd="$(containerhub_path linux/scripts/02-toolchain/setup-dependencies.sh)"; then
+    warn "Cannot auto-install Vulkan: ContainerHub's setup-dependencies.sh is not available."
     return 1
   fi
 

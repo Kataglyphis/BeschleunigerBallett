@@ -7,5 +7,4 @@ breathe
 exhale
 sphinx_design
 pre-commit
-sphinx_design
 junit2html

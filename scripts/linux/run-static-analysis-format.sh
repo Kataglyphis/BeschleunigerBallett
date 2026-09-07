@@ -2,9 +2,9 @@
 # run-static-analysis-format.sh - project wrapper around ContainerHub's generic
 # code-quality driver. Everything reusable (cmake-format bootstrap, the
 # file-enumeration walks, clang-format, clang-tidy, and the container
-# compile-database path remapping) lives in
-# third_party/ContainerHub/linux/scripts/lib/code-quality.sh; only
-# this project's source roots, tool arguments and paths live here.
+# compile-database path remapping) lives in ContainerHub's
+# linux/scripts/lib/code-quality.sh; only this project's source roots, tool
+# arguments and paths live here.
 #
 # NOTE: the Windows formatting/tidy path deliberately behaves differently on six
 # axes (source roots, module-TU skip, --header-filter, --checks, per-file vs
@@ -18,12 +18,11 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CODE_QUALITY_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh"
-if [[ ! -f "${CODE_QUALITY_LIB}" ]]; then
-  err "Shared code-quality library not found at '${CODE_QUALITY_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/code-quality.sh
-source "${CODE_QUALITY_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# not honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/code-quality.sh
 
 BUILD_DIR="${BUILD_DIR:-build}"
 PRESET="${PRESET:-}"
@@ -56,8 +55,31 @@ CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-15.2.0"
 CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
 
 # cmake-format is installed into the repo-local .venv when it is not on PATH.
+#
+# The install knob is a FUNCTION, not lib/uv-install-requirements.sh: that
+# wrapper defaults to this repo's root requirements.txt, which is the Sphinx
+# DOCS stack (sphinx, breathe, exhale, junit2html, ...) - eleven unpinned
+# packages dragged in merely to run a formatter, and a docs-stack resolution
+# failure would then break the formatting gate. The gate installs ContainerHub's
+# pinned cmake-format bootstrap set instead (cmake-format==0.6.13 plus the
+# pyyaml it needs to read .cmake-format.yaml at all) - the very file the hub's
+# own preflight cmake-format gate installs, so both graders run one version.
+#
+# A function is what upstream itself passes here (check_cmake_format in
+# ContainerHub's linux/scripts/preflight.sh): code-quality.sh runs the knob as a
+# command, so a shell function needs no exec bit and no extra wrapper file. It
+# runs in the subshell code-quality.sh wraps it in, so sourcing python_uv.sh
+# there cannot leak its helpers over this script's own.
 CODE_QUALITY_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
-CODE_QUALITY_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirements.sh"
+cmake_format_install_requirements() {
+  local requirements
+  requirements="$(containerhub_path linux/scripts/cmake-format.requirements.txt)" || return 1
+  containerhub_source linux/scripts/01-core/python_uv.sh
+  # Same venv code-quality.sh then activates and probes for cmake-format;
+  # honour the knob rather than restating its default.
+  uv_pip_install_requirements "${CODE_QUALITY_VENV_DIR:-${ROOT_DIR}/.venv}" "${requirements}"
+}
+CODE_QUALITY_UV_INSTALL_REQUIREMENTS_SCRIPT=cmake_format_install_requirements
 
 run_format_and_tidy() {
   code_quality_ensure_cmake_format

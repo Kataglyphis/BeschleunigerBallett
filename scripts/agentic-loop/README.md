@@ -27,17 +27,49 @@ used to restate it, and the restatement is what went stale.
 | [`AgenticLoop.config.json`](AgenticLoop.config.json) | Engine choice, model IDs, cadences, timeouts, build matrix, build/test/quality commands |
 | [`Invoke-AgenticLoop.ps1`](Invoke-AgenticLoop.ps1) | Windows runner — resolves the module, loads the config, calls `Invoke-AgenticLoop` |
 | [`Run-AgenticLoop.sh`](Run-AgenticLoop.sh) | Linux runner — sources the library, maps flags onto the env vars it reads, calls `run_agentic_loop` |
+| [`AgenticPromptOverlay.psm1`](AgenticPromptOverlay.psm1) | Overlay preflight for the Windows runner: fails the loop when a declared overlay never reaches the agent (the Bash runner carries the same assertion inline) |
 | [`prompts/planner-overlay.md`](prompts/planner-overlay.md) | Project delta appended to ContainerHub's shared planner system prompt |
 | [`prompts/executor-overlay.md`](prompts/executor-overlay.md) | Project delta appended to ContainerHub's shared executor system prompt |
 
-Both runners are the upstream templates with only their header comment and the
-loop name changed. Keep them that way: no prompt text and no build-config list
-belongs in a runner — hard-coding either is what let the Windows and Linux
-copies drift apart once already.
+Both runners are the upstream templates with their header comment, the loop name
+and one preflight added. Keep them that way: no prompt text and no build-config
+list belongs in a runner — hard-coding either is what let the Windows and Linux
+copies drift apart once already. The preflight is the one deliberate deviation,
+and it holds no prompt text: it asserts that the overlays the config declares
+actually reach the agent, because the shared library treats every way of losing
+them as a warning or as nothing at all. It belongs upstream; it lives here until
+it is there. See [The prompt overlays](#the-prompt-overlays).
 
-The `opencode` engine additionally uses [`.opencode/agents/`](../../.opencode/agents)
-and [`.opencode/commands/`](../../.opencode/commands) at the repo root, which
-opencode discovers by itself. The commands give the OpenCode TUI `/plan`,
+The two overlays are the **only** prompt text this repo owns. Both engines are
+fed the same composition of ContainerHub's shared role prompt plus the overlay:
+`claude` gets it as a temp file behind `--append-system-prompt-file`, composed
+by the module at start-up, and `opencode` gets it as `.opencode/agents/<role>.md`,
+because opencode takes no prompt file on its command line.
+
+`.opencode/agents/` is **tracked**, and stays tracked. It was deleted and
+gitignored on 2026-09-07 as a build artefact "regenerated on every loop start" —
+but nothing generates it. There is no `Write-AgenticOpenCodeAgentFile`, or any
+other writer of `.opencode/`, anywhere in the pinned ContainerHub, and the Bash
+half's `invoke_opencode` goes straight to `opencode run --agent <role>`, which
+resolves the file out of the checkout. The delete left a fresh clone on
+`engine: opencode` running both roles with no role prompt at all.
+
+The drift that motivated the delete was real — by then the files had become a
+stale pre-extraction copy of the shared prompt: 225 lines that had lost the
+executor incident narrative ("On 2026-07-31 three consecutive executor sessions
+launched a container build in the background… zero tasks completed"), the
+`timeout: 600000` guidance, the `until <done-check>; do sleep 10; done` polling
+pattern, and the `- [b]` rationale with its commit step. The cure is a gate, not
+a deletion: the tracked copies now hold the composed shared-prompt + overlay
+text, and
+[`AgenticLoop.PromptOverlays.Tests.ps1`](../windows/tests/AgenticLoop.PromptOverlays.Tests.ps1)
+fails if either stops containing the shared role prompt or this repo's overlay
+verbatim. **Edit the overlay, not these files.** They may go back to being
+generated once a generator exists AND is proven to run before the first
+`opencode run`.
+
+[`.opencode/commands/`](../../.opencode/commands) stays hand-written and tracked:
+those are TUI commands, not role prompts. They give the OpenCode TUI `/plan`,
 `/execute`, `/build <preset>`, `/test` and `/quality` for driving single loop
 phases interactively. OpenCode itself is installed via `scoop install opencode`
 (or `npm install -g opencode-ai`) and authenticated once with
@@ -130,11 +162,16 @@ defaults to all five presets without it); on Linux it is
 `--append-system-prompt-file` takes exactly one file, so the module concatenates
 ContainerHub's shared role prompt with this repo's overlay into a temp file at
 startup rather than making the consumer keep a whole copy of the shared prompt.
-The overlays are wired through `engines.claude.plannerPromptOverlayFile` /
-`engines.claude.executorPromptOverlayFile` — two keys the upstream config-key
-table does not document yet (it only lists the older full-override
-`plannerPromptFile` / `executorPromptFile` shape). The overlays therefore carry
-only what is true of *this* renderer:
+The overlays are declared in the config's top-level `promptOverlays` block
+(engine-agnostic, because both engines are fed the same composition) **and
+mirrored under `engines.claude`** — two keys the upstream config-key table does
+not document yet (it only lists the older full-override `plannerPromptFile` /
+`executorPromptFile` shape). The mirror is not redundancy to tidy away: the
+pinned `Resolve-AgenticEngine` reads `*PromptOverlayFile` from `engines.<engine>`
+and nowhere else, so a top-level-only declaration made both overlays unread, with
+no warning and no log line. Keep the two copies identical until the pinned hub
+reads `promptOverlays`. The overlays therefore carry only what is true of *this*
+renderer:
 
 - [`prompts/planner-overlay.md`](prompts/planner-overlay.md) — which `BACKLOG.md`
   heading a task belongs under, which preset a task should name (`clangcl-debug`
@@ -147,9 +184,24 @@ only what is true of *this* renderer:
   `ctest --test-dir` (the container build's CTest metadata carries container
   paths), and the stale-SPIR-V trap after touching a shader.
 
-They reach the agent on Windows only — an upstream defect, not a design
+They reach the `claude` agent on Windows only — an upstream defect, not a design
 choice. The Bash half
 (`third_party/ContainerHub/linux/scripts/lib/agentic-engines.sh`) still reads
-only `plannerPromptFile` / `executorPromptFile`, so a Linux run silently gets
-no project system prompt at all. Until `agentic-engines.sh` learns the two
-overlay keys, do not expect a Linux run to honour anything the overlays say.
+only `plannerPromptFile` / `executorPromptFile`, so a Linux `claude` run gets no
+project system prompt at all.
+
+That used to happen **silently**, which is the worse half of the defect: a loop
+producing work without this repo's build commands or conventions looks exactly
+like a healthy one. It no longer does. Both runners preflight the overlays and
+refuse to start when a declared overlay does not reach the agent:
+
+| Runner | Preflight |
+| --- | --- |
+| [`Invoke-AgenticLoop.ps1`](Invoke-AgenticLoop.ps1) | `Assert-AgenticPromptOverlay` from [`AgenticPromptOverlay.psm1`](AgenticPromptOverlay.psm1) — resolves the config through the module, then requires the composed prompt to contain the overlay |
+| [`Run-AgenticLoop.sh`](Run-AgenticLoop.sh) | `assert_prompt_overlays` — same assertion against `CLAUDE_*_PROMPT_FILE` (claude) or `.opencode/agents/<role>.md` (opencode) |
+
+So today `Run-AgenticLoop.sh --engine claude` **exits 1 before the first agent
+call**, naming `agentic-engines.sh` and what it has to learn. `--engine opencode`
+passes, because the composed role prompts are tracked. Both preflights also fail
+on a missing overlay file (which the module otherwise downgrades to a `WARN`) and
+on the two overlay declarations drifting apart.

@@ -6,16 +6,18 @@ set -euo pipefail
 # `--python .venv/bin/python` pin (uv honours UV_PYTHON over the activated
 # venv - see the explanatory comment upstream), so no activation is needed.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-PYTHON_UV_LIB="${REPO_ROOT}/third_party/ContainerHub/linux/scripts/01-core/python_uv.sh"
 
-if [[ ! -f "${PYTHON_UV_LIB}" ]]; then
-  echo "ERROR: shared uv helpers not found: ${PYTHON_UV_LIB}" >&2
-  echo "       Run: git submodule update --init third_party/ContainerHub" >&2
-  exit 1
-fi
+# This script deliberately does NOT source lib/common.sh (it must stay usable
+# from a bare venv bootstrap, before any toolchain is set up), so it sources the
+# bootstrap directly. containerhub.sh is load-guarded, so this is free when
+# common.sh already pulled it in.
+#
+# It replaces a "${REPO_ROOT}/third_party/ContainerHub/..." literal plus its
+# hand-rolled -f guard: the literal ignored the CONTAINERHUB_DIR override, and
+# containerhub_source already fails naming the probed path AND the fix.
+# shellcheck source=containerhub.sh
+source "${SCRIPT_DIR}/containerhub.sh"
 
-# shellcheck source=../../../third_party/ContainerHub/linux/scripts/01-core/python_uv.sh
-source "${PYTHON_UV_LIB}"
+containerhub_source linux/scripts/01-core/python_uv.sh
 
 uv_pip_install_requirements "${1:-.venv}" "${2:-requirements.txt}"

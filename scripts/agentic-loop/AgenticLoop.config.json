@@ -4,9 +4,16 @@
 
   "engine": "claude",
 
+  "promptOverlays": {
+    "_comment": "Project deltas appended to ContainerHub's shared role prompts. Engine-agnostic on purpose: the loop composes shared+overlay once and delivers it to claude via --append-system-prompt-file AND to opencode as .opencode/agents/<role>.md. This block is the source of truth; the identical keys under engines.claude are a COMPATIBILITY MIRROR, not a second setting - see the note there. Assert-AgenticPromptOverlay fails the loop if the two disagree, so edit both or neither.",
+    "plannerPromptOverlayFile": "scripts/agentic-loop/prompts/planner-overlay.md",
+    "executorPromptOverlayFile": "scripts/agentic-loop/prompts/executor-overlay.md"
+  },
+
   "engines": {
     "claude": {
       "_comment": "Claude Code CLI (claude -p). Planner: Opus 5 with Fable 5 fallback when unavailable/overloaded (via claude --fallback-model). Executor: Sonnet. Planner is sandboxed to read-only tools + BACKLOG.md edits; executor runs with bypassPermissions (trusted repo).",
+      "_commentPromptOverlayMirror": "plannerPromptOverlayFile / executorPromptOverlayFile are mirrored from the top-level promptOverlays block because ContainerHub's reader at the pinned commit (WindowsAgenticLoop.Common.psm1, Resolve-AgenticEngine) looks them up under engines.<engine> and nowhere else. Moving them out to the top level alone made both overlays unread - and unread SILENTLY, because a missing overlay is not an error there. Keep the mirror until the pinned hub reads promptOverlays; AgenticPromptOverlay.psm1 (Windows) and the assert_prompt_overlays preflight in Run-AgenticLoop.sh (Linux) check that the overlay actually reaches the agent and fail the loop when it does not.",
       "plannerModel": "claude-opus-5",
       "plannerFallbackModel": "claude-fable-5",
       "executorModel": "claude-sonnet-5",

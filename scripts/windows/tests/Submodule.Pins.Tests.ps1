@@ -20,6 +20,32 @@
 #
 # NOTE: written for Pester 3.4.0 (what the Windows lane pins) - no BeforeAll
 # outside Describe, and the dash-less assertion syntax.
+#
+# ---------------------------------------------------------------------------
+# OVERLAP WITH THE `submodule-pins` JOB - read before deleting either one.
+#
+# Windows.yml now carries a second job (`submodule-pins`) that runs
+# ContainerHub's promoted, repo-agnostic suite at
+# third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1. That
+# suite is a strict SUPERSET of this file: it asserts checked-out + at the
+# recorded gitlink + reachable from the remote for EVERY configured submodule,
+# where this file asserts reachability for FUZZTEST alone. Once both run, the
+# drift invariant is asserted twice and this file has no unique coverage left.
+#
+# It is kept anyway, for now, because that hub path DOES NOT EXIST at the
+# currently pinned ContainerHub (fc1a1536: shared/windows/ contains only
+# templates/). Verified 2026-09-07. Until the gitlink is bumped to a commit
+# that carries the promoted suite, the `submodule-pins` job cannot pass and
+# THIS file is the only thing asserting the invariant - deleting it now would
+# leave the repo with no pin check at all, which is exactly the vacuous-gate
+# failure the rest of this lane is built to avoid.
+#
+# Removal condition, so this note cannot rot into a permanent excuse: when
+# third_party/ContainerHub is bumped to a commit that ships
+# shared/windows/tests/Submodule.Pins.Tests.ps1 AND the `submodule-pins` job
+# has passed once on that pin, delete this file. The `pester-tests` job runs
+# the whole scripts/windows/tests directory, so no workflow edit is needed.
+# ---------------------------------------------------------------------------
 
 Describe 'Submodule pins' {
 

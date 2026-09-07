@@ -139,18 +139,19 @@ get_project_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd
 }
 
-# Source module from ContainerHub's specific category (optional advanced use)
-source_hub_module() {
-  local category="$1"
-  local name="$2"
-  local path="${SCRIPT_LIB_DIR}/../../../third_party/ContainerHub/linux/scripts/${category}/${name}"
-  if [[ -f "${path}" ]]; then
-    # shellcheck disable=SC1090
-    source "${path}"
-    return 0
-  fi
-  return 1
-}
+# source_hub_module() stood here. It was a third, redundant way to reach into
+# the submodule - a <category>/<name> split over a hard-coded
+# "${SCRIPT_LIB_DIR}/../../../third_party/ContainerHub/..." literal that ignored
+# the CONTAINERHUB_DIR override the bootstrap above exists to provide, and that
+# returned a bare 1 so every caller had to invent its own error text.
+#
+# Its two callers (docs-build-web.sh and wasm-size-budget.sh, both for
+# lib/rust-toolchain.sh) now call containerhub_source directly with the full
+# hub-relative path. Nothing else referenced it.
+#
+# source_module() above is NOT redundant with containerhub_source and stays: its
+# search order is deliberately wider, ending at /opt/scripts/core, where the
+# image bakes these files and where there is no submodule to resolve against.
 
 # ---------------------------------------------------------------------------
 # Rust toolchain selection, applied on source so every script in this directory

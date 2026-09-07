@@ -336,3 +336,119 @@ jobs:
         with:
           path: scripts/windows/tests
           version: '3.4.0'
+
+  # ===========================================================================
+  # ALWAYS-ON gates. Everything above carries
+  #   if: workflow_dispatch || contains(head_commit.message, '[build-win]')
+  # because it costs a 2-3h containerised build. Neither job below builds
+  # anything - both are CPU-only, container-free and finish in minutes - so
+  # neither carries that condition.
+  #
+  # That is the point, not an oversight: an invariant that only runs when
+  # somebody remembers to type [build-win] is not a gate. The submodule-pin
+  # check in particular was reachable ONLY through the opt-in job above, which
+  # means the pins were unguarded on exactly the pushes nobody thought needed
+  # checking.
+  # ===========================================================================
+
+  # PowerShell lint: ContainerHub's Invoke-Lint.ps1 pointed at THIS repo's
+  # PowerShell tree. Two passes - a mandatory parse + AST-trap gate, and
+  # PSScriptAnalyzer.
+  #
+  # Runs on Windows rather than being folded into Linux.yml's lint job on
+  # purpose: the script is Windows-native (it resolves its own helper module with
+  # a backslash path and excludes `\archive\` by a backslash regex), and
+  # PSScriptAnalyzer is preinstalled on the hosted Windows image.
+  powershell-lint:
+    name: PowerShell lint (ContainerHub gate)
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      # Top-level only: the only submodule these steps read is ContainerHub,
+      # which carries both the gate script and its ruleset.
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      # Pinned, like the hub pins it for its own lane, so a runner-image module
+      # refresh cannot silently change what this gate reports.
+      - name: Install PSScriptAnalyzer
+        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+
+      # -Path is the parameter ContainerHub added for exactly this case: a
+      # consumer points the gate at ITS tree, while the PSScriptAnalyzer settings
+      # file stays resolved against the SCRIPT's own location - so the hub's
+      # PSScriptAnalyzerSettings.psd1 is consumed BY REFERENCE and no ruleset is
+      # copied into this repo. `scripts` is walked recursively, so scripts\,
+      # scripts\windows\, scripts\windows\tests\ and scripts\agentic-loop\ are all
+      # covered; the dead archive\ tree at the repo root is deliberately outside
+      # the scope.
+      #
+      # -FailOnAnalyzer is deliberately NOT passed, and this step deliberately
+      # carries no continue-on-error - those are not the same thing. The step
+      # FAILS the job on any parse error or AST-trap violation, which are hard
+      # code defects. What is advisory is only the PSScriptAnalyzer pass, and
+      # that ramp is the hub's own documented one: its
+      # PSScriptAnalyzerSettings.psd1 opens with "Deliberately lenient to start
+      # ... Tighten over time", and Invoke-Lint.ps1's own parameter help records
+      # that the analyzer is advisory unless -FailOnAnalyzer is given. Add
+      # -FailOnAnalyzer here once this repo's analyzer findings are triaged; do
+      # not reach for continue-on-error, which would hide the parse gate too.
+      - name: Lint PowerShell (parse gate + PSScriptAnalyzer)
+        run: >-
+          pwsh -NoProfile -File third_party/ContainerHub/windows/scripts/Invoke-Lint.ps1
+          -Path scripts
+
+  # Submodule pins sit at their recorded, restorable commits.
+  #
+  # The suite is ContainerHub's promoted, repo-agnostic one - not a copy. It
+  # asserts, for EVERY configured submodule (this repo has 15), that it is
+  # checked out, sitting at its recorded gitlink, and pinned to a commit
+  # reachable from its remote. A pin that is on no remote branch cannot be
+  # restored by a fresh clone, which turns local drift into a build that only
+  # works on the machine that made it.
+  #
+  # windows-2025, matching the hub's own submodule-pins lane, because
+  # run-pester-suite installs Pester 3.4.0 - a Windows PowerShell-era module. The
+  # suite itself asserts with plain `throw` rather than `Should`, so it is
+  # dialect-agnostic and can move to a cheaper runner whenever the action can be
+  # told a Core-compatible version.
+  submodule-pins:
+    name: submodule pins
+    runs-on: windows-2025
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      # The suite takes the superproject root as a parameter and the composite
+      # action can only pass a path, so the root comes through the environment.
+      # It would fall back to GITHUB_WORKSPACE by itself; naming it keeps the
+      # wiring visible rather than implied. It must NOT be left to the suite's
+      # last-resort git-toplevel probe either: the file lives inside the
+      # ContainerHub submodule, so that probe would answer "ContainerHub".
+      CONTAINERHUB_PIN_CHECK_REPO_ROOT: ${{ github.workspace }}
+    steps:
+      # `submodules: true` is required, not an optimisation: without it nothing
+      # is checked out, and the suite fails on its own vacuity guard rather than
+      # passing over an empty tree. Top-level only, because the drift check is
+      # non-recursive for the same reason. Default fetch depth, which is what
+      # makes the reachability check exercise its shallow-clone escalation.
+      #
+      # It must be actions/checkout doing this, not a hand-rolled
+      # `git submodule update --init` step. .gitmodules pins git@github.com:
+      # (SSH) URLs for ContainerHub and OxidANT, and a hosted runner has no SSH
+      # key - the bare git command dies with "Permission denied (publickey)".
+      # checkout installs the `url.<https>.insteadOf git@github.com:` rewrite
+      # plus token auth, so the SSH pins resolve over HTTPS.
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+
+      - name: Submodule pins sit at their recorded, restorable commits
+        uses: Kataglyphis/ContainerHub/.github/actions/run-pester-suite@main
+        with:
+          path: third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1

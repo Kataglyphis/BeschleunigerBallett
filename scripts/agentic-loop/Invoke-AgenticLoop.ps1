@@ -37,6 +37,19 @@ if (-not $config) { Write-Host "FATAL: Invalid JSON" -ForegroundColor Red; exit 
 
 Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun
 
+# Preflight: a prompt overlay the config DECLARES and no reader picks up is an
+# error, not a silent fallback to the bare shared prompt. Both ways of losing
+# one are quiet upstream - Resolve-AgenticEngine reads the overlay keys from
+# engines.<engine> only, and New-AgenticComposedPrompt downgrades a missing
+# overlay file to a WARN - so the loop would run without this repo's project
+# rules and report nothing. Asserted here, before the first agent invocation,
+# so the failure costs a second instead of a whole session.
+Import-Module (Join-Path $scriptRoot 'AgenticPromptOverlay.psm1') -Force
+$overlayEngine = if ($Engine) { $Engine }
+                 elseif ($env:AGENTIC_ENGINE) { $env:AGENTIC_ENGINE }
+                 else { Get-AgenticConfigValue $config 'engine' 'opencode' }
+Assert-AgenticPromptOverlay -Config $config -RepoRoot $repoRoot -Engine $overlayEngine
+
 # Build configs and planner/executor task prompts come from the module:
 # configs from the config's buildMatrix (legacy buildConfigurations fallback),
 # prompts from ContainerHub's shared/agentic-loop/prompts/*.md defaults.

@@ -8,12 +8,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-COVERAGE_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/coverage.sh"
-if [[ ! -f "${COVERAGE_LIB}" ]]; then
-  err "Shared coverage library not found at '${COVERAGE_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/coverage.sh
-source "${COVERAGE_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# not honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/coverage.sh
 
 # gcovr walks the compile directory for .gcda/.gcno, which for this project is
 # the repo root the container builds from.

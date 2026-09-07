@@ -1,4 +1,14 @@
-include(GoogleTest)
+# GoogleTest test registration comes from ContainerHub's GTestDiscovery module
+# (kataglyphis_register_gtest_target), which owns the union of what this repo and
+# AccelerANTgine had each grown for it: this repo's WORKING_DIRECTORY, and
+# AccelerANTgine's clang-cl opt-out plus its add_test/PATH fallback for the
+# ASan/UBSan binaries that die during discovery with 0xc0000135.
+#
+# The module includes GoogleTest itself, so the bare `include(GoogleTest)` that
+# stood on this line is gone - one file owning both is what keeps a consumer from
+# having to remember the ordering. Resolved BY NAME off CMAKE_MODULE_PATH, which
+# the top-level CMakeLists points at third_party/ContainerHub/cmake.
+include(GTestDiscovery)
 
 function(kataglyphis_disable_test_warnings test_target)
   if(MSVC)
@@ -28,24 +38,32 @@ function(kataglyphis_enable_windows_vulkan_delay_load test_target)
   endif()
 endfunction()
 
+# All the registration logic that used to live in this function now lives in
+# ContainerHub's kataglyphis_register_gtest_target. What is left here is the one
+# thing that is genuinely THIS project's and that the hub module deliberately
+# refuses to default: the working directory.
+#
+# WORKING_DIRECTORY is opt-in upstream because CMAKE_SOURCE_DIR does not mean the
+# same thing in every consumer - in a repo that builds as somebody else's
+# subproject it is the outer root, and defaulting it on would silently relocate
+# the cwd of tests that rely on CTest's default. Here it is correct and
+# load-bearing: both suites read resources by paths relative to the repository
+# root, exactly like the main executable does.
+#
+# It stays a named function rather than being inlined at the two call sites so
+# that decision has ONE place to change (and so those call sites, which belong to
+# a different area of the tree, did not have to be edited to adopt the module).
+#
+# REMOVED, deliberately: the else-branch that stood in the old body. It guarded
+# on KATAGLYPHIS_ENABLE_GTEST_DISCOVERY, set that variable to ON itself two lines
+# earlier when undefined, and nothing in this repository - no cache entry, no
+# preset, no CI argument, no other CMake file - ever set it. The branch was
+# unreachable, and the message it would have printed ("skipping
+# gtest_discover_tests") described a state this repo could not enter: a test
+# target registered with CTest under NO name at all. The hub module keeps the
+# knob and backs it with a REAL fallback (add_test plus, on Windows, the explicit
+# PATH the loader needs), and turns discovery off by itself for clang-cl, which
+# is the one case that actually needs it.
 function(kataglyphis_configure_gtest_discovery test_target)
-  if(NOT DEFINED KATAGLYPHIS_ENABLE_GTEST_DISCOVERY)
-    set(KATAGLYPHIS_ENABLE_GTEST_DISCOVERY ON)
-  endif()
-
-  if(KATAGLYPHIS_ENABLE_GTEST_DISCOVERY)
-    message(STATUS "Enabling gtest_discover_tests for ${test_target}.")
-    # PRE_TEST keeps test discovery inside the ctest phase, which is safer for
-    # Windows runtime-path handling than executing tests during build steps.
-    # WORKING_DIRECTORY is set to project root so relative paths match the main executable.
-    gtest_discover_tests(
-      ${test_target}
-      DISCOVERY_TIMEOUT
-      300
-      DISCOVERY_MODE
-      PRE_TEST
-      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
-  else()
-    message(STATUS "KATAGLYPHIS_ENABLE_GTEST_DISCOVERY is OFF - skipping gtest_discover_tests for ${test_target}.")
-  endif()
+  kataglyphis_register_gtest_target(${test_target} WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endfunction()

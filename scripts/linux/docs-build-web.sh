@@ -2,26 +2,24 @@
 # docs-build-web.sh - project wrapper around ContainerHub's generic Sphinx docs
 # builder. Everything reusable (venv bootstrap, _static staging, the diagram
 # generator step and the `make html` / `make linkcheck` pair with warnings as
-# errors) lives in
-# third_party/ContainerHub/linux/scripts/lib/docs-build.sh; only
-# this project's paths and its WebGPU wasm demo live here.
+# errors) lives in ContainerHub's linux/scripts/lib/docs-build.sh; only this
+# project's paths and its WebGPU wasm demo live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literals these calls
+# replace could not honour - and fails naming the probed path AND the fix.
+#
 # ensure_wasm32_target lives in ContainerHub: making the wasm32 target usable
 # without assuming rustup is not this project's problem, it is a property of
 # the images.
-source_hub_module lib rust-toolchain.sh   || err "ContainerHub lib/rust-toolchain.sh not found. Initialize the submodule first."
+containerhub_source linux/scripts/lib/rust-toolchain.sh
 
-
-DOCS_BUILD_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh"
-if [[ ! -f "${DOCS_BUILD_LIB}" ]]; then
-  err "Shared docs-build library not found at '${DOCS_BUILD_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/docs-build.sh
-source "${DOCS_BUILD_LIB}"
+containerhub_source linux/scripts/lib/docs-build.sh
 
 # Directory the C++ build wrote its Doxygen/Graphviz SVGs to.
 DOCS_OUT="${1:-${DOCS_OUT:-build/build/html}}"

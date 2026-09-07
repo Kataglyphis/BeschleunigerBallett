@@ -26,6 +26,23 @@ The command to put in a task's **Build:** field:
 pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
 ```
 
+## Test guidance a task must carry
+
+Name the test in the task's **Test:** field and point at the existing
+`Test/commit/` harness pattern; a GPU-dependent test must skip gracefully when
+no adapter is present. File paths in **Files to read:** are repo-relative —
+`Src/...` for engine sources, `Test/...` for the harness.
+
+## Refactor focus: C++23 modernization
+
+On top of the shared refactor focus areas, this repo's "language modernization"
+means concretely:
+
+- `std::span` where raw pointer + length pairs are still passed around,
+- `std::expected` where a function returns an error code (remember exceptions
+  are disabled, so this is the error channel),
+- `constexpr` / `consteval` where a computation is knowable at compile time.
+
 ## Conventions a task must never violate
 
 Read `AGENTS.md`. In particular, do not propose enabling exceptions

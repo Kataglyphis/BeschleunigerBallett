@@ -2,20 +2,19 @@
 # run-ctest.sh - project wrapper around ContainerHub's generic ctest runner.
 # Everything reusable (arg parsing, git safe.directory, Vulkan env, the ctest
 # verbosity/-T test flag set and the --ctest-exclude plumbing) lives in
-# third_party/ContainerHub/linux/scripts/lib/ctest-run.sh; only this
-# project's defaults live here.
+# ContainerHub's linux/scripts/lib/ctest-run.sh; only this project's defaults
+# live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-CTEST_RUN_LIB="${SCRIPT_DIR}/../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh"
-if [[ ! -f "${CTEST_RUN_LIB}" ]]; then
-  err "Shared ctest-run library not found at '${CTEST_RUN_LIB}'. Initialize the ContainerHub submodule first."
-fi
-# shellcheck source=../../third_party/ContainerHub/linux/scripts/lib/ctest-run.sh
-source "${CTEST_RUN_LIB}"
+# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
+# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# not honour - and fails naming the probed path AND the fix.
+containerhub_source linux/scripts/lib/ctest-run.sh
 
 CTEST_RUN_DEFAULT_BUILD_DIR="build"
 CTEST_RUN_DEFAULT_BUILD_TYPE="Debug"

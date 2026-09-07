@@ -20,6 +20,20 @@
 *.cmd   text eol=crlf
 *.bat   text eol=crlf
 
+# Shared config vendored from ContainerHub MUST be LF, byte-identical to the
+# canonical copies upstream. Sync-SharedConfig normalises line endings before
+# it compares, so a CRLF copy drifts past the sync gate without tripping it:
+# .pre-commit-config.yaml was stored CRLF here while the hub ships LF, and the
+# check reported no drift. eol=lf makes the stored blob match what the hub
+# ships, so byte comparison and text comparison can no longer disagree.
+# (These names are also read inside Linux CI containers and by pre-commit,
+# where a stray CR is a parse fault rather than cosmetics.)
+.clang-format text eol=lf
+.clang-tidy text eol=lf
+.cmake-format.yaml text eol=lf
+.pre-commit-config.yaml text eol=lf
+gcovr.cfg text eol=lf
+
 # exclude all files from language analysis which do not directly contribute to engine
 third_party/** linguist-vendored
 Documents/** linguist-vendored
