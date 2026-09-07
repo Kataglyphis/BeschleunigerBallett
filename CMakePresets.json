@@ -269,6 +269,7 @@
 				"RUST_FEATURES": "ON",
 				"BUILD_TESTING": "TRUE",
 				"COMPILER_CACHE": "sccache",
+				"myproject_ENABLE_COVERAGE": "OFF",
 				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
 			"condition": {
@@ -294,7 +295,8 @@
 				"RUST_FEATURES": "ON",
 				"CMAKE_BUILD_TYPE": "Release",
 				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "FALSE"
+				"BUILD_TESTING": "FALSE",
+				"myproject_ENABLE_COVERAGE": "OFF"
 			},
 			"condition": {
 				"type": "equals",

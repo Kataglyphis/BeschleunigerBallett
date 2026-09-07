@@ -1,0 +1,6 @@
+# ubuntu-26.04/-arm are GitHub preview labels (family-wide since 2026-09-06) that
+# pinned actionlint 1.7.12 - the latest release - predates; this only ADDS labels.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm
