@@ -47,13 +47,31 @@ Write-Host "Rust project: $RustProjectDir" -ForegroundColor Cyan
 Write-Host ''
 
 # ---- Prerequisites ----
-$hasWasmTarget = $false
-try {
-    $installed = rustup target list --installed 2>$null
-    $hasWasmTarget = $installed -match 'wasm32-unknown-unknown'
-} catch { }
+#
+# THE TWO FAILURES ARE REPORTED SEPARATELY, and that is the whole point of the
+# shape below. The `try { ... } catch { }` this replaces swallowed every fault
+# rustup could raise - not on PATH, a broken toolchain, an unreadable
+# ~/.rustup - and every one of them then surfaced as the single message "Wasm
+# target wasm32-unknown-unknown not installed", sending the reader to
+# `rustup target add` for a problem that had nothing to do with the target. A
+# diagnosis that is wrong is worse than no diagnosis.
+#
+# `2>$null` is gone with it: rustup's stderr is the only thing that says WHY it
+# failed, so discarding it while reporting the failure is self-defeating.
+if (-not (Get-Command rustup -ErrorAction SilentlyContinue)) {
+    Write-Host 'rustup is not on PATH, so the wasm target cannot be checked or built.' -ForegroundColor Yellow
+    Write-Host 'Install Rust from https://rustup.rs, then: rustup target add wasm32-unknown-unknown' -ForegroundColor Yellow
+    exit 1
+}
 
-if (-not $hasWasmTarget) {
+$installed = rustup target list --installed
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "rustup target list --installed failed (exit $LASTEXITCODE). Its output is above." -ForegroundColor Red
+    Write-Host 'This is a broken Rust toolchain, NOT a missing wasm target.' -ForegroundColor Red
+    exit 1
+}
+
+if (-not ($installed -match 'wasm32-unknown-unknown')) {
     Write-Host 'Wasm target wasm32-unknown-unknown not installed.' -ForegroundColor Yellow
     Write-Host 'Install with: rustup target add wasm32-unknown-unknown' -ForegroundColor Yellow
     exit 1

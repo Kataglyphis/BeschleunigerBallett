@@ -277,7 +277,21 @@ done
 # The compile-DB hint quotes the final build dir, so refresh it after parsing.
 CODE_QUALITY_COMPILE_DB_HINT="e.g. scripts/linux/cmake-configure-build.sh --build-dir ${BUILD_DIR} --preset <preset>"
 
-git config --global --add safe.directory /workspace || true
+# The bind-mounted workspace is owned by the host user, not by the container's
+# root, so git refuses to operate in it ("detected dubious ownership") and every
+# git-touching step below - the compile-DB path remapping, the changed-file
+# walks - fails on a message that reads like a git bug. This marks it safe.
+#
+# The `|| true` this used to carry was a genuine suppression, not a guard: it
+# turned "git could not write its global config" into a silent no-op, and the
+# whole remainder of the gate then ran against a repository git would not touch.
+# The failure is now fatal, and the config write is attempted ONLY where it is
+# needed - inside the container, where /workspace exists. On a dev box the
+# checkout is already owned by the user running this, so there is nothing to
+# mark and nothing to fail.
+if [[ -d /workspace ]]; then
+  git config --global --add safe.directory /workspace
+fi
 
 cd "${ROOT_DIR}"
 

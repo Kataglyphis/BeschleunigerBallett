@@ -14,7 +14,11 @@ param(
 
   # Comma-separated Build-Windows.ps1 configurations to build.
   [string]$Configurations = 'clangcl-debug,clangcl-profile,clangcl-release',
-  [string]$Image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64',
+  # EMPTY means "ask ContainerHub", which is what you want unless you are
+  # testing an image that is not the family one. It cannot default to the
+  # resolved value here: a param default is evaluated at bind time, before the
+  # module that answers the question has been imported. Resolved below.
+  [string]$Image = '',
   # Explicit docker.exe path; falls back to $env:DOCKER_EXE, the Stevedore
   # install locations, then 'docker' on PATH.
   [string]$DockerExe,
@@ -48,6 +52,38 @@ $null = Resolve-BuildModulePath -Name 'WindowsBuild.Common'
 # any project built in that image, not just this engine. Must load before first
 # use (Resolve-DockerExe below).
 Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
+
+# The Windows developer image, resolved from ContainerHub's
+# linux/scripts/01-core/versions.env (CI_IMAGE_WINDOWS_TAG) rather than named
+# here. That file is the fleet's one owner of the two CI image tags -
+# .github/workflows/Windows.yml already inherits it as the container action's
+# `image:` default, and Get-CiImageReference is the PowerShell twin of
+# scripts/linux/ci-image-ref.sh, gated against it by ContainerHub's
+# verify_ci_image_refs.py. Before this, a tag bump upstream left this local
+# entry point building in the previous image with nothing to say so.
+#
+# Imported EXPLICITLY and not relied upon via WindowsContainerBuild.Reuse: a
+# nested Import-Module inside a .psm1 binds into that module's private scope and
+# never reaches this script (see Resolve-BuildModule.ps1's header).
+#
+# THE else BRANCH IS A PIN FALLBACK, not a second source of truth.
+# Get-CiImageReference landed in ContainerHub after the commit
+# third_party/ContainerHub currently pins, and this script WORKS today; a hard
+# dependency would break a working local entry point to gain nothing until the
+# gitlink moves. Get-Command is a capability probe, not a swallowed error.
+#
+# TO RETIRE: in the same commit that bumps third_party/ContainerHub to a hub
+# commit exporting Get-CiImageReference, collapse this to
+# `if (-not $Image) { $Image = Get-CiImageReference -Windows }` and delete this
+# note.
+Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerImage.Common') -Force -Global
+if (-not $Image) {
+  $Image = if (Get-Command Get-CiImageReference -ErrorAction SilentlyContinue) {
+    Get-CiImageReference -Windows
+  } else {
+    'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+  }
+}
 
 $docker = Resolve-DockerExe -Override $DockerExe
 Write-Host "Using docker: $docker"

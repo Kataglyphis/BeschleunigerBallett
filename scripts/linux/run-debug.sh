@@ -19,29 +19,31 @@ APP_RUNNER_ENABLE_SHADER_CLEAN=true
 APP_RUNNER_SHADER_CLEAN_DIR="Resources/ShadersSlang/build"
 APP_RUNNER_SHADER_COMPILE_SCRIPT="${SCRIPT_DIR}/compile-slang-shaders.sh"
 
-# Helper: check whether Vulkan SDK/tools are available in the current environment
-check_vulkan() {
-  # common detections: glslc or vulkaninfo in PATH
-  if command -v glslc >/dev/null 2>&1; then
+# Is a usable Vulkan SDK reachable at all? Used ONLY to decide whether the
+# auto-install below is worth attempting.
+#
+# The five-probe sweep this used to hand-roll (glslc on PATH, vulkaninfo on
+# PATH, $VULKAN_SDK/setup-env.sh, /opt/vulkan/*/setup-env.sh,
+# ~/vulkan/*/setup-env.sh) is ContainerHub's
+# linux/scripts/01-core/vulkan-env.sh - vulkan_env_find_setup_script, whose
+# header enumerates that exact union and adds $VULKAN_SETUP_SCRIPT, the
+# $VULKAN_VERSION-pinned path and the arch-subdirectory layout
+# (/opt/vulkan/<ver>/x86_64/setup-env.sh) that the local copy missed. lib/
+# common.sh already sources that module for source_vulkan_env; this is the same
+# module answering the same question.
+#
+# The two PATH probes stay HERE because vulkan_env_find_setup_script answers
+# "is there a setup-env.sh to source", not "are the tools usable": a container
+# image with glslc/vulkaninfo baked in and no SDK directory is a valid
+# environment for this launcher and must not trigger an install. vulkaninfo in
+# particular has no upstream equivalent at all - vulkan_env_source's own
+# fallback checks glslc only.
+vulkan_sdk_available() {
+  if declare -F vulkan_env_find_setup_script >/dev/null 2>&1 &&
+     vulkan_env_find_setup_script >/dev/null; then
     return 0
   fi
-  if command -v vulkaninfo >/dev/null 2>&1; then
-    return 0
-  fi
-  # VULKAN_SDK env pointing to a setup script
-  if [[ -n "${VULKAN_SDK:-}" && -f "${VULKAN_SDK}/setup-env.sh" ]]; then
-    return 0
-  fi
-  # look for any /opt/vulkan/*/setup-env.sh or ~/vulkan/<version>/setup-env.sh
-  shopt -s nullglob >/dev/null 2>&1 || true
-  local candidates=(/opt/vulkan/*/setup-env.sh "${HOME}/vulkan/*/setup-env.sh")
-  shopt -u nullglob >/dev/null 2>&1 || true
-  for c in "${candidates[@]}"; do
-    if [[ -f "${c}" ]]; then
-      return 0
-    fi
-  done
-  return 1
+  has_tool glslc || has_tool vulkaninfo
 }
 
 # Try to install Vulkan SDK using ContainerHub's setup-dependencies.sh.
@@ -78,41 +80,31 @@ install_vulkan_via_containerhub() {
   fi
 }
 
-# If Vulkan wasn't detected, attempt auto-install then source the installed SDK
+# If no Vulkan SDK was found, attempt an auto-install and then source it.
+#
+# app_runner_main has ALREADY called source_vulkan_env by the time this hook
+# runs (ContainerHub linux/scripts/lib/app-runner.sh:187-188 -> lib/common.sh's
+# source_vulkan_env -> vulkan_env_source "" keep-libs 0), so a pre-existing SDK
+# is already sourced and there is nothing left for this hook to do. What this
+# hook uniquely owns - and the only reason it still exists - is the
+# auto-INSTALL: nothing upstream installs an SDK on a dev box that has none.
+#
+# The three-way sourcing cascade that used to follow the install here
+# (/opt/vulkan/$VER, then ~/vulkan/$VER, then the first /opt/vulkan/*/
+# setup-env.sh) was a third copy of the same search; the second
+# source_vulkan_env below is that search, run again now that the install has
+# put something on disk. It also picks up the two layouts the local cascade
+# could not: an SDK under ~/vulkan/*/ without an exact $VULKAN_VERSION match,
+# and the arch-subdirectory layout.
 app_runner_post_vulkan_hook() {
-  if check_vulkan; then
+  if vulkan_sdk_available; then
     return 0
   fi
 
   info "Vulkan SDK/tools not detected on PATH. Attempting automatic install..."
   if install_vulkan_via_containerhub; then
-    # Prefer explicit version install location, then fallback to first found
-    VER_TO_SOURCE="${VULKAN_VERSION:-1.4.341.1}"
-    if [[ -f "/opt/vulkan/${VER_TO_SOURCE}/setup-env.sh" ]]; then
-      info "Sourcing Vulkan env from /opt/vulkan/${VER_TO_SOURCE}/setup-env.sh"
-      # shellcheck disable=SC1090
-      . "/opt/vulkan/${VER_TO_SOURCE}/setup-env.sh"
-    elif [[ -f "${HOME}/vulkan/${VER_TO_SOURCE}/setup-env.sh" ]]; then
-      info "Sourcing Vulkan env from ${HOME}/vulkan/${VER_TO_SOURCE}/setup-env.sh"
-      . "${HOME}/vulkan/${VER_TO_SOURCE}/setup-env.sh"
-    else
-      # fallback: source the first matching setup-env.sh under /opt/vulkan
-      shopt -s nullglob >/dev/null 2>&1 || true
-      found_setup=""
-      for s in /opt/vulkan/*/setup-env.sh; do
-        if [[ -f "${s}" ]]; then
-          found_setup="${s}"
-          break
-        fi
-      done
-      shopt -u nullglob >/dev/null 2>&1 || true
-      if [[ -n "${found_setup}" ]]; then
-        info "Sourcing Vulkan env from ${found_setup}"
-        . "${found_setup}"
-      else
-        warn "Vulkan installation completed but no setup-env.sh found to source. You may need to source it manually."
-      fi
-    fi
+    # Second pass: the first one ran before the SDK existed.
+    source_vulkan_env
   else
     warn "Automatic Vulkan installation failed or was not available. Continue at your own risk."
   fi

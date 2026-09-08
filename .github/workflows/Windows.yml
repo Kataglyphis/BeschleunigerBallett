@@ -321,9 +321,11 @@ jobs:
       contents: read
     steps:
       # `submodules: true` is top-level only (NOT recursive) - exactly what these
-      # suites need: they resolve modules from the ContainerHub submodule, and
-      # Submodule.Pins.Tests reads non-recursive `git submodule status`, so every
-      # top-level submodule must be present but none of the nested ones.
+      # suites need: they resolve their modules and shared config out of the
+      # ContainerHub submodule, so that one working tree must be present, and
+      # none of the nested ones are read. (The pin-drift suite that also needed
+      # a non-recursive `git submodule status` is no longer here: it moved to
+      # the always-on `submodule-pins` job below, which does its own checkout.)
       #
       # It must be actions/checkout doing this, not a hand-rolled
       # `git submodule update --init` step. .gitmodules pins git@github.com:

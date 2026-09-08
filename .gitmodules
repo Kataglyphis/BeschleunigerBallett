@@ -1,36 +1,64 @@
 [submodule "third_party/TINY_OBJ_LOADER"]
 	path = third_party/TINY_OBJ_LOADER
 	url = https://github.com/tinyobjloader/tinyobjloader
+	branch = release
 [submodule "third_party/GLM"]
 	path = third_party/GLM
 	url = https://github.com/g-truc/glm
+	branch = master
 [submodule "third_party/IMGUI"]
 	path = third_party/IMGUI
 	url = https://github.com/ocornut/imgui
+	branch = master
 [submodule "third_party/STB"]
 	path = third_party/STB
 	url = https://github.com/nothings/stb
+	branch = master
 [submodule "third_party/GLFW"]
 	path = third_party/GLFW
 	url = https://github.com/glfw/glfw
+	branch = master
 [submodule "third_party/VULKAN_MEMORY_ALLOCATOR"]
 	path = third_party/VULKAN_MEMORY_ALLOCATOR
 	url = https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator
+	branch = master
 [submodule "third_party/NLOHMANN_JSON"]
 	path = third_party/NLOHMANN_JSON
 	url = https://github.com/nlohmann/json
+	branch = develop
 [submodule "third_party/GOOGLE_BENCHMARK"]
 	path = third_party/GOOGLE_BENCHMARK
 	url = https://github.com/google/benchmark.git
+	branch = main
 [submodule "third_party/SPDLOG"]
 	path = third_party/SPDLOG
 	url = https://github.com/gabime/spdlog
+	branch = v1.x
+# third_party/FUZZTEST deliberately carries NO `branch =` entry, unlike every
+# other submodule here. There is no correct value for it. The pin 704efb34 is
+# the exact tip of google/fuzztest's dated release branch release_2026-06-29
+# (and the tag 2026-06-29); it is NOT on main - GitHub's compare of
+# main...704efb34 reports ahead 1, behind 81. So `branch = main` would track a
+# line this pin was never taken from, while `branch = release_2026-06-29`
+# names a frozen branch that can never produce a bump: an entry that looks
+# watched while covering nothing, which is the one failure mode this repo's
+# gates exist to prevent. Upstream cuts a NEW release_<date> branch each time.
+# Leaving it unset also keeps `git submodule update --remote` disarmed for the
+# one submodule whose unexplained re-checkouts were investigated on
+# 2026-07-20 - the findings are recorded in the header of the pin suite this
+# repo runs from the submodule,
+# third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1, and
+# that investigation ruled out --remote precisely because
+# submodule.third_party/FUZZTEST.branch is unset. Keep it unset; the
+# git-submodules manager is held to dashboard-approval for this path in
+# .github/renovate.json instead.
 [submodule "third_party/FUZZTEST"]
 	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest
 [submodule "third_party/KOMPUTE"]
 	path = third_party/KOMPUTE
 	url = https://github.com/KomputeProject/kompute.git
+	branch = master
 [submodule "third_party/ContainerHub"]
 	path = third_party/ContainerHub
 	url = git@github.com:Kataglyphis/ContainerHub.git
@@ -38,11 +66,12 @@
 [submodule "third_party/OxidANT"]
 	path = third_party/OxidANT
 	url = git@github.com:Kataglyphis/OxidANT.git
-
 	branch = develop
 [submodule "third_party/tomlplusplus"]
 	path = third_party/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git
+	branch = master
 [submodule "third_party/cgltf"]
 	path = third_party/cgltf
 	url = https://github.com/jkuhlmann/cgltf.git
+	branch = master

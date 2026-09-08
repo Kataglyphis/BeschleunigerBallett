@@ -281,10 +281,12 @@ wrapper only supplies this project's payload.
 | `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
 | `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
+| `scripts/linux/run-lint-gates.sh` (34 lines) | `linux/scripts/run-lint-gates.sh` (→ `lint-shell.sh`, `lint-workflows.sh`, `lint-secrets.sh`, `01-core/gates.sh`) |
+| `scripts/linux/ci-image-ref.sh` (54 lines) | `linux/scripts/ci-image-ref.sh`; PowerShell twin `windows/scripts/modules/WindowsContainerImage.Common.psm1` → `Get-CiImageReference` |
 | `scripts/windows/Invoke-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `scripts/agentic-loop/Invoke-AgenticLoop.ps1` / `scripts/agentic-loop/Run-AgenticLoop.sh` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
 | `scripts/Test-AllConfigs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
-| `scripts/windows/tests/Submodule.Pins.Tests.ps1`, `Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Get-TrackedIgnoredFile`, `Test-SubmoduleCommitReachable` |
+| `scripts/windows/tests/Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-TrackedIgnoredFile` (the pin-drift half — `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Test-SubmoduleCommitReachable` — is consumed by the hub's own suite, see § Critical Invariant: Submodule Pins) |
 | `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
 
 `Invoke-ClangClDebug.ps1` is the exception: it keeps its own flow because it
@@ -390,12 +392,18 @@ Known coupling to watch when bumping pins:
   FuzzTest pin or configure fails with missing `absl::*` targets (observed:
   `absl::random_mocking_access`). Both are `20260526.0` today.
 
-Drift itself is guarded by `scripts/windows/tests/Submodule.Pins.Tests.ps1`,
-which asserts no submodule sits away from its recorded commit (and that
-`FUZZTEST` in particular is at a commit reachable from its remote — an
-unidentified host tool keeps re-checking it out to the latest date tag). Run
-the Pester suites after any pin bump. It does **not** check the Abseil version
-coupling above — that one is on you.
+Drift itself is guarded by ContainerHub's repo-agnostic suite,
+`third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1`, run
+by the **always-on** `submodule-pins` job in `.github/workflows/Windows.yml` —
+no `[build-win]` opt-in, because an invariant that only runs when somebody
+remembers to type a marker is not a gate. For **every** configured submodule it
+asserts the tree is checked out, sits at its recorded gitlink, and is pinned to
+a commit reachable from its remote (a pin on no remote branch cannot be
+restored by a fresh clone). This repo's own copy of the suite was deleted once
+the hub pin carried the promoted one; do not re-add a local fork. To run it by
+hand: `$env:CONTAINERHUB_PIN_CHECK_REPO_ROOT = $PWD; Invoke-Pester
+third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1`. It
+does **not** check the Abseil version coupling above — that one is on you.
 
 ## Running on the Host (Windows)
 
@@ -519,27 +527,55 @@ this repo's CI on the next run**, which is why both repos ship together with
 ContainerHub first (see the rule above). When a lane fails inside a step whose
 `uses:` points at ContainerHub, read the action there — it is not defined here.
 
-### Lint gates (shellcheck + actionlint, before anything builds)
+### Lint gates (shellcheck + actionlint + gitleaks, before anything builds)
 
 The Linux lane's first job is `lint`. It pulls no image and builds nothing
 (~2 min), and it catches a class the rest of the lane cannot: `yaml.safe_load`
 proves a workflow is valid YAML, not valid Actions, and a bash quoting or
 undefined-function bug only surfaces when that line finally runs — an hour into
-a gcc build. Both gates are ContainerHub scripts invoked out of the submodule,
-using its pinned, SHA-verified binaries rather than a second set installed here:
+a gcc build.
 
-| Gate | Invocation | Covers |
-| --- | --- | --- |
-| shellcheck (`-S error`) | `bash third_party/ContainerHub/linux/scripts/lint-shell.sh scripts/linux/*.sh scripts/linux/lib/*.sh` | this repo's Linux shell scripts |
-| actionlint | `bash third_party/ContainerHub/linux/scripts/lint-workflows.sh "$GITHUB_WORKSPACE"` | `.github/workflows/*.yml` |
+**One command, and it is the same one CI runs:**
 
-Both run locally the same way (the binary bootstrap downloads once and caches).
-`lint-workflows.sh` **must** be given the consumer root: the script lives inside
-the submodule, so the default root resolves to ContainerHub and the gate would
-lint the wrong tree while still reporting green.
+```bash
+bash ./scripts/linux/run-lint-gates.sh
+```
 
-Not covered today: `scripts/agentic-loop/Run-AgenticLoop.sh` and
-`bump-version.sh` fall outside the shellcheck globs.
+That is the whole `lint` job. The wrapper hands this repo's root to
+ContainerHub's `linux/scripts/run-lint-gates.sh`, which owns all three gates and
+the scaffolding around them; the binaries (shellcheck, actionlint, gitleaks) are
+ContainerHub's pinned, SHA-verified bootstraps, not a second set installed here.
+The bootstrap downloads once and caches, so only the first local run is slow.
+
+| Gate | Covers |
+| --- | --- |
+| shellcheck (`-S error`) | every tracked `*.sh` outside `third_party/` |
+| actionlint + CI image refs | `.github/workflows/*.yml` |
+| gitleaks | every tracked first-party path, plus this repo's own files inside `third_party/` |
+
+Four properties of that job are load-bearing and are asserted upstream rather
+than assumed here:
+
+- **Scopes come from `git ls-files`, never a glob.** The globs this replaced
+  (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse and graded 19 of
+  21 tracked scripts while reading as if they graded all of them —
+  `scripts/agentic-loop/Run-AgenticLoop.sh` and the repo-root `bump-version.sh`
+  were the two that fell through. Both are covered now, and so is anything that
+  lands in a directory nobody has thought of yet.
+- **The consumer root is passed explicitly.** The gate scripts live *inside* the
+  submodule, so a root inferred from their own location resolves to ContainerHub
+  and every gate reports green over the wrong tree.
+- **An empty file list is a failure, not a pass.** `lint-shell.sh` with zero file
+  arguments falls back to ContainerHub's own tree and would pass having checked
+  nothing of this repository.
+- **The secret gate self-tests before it scans**: a clean tree must come back
+  clean and exit 0, then a planted GitHub PAT must be reported *at the path that
+  was passed in* and exit non-zero. A scan root that does not exist is exit 0
+  with gitleaks skipping it — green over nothing — which is why the canary is
+  matched by path rather than by outcome.
+
+All three gates run even after one fails, and the verdict is decided once at the
+end, so a triage round sees every finding instead of only the first.
 
 The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
@@ -594,8 +630,8 @@ and the exceptions below are this repo's.
 - **Two shapes deliberately break the plain `Verb-Noun` mould, and are not bugs.** Pester suites are
   `<Subject>.Tests.ps1` — mirroring the script under test where there is one
   (`Resolve-BuildModule.Tests.ps1`, `Invoke-SyncValidation.Tests.ps1`), or naming
-  the repo property under test where there is not (`Submodule.Pins.Tests.ps1`,
-  `Repo.GeneratedArtifacts.Tests.ps1`, `SharedConfig.Drift.Tests.ps1`,
+  the repo property under test where there is not
+  (`Repo.GeneratedArtifacts.Tests.ps1`, `SharedConfig.Drift.Tests.ps1`,
   `CMakePresets.Integrity.Tests.ps1`). Modules take the dotted noun form
   `<Area>.Common.psm1` — `scripts/Compare-Renderer.Common.psm1`, matching
   ContainerHub's `Windows<Area>.Common.psm1` — and export explicitly via

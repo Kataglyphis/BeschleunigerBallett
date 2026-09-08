@@ -10,7 +10,7 @@
 # rather than the live (and evolving) engine sources.
 #
 # NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
-# assertion syntax (see Submodule.Pins.Tests.ps1).
+# assertion syntax (`Should Be 0`, never Pester 5's `Should -Be 0`).
 
 Describe 'Compare-RendererTimings' {
 
