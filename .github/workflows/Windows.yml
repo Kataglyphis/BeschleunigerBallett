@@ -25,8 +25,25 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-env:
-  GHCR_IMAGE_WIN: ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
+# NO CONTAINER IMAGE IS NAMED IN THIS FILE, and that is the point.
+#
+# The tag used to sit here as `GHCR_IMAGE_WIN: ...:winamd64`, referenced by the
+# six container steps below. One literal per repo is not drift-free, it is
+# drift-per-repo: a fleet-wide tag bump had to find and edit this line in every
+# consumer.
+#
+# The value now comes from ContainerHub's linux/scripts/01-core/versions.env
+# (IMAGE_REGISTRY_PREFIX + CI_IMAGE_WINDOWS_TAG), which prepare-windows-container-host
+# and run-in-windows-container carry as the DEFAULT of their `image` input - so
+# every step below OMITS `image:` and inherits it. ContainerHub's
+# linux/scripts/verify_ci_image_refs.py, which Linux.yml's lint job runs against
+# this tree, rejects any non-canonical kataglyphis_beschleuniger tag under
+# .github/ AND a Windows action handed the Linux ref, so neither a stale literal
+# nor a crossed platform can pass quietly.
+#
+# Do NOT "make it explicit" by passing an `image:` expression back in: GitHub
+# applies an action default only when the key is ABSENT, so an expression that
+# resolves empty yields an EMPTY image reference rather than the default.
 
 defaults:
   run:
@@ -59,7 +76,6 @@ jobs:
         id: prep
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-windows-container-host@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           registry-password: ${{ secrets.GHCR_PAT }}
           fetch-depth: 0
           short-path-target: /d/ws
@@ -89,11 +105,10 @@ jobs:
       # Caveat of the line-per-argument encoding: a secret whose value contains
       # a newline cannot be expressed. None of these are multi-line (passwords,
       # a hostname, a username, a remote path).
-      - name: Build/Test/Package inside ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
+      - name: Build/Test/Package inside the Windows CI container
         continue-on-error: false
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           extra-args: |
             -e
             MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}
@@ -169,7 +184,6 @@ jobs:
       - name: Run CPU-only tests inside the container
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           # Test-Path first: a missing or unbuilt executable must say so, not
           # surface as a bare "exit code 1" with an empty log the way the
           # 2026-08-05 run did.
@@ -193,7 +207,6 @@ jobs:
         timeout-minutes: 20
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           # Inner strings use single quotes and concatenation, NOT \" escapes:
           # backslash is not an escape character in PowerShell (backtick is), so
           # \" terminated the surrounding double-quoted string and the whole
@@ -252,7 +265,6 @@ jobs:
       - name: GPU timing comparison (validation-only on GPU-less runners)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           command: >-
             & 'C:\ws\scripts\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
 
@@ -277,7 +289,6 @@ jobs:
       - name: Pixel comparison (validation-only on GPU-less runners)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
         with:
-          image: ${{ env.GHCR_IMAGE_WIN }}
           command: >-
             & 'C:\ws\scripts\Compare-RendererPixels.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }};
             $code = $LASTEXITCODE;

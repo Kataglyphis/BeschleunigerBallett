@@ -39,29 +39,32 @@ env:
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-  # The cross lane, NOT :latest. The plain tag is the old single-arch build and
-  # had not been rebuilt since 2026-04-16 - three months of toolchain drift
-  # behind the cross lane, which is rebuilt routinely. Worse, :latest's manifest
-  # list still ADVERTISES amd64/arm64/riscv64 but every child manifest it points
-  # at now 404s (MANIFEST_UNKNOWN) - it is not a fallback for anything.
+  # NO CONTAINER IMAGE IS NAMED IN THIS FILE, and that is the point.
   #
-  # The :latest-cross INDEX, one tag for every architecture. This used to be a
-  # per-arch expression, and the reason it had to be is now obsolete: on
-  # 2026-08-04 the :latest-cross manifest list contained exactly ONE entry,
-  # linux/amd64, so `docker pull` on ubuntu-26.04-arm died with "no matching
-  # manifest for linux/arm64/v8 in the manifest list entries" and took the whole
-  # ARM lane with it. Naming :latest-cross-amd64 / :latest-cross-arm64 directly
-  # was the way around that.
+  # The tag used to sit here as `CONTAINER_IMAGE: "...:latest-cross"`, referenced
+  # by 34 call sites below. One literal per repo is not drift-free, it is
+  # drift-per-repo: a fleet-wide tag bump had to find and edit this line in every
+  # consumer, and a consumer that was missed kept building against a tag nobody
+  # was rebuilding any more.
   #
-  # Re-verified against GHCR 2026-08-12: the index now lists linux/amd64,
-  # linux/arm64 AND linux/riscv64, and all three child manifests resolve. Docker
-  # picks the right one per runner, so the arch no longer belongs in the tag -
-  # and the arch-suffixed tags go back to being an implementation detail of the
-  # image build rather than something a lane references.
+  # The value now comes from ContainerHub's linux/scripts/01-core/versions.env
+  # (IMAGE_REGISTRY_PREFIX + CI_IMAGE_LINUX_TAG), which the four container
+  # composite actions carry as the DEFAULT of their `image` input - so every step
+  # below OMITS `image:` entirely and inherits it. ContainerHub's
+  # linux/scripts/verify_ci_image_refs.py, which the lint job's actionlint gate
+  # runs against THIS tree, fails on any non-canonical kataglyphis_beschleuniger
+  # tag under .github/, so a re-introduced literal cannot pass quietly.
   #
-  # Use the same tag locally so a CI failure is reproducible on a dev box; see
-  # ContainerHub docs/rancher-desktop-linux-containers.md.
-  CONTAINER_IMAGE: "ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross"
+  # Do NOT "make it explicit" by passing an `image:` expression back in: GitHub
+  # applies an action default only when the key is ABSENT, so an expression that
+  # resolves empty yields an EMPTY image reference rather than the default - a
+  # failure that surfaces as a confusing `docker run` error far from its cause.
+  #
+  # The one step that cannot omit an input, because it calls no action - the ASan
+  # fuzz-seed loop, which needs a loop rather than the single command line the
+  # action takes - reads the same versions.env through
+  # scripts/linux/ci-image-ref.sh. That script's header carries the
+  # ":latest-cross, not :latest" rationale this comment used to.
 
 # WHY THIS IS FANNED OUT (2026-08-06)
 #
@@ -318,14 +321,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
@@ -335,7 +336,6 @@ jobs:
       - name: Run Unit/Integration tests
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/run-ctest.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -355,7 +355,6 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
@@ -364,7 +363,6 @@ jobs:
       - name: Configure/build with AddressSanitizer
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-asan-clang"
@@ -388,6 +386,15 @@ jobs:
       # action takes one command line and this needs a loop that keeps going
       # after a failure.
       #
+      # THE ONE STEP IN THIS FILE THAT STILL NAMES AN IMAGE, and it does not
+      # name a TAG: scripts/linux/ci-image-ref.sh reads the same ContainerHub
+      # versions.env that supplies the `image` default every other step here
+      # inherits, so this loop and those steps cannot end up on different
+      # images. It fails loudly on a missing key rather than returning an empty
+      # string, because an empty reference makes `docker run` treat the next
+      # argument as the image name and the error then lands nowhere near its
+      # cause.
+      #
       # Collecting failures instead of aborting on the first is the point of
       # the loop: with `set -e` semantics the first bad target hid the verdict
       # on every target after it, so each round trip revealed exactly one
@@ -401,6 +408,8 @@ jobs:
       - name: Run fuzzer tests
         timeout-minutes: 15
         run: |
+          image="$(bash ./scripts/linux/ci-image-ref.sh)"
+          echo "fuzz seeds run in ${image}"
           failed=""
           for t in first_fuzz_test example_fuzz_test obj_parsing_fuzz_test gltf_parsing_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
             exe="build-asan-clang/$t"
@@ -409,7 +418,7 @@ jobs:
             if docker run --rm \
                  -v "${{ github.workspace }}:/workspace" \
                  -w /workspace \
-                 "${{ env.CONTAINER_IMAGE }}" \
+                 "${image}" \
                  "./$exe"; then
               echo "--- $t OK"
             else
@@ -426,7 +435,6 @@ jobs:
       - name: Run tests under AddressSanitizer
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           extra-args: >-
             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"
             -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"
@@ -447,7 +455,6 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
@@ -457,7 +464,6 @@ jobs:
       - name: Configure/build with ThreadSanitizer
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-tsan-clang"
@@ -467,7 +473,6 @@ jobs:
       - name: Run tests under ThreadSanitizer
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           extra-args: >-
             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"
           script: >-
@@ -489,14 +494,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Build for coverage
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
@@ -506,7 +509,6 @@ jobs:
       - name: Build Code Coverage
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/build-coverage-llvm.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -533,7 +535,6 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
@@ -544,43 +545,37 @@ jobs:
       - name: Configure/build for analysis
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # The ONLY step that still needs CXXFLAGS/LDFLAGS in the environment: it
-      # runs `clang++ --analyze` DIRECTLY (run-static-analysis-format.sh), with
-      # no CMake and no preset, so it cannot inherit the --gcc-toolchain flags
-      # CMakeLists.txt computes for every preset-driven step. Without them
-      # clang++ would resolve libstdc++ headers from the system GCC instead of
-      # the image's.
+      # `clang++ --analyze` runs DIRECTLY here - no CMake, no preset - so it
+      # cannot inherit the --gcc-toolchain flags CMakeLists.txt computes for
+      # every preset-driven step, and without them clang++ resolves libstdc++
+      # headers from the system GCC instead of the image's.
       #
-      # The prefix is RESOLVED IN THE CONTAINER, not written out here. It used
-      # to be the literal /opt/gcc-16.1.0; the image then bumped to GCC 16.2.0
-      # and every Linux job died on "cannot find crtbeginS.o". Sharing one
-      # resolver with CMakeLists means the next bump needs no edit at all.
+      # Those four lines (resolve the prefix, export CXXFLAGS/LDFLAGS) used to
+      # be a `bash -lc` prologue spelled out in THIS step, which meant a human
+      # running --only-clang-analyze-html locally analysed against a different
+      # toolchain than CI did and had no way to know. They now live inside
+      # run-static-analysis-format.sh's run_clang_analyze_html, where the local
+      # invocation gets them too - so this step is a plain one-line script call
+      # like every other step in this lane.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
-            bash -lc 'set -e;
-            gcc_root="$(bash ./scripts/linux/gcc-toolchain-root.sh)";
-            echo "Using GCC toolchain: ${gcc_root}";
-            export CXXFLAGS="--gcc-toolchain=${gcc_root}";
-            export LDFLAGS="-L${gcc_root}/lib64 -Wl,-rpath,${gcc_root}/lib64 --gcc-toolchain=${gcc_root}";
-            bash ./scripts/linux/run-static-analysis-format.sh --only-clang-analyze-html'
+            bash ./scripts/linux/run-static-analysis-format.sh
+            --only-clang-analyze-html
           log-file: output.log
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/run-static-analysis-format.sh
             --only-scan-build
@@ -598,14 +593,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -616,7 +609,6 @@ jobs:
       - name: Run performance benchmarks
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
@@ -635,14 +627,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Run Rust renderer tests
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
 
@@ -662,14 +652,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Generate Doxygen XML
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
@@ -680,7 +668,6 @@ jobs:
       - name: Build web page
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: Enforce wasm demo size budget
@@ -691,7 +678,6 @@ jobs:
         # see scripts/linux/wasm-size-budget.sh.)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/wasm-size-budget.sh
 
       - name: 📂 Sync files to domain
@@ -718,14 +704,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -736,7 +720,6 @@ jobs:
       - name: Run Unit/Integration tests (gcc)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/run-ctest.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -744,17 +727,20 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
           log-file: output.log
 
-      - name: Run fuzzer tests (gcc)
-        run: |
-          echo "Compiled with GCC so no fuzz testing!"
-        working-directory: ${{ github.workspace }}
+      # There is deliberately NO fuzz step here. Test/fuzz/CMakeLists.txt builds
+      # its targets under clang only, so this job has nothing to run - and the
+      # step that used to stand here said so by echoing a sentence and exiting
+      # 0. A step named "Run fuzzer tests (gcc)" that runs no fuzzer is a green
+      # tick over nothing; the absence is the honest form. Coverage of the
+      # targets themselves is the asan job's, and
+      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi is what proves none of
+      # them silently stops running.
 
       # gcovr walks the build tree for the .gcda files the ctest run above left
       # behind, so it has to stay in the same job as those tests.
       - name: Build Code Coverage (gcc)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
 
@@ -771,14 +757,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (gcc)
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -786,9 +770,25 @@ jobs:
             --clean-build-dir true
           log-file: output.log
 
+      # IN THE CONTAINER, exactly like its clang twin in the profiling job -
+      # which calls this same script the same way. This step used to be a bare
+      # `run:` on the ubuntu-26.04 host while the binary it executes had just
+      # been built INSIDE the image by the step above, so the host's libstdc++
+      # was asked to run a binary linked against the image's /opt/gcc-16.x one.
+      # It is the identical mismatch this workflow already documents for the
+      # ASan fuzz targets, and the identical shape of the "cannot find
+      # crtbeginS.o" incident the static-analysis job records: it works only
+      # while the host happens to satisfy the link, and the next image GCC bump
+      # breaks it.
+      #
+      # run-perf-suite.sh execs ${BUILD_DIR}/perfTestSuite directly after an
+      # `[[ -f ]]` guard, so a non-zero exit from the suite is the step's exit
+      # code here just as it was before.
       - name: Run performance benchmarks (gcc)
-        run: ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
-        working-directory: ${{ github.workspace }}
+        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        with:
+          script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
+          log-file: output.log
 
   # ---------------------------------------------------------------------------
   # Release build + packages.
@@ -800,14 +800,12 @@ jobs:
       - name: Prepare host
         uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
@@ -818,7 +816,6 @@ jobs:
       - name: Package
         uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
         with:
-          image: ${{ env.CONTAINER_IMAGE }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"

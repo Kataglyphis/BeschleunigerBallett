@@ -144,8 +144,47 @@ run_scan_build() {
   "${scan_cmd[@]}"
 }
 
+# Resolves the GCC prefix clang++ must be pointed at, and applies it.
+#
+# This lived in Linux.yml as a `bash -lc` prologue in front of the
+# --only-clang-analyze-html step, which meant CI analysed against the image's
+# libstdc++ and a human running the same flag locally analysed against whatever
+# the system GCC happened to be - with nothing saying the two differed. It
+# belongs here, where both callers get it.
+#
+# clang++ --analyze runs DIRECTLY: no CMake, no preset, so it cannot inherit the
+# --gcc-toolchain flags CMakeLists.txt computes for every preset-driven step.
+#
+# The flag goes on the COMMAND LINE, via ANALYZE_EXTRA_ARGS. The workflow only
+# ever exported CXXFLAGS, and clang++ does not read CXXFLAGS - that is a
+# make/CMake convention, not a compiler one - so the toolchain never actually
+# reached the analyzer. The exports are kept as well, unchanged, because that is
+# the environment the CI step has always run with and the cmake-driven modes of
+# this same script do honour them.
+#
+# The prefix is DISCOVERED, never hardcoded: it used to be the literal
+# /opt/gcc-16.1.0, the image bumped to 16.2.0, and every Linux job died on
+# "cannot find crtbeginS.o" - a message naming neither the flag nor the version.
+# gcc-toolchain-root.sh shares the resolution with CMakeLists.txt.
+#
+# A failure to resolve is FATAL, exactly as it was in the workflow's `set -e`
+# prologue: analysing against the system GCC's headers by accident is the silent
+# wrong answer this whole path exists to prevent. Run this in the family image
+# (ContainerHub docs/rancher-desktop-linux-containers.md), which is where CI
+# runs it and where GCC_PREFIX is exported for it.
+apply_gcc_toolchain_for_analysis() {
+  local gcc_root
+  gcc_root="$(bash "${SCRIPT_DIR}/gcc-toolchain-root.sh")"
+  info "Using GCC toolchain: ${gcc_root}"
+  export CXXFLAGS="--gcc-toolchain=${gcc_root}"
+  export LDFLAGS="-L${gcc_root}/lib64 -Wl,-rpath,${gcc_root}/lib64 --gcc-toolchain=${gcc_root}"
+  ANALYZE_EXTRA_ARGS+=("--gcc-toolchain=${gcc_root}")
+}
+
 run_clang_analyze_html() {
   require_tools clang++
+
+  apply_gcc_toolchain_for_analysis
 
   if [[ ! -d "${ANALYZE_SOURCE_ROOT}" ]]; then
     warn "Skipping clang++ --analyze: ${ANALYZE_SOURCE_ROOT} directory not found."
