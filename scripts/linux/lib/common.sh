@@ -215,42 +215,21 @@ get_project_root() {
 # image bakes these files and where there is no submodule to resolve against.
 
 # ---------------------------------------------------------------------------
-# Rust toolchain selection, applied on source so every script in this directory
-# gets it (all 14 source this file).
+# Rust toolchain selection and CARGO_HOME, applied on source so every script in
+# this directory gets it (all 14 source this file).
 #
-# The :latest-cross image carries TWO Rusts:
-#   /usr/local/cargo/bin  the PINNED rustup toolchain (1.97.1)
-#   /bin/cargo            Ubuntu's cargo deb (1.93.1)
-# and its ENV lists /usr/local/cargo/bin far too late — after /bin — so the deb
-# wins. Only /etc/profile.d/10-rust.sh corrects the order, and only for LOGIN
-# shells; these scripts run as `bash <script>`, which is not one. The visible
-# symptom is a Rust build failing on crates that are perfectly fine:
-#   error: rustc 1.93.1 is not supported by the following packages:
-#     egui@0.36.1 requires rustc 1.95   (and seven more)
-# It hit the CMake-embedded cargo build (_cargo-build_*) in EVERY lane, which
-# is why every lane died at the same ninja step with no C++ error anywhere.
+# BOTH are ContainerHub's, and this file used to carry its own copies. They were
+# not merely duplicates, they were the weaker versions:
 #
-# HOIST, do not merely add: the path is already present, just last, so an
-# "append if missing" guard is a no-op.
-if [[ -x /usr/local/cargo/bin/cargo ]]; then
-  _bb_path=":${PATH}:"
-  _bb_path="${_bb_path//:\/usr\/local\/cargo\/bin:/:}"
-  _bb_path="${_bb_path#:}"
-  _bb_path="${_bb_path%:}"
-  export PATH="/usr/local/cargo/bin:${_bb_path}"
-  unset _bb_path
-fi
-
-# CARGO_HOME must be somewhere uid 1001 can write. The image sets
-# /usr/local/cargo, whose registry/ subtree is root-owned (populated by
-# `cargo install cargo-c` at image-build time), so cargo dies with
-#   error: failed to create directory `/usr/local/cargo/registry/cache/...`
-#   Caused by: Permission denied (os error 13)
-# Probe the directory cargo actually writes into, not just its parent: the
-# parent can be writable while registry/ is not, which is exactly the case here
-# and why a shallower check passed and the build still failed.
-if ! { mkdir -p "${CARGO_HOME:-/usr/local/cargo}/registry" 2>/dev/null \
-       && [[ -w "${CARGO_HOME:-/usr/local/cargo}/registry" ]]; }; then
-  export CARGO_HOME="${TMPDIR:-/tmp}/cargo-home"
-  mkdir -p "${CARGO_HOME}"
-fi
+#   * the CARGO_HOME probe defaulted to /usr/local/cargo rather than
+#     $HOME/.cargo, so on a developer host with CARGO_HOME unset it probed a
+#     directory nobody can write, concluded "not writable", and silently
+#     redirected the real ~/.cargo to /tmp/cargo-home;
+#   * it tested with [[ -w ]], which the hub guard's own header names as the
+#     REJECTED test: [ -w ] reports the root-owned dir as writable to uid 1001
+#     while an actual touch is denied. The hub writes a probe file instead.
+#
+# The guards also ran anyway, transitively, through _cargo_wrapper.sh - so the
+# same algorithm was executing twice per invocation, in two versions.
+containerhub_source linux/scripts/02-toolchain/rust/_rust_toolchain_guard.sh
+containerhub_source linux/scripts/02-toolchain/rust/_cargo_home_guard.sh

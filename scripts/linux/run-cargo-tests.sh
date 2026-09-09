@@ -33,31 +33,15 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 # container runs as uid 1001; cargo_test.sh's own guard falls back to a
 # writable dir automatically, but pin one explicitly so a registry write
 # never depends on the guard's write-probe racing another cargo step's cache.
+# NOTE: _cargo_home_guard.sh has already run via lib/common.sh, so this `:-`
+# OVERRIDES the guard's answer rather than filling a blank. Deliberate; see above.
 export CARGO_HOME="${CARGO_HOME:-/tmp/cargo-home}"
 mkdir -p "${CARGO_HOME}"
 
-# The image carries TWO Rusts: the PINNED rustup toolchain in
-# /usr/local/cargo/bin, and Ubuntu's `cargo` deb at /usr/bin. The image's own
-# ENV puts /bin ahead of /usr/local/cargo/bin, and the ordering is only
-# corrected by /etc/profile.d/10-rust.sh - which a LOGIN shell sources and this
-# script, invoked as `bash run-cargo-tests.sh`, does not. So the deb won here
-# while the sibling lanes (which use `bash -lc`) got the pinned toolchain, and
-# the suite failed against a Rust two minors older than every other lane:
-#   error: rustc 1.93.1 is not supported by the following packages:
-#     egui@0.36.1 requires rustc 1.95  (and seven more)
-# HOIST it, do not merely add it. The image's ENV already contains
-# /usr/local/cargo/bin — just far too late, after /bin — so an
-# "add it if missing" guard is a no-op and the deb still wins:
-#   [INFO] cargo: /bin/cargo (cargo 1.93.1 ...)
-# Drop any existing occurrence, then put it first.
-if [[ -x /usr/local/cargo/bin/cargo ]]; then
-  _cargo_path=":${PATH}:"
-  _cargo_path="${_cargo_path//:\/usr\/local\/cargo\/bin:/:}"
-  _cargo_path="${_cargo_path#:}"
-  _cargo_path="${_cargo_path%:}"
-  export PATH="/usr/local/cargo/bin:${_cargo_path}"
-  unset _cargo_path
-fi
+# The PATH hoist that used to stand here is gone: lib/common.sh (sourced at the
+# top of this file) now sources ContainerHub's
+# 02-toolchain/rust/_rust_toolchain_guard.sh, which does exactly this and is the
+# owner of it. This was the third copy of the same seven lines in this repo.
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
 
 info "=== Rust renderer test suite (kataglyphis_webgpu_renderer) ==="
