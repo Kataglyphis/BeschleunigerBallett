@@ -12,7 +12,7 @@ Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigk
 | stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT oder Public Domain (nach Wahl) | `third_party/STB/LICENSE` |
 | glfw | https://github.com/glfw/glfw | 3.5.1 (d9d6f0f1) | Zlib/libpng-Lizenztext | `third_party/GLFW/LICENSE.md` |
 | Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT-Lizenztext (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
-| nlohmann/json | https://github.com/nlohmann/json | v3.11.2-532-g2222d386c | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
+| nlohmann/json | https://github.com/nlohmann/json | v3.11.3-505-gb17c272f4 | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
 | google/benchmark | https://github.com/google/benchmark | v1.9.5-122-g04b5f41 | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
 | spdlog | https://github.com/gabime/spdlog | v1.17.0-44-g57cb5fb7 | MIT; enthält gebündeltes {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
 | google/fuzztest | https://github.com/google/fuzztest | 704efb34 (2026-06-29) | Apache-2.0; zusätzliche Lucent-Notiz für `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
