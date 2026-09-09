@@ -8,7 +8,7 @@ Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigk
 |---|---|---|---|---|
 | tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `third_party/TINY_OBJ_LOADER/LICENSE` |
 | glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `third_party/GLM/copying.txt` |
-| imgui | https://github.com/ocornut/imgui | v1.92.9b-1-g9b7699f32 | MIT | `third_party/IMGUI/LICENSE.txt` |
+| imgui | https://github.com/ocornut/imgui | v1.92.9b-57-gea6d21687 | MIT | `third_party/IMGUI/LICENSE.txt` |
 | stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT oder Public Domain (nach Wahl) | `third_party/STB/LICENSE` |
 | glfw | https://github.com/glfw/glfw | 3.5.1 (d9d6f0f1) | Zlib/libpng-Lizenztext | `third_party/GLFW/LICENSE.md` |
 | Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT-Lizenztext (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
