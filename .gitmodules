@@ -43,15 +43,25 @@
 # names a frozen branch that can never produce a bump: an entry that looks
 # watched while covering nothing, which is the one failure mode this repo's
 # gates exist to prevent. Upstream cuts a NEW release_<date> branch each time.
-# Leaving it unset also keeps `git submodule update --remote` disarmed for the
-# one submodule whose unexplained re-checkouts were investigated on
-# 2026-07-20 - the findings are recorded in the header of the pin suite this
-# repo runs from the submodule,
-# third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1, and
-# that investigation ruled out --remote precisely because
-# submodule.third_party/FUZZTEST.branch is unset. Keep it unset; the
+# CORRECTED 2026-09-09 - the paragraph that used to stand here was wrong.
+# Leaving `branch` unset does NOT keep `git submodule update --remote` disarmed
+# for this path. An unset branch makes --remote fall back to the REMOTE'S
+# DEFAULT BRANCH, so a bare --remote in this repo walks FUZZTEST from 704efb34
+# onto main: 82 commits down the very line this pin was never taken from.
+# Established by experiment, not by reading: a synthetic superproject whose
+# submodule declares no branch and whose remote default is named `trunk` had
+# `trunk` checked out by --remote, so the fallback really is remote HEAD and not
+# a hardcoded main/master.
+# This also removes the premise of the 2026-07-20 investigation into this
+# submodule's unexplained re-checkouts, recorded in the header of
+# third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1: that
+# investigation ruled --remote out BECAUSE the branch is unset, and that is not
+# a reason. --remote belongs back on the list of candidates.
+# Keep `branch` unset regardless - the argument above about main versus a frozen
+# release_<date> branch is unaffected - but never run a bare
+# `git submodule update --remote` in this repo. Pass explicit paths. The
 # git-submodules manager is held to dashboard-approval for this path in
-# .github/renovate.json instead.
+# .github/renovate.json.
 [submodule "third_party/FUZZTEST"]
 	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest
