@@ -101,6 +101,18 @@ If Doxygen XML is available, the Sphinx build automatically includes the generat
 - `scripts/linux/run-perf-suite.sh` runs performance-oriented checks
 - `scripts/windows/Build-Windows.ps1` can orchestrate formatting, tidy, builds, tests, and packaging
 
+## Dependency Updates
+
+Submodule bumps go through `scripts/linux/renovate-local.sh`, not by hand. Run
+it from WSL — there is no node on the Windows host. It runs Renovate as a local
+CLI to report what is behind; `--apply` is then plain git, moving only the
+gitlinks whose submodule declares a branch in `.gitmodules` and naming the rest
+for a deliberate manual bump. That half needs the git that wrote this working
+tree, so from WSL the script switches to `git.exe` and refuses up front when it
+cannot reach one — a Linux git over a Windows checkout would abort half-applied.
+Other managers are report-only. See
+[`third_party/ContainerHub/docs/dependency-updates.md`](third_party/ContainerHub/docs/dependency-updates.md).
+
 ## Packaging
 
 Linux binary packages are generated with CPack (optionally as AppImage); the Windows release build can produce a signed MSIX. The workflows live in [docs/source/getting_started.md](docs/source/getting_started.md#packaging).

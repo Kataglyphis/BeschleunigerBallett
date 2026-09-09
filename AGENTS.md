@@ -19,6 +19,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Refactoring the renderer / device path | The per-unit verification loop in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md); log the change in [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) |
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ContainerHub](#rule-reusable-work-belongs-in-containerhub) |
+| Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
@@ -282,6 +283,7 @@ wrapper only supplies this project's payload.
 | `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
 | `scripts/linux/run-lint-gates.sh` (34 lines) | `linux/scripts/run-lint-gates.sh` (→ `lint-shell.sh`, `lint-workflows.sh`, `lint-secrets.sh`, `01-core/gates.sh`) |
+| `scripts/linux/renovate-local.sh` (62 lines) | `linux/scripts/renovate-local.sh` (Renovate as a local CLI, plus the git half that applies what it can only detect) |
 | `scripts/linux/ci-image-ref.sh` (54 lines) | `linux/scripts/ci-image-ref.sh`; PowerShell twin `windows/scripts/modules/WindowsContainerImage.Common.psm1` → `Get-CiImageReference` |
 | `scripts/windows/Invoke-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `scripts/agentic-loop/Invoke-AgenticLoop.ps1` / `scripts/agentic-loop/Run-AgenticLoop.sh` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
@@ -404,6 +406,32 @@ the hub pin carried the promoted one; do not re-add a local fork. To run it by
 hand: `$env:CONTAINERHUB_PIN_CHECK_REPO_ROOT = $PWD; Invoke-Pester
 third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1`. It
 does **not** check the Abseil version coupling above — that one is on you.
+
+### Dependency upgrades: Renovate as a local CLI
+
+**Dependency upgrades go through this wrapper, not by hand:**
+
+```bash
+bash ./scripts/linux/renovate-local.sh                    # what is behind
+bash ./scripts/linux/renovate-local.sh --apply --dry-run  # the plan
+bash ./scripts/linux/renovate-local.sh --apply            # move the gitlinks
+```
+
+Run it from WSL — there is no node on the Windows host. `--apply` is git, not
+Renovate, and it wants the git that wrote this working tree: a Linux git over a
+Windows checkout reads every text file as modified and would abort part way
+through. The script settles that itself — from WSL it switches to `git.exe`,
+and refuses up front when it cannot reach one — so you do not have to. Nothing
+is staged or committed either way.
+
+It moves gitlinks, and only submodules that declare a `branch =`, so
+`third_party/FUZZTEST` comes back as **REFUSED** — move that one by hand, with
+the release-line argument above in mind. Any other manager (`--managers`) is
+report-only; `requirements.txt` is one of those. `.github/renovate.json` is
+inert until the Renovate GitHub App is installed here, which has happened on no
+repository in this family — this CLI is the only thing that reads it.
+Rationale, the full local workflow and the GitHub-token variant:
+[`third_party/ContainerHub/docs/dependency-updates.md`](third_party/ContainerHub/docs/dependency-updates.md).
 
 ## Running on the Host (Windows)
 
@@ -722,6 +750,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `third_party/ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
 | `third_party/ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
 | `third_party/ContainerHub/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
+| `third_party/ContainerHub/docs/dependency-updates.md` | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses |
 | `third_party/ContainerHub/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
 | `third_party/ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
 | `third_party/ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
