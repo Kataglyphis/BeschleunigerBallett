@@ -65,6 +65,8 @@
 [submodule "third_party/FUZZTEST"]
 	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest
+# renovate: datasource=git-tags depName=https://github.com/google/fuzztest
+	branch = release_2026-06-29
 [submodule "third_party/KOMPUTE"]
 	path = third_party/KOMPUTE
 	url = https://github.com/KomputeProject/kompute.git

@@ -8,18 +8,40 @@
     "Unlike the three sibling consumers, this repo has never carried a .github/dependabot.yml, so adopting the preset is a pure addition here - there is no hand-over to sequence and nothing to delete afterwards.",
     "Renovate resolves `github>Kataglyphis/ContainerHub` from ContainerHub's DEFAULT BRANCH, not from the pin in third_party/ContainerHub, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ContainerHub's linux/scripts/renovate-local.sh reads exactly it."
   ],
-  "extends": ["github>Kataglyphis/ContainerHub"],
+  "extends": [
+    "github>Kataglyphis/ContainerHub"
+  ],
   "packageRules": [
     {
       "description": [
-        "third_party/FUZZTEST is notification-only, because the git-submodules manager cannot track it correctly on its own. The pin 704efb34 is the tip of google/fuzztest's dated release branch release_2026-06-29; it is not on main (compare main...704efb34: ahead 1, behind 81). With no `branch =` in .gitmodules the manager falls back to the remote default, main, so an unattended PR here would silently move this repo off the release line and onto trunk.",
-        "Naming release_2026-06-29 in .gitmodules would not fix it either - that branch is frozen at exactly this commit, so the entry would look watched while never producing an update. Upstream cuts a new release_<date> branch per release, which is a human decision.",
-        "dependencyDashboardApproval keeps the available update VISIBLE on the dependency dashboard and only refuses to open the PR unattended; it is not a suppression. Moving this pin means picking the next release_<date> branch by hand.",
-        "The depName for the git-submodules manager is the submodule PATH, which is why the match is on `third_party/FUZZTEST` rather than a package name."
+        "third_party/FUZZTEST now NAMES its branch (release_2026-06-29 in .gitmodules), so the git-submodules manager tracks that line and the old fallback onto main cannot happen. Measured 2026-09-10: the pin 704efb34 is byte-identical to both refs/tags/2026-06-29 and refs/heads/release_2026-06-29, so this submodule is UP TO DATE on its line; main sits at d1dc1347, 81 commits away on a line this pin was never taken from.",
+        "Approval is kept for the LINE CHANGE itself. Moving from one dated release to the next is a deliberate act -- the customManager above surfaces the new date, and a human decides when to take it.",
+        "The depName for the git-submodules manager is the submodule PATH, which is why the match is on `third_party/FUZZTEST`."
       ],
-      "matchManagers": ["git-submodules"],
-      "matchDepNames": ["third_party/FUZZTEST"],
+      "matchManagers": [
+        "git-submodules"
+      ],
+      "matchDepNames": [
+        "third_party/FUZZTEST"
+      ],
       "dependencyDashboardApproval": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": [
+        "third_party/FUZZTEST follows google/fuzztest's DATED RELEASE LINE, not its default branch. The line is named in .gitmodules as `branch = release_<date>`, and this manager is what keeps that name current: it reads the date out of the branch name and compares it against the repo's tags, which upstream publishes as bare dates (2024-10-25 ... 2026-06-29, eight of them so far) alongside identically named release_<date> branches.",
+        "The regex versioning maps a date onto major.minor.patch so the ordering is the calendar's. Without it a bare `2026-06-29` is unparseable and every tag would look equally new.",
+        "Why this and not a bare `branch =`: pinning the line stops the walk onto main, but nothing would then tell you a NEWER line exists. This does."
+      ],
+      "managerFilePatterns": [
+        "/^\\.gitmodules$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s*\\n\\s*branch = release_(?<currentValue>\\S+)"
+      ],
+      "versioningTemplate": "regex:^(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})$"
     }
   ]
 }
