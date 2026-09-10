@@ -31,6 +31,23 @@
     {
       "customType": "regex",
       "description": [
+        "third_party/CMakeLists.txt pulls four dependencies with FetchContent, and Renovate has NO manager that reads CMake -- abseil-cpp, googletest, microsoft/GSL and Corrosion have never had an update proposed by anything, by the App or by renovate-local.sh.",
+        "Two of them carry a real version and are annotated directly above their pin. ABSL_TAG uses abseil's LTS format (20260526.0), which is not semver -- the default parser cannot order it, hence versioning=loose in the annotation. GSL is plain semver and needs no override, which is why the versioning group is optional and one manager serves both shapes.",
+        "The other two are deliberately NOT annotated, and that is the finding rather than an omission. googletest is pinned to an archive of commit 56efe398, a digest and not a version. Corrosion is pinned to `master`: that is not a version at all, so this build is not reproducible from its sources, and pinning it is an owner decision this manager must not paper over.",
+        "Keep the ABSL_TAG comment above the pin in mind when taking a bump: the tag must stay >= the one FUZZTEST pins in third_party/FUZZTEST/cmake/BuildDependencies.cmake. Moving abseil UP is always safe for that constraint; moving it down is not.",
+        "The file pattern uses character classes rather than escapes, because the delimiters of a Renovate regex string are slashes and an inner one would end it early."
+      ],
+      "managerFilePatterns": [
+        "/^third_party[/]CMakeLists[.]txt$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*\\nset\\([A-Z_]+_TAG (?<currentValue>[^)\\s]+)\\)",
+        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*\\n\\s*GIT_TAG \"?(?<currentValue>[^)\"\\s]+)\"?"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": [
         "third_party/FUZZTEST follows google/fuzztest's DATED RELEASE LINE, not its default branch. The line is named in .gitmodules as `branch = release_<date>`, and this manager is what keeps that name current: it reads the date out of the branch name and compares it against the repo's tags, which upstream publishes as bare dates (2024-10-25 ... 2026-06-29, eight of them so far) alongside identically named release_<date> branches.",
         "The regex versioning maps a date onto major.minor.patch so the ordering is the calendar's. Without it a bare `2026-06-29` is unparseable and every tag would look equally new.",
         "Why this and not a bare `branch =`: pinning the line stops the walk onto main, but nothing would then tell you a NEWER line exists. This does."

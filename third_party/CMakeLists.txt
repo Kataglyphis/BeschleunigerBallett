@@ -186,6 +186,7 @@ endmacro()
 # third_party/FUZZTEST/cmake/BuildDependencies.cmake — this declaration comes
 # first and wins, and older LTS releases lack targets FuzzTest links against
 # (e.g. absl::random_mocking_access).
+# renovate: datasource=github-tags depName=abseil/abseil-cpp versioning=loose
 set(ABSL_TAG 20260526.0)
 FetchContent_Declare(
   abseil-cpp
@@ -344,6 +345,7 @@ endif()
 FetchContent_Declare(
   GSL
   GIT_REPOSITORY "https://github.com/microsoft/GSL"
+  # renovate: datasource=github-tags depName=microsoft/GSL
   GIT_TAG "v4.2.1")
 FetchContent_MakeAvailable(GSL)
 
