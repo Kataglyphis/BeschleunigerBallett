@@ -428,8 +428,8 @@ It moves gitlinks, and only submodules that declare a `branch =`, so
 `third_party/FUZZTEST` comes back as **REFUSED** — move that one by hand, with
 the release-line argument above in mind. Any other manager (`--managers`) is
 report-only; `requirements.txt` is one of those. `.github/renovate.json` is
-inert until the Renovate GitHub App is installed here, which has happened on no
-repository in this family — this CLI is the only thing that reads it.
+read by this CLI and by nothing else: the Renovate GitHub App is installed on no
+repository in this family and will not be (owner decision, 2026-09-09).
 Rationale, the full local workflow and the GitHub-token variant:
 [`third_party/ContainerHub/docs/dependency-updates.md`](third_party/ContainerHub/docs/dependency-updates.md).
 
