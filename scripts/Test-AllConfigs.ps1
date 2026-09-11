@@ -51,22 +51,7 @@ Import-BuildModule 'WindowsContainerImage.Common', 'WindowsBuildSweep.Common'
 # `:latest-cross`, NOT the stale `:latest` - see ContainerHub
 # docs/rancher-desktop-linux-containers.md, and the measured history of why the
 # tag is what it is in scripts/linux/ci-image-ref.sh.
-#
-# THE else BRANCH IS A PIN FALLBACK, not a second source of truth.
-# Get-CiImageReference landed in ContainerHub after the commit
-# third_party/ContainerHub currently pins, and this sweep WORKS today; a hard
-# dependency would break a working local entry point to gain nothing until the
-# gitlink moves. Get-Command is a capability probe, not a swallowed error - the
-# cmdlet's "not found" IS the answer here.
-#
-# TO RETIRE: in the same commit that bumps third_party/ContainerHub to a hub
-# commit exporting Get-CiImageReference, collapse this to
-# `$linuxImage = Get-CiImageReference` and delete this note.
-$linuxImage = if (Get-Command Get-CiImageReference -ErrorAction SilentlyContinue) {
-    Get-CiImageReference
-} else {
-    'ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross'
-}
+$linuxImage = Get-CiImageReference
 $linuxBuildDir = 'build-linux-tsan'
 
 $results = @()

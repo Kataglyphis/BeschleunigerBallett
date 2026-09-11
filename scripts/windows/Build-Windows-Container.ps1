@@ -65,24 +65,9 @@ Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -For
 # Imported EXPLICITLY and not relied upon via WindowsContainerBuild.Reuse: a
 # nested Import-Module inside a .psm1 binds into that module's private scope and
 # never reaches this script (see Resolve-BuildModule.ps1's header).
-#
-# THE else BRANCH IS A PIN FALLBACK, not a second source of truth.
-# Get-CiImageReference landed in ContainerHub after the commit
-# third_party/ContainerHub currently pins, and this script WORKS today; a hard
-# dependency would break a working local entry point to gain nothing until the
-# gitlink moves. Get-Command is a capability probe, not a swallowed error.
-#
-# TO RETIRE: in the same commit that bumps third_party/ContainerHub to a hub
-# commit exporting Get-CiImageReference, collapse this to
-# `if (-not $Image) { $Image = Get-CiImageReference -Windows }` and delete this
-# note.
 Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerImage.Common') -Force -Global
 if (-not $Image) {
-  $Image = if (Get-Command Get-CiImageReference -ErrorAction SilentlyContinue) {
-    Get-CiImageReference -Windows
-  } else {
-    'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
-  }
+  $Image = Get-CiImageReference -Windows
 }
 
 $docker = Resolve-DockerExe -Override $DockerExe
