@@ -8,7 +8,7 @@
 #
 # The sweep harness - failure aggregation, the "can this host run Linux
 # containers" probe, the bind-mounted container run, the summary - was
-# upstreamed on 2026-08-07 and lives in ContainerHub's
+# upstreamed on 2026-08-07 and lives in ANTfrastructure's
 # WindowsBuildSweep.Common. What is left here is this project's payload: which
 # configurations, which preset, which image, which build directory.
 #
@@ -39,16 +39,16 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Import-BuildModule 'WindowsContainerImage.Common', 'WindowsBuildSweep.Common'
 
 # The Linux image this project's cross builds run in, resolved from
-# ContainerHub's linux/scripts/01-core/versions.env rather than named here.
+# ANTfrastructure's linux/scripts/01-core/versions.env rather than named here.
 # That file is the fleet's one owner of the two CI image tags: the container
 # composite actions carry the composed ref as their `image:` default, the Linux
 # workflow's fuzz-seed loop reads it through scripts/linux/ci-image-ref.sh, and
-# Get-CiImageReference is the PowerShell twin of that script (ContainerHub
+# Get-CiImageReference is the PowerShell twin of that script (ANTfrastructure
 # verify_ci_image_refs.py gates that all three compose the same string). A
 # fleet-wide tag bump now moves this sweep too, instead of leaving it on a
 # literal that still looks right.
 #
-# `:latest-cross`, NOT the stale `:latest` - see ContainerHub
+# `:latest-cross`, NOT the stale `:latest` - see ANTfrastructure
 # docs/rancher-desktop-linux-containers.md, and the measured history of why the
 # tag is what it is in scripts/linux/ci-image-ref.sh.
 $linuxImage = Get-CiImageReference

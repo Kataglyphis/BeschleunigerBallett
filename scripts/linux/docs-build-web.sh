@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# docs-build-web.sh - project wrapper around ContainerHub's generic Sphinx docs
+# docs-build-web.sh - project wrapper around ANTfrastructure's generic Sphinx docs
 # builder. Everything reusable (venv bootstrap, _static staging, the diagram
 # generator step and the `make html` / `make linkcheck` pair with warnings as
-# errors) lives in ContainerHub's linux/scripts/lib/docs-build.sh; only this
+# errors) lives in ANTfrastructure's linux/scripts/lib/docs-build.sh; only this
 # project's paths and its WebGPU wasm demo live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
-# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
-# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literals these calls
+# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
+# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literals these calls
 # replace could not honour - and fails naming the probed path AND the fix.
 #
-# ensure_wasm32_target lives in ContainerHub: making the wasm32 target usable
+# ensure_wasm32_target lives in ANTfrastructure: making the wasm32 target usable
 # without assuming rustup is not this project's problem, it is a property of
 # the images.
-containerhub_source linux/scripts/lib/rust-toolchain.sh
+antfrastructure_source linux/scripts/lib/rust-toolchain.sh
 
-containerhub_source linux/scripts/lib/docs-build.sh
+antfrastructure_source linux/scripts/lib/docs-build.sh
 
 # Directory the C++ build wrote its Doxygen/Graphviz SVGs to.
 DOCS_OUT="${1:-${DOCS_OUT:-build/build/html}}"
@@ -36,7 +36,7 @@ DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirem
 # show the CURRENT renderer rather than a hand-built snapshot that goes stale.
 # Best-effort: a wasm build failure must NOT red the docs deploy - the committed
 # snapshot then remains the fallback. The container already ships the wasm32
-# target (ContainerHub install-rust.sh); only wasm-bindgen-cli is fetched here,
+# target (ANTfrastructure install-rust.sh); only wasm-bindgen-cli is fetched here,
 # pinned to the EXACT version the crate's Cargo.lock locks (CLI and crate must
 # match or wasm-bindgen refuses to run).
 build_webgpu_wasm_demo() {

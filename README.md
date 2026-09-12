@@ -86,7 +86,7 @@ The repository ships two documentation entry points:
 - this README for repository-level orientation
 - the Sphinx site under `docs/` for getting started, workflow notes, Graphviz output, and optional API reference material
 
-Each topic has exactly one home; the full topic-guide inventory is the Docs table in [AGENTS.md](AGENTS.md). Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it (see the "Reusable Work Belongs in ContainerHub" rule there).
+Each topic has exactly one home; the full topic-guide inventory is the Docs table in [AGENTS.md](AGENTS.md). Renderer-agnostic and Windows-container knowledge lives in the ANTfrastructure submodule so other projects can consume it (see the "Reusable Work Belongs in ANTfrastructure" rule there).
 
 To build the Sphinx HTML docs locally, see
 [docs/source/documentation_workflow.md](docs/source/documentation_workflow.md).
@@ -111,7 +111,7 @@ for a deliberate manual bump. That half needs the git that wrote this working
 tree, so from WSL the script switches to `git.exe` and refuses up front when it
 cannot reach one — a Linux git over a Windows checkout would abort half-applied.
 Other managers are report-only. See
-[`third_party/ContainerHub/docs/dependency-updates.md`](third_party/ContainerHub/docs/dependency-updates.md).
+[`third_party/ANTfrastructure/docs/dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
 ## Packaging
 
@@ -127,7 +127,7 @@ Shaders for the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [ContainerHub](https://github.com/Kataglyphis/ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 
@@ -173,7 +173,7 @@ Project link: [https://github.com/Kataglyphis/BeschleunigerBallett](https://gith
 ## Further Reading
 
 - [Official homepage](https://beschleunigerballette.jonasheinle.de/)
-- [ContainerHub](https://github.com/Kataglyphis/ContainerHub)
+- [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure)
 - [Doxygen PDF reference](Documents/refman.pdf)
 - [Sphinx docs source](docs/source)
 

@@ -8,7 +8,7 @@ restating it.
 > why a named volume cannot be a CMake build directory, the Windows path-limit
 > trap that silently truncates tar transfers, the Dev Drive bind-mount
 > restriction and the `docker exec` entrypoint bypass all live in
-> [`ContainerHub / windows-container-build-performance.md`](../third_party/ContainerHub/docs/windows-container-build-performance.md).
+> [`ANTfrastructure / windows-container-build-performance.md`](../third_party/ANTfrastructure/docs/windows-container-build-performance.md).
 > They apply to any project built in that image. This page covers only what is
 > specific to this repository.
 
@@ -31,7 +31,7 @@ removes the transport entirely) was enabled and measured on 2026-07-19 and is
 build tree then sits on the Dev Drive and every file operation crosses the
 `bindFlt` filter. The script therefore defaults to the tar-pipe;
 `-UseBindMount` opts in. Full measurements and the caveat about when the trade
-inverts: [ContainerHub](../third_party/ContainerHub/docs/windows-container-build-performance.md).
+inverts: [ANTfrastructure](../third_party/ANTfrastructure/docs/windows-container-build-performance.md).
 
 Verified against these numbers: at the time of measurement (2026-07-19),
 21/21 commit tests and 18/18 Pester tests passed on the incrementally built
@@ -43,7 +43,7 @@ Not compiler output — **build state**. One container (`bb-build-persistent`)
 is reused, so ninja's dependency graph, the C++23 module BMIs and the object
 files stay where they are. sccache is wired to a persistent volume but
 contributes nothing here (0.00 % hit rate on a modules build — see
-ContainerHub for the measurement); do not expect a speedup from it.
+ANTfrastructure for the measurement); do not expect a speedup from it.
 
 ## Repo-specific wiring
 

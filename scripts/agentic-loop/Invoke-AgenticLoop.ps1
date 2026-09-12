@@ -2,7 +2,7 @@
 <#
 .SYNOPSIS
   Agentic loop: planner adds tasks to BACKLOG.md, executor drains the queue.
-  Uses WindowsAgenticLoop.Common module from ContainerHub.
+  Uses WindowsAgenticLoop.Common module from ANTfrastructure.
 
   Engines (config .engine, or -Engine / $env:AGENTIC_ENGINE):
     claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet
@@ -20,9 +20,9 @@ $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest
 $scriptRoot = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $scriptRoot '..\..')).Path
 
-# Resolve module from ContainerHub or vendored fallback
+# Resolve module from ANTfrastructure or vendored fallback
 $modulePath = $null
-foreach ($c in @((Join-Path $repoRoot 'third_party\ContainerHub\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'),
+foreach ($c in @((Join-Path $repoRoot 'third_party\ANTfrastructure\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'),
                  (Join-Path $scriptRoot 'modules\WindowsAgenticLoop.Common.psm1'))) {
     if (Test-Path $c) { $modulePath = (Resolve-Path $c).Path; break }
 }
@@ -52,7 +52,7 @@ Assert-AgenticPromptOverlay -Config $config -RepoRoot $repoRoot -Engine $overlay
 
 # Build configs and planner/executor task prompts come from the module:
 # configs from the config's buildMatrix (legacy buildConfigurations fallback),
-# prompts from ContainerHub's shared/agentic-loop/prompts/*.md defaults.
+# prompts from ANTfrastructure's shared/agentic-loop/prompts/*.md defaults.
 try {
     Invoke-AgenticLoop -Config $config -Engine $Engine -RepoRoot $repoRoot `
         -MaxIterations:$MaxIterations -SkipBuild:$SkipBuild -SkipTests:$SkipTests `

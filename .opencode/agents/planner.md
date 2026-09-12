@@ -2,7 +2,7 @@
 GENERATED FILE - DO NOT EDIT.
 
 Written on every agentic-loop start by Write-AgenticOpenCodeAgentFile
-(ContainerHub windows/scripts/modules/WindowsAgenticLoop.Common.psm1).
+(ANTfrastructure windows/scripts/modules/WindowsAgenticLoop.Common.psm1).
 opencode takes no system-prompt file on its command line, so this is the
 only way `opencode run --agent <role>` can be given the shared role prompt.
 
@@ -116,9 +116,9 @@ from feature work.
 # Project: BeschleunigerBallett
 
 The role, the critical rules, the refactor focus areas and the task-entry
-template come from ContainerHub's shared Planner prompt, which the loop prepends
+template come from ANTfrastructure's shared Planner prompt, which the loop prepends
 to this file automatically
-(`third_party/ContainerHub/shared/agentic-loop/system-prompts/planner.md`).
+(`third_party/ANTfrastructure/shared/agentic-loop/system-prompts/planner.md`).
 Everything below is what is specific to **this** repo.
 
 This is a Vulkan graphics engine: C++23/C17, CMake presets, optional Rust WebGPU

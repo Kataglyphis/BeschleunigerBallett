@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ci-image-ref.sh - print the family CI container image reference.
 #
-# THIN WRAPPER. The logic moved to ContainerHub
+# THIN WRAPPER. The logic moved to ANTfrastructure
 # linux/scripts/ci-image-ref.sh, which is now the fleet's one owner of "compose
 # ${IMAGE_REGISTRY_PREFIX}:${CI_IMAGE_*_TAG} out of versions.env and print it".
 # Its PowerShell twin is WindowsContainerImage.Common.psm1's
-# Get-CiImageReference, and ContainerHub's own verify_ci_image_refs.py gates
+# Get-CiImageReference, and ANTfrastructure's own verify_ci_image_refs.py gates
 # that all three compose the same string.
 #
 # This file stays because the invocation stays: `scripts/linux/ci-image-ref.sh`
@@ -21,7 +21,7 @@
 # Local repro of a CI step against exactly the image CI used:
 #   docker run --rm -v "$PWD:/workspace" -w /workspace \
 #     "$(scripts/linux/ci-image-ref.sh)" <cmd>
-# See ContainerHub docs/rancher-desktop-linux-containers.md.
+# See ANTfrastructure docs/rancher-desktop-linux-containers.md.
 #
 # ---------------------------------------------------------------------------
 # HISTORY KEPT HERE ON PURPOSE: why the tag is :latest-cross, and why ONE tag.
@@ -46,9 +46,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# containerhub.sh only - NOT lib/common.sh: common.sh's info()/warn() print to
+# antfrastructure.sh only - NOT lib/common.sh: common.sh's info()/warn() print to
 # stdout, which would corrupt the one line this script exists to emit.
-# shellcheck source=lib/containerhub.sh
-source "${SCRIPT_DIR}/lib/containerhub.sh"
+# shellcheck source=lib/antfrastructure.sh
+source "${SCRIPT_DIR}/lib/antfrastructure.sh"
 
-containerhub_exec linux/scripts/ci-image-ref.sh "$@"
+antfrastructure_exec linux/scripts/ci-image-ref.sh "$@"

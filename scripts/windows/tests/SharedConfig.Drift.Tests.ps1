@@ -3,7 +3,7 @@
 # Guards this repo's copies of the shared tool configs against drift.
 #
 # .clang-format, .clang-tidy, gcovr.cfg and .pre-commit-config.yaml are owned by
-# ContainerHub (shared/config/). They are COPIED here rather than referenced
+# ANTfrastructure (shared/config/). They are COPIED here rather than referenced
 # because clang-format, clang-tidy and pre-commit find their config by walking
 # UP from the file being processed - a config inside the submodule is never
 # found, and deleting the local copy would silently stop format-on-save in every
@@ -18,20 +18,20 @@
 Describe 'Shared tool config' {
 
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-    $syncScript = Join-Path $repoRoot 'third_party\ContainerHub\shared\config\Sync-SharedConfig.ps1'
+    $syncScript = Join-Path $repoRoot 'third_party\ANTfrastructure\shared\config\Sync-SharedConfig.ps1'
 
-    It 'has the ContainerHub sync script available' {
+    It 'has the ANTfrastructure sync script available' {
         # A missing script means the submodule is not checked out; without this
         # the next test would "pass" by never running the check.
         Test-Path $syncScript | Should Be $true
     }
 
-    It 'matches the canonical copies in ContainerHub' {
+    It 'matches the canonical copies in ANTfrastructure' {
         $output = & pwsh -NoProfile -File $syncScript -RepoRoot $repoRoot -Check 2>&1
         $exitCode = $LASTEXITCODE
 
         if ($exitCode -ne 0) {
-            Write-Host 'Shared tool config has drifted from ContainerHub:'
+            Write-Host 'Shared tool config has drifted from ANTfrastructure:'
             $output | ForEach-Object { Write-Host "  $_" }
         }
 

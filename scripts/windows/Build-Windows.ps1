@@ -30,7 +30,7 @@ Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
-# Modules come from the ContainerHub submodule when available (preferred, so
+# Modules come from the ANTfrastructure submodule when available (preferred, so
 # reusable scripts live upstream); modules its refactor removed are vendored
 # in scripts/windows/modules. See Resolve-BuildModule.ps1.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')

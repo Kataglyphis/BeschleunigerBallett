@@ -31,7 +31,7 @@ env:
   GCC_PROFILE_PRESET: linux-profile-GNU
   CLANG_PROFILE_PRESET: linux-profile-clang
   # Vulkan SDK version is NOT set here: the container already exports
-  # VULKAN_VERSION (ContainerHub linux/Dockerfile.base), and
+  # VULKAN_VERSION (ANTfrastructure linux/Dockerfile.base), and
   # cmake-configure-build.sh only overrides it when --vulkan-version is
   # passed - so repeating it here was redundant.
   # folder/name configuration -- change here to affect the whole workflow
@@ -47,10 +47,10 @@ env:
   # consumer, and a consumer that was missed kept building against a tag nobody
   # was rebuilding any more.
   #
-  # The value now comes from ContainerHub's linux/scripts/01-core/versions.env
+  # The value now comes from ANTfrastructure's linux/scripts/01-core/versions.env
   # (IMAGE_REGISTRY_PREFIX + CI_IMAGE_LINUX_TAG), which the four container
   # composite actions carry as the DEFAULT of their `image` input - so every step
-  # below OMITS `image:` entirely and inherits it. ContainerHub's
+  # below OMITS `image:` entirely and inherits it. ANTfrastructure's
   # linux/scripts/verify_ci_image_refs.py, which the lint job's actionlint gate
   # runs against THIS tree, fails on any non-canonical kataglyphis_beschleuniger
   # tag under .github/, so a re-introduced literal cannot pass quietly.
@@ -95,14 +95,14 @@ env:
 # see. Demoting them to nightly is the obvious way to make this number smaller
 # and it would have cost both findings.
 #
-# The four-step host prologue every job now repeats lives in ContainerHub's
+# The four-step host prologue every job now repeats lives in ANTfrastructure's
 # prepare-linux-ci-host action, so a change to the pull retry or the checkout
 # flags happens once rather than eleven times.
 jobs:
   # ---------------------------------------------------------------------------
-  # Lint gates, entirely ContainerHub's: shellcheck over this repo's bash,
+  # Lint gates, entirely ANTfrastructure's: shellcheck over this repo's bash,
   # actionlint over its workflows and gitleaks over its tracked tree, all using
-  # the pinned, SHA-verified binaries ContainerHub bootstraps rather than a
+  # the pinned, SHA-verified binaries ANTfrastructure bootstraps rather than a
   # second set installed here.
   #
   # Cheap and first-to-finish (~2 min, no image pull, no build), and it covers a
@@ -115,7 +115,7 @@ jobs:
   # git-ls-files scope construction, the two empty-list vacuity guards, the
   # run-all-three-then-fail-once accumulator and the gitleaks self-test
   # (clean-tree positive control + planted-PAT canary) - now lives in
-  # ContainerHub linux/scripts/run-lint-gates.sh and is reached through this
+  # ANTfrastructure linux/scripts/run-lint-gates.sh and is reached through this
   # repo's one-line wrapper. Brevity is not the point; THIS is:
   #     bash ./scripts/linux/run-lint-gates.sh
   # on a dev box runs exactly what this job runs, which a `run:` block never
@@ -137,7 +137,7 @@ jobs:
   #     plain FILES inside an excluded directory precisely because they are the
   #     consumer's own.
   #   - the empty-list guards are load-bearing. lint-shell.sh invoked with ZERO
-  #     file arguments falls back to its own default scope, ContainerHub's
+  #     file arguments falls back to its own default scope, ANTfrastructure's
   #     linux/ tree, and would report green having checked none of this
   #     repository's scripts.
   #   - the self-test is what separates "the gate ran and found nothing" from
@@ -160,7 +160,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          # ContainerHub is a TOP-LEVEL submodule and it is the one these gates
+          # ANTfrastructure is a TOP-LEVEL submodule and it is the one these gates
           # EXECUTE - all three lint scripts and the aggregator that drives them
           # live inside it - so this deliberately does not recurse; the full
           # recursive tree costs minutes for no benefit here. The other
@@ -169,7 +169,7 @@ jobs:
           submodules: true
           fetch-depth: 1
 
-      - name: Lint gates (ContainerHub shellcheck + actionlint + gitleaks)
+      - name: Lint gates (ANTfrastructure shellcheck + actionlint + gitleaks)
         run: bash ./scripts/linux/run-lint-gates.sh
 
   # ---------------------------------------------------------------------------
@@ -180,13 +180,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -195,7 +195,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/run-ctest.sh
@@ -214,7 +214,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -222,7 +222,7 @@ jobs:
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -248,7 +248,7 @@ jobs:
       # after a failure.
       #
       # THE ONE STEP IN THIS FILE THAT STILL NAMES AN IMAGE, and it does not
-      # name a TAG: scripts/linux/ci-image-ref.sh reads the same ContainerHub
+      # name a TAG: scripts/linux/ci-image-ref.sh reads the same ANTfrastructure
       # versions.env that supplies the `image` default every other step here
       # inherits, so this loop and those steps cannot end up on different
       # images. It fails loudly on a missing key rather than returning an empty
@@ -294,7 +294,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           extra-args: >-
             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"
@@ -314,7 +314,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -323,7 +323,7 @@ jobs:
       # data races could only be found by hand. Non-GPU tests only - the
       # Integration suites need an adapter the CI container does not have.
       - name: Configure/build with ThreadSanitizer
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -332,7 +332,7 @@ jobs:
           log-file: output-tsan.log
 
       - name: Run tests under ThreadSanitizer
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           extra-args: >-
             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"
@@ -353,13 +353,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Build for coverage
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -368,7 +368,7 @@ jobs:
           log-file: output.log
 
       - name: Build Code Coverage
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/build-coverage-llvm.sh
@@ -394,7 +394,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -404,7 +404,7 @@ jobs:
       # in the old single job happened to exist only because an earlier step had
       # already built into the same directory.
       - name: Configure/build for analysis
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -426,7 +426,7 @@ jobs:
       # like every other step in this lane.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/run-static-analysis-format.sh
@@ -435,7 +435,7 @@ jobs:
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/run-static-analysis-format.sh
@@ -452,13 +452,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -468,7 +468,7 @@ jobs:
           log-file: output.log
 
       - name: Run performance benchmarks
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -486,13 +486,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Run Rust renderer tests
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
@@ -501,7 +501,7 @@ jobs:
   # Docs + wasm demo + deploy.
   #
   # It builds ONLY the doc_doxygen target: Sphinx/Breathe consume the Doxygen
-  # XML the C++ build emits, but ContainerHub's cmake/Doxygen.cmake declares doc_doxygen as a
+  # XML the C++ build emits, but ANTfrastructure's cmake/Doxygen.cmake declares doc_doxygen as a
   # custom target with no compiled dependencies, so that XML costs a configure
   # plus a doxygen run rather than a ~20-minute engine build.
   # ---------------------------------------------------------------------------
@@ -511,13 +511,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Generate Doxygen XML
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -527,7 +527,7 @@ jobs:
           log-file: output.log
 
       - name: Build web page
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
@@ -537,7 +537,7 @@ jobs:
         # below, not surface as a slow page load after it is already live.
         # (It skips itself, loudly, when the image cannot build wasm at all -
         # see scripts/linux/wasm-size-budget.sh.)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/wasm-size-budget.sh
 
@@ -563,13 +563,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -579,7 +579,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests (gcc)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/run-ctest.sh
@@ -600,7 +600,7 @@ jobs:
       # gcovr walks the build tree for the .gcda files the ctest run above left
       # behind, so it has to stay in the same job as those tests.
       - name: Build Code Coverage (gcc)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
@@ -616,13 +616,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (gcc)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -646,7 +646,7 @@ jobs:
       # `[[ -f ]]` guard, so a non-zero exit from the suite is the step's exit
       # code here just as it was before.
       - name: Run performance benchmarks (gcc)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -659,13 +659,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -675,7 +675,7 @@ jobs:
           log-file: output.log
 
       - name: Package
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh

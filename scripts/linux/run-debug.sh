@@ -5,11 +5,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
-# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
+# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
 # not honour - and fails naming the probed path AND the fix.
-containerhub_source linux/scripts/lib/app-runner.sh
+antfrastructure_source linux/scripts/lib/app-runner.sh
 
 APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"
 APP_RUNNER_DEFAULT_BUILD_DIR="build"
@@ -24,7 +24,7 @@ APP_RUNNER_SHADER_COMPILE_SCRIPT="${SCRIPT_DIR}/compile-slang-shaders.sh"
 #
 # The five-probe sweep this used to hand-roll (glslc on PATH, vulkaninfo on
 # PATH, $VULKAN_SDK/setup-env.sh, /opt/vulkan/*/setup-env.sh,
-# ~/vulkan/*/setup-env.sh) is ContainerHub's
+# ~/vulkan/*/setup-env.sh) is ANTfrastructure's
 # linux/scripts/01-core/vulkan-env.sh - vulkan_env_find_setup_script, whose
 # header enumerates that exact union and adds $VULKAN_SETUP_SCRIPT, the
 # $VULKAN_VERSION-pinned path and the arch-subdirectory layout
@@ -46,16 +46,16 @@ vulkan_sdk_available() {
   has_tool glslc || has_tool vulkaninfo
 }
 
-# Try to install Vulkan SDK using ContainerHub's setup-dependencies.sh.
-install_vulkan_via_containerhub() {
+# Try to install Vulkan SDK using ANTfrastructure's setup-dependencies.sh.
+install_vulkan_via_antfrastructure() {
   local sd
-  # containerhub_path resolves against CONTAINERHUB_DIR (env-overridable) and,
+  # antfrastructure_path resolves against ANTFRASTRUCTURE_DIR (env-overridable) and,
   # on a miss, prints the probed path AND the submodule fix itself - strictly
   # more than the warn it replaces said.
   #
   # The second candidate the old code fell back to - linux/scripts/
   # setup-dependencies.sh, without the 02-toolchain/ segment - does not exist in
-  # ContainerHub, so that branch could only ever turn "the submodule is not
+  # ANTfrastructure, so that branch could only ever turn "the submodule is not
   # checked out" into a message naming a path that was never right anyway. It is
   # gone rather than translated.
   #
@@ -63,8 +63,8 @@ install_vulkan_via_containerhub() {
   # convenience for a dev box with no Vulkan SDK, and the caller
   # (app_runner_post_vulkan_hook) already decides what a failed auto-install
   # means. Nothing in CI reaches it.
-  if ! sd="$(containerhub_path linux/scripts/02-toolchain/setup-dependencies.sh)"; then
-    warn "Cannot auto-install Vulkan: ContainerHub's setup-dependencies.sh is not available."
+  if ! sd="$(antfrastructure_path linux/scripts/02-toolchain/setup-dependencies.sh)"; then
+    warn "Cannot auto-install Vulkan: ANTfrastructure's setup-dependencies.sh is not available."
     return 1
   fi
 
@@ -72,10 +72,10 @@ install_vulkan_via_containerhub() {
   info "Attempting to install Vulkan SDK ${ver} using ${sd} (may require sudo and take several minutes)"
   # Run the helper; it contains its own privilege escalation where needed
   if bash "${sd}" --vulkan-version "${ver}" vulkan; then
-    info "ContainerHub helper finished (attempted Vulkan install)."
+    info "ANTfrastructure helper finished (attempted Vulkan install)."
     return 0
   else
-    warn "ContainerHub helper returned non-zero while attempting Vulkan install."
+    warn "ANTfrastructure helper returned non-zero while attempting Vulkan install."
     return 2
   fi
 }
@@ -83,7 +83,7 @@ install_vulkan_via_containerhub() {
 # If no Vulkan SDK was found, attempt an auto-install and then source it.
 #
 # app_runner_main has ALREADY called source_vulkan_env by the time this hook
-# runs (ContainerHub linux/scripts/lib/app-runner.sh:187-188 -> lib/common.sh's
+# runs (ANTfrastructure linux/scripts/lib/app-runner.sh:187-188 -> lib/common.sh's
 # source_vulkan_env -> vulkan_env_source "" keep-libs 0), so a pre-existing SDK
 # is already sourced and there is nothing left for this hook to do. What this
 # hook uniquely owns - and the only reason it still exists - is the
@@ -102,7 +102,7 @@ app_runner_post_vulkan_hook() {
   fi
 
   info "Vulkan SDK/tools not detected on PATH. Attempting automatic install..."
-  if install_vulkan_via_containerhub; then
+  if install_vulkan_via_antfrastructure; then
     # Second pass: the first one ran before the SDK existed.
     source_vulkan_env
   else

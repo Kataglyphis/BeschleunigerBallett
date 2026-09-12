@@ -11,7 +11,7 @@
 # This project's copy is kept in-tree (and passed to the driver as
 # -SettingsPath) because its comments record project-specific provenance -
 # VulkanInstance.cpp's debug-build layer setup and the July 2026 hazard find.
-# ContainerHub ships a generic, minimal twin
+# ANTfrastructure ships a generic, minimal twin
 # (windows/scripts/modules/vk_layer_settings.default.txt) that the driver
 # stages when a caller supplies no settings file; keep the setting VALUES in
 # the two files identical.

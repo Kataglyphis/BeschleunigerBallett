@@ -8,7 +8,7 @@
   The overlays are the only prompt text this repo owns, and every way of losing
   them is silent:
 
-    * ContainerHub's Resolve-AgenticEngine reads plannerPromptOverlayFile /
+    * ANTfrastructure's Resolve-AgenticEngine reads plannerPromptOverlayFile /
       executorPromptOverlayFile from engines.<engine> only. Moving the keys to
       a top-level promptOverlays block therefore made both overlays vanish -
       no warning, no log line, a loop running on the bare shared prompt.
@@ -47,7 +47,7 @@ function Get-OverlayConfigValue {
         StrictMode-safe property lookup over both hashtables (tests) and the
         PSCustomObjects ConvertFrom-Json produces. A local copy of the module's
         Get-AgenticConfigValue so the declaration and mirror checks below work
-        on a config alone, with no ContainerHub checkout.
+        on a config alone, with no ANTfrastructure checkout.
     #>
     param($Object, [string]$Name, $Default = $null)
     if ($null -eq $Object) { return $Default }
@@ -129,7 +129,7 @@ function Assert-AgenticPromptOverlay {
         }
         if (-not (Test-Path -LiteralPath $overlayPath)) {
             throw ("Prompt overlay declared but missing on disk: $($decl.Key) = '$($decl.Effective)' resolves to " +
-                   "'$overlayPath'. ContainerHub's New-AgenticComposedPrompt downgrades this to a WARN and runs on the " +
+                   "'$overlayPath'. ANTfrastructure's New-AgenticComposedPrompt downgrades this to a WARN and runs on the " +
                    'shared prompt alone, so it is caught here instead: restore the file or drop the declaration.')
         }
 
@@ -185,11 +185,11 @@ function Get-AgenticDeliveredPrompt {
         }
     }
 
-    # claude: ContainerHub composes shared prompt + overlay into a temp file and
+    # claude: ANTfrastructure composes shared prompt + overlay into a temp file and
     # passes it to --append-system-prompt-file. Ask the module rather than
     # reimplementing it - the point is to observe the reader that will run.
     if (-not (Get-Command Resolve-AgenticEngine -ErrorAction SilentlyContinue)) {
-        throw ('Resolve-AgenticEngine is not available: import ContainerHub''s WindowsAgenticLoop.Common module before ' +
+        throw ('Resolve-AgenticEngine is not available: import ANTfrastructure''s WindowsAgenticLoop.Common module before ' +
                'calling Assert-AgenticPromptOverlay, or the overlay delivery cannot be observed at all.')
     }
     $settings = Resolve-AgenticEngine -Config $Config -RepoRoot $RepoRoot -EngineOverride $Engine

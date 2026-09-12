@@ -2,7 +2,7 @@
  *
  * The shared look lives in css/custom.css, which is a SYMLINK to the generated
  * brand stylesheet in DocumANTation
- * (third_party/ContainerHub/third_party/DocumANTation/docs-tooling/
+ * (third_party/ANTfrastructure/third_party/DocumANTation/docs-tooling/
  *  source_templates/sphinx-book/custom.css). That file is generated from
  * style/brand.json - never edit or fork it. This file is the supported place
  * for project rules and is loaded AFTER it (see html_css_files in

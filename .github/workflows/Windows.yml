@@ -32,10 +32,10 @@ concurrency:
 # drift-per-repo: a fleet-wide tag bump had to find and edit this line in every
 # consumer.
 #
-# The value now comes from ContainerHub's linux/scripts/01-core/versions.env
+# The value now comes from ANTfrastructure's linux/scripts/01-core/versions.env
 # (IMAGE_REGISTRY_PREFIX + CI_IMAGE_WINDOWS_TAG), which prepare-windows-container-host
 # and run-in-windows-container carry as the DEFAULT of their `image` input - so
-# every step below OMITS `image:` and inherits it. ContainerHub's
+# every step below OMITS `image:` and inherits it. ANTfrastructure's
 # linux/scripts/verify_ci_image_refs.py, which Linux.yml's lint job runs against
 # this tree, rejects any non-canonical kataglyphis_beschleuniger tag under
 # .github/ AND a Windows action handed the Linux ref, so neither a stale literal
@@ -63,7 +63,7 @@ jobs:
 
       # Der komplette Prolog - long paths, Checkout ohne Submodule,
       # Kurzpfad-Klon, data-root auf D:, Disk-Cleanup, Registry-Login, Pull,
-      # Disk-Report - kommt aus ContainerHub. Er war hier ~60 Zeilen und in drei
+      # Disk-Report - kommt aus ANTfrastructure. Er war hier ~60 Zeilen und in drei
       # Schwester-Repos identisch; jede der drei Fallen darin hatte schon eine
       # Lane gekostet.
       #
@@ -74,7 +74,7 @@ jobs:
       # dem Laufwerk, auf dem das Image dann landet.
       - name: Prepare Windows container host
         id: prep
-        uses: Kataglyphis/ContainerHub/.github/actions/prepare-windows-container-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-windows-container-host@main
         with:
           registry-password: ${{ secrets.GHCR_PAT }}
           fetch-depth: 0
@@ -86,8 +86,8 @@ jobs:
       # Dockerfile:48-49); mounting a bind OVER that baked-in dir dies at
       # `hcs::CreateComputeSystem: The request is not supported` whenever the
       # host OS build differs from the image base build - and it does here: the
-      # image is validated on a build-26200 host (ContainerHub BUILD-OBSERVATIONS)
-      # while the github windows-2025 runner is 26100. ContainerHub's own
+      # image is validated on a build-26200 host (ANTfrastructure BUILD-OBSERVATIONS)
+      # while the github windows-2025 runner is 26100. ANTfrastructure's own
       # Test-ContainerBindMount defaults to a fresh C:\ws-mnt for exactly this.
       # D:\ws -> C:\ws and --memory 16g are the composite action's defaults, and
       # --cpus defaults to NUMBER_OF_PROCESSORS (min 2) - the identical
@@ -107,7 +107,7 @@ jobs:
       # a hostname, a username, a remote path).
       - name: Build/Test/Package inside the Windows CI container
         continue-on-error: false
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           extra-args: |
             -e
@@ -182,7 +182,7 @@ jobs:
           "GPU_ONLY_SUITES=$gpuOnlySuites" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Run CPU-only tests inside the container
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           # Test-Path first: a missing or unbuilt executable must say so, not
           # surface as a bare "exit code 1" with an empty log the way the
@@ -205,7 +205,7 @@ jobs:
       # cold container start and still fails the same day.
       - name: Run fuzz target seeds inside the container
         timeout-minutes: 20
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           # Inner strings use single quotes and concatenation, NOT \" escapes:
           # backslash is not an escape character in PowerShell (backtick is), so
@@ -263,7 +263,7 @@ jobs:
           "TIMING_VALIDATION_FLAG=$flag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: GPU timing comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           command: >-
             & 'C:\ws\scripts\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
@@ -287,7 +287,7 @@ jobs:
       # a run that verified something. With KATAGLYPHIS_CI_HAS_GPU=1 the flag
       # is empty and 2 stays fatal, because then frames SHOULD exist.
       - name: Pixel comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-in-windows-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           command: >-
             & 'C:\ws\scripts\Compare-RendererPixels.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }};
@@ -313,7 +313,7 @@ jobs:
   # CPU-only, container-free: the PowerShell module Pester suites (this repo's
   # scripts/windows/tests, written for Pester 3.4 syntax — pinned install, the
   # runner's default Pester 5 cannot parse them). Cheap gate for the module
-  # moves to ContainerHub: every module must still resolve and behave.
+  # moves to ANTfrastructure: every module must still resolve and behave.
   pester-tests:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-win]')
     runs-on: windows-2025
@@ -322,14 +322,14 @@ jobs:
     steps:
       # `submodules: true` is top-level only (NOT recursive) - exactly what these
       # suites need: they resolve their modules and shared config out of the
-      # ContainerHub submodule, so that one working tree must be present, and
+      # ANTfrastructure submodule, so that one working tree must be present, and
       # none of the nested ones are read. (The pin-drift suite that also needed
       # a non-recursive `git submodule status` is no longer here: it moved to
       # the always-on `submodule-pins` job below, which does its own checkout.)
       #
       # It must be actions/checkout doing this, not a hand-rolled
       # `git submodule update --init` step. .gitmodules pins git@github.com:
-      # (SSH) URLs for ContainerHub and OxidANT,
+      # (SSH) URLs for ANTfrastructure and OxidANT,
       # and a hosted runner has no SSH key - the bare git command died with
       # "git@github.com: Permission denied (publickey)" on both, every single run.
       # checkout's submodule support installs the same `url.<https>.insteadOf
@@ -343,9 +343,9 @@ jobs:
       # Pinned version, not the runner's default: these suites are written in
       # Pester 3.4's dash-less assertion syntax (`Should Be 0`), which the
       # Pester 5 on the runner cannot parse. The install/run/report mechanics
-      # are generic and live in ContainerHub.
+      # are generic and live in ANTfrastructure.
       - name: Run Pester suites (pinned 3.4.0)
-        uses: Kataglyphis/ContainerHub/.github/actions/run-pester-suite@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@main
         with:
           path: scripts/windows/tests
           version: '3.4.0'
@@ -364,7 +364,7 @@ jobs:
   # checking.
   # ===========================================================================
 
-  # PowerShell lint: ContainerHub's Invoke-Lint.ps1 pointed at THIS repo's
+  # PowerShell lint: ANTfrastructure's Invoke-Lint.ps1 pointed at THIS repo's
   # PowerShell tree. Two passes - a mandatory parse + AST-trap gate, and
   # PSScriptAnalyzer.
   #
@@ -373,12 +373,12 @@ jobs:
   # a backslash path and excludes `\archive\` by a backslash regex), and
   # PSScriptAnalyzer is preinstalled on the hosted Windows image.
   powershell-lint:
-    name: PowerShell lint (ContainerHub gate)
+    name: PowerShell lint (ANTfrastructure gate)
     runs-on: windows-2025
     permissions:
       contents: read
     steps:
-      # Top-level only: the only submodule these steps read is ContainerHub,
+      # Top-level only: the only submodule these steps read is ANTfrastructure,
       # which carries both the gate script and its ruleset.
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -391,7 +391,7 @@ jobs:
       - name: Install PSScriptAnalyzer
         run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
 
-      # -Path is the parameter ContainerHub added for exactly this case: a
+      # -Path is the parameter ANTfrastructure added for exactly this case: a
       # consumer points the gate at ITS tree, while the PSScriptAnalyzer settings
       # file stays resolved against the SCRIPT's own location - so the hub's
       # PSScriptAnalyzerSettings.psd1 is consumed BY REFERENCE and no ruleset is
@@ -412,12 +412,12 @@ jobs:
       # not reach for continue-on-error, which would hide the parse gate too.
       - name: Lint PowerShell (parse gate + PSScriptAnalyzer)
         run: >-
-          pwsh -NoProfile -File third_party/ContainerHub/windows/scripts/Invoke-Lint.ps1
+          pwsh -NoProfile -File third_party/ANTfrastructure/windows/scripts/Invoke-Lint.ps1
           -Path scripts
 
   # Submodule pins sit at their recorded, restorable commits.
   #
-  # The suite is ContainerHub's promoted, repo-agnostic one - not a copy. It
+  # The suite is ANTfrastructure's promoted, repo-agnostic one - not a copy. It
   # asserts, for EVERY configured submodule (this repo has 15), that it is
   # checked out, sitting at its recorded gitlink, and pinned to a commit
   # reachable from its remote. A pin that is on no remote branch cannot be
@@ -441,8 +441,8 @@ jobs:
       # It would fall back to GITHUB_WORKSPACE by itself; naming it keeps the
       # wiring visible rather than implied. It must NOT be left to the suite's
       # last-resort git-toplevel probe either: the file lives inside the
-      # ContainerHub submodule, so that probe would answer "ContainerHub".
-      CONTAINERHUB_PIN_CHECK_REPO_ROOT: ${{ github.workspace }}
+      # ANTfrastructure submodule, so that probe would answer "ANTfrastructure".
+      ANTFRASTRUCTURE_PIN_CHECK_REPO_ROOT: ${{ github.workspace }}
     steps:
       # `submodules: true` is required, not an optimisation: without it nothing
       # is checked out, and the suite fails on its own vacuity guard rather than
@@ -452,7 +452,7 @@ jobs:
       #
       # It must be actions/checkout doing this, not a hand-rolled
       # `git submodule update --init` step. .gitmodules pins git@github.com:
-      # (SSH) URLs for ContainerHub and OxidANT, and a hosted runner has no SSH
+      # (SSH) URLs for ANTfrastructure and OxidANT, and a hosted runner has no SSH
       # key - the bare git command dies with "Permission denied (publickey)".
       # checkout installs the `url.<https>.insteadOf git@github.com:` rewrite
       # plus token auth, so the SSH pins resolve over HTTPS.
@@ -462,6 +462,6 @@ jobs:
           submodules: true
 
       - name: Submodule pins sit at their recorded, restorable commits
-        uses: Kataglyphis/ContainerHub/.github/actions/run-pester-suite@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@main
         with:
-          path: third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1
+          path: third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1

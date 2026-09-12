@@ -1,15 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "description": [
-    "BeschleunigerBallett's Renovate config. Everything shared lives in the preset at ContainerHub's repository root (default.json); the `extends` line below is the whole adoption, exactly as in OmniAccelerANT and jotrockenmitlocken.",
-    "The part this repo cannot get any other way is the git-submodules manager, which Renovate DISABLES by default. This repo carries fifteen gitlinks - two owned (third_party/ContainerHub at `main`, third_party/OxidANT at `develop`) and thirteen vendored - and not one of them has ever had a bump proposed by anything. The hub gitlink is the expensive one: the Linux and Windows lanes run the gates that live behind that pin, so a stale gitlink means CI grades this tree with whatever the hub looked like the last time someone moved it by hand.",
+    "BeschleunigerBallett's Renovate config. Everything shared lives in the preset at ANTfrastructure's repository root (default.json); the `extends` line below is the whole adoption, exactly as in OmniAccelerANT and jotrockenmitlocken.",
+    "The part this repo cannot get any other way is the git-submodules manager, which Renovate DISABLES by default. This repo carries fifteen gitlinks - two owned (third_party/ANTfrastructure at `main`, third_party/OxidANT at `develop`) and thirteen vendored - and not one of them has ever had a bump proposed by anything. The hub gitlink is the expensive one: the Linux and Windows lanes run the gates that live behind that pin, so a stale gitlink means CI grades this tree with whatever the hub looked like the last time someone moved it by hand.",
     "The manager bumps a gitlink to the tip of the branch named in .gitmodules, falling back to the remote's DEFAULT branch when none is named. Every submodule here now names its branch explicitly except third_party/FUZZTEST, which is the one case where no value is correct - see the comment above that section in .gitmodules, and the packageRule below that stops the fallback from acting on it unattended.",
-    "Actions: the preset's helpers:pinGitHubActionDigests will propose digest pins for the third-party actions this repo references by tag (actions/checkout@v7.0.1, actions/upload-artifact@v7.0.1, codecov/codecov-action@v7.0.0, SamKirkland/FTP-Deploy-Action@v4.4.0), while a preset rule explicitly leaves the five Kataglyphis/ContainerHub composite actions at @main for the upstream-first change flow.",
+    "Actions: the preset's helpers:pinGitHubActionDigests will propose digest pins for the third-party actions this repo references by tag (actions/checkout@v7.0.1, actions/upload-artifact@v7.0.1, codecov/codecov-action@v7.0.0, SamKirkland/FTP-Deploy-Action@v4.4.0), while a preset rule explicitly leaves the five Kataglyphis/ANTfrastructure composite actions at @main for the upstream-first change flow.",
     "Unlike the three sibling consumers, this repo has never carried a .github/dependabot.yml, so adopting the preset is a pure addition here - there is no hand-over to sequence and nothing to delete afterwards.",
-    "Renovate resolves `github>Kataglyphis/ContainerHub` from ContainerHub's DEFAULT BRANCH, not from the pin in third_party/ContainerHub, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ContainerHub's linux/scripts/renovate-local.sh reads exactly it."
+    "Renovate resolves `github>Kataglyphis/ANTfrastructure` from ANTfrastructure's DEFAULT BRANCH, not from the pin in third_party/ANTfrastructure, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ANTfrastructure's linux/scripts/renovate-local.sh reads exactly it."
   ],
   "extends": [
-    "github>Kataglyphis/ContainerHub"
+    "github>Kataglyphis/ANTfrastructure"
   ],
   "packageRules": [
     {

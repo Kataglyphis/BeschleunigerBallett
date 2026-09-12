@@ -1,4 +1,4 @@
-# GoogleTest test registration comes from ContainerHub's GTestDiscovery module
+# GoogleTest test registration comes from ANTfrastructure's GTestDiscovery module
 # (kataglyphis_register_gtest_target), which owns the union of what this repo and
 # AccelerANTgine had each grown for it: this repo's WORKING_DIRECTORY, and
 # AccelerANTgine's clang-cl opt-out plus its add_test/PATH fallback for the
@@ -7,7 +7,7 @@
 # The module includes GoogleTest itself, so the bare `include(GoogleTest)` that
 # stood on this line is gone - one file owning both is what keeps a consumer from
 # having to remember the ordering. Resolved BY NAME off CMAKE_MODULE_PATH, which
-# the top-level CMakeLists points at third_party/ContainerHub/cmake.
+# the top-level CMakeLists points at third_party/ANTfrastructure/cmake.
 include(GTestDiscovery)
 
 function(kataglyphis_disable_test_warnings test_target)
@@ -39,7 +39,7 @@ function(kataglyphis_enable_windows_vulkan_delay_load test_target)
 endfunction()
 
 # All the registration logic that used to live in this function now lives in
-# ContainerHub's kataglyphis_register_gtest_target. What is left here is the one
+# ANTfrastructure's kataglyphis_register_gtest_target. What is left here is the one
 # thing that is genuinely THIS project's and that the hub module deliberately
 # refuses to default: the working directory.
 #

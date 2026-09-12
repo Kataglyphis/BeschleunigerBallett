@@ -6,7 +6,7 @@
 #   1. The config declared them somewhere the reader does not look. Moving
 #      plannerPromptOverlayFile / executorPromptOverlayFile out of
 #      engines.claude into a top-level promptOverlays block did exactly that:
-#      ContainerHub's Resolve-AgenticEngine reads them from engines.<engine>
+#      ANTfrastructure's Resolve-AgenticEngine reads them from engines.<engine>
 #      and nowhere else, so both overlays became unread with no warning and the
 #      loop ran on the bare shared prompt.
 #   2. .opencode/agents/<role>.md was deleted and gitignored on the premise
@@ -25,7 +25,7 @@ Describe 'Agentic loop prompt overlays' {
     $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
     $loopDir = Join-Path $repoRoot 'scripts\agentic-loop'
     $configPath = Join-Path $loopDir 'AgenticLoop.config.json'
-    $modulePath = Join-Path $repoRoot 'third_party\ContainerHub\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'
+    $modulePath = Join-Path $repoRoot 'third_party\ANTfrastructure\windows\scripts\modules\WindowsAgenticLoop.Common.psm1'
 
     Import-Module (Join-Path $loopDir 'AgenticPromptOverlay.psm1') -Force
     $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
@@ -41,7 +41,7 @@ Describe 'Agentic loop prompt overlays' {
 
     It 'mirrors the overlay keys under engines.claude, byte-identical' {
         # The mirror is not a second setting: it exists only because the pinned
-        # ContainerHub reader looks the keys up under engines.<engine>. Dropping
+        # ANTfrastructure reader looks the keys up under engines.<engine>. Dropping
         # it is the regression this file is named after; letting the two copies
         # differ is the same bug wearing a hat.
         foreach ($role in $roles) {
@@ -90,7 +90,7 @@ Describe 'Agentic loop prompt overlays' {
             $agentFile = Join-Path $repoRoot ".opencode\agents\$role.md"
             Test-Path -LiteralPath $agentFile | Should Be $true
 
-            $shared = Join-Path $repoRoot "third_party\ContainerHub\shared\agentic-loop\system-prompts\$role.md"
+            $shared = Join-Path $repoRoot "third_party\ANTfrastructure\shared\agentic-loop\system-prompts\$role.md"
             Test-Path -LiteralPath $shared | Should Be $true
             $overlay = Join-Path $repoRoot "scripts\agentic-loop\prompts\$role-overlay.md"
 

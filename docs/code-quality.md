@@ -2,11 +2,11 @@
 
 The commands, the scoping rules, the two clang-tidy traps and the cadence are
 generic and live upstream:
-[`ContainerHub / code-quality-tooling.md`](../third_party/ContainerHub/docs/code-quality-tooling.md).
+[`ANTfrastructure / code-quality-tooling.md`](../third_party/ANTfrastructure/docs/code-quality-tooling.md).
 Read that first — this page only carries what is specific to **this** repo.
 
 The configs themselves (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are owned
-by ContainerHub as well and copied in here; `scripts/windows/tests/SharedConfig.Drift.Tests.ps1`
+by ANTfrastructure as well and copied in here; `scripts/windows/tests/SharedConfig.Drift.Tests.ps1`
 fails if a local copy drifts. Edit them upstream in `shared/config/`, then run
 `Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
 this repo's root.

@@ -209,7 +209,7 @@ that are *not* exercised that way and should be run periodically:
   (debug timings are noise). Run it after any perf-relevant change and
   before a release; it also builds `perfTestSuite.exe`.
 - **`clangcl-tsan` does NOT detect data races** — checked 2026-07-20 by
-  building it and inspecting the result. `third_party/ContainerHub/cmake/Sanitizers.cmake` warns
+  building it and inspecting the result. `third_party/ANTfrastructure/cmake/Sanitizers.cmake` warns
   "clang-cl ThreadSanitizer is not supported for target
   x86_64-pc-windows-msvc" and drops the request, so the preset produces a
   plain debug build: no `-fsanitize=thread` in `build.ninja`, no `__tsan_*`
@@ -435,7 +435,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   fails fast if the data-root drive can't hold ~54 GB (owner chose "diagnostic
   first").
 
-  **What's in the 54 GB** (ContainerHub `windows/build.ps1`): the chain is
+  **What's in the 54 GB** (ANTfrastructure `windows/build.ps1`): the chain is
   `base → nvidia (CUDA+cuDNN+TensorRT ~50 GB) → toolchain (clang/cmake) → media
   (ONNX/GenAI+OpenCV+FFmpeg+LiteRT+TVM+GStreamer) → final`. **The graphics engine
   + wgpu renderer need NONE of it** — verified: `RUST_FEATURES=ON` builds the whole
@@ -445,7 +445,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   Rust toolchain.
 
   **Fix (owner builds the image) — command CORRECTED 2026-07-22 against
-  ContainerHub `windows/build.ps1`:** the stage chain is
+  ANTfrastructure `windows/build.ps1`:** the stage chain is
   `base → sdk → toolchain → media → final`, and `toolchain` builds
   `FROM windows-sdk`, so `sdk` cannot be skipped - but on the CPU lane (no
   `-Gpu`) the `sdk` stage is just `docker tag windows-base windows-sdk` (no
@@ -1615,7 +1615,7 @@ model loader is race-clean; GUI/renderer state is single-threaded.
 
 **Bake wasm32-unknown-unknown into the :latest-cross image.** ~~The CI lane added
 2026-07-22 cannot add the target itself~~ **FIX UPSTREAM (2026-07-22,
-ContainerHub `3cff632`)**: install-rust.sh now adds the wasm target on the
+ANTfrastructure `3cff632`)**: install-rust.sh now adds the wasm target on the
 STABLE toolchain (it only had it on the pinned nightly), not behind try_ so a
 regression fails the image build. REMAINING: once the rebuilt :latest-cross
 publishes, flip the RPT wasm step from skip-if-missing back into a hard gate.
@@ -2168,8 +2168,8 @@ shadow-factor fix (see the first task — do it before any other Rust work);
 `Resources/Shaders/` tree is fully deleted (Slang-only now), so the reference
 kernel must come from git history; `PushConstantRasterizerUnit` is the ONLY
 CPU suite missing from the Windows CI filter (checked every `TEST(` suite name
-against `Windows.yml:209-229`); the ContainerHub commit the RPT working tree
-points at (`1de9aff`) is already on ContainerHub `origin/main`, so committing
+against `Windows.yml:209-229`); the ANTfrastructure commit the RPT working tree
+points at (`1de9aff`) is already on ANTfrastructure `origin/main`, so committing
 that bump is safe.
 
 ### CI and release gaps
@@ -2507,7 +2507,7 @@ batch IV's two "folded" fixes **did land** — `depth_resolve.slang:26` now loop
 doc comment no longer claims "it does not yet skip any draw". Nothing to re-do there.
 
 **One build-system fact that all three tasks depend on, checked this pass:**
-`kataglyphis_collect_module_interfaces` (`third_party/ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`)
+`kataglyphis_collect_module_interfaces` (`third_party/ANTfrastructure/cmake/KataglyphisCMakeHelpers.cmake:10-13`)
 uses a plain `file(GLOB_RECURSE ... *.ixx)` with **no `CONFIGURE_DEPENDS`** — unlike
 the commit-test glob (`Test/commit/VulkanEngine/CMakeLists.txt:9`), which has it
 precisely because a new file was otherwise silently never compiled. So **adding or
@@ -2724,7 +2724,7 @@ prologue") and never tasked.
 
 **Build-system fact all three tasks depend on** (re-checked this pass, unchanged
 since batch V): `kataglyphis_collect_module_interfaces`
-(`third_party/ContainerHub/cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
+(`third_party/ANTfrastructure/cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
 `CONFIGURE_DEPENDS`, and the recorded module-BMI skew hazard ("Incremental container
 builds can ship ODR-broken binaries") applies to any edited module interface. All
 three tasks below edit a `.ixx`, so all three want `-FreshContainer`.
@@ -5246,7 +5246,7 @@ checked-in generated WGSL having no *content* gate** (`CheckedInWgslIsNotOlderTh
 compares mtimes only, `buildIntegritySuite.cpp:1220`) — a real hole, but closing it
 means running `slangc` inside the test or diffing after a compile, and the
 combined WGSL emit is skipped below `minSlangcVersionForWgsl`, which the
-`- [b]` ContainerHub SDK-bump entry above still blocks.
+`- [b]` ANTfrastructure SDK-bump entry above still blocks.
 
 ### C++ Vulkan engine
 
@@ -7242,9 +7242,9 @@ the two AGENTS.md says are genuinely project-specific and must stay here
 with no Pester suite at all.** `scripts/windows/tests/` carries twelve suites;
 five of them (`WindowsCMake.Common`, `WindowsConfig.Common`,
 `WindowsMsix.Common`, `WindowsMsix.Signing`, `WindowsWebDav.Common`) cover
-modules that were **upstreamed to ContainerHub on 2026-08-02** and no longer
+modules that were **upstreamed to ANTfrastructure on 2026-08-02** and no longer
 exist under `scripts/windows/modules/`. Those suites are not redundant —
-ContainerHub's own `windows/scripts/tests/` has no equivalents, so this repo is
+ANTfrastructure's own `windows/scripts/tests/` has no equivalents, so this repo is
 their only coverage, do not delete them — but the coverage map is exactly
 inverted from where the risk is. Reading the two untested modules found a real
 defect in each, and neither is subtle once you look:
@@ -7934,7 +7934,7 @@ while the abseil that FuzzTest links was built without it. Abseil's
 about container internals and the binary died during startup — before reaching
 a single test, which is why it crashed even while merely *listing* tests.
 
-Reproduced locally in the CI image (Rancher Desktop — see ContainerHub
+Reproduced locally in the CI image (Rancher Desktop — see ANTfrastructure
 `docs/rancher-desktop-linux-containers.md`), same source, same compiler, one
 variable changed:
 
@@ -8101,10 +8101,10 @@ submodule was pushed separately". The identical argument applies to
 `clippy`/`rustfmt` and has not been acted on: `grep -rn "clippy\|rustfmt"
 .github/workflows/` returns nothing in this repo, while the submodule's own
 `rust_ubuntu24_04.yml:123` runs
-`third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh`.
+`third_party/ANTfrastructure/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh`.
 The driver already exists upstream (`cargo fmt --all -- --check` then
 `cargo clippy --all-targets --all-features -- -D warnings`), so per AGENTS.md
-§ "Rule: Reusable Work Belongs in ContainerHub" this repo owes only a thin
+§ "Rule: Reusable Work Belongs in ANTfrastructure" this repo owes only a thin
 wrapper and a workflow step.
 
 Ordering: the five are disjoint. Tasks 2 and 3 both add
@@ -8160,13 +8160,13 @@ here does.
   **Files to read:**
   - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
   - `scripts/linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
-  - `third_party/ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
+  - `third_party/ANTfrastructure/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
   - `third_party/OxidANT/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
-  - `AGENTS.md` § "Rule: Reusable Work Belongs in ContainerHub" and the wrapper map
+  - `AGENTS.md` § "Rule: Reusable Work Belongs in ANTfrastructure" and the wrapper map
 
   **Steps:**
   1. Before writing anything, run the linters locally from `third_party/OxidANT` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
-  2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ContainerHub script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
+  2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ANTfrastructure script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
   3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
   4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
   5. If step 1 surfaced findings in crates **other than** `webgpu_renderer`, do not fix them here and do not silence them with `#[allow]`: the submodule's own CI owns those crates. Fall back to a crate-scoped wrapper instead — `cargo fmt -p kataglyphis_webgpu_renderer -- --check` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets --all-features -- -D warnings` invoked directly rather than via the upstream script — and say in the script's header comment why the upstream delegation was not usable.
@@ -8344,19 +8344,19 @@ last one and its checked-in WGSL is final. Task 4 touches only
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/
-MSIX modules + download script upstreamed to ContainerHub; uv-venv logic
+MSIX modules + download script upstreamed to ANTfrastructure; uv-venv logic
 consolidated (4 copies -> upstream python_uv.sh / WindowsUv.Common); Slang
 manifest single-sourced as `Resources/ShadersSlang/shader-manifest.json`
-with the four PS/sh drifts fixed; app runners consolidated over ContainerHub
+with the four PS/sh drifts fixed; app runners consolidated over ANTfrastructure
 `app-runner.sh` + `Resolve-AppExecutablePath`; CI docker-run boilerplate
-moved into ContainerHub composite actions; Pester wired into CI
+moved into ANTfrastructure composite actions; Pester wired into CI
 (`pester-tests` job); cargo-retry upstreamed; LICENSES-README rewritten;
 CHANGELOG.md deleted (git history + this file are the record). What remains:
 
-- [b] **ContainerHub has no LICENSE file** (S, **blocked on owner
+- [b] **ANTfrastructure has no LICENSE file** (S, **blocked on owner
   decision**) — surfaced by the license audit; consumers cannot state its
   terms. Pick a license (sibling Kataglyphis repos use MIT) and add the
-  file in ContainerHub. Also queued in ContainerHub's
+  file in ANTfrastructure. Also queued in ANTfrastructure's
   docs/refactoring-backlog.md.
 
 ## 2026-08-02 batch II — findings from the Stevedore + Rancher verification pass
@@ -8383,15 +8383,15 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Until then treat host GPU goldens as unavailable and do not burn executor
   retries on them.
 
-- [b] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
-  (S) — `third_party/ContainerHub/linux/Dockerfile.base` already
-  carries `ARG VULKAN_VERSION=1.4.350.0` (landed in ContainerHub `709756e`,
+- [b] **Bump the ANTfrastructure Linux image's Vulkan SDK past slangc 2026.8**
+  (S) — `third_party/ANTfrastructure/linux/Dockerfile.base` already
+  carries `ARG VULKAN_VERSION=1.4.350.0` (landed in ANTfrastructure `709756e`,
   "bump Vulkan SDK to 1.4.350.0"), and this repo's submodule pin
   (`6aeb0f6`) is already past that commit — the Dockerfile edit itself is
   done, nothing left to change there.
   BLOCKER: what remains is rebuilding and pushing the multi-arch
   `:latest-cross` image to `ghcr.io/kataglyphis/kataglyphis_beschleuniger`.
-  There is no CI job that does this automatically (ContainerHub's
+  There is no CI job that does this automatically (ANTfrastructure's
   `ubuntu24.04.yml` only runs `preflight` + `build-docs`); it's a manual,
   local run of `linux/scripts/build-cross-chain.sh`, which `preflight.sh`
   itself documents as taking **hours under QEMU** across 3 architectures,
@@ -10392,7 +10392,7 @@ should not claim it does: when a shader genuinely does import the edited module
 but its emitted WGSL is byte-identical, `slangc` plus `Copy-Item` leave the
 destination's mtime untouched and the gate still reports it stale. That one
 needs a content stamp written by the compile scripts, which live upstream in
-ContainerHub — out of scope here, and worth stating in the test's comment so
+ANTfrastructure — out of scope here, and worth stating in the test's comment so
 the next reader does not re-derive it.
 
 **Verification context.** Host GPU goldens remain blocked over RDP (the `- [b]`

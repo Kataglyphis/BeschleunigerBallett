@@ -66,7 +66,7 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 | Projekt | URL | Pin | Lizenz | Geprüfte Quelle |
 |---|---|---|---|---|
 | OxidANT | https://github.com/Kataglyphis/OxidANT | 49e8ee24 (develop) | MIT (`license = "MIT"` in `[workspace.package]`; keine LICENSE-Datei im Submodul) | `third_party/OxidANT/Cargo.toml` |
-| ContainerHub | https://github.com/Kataglyphis/ContainerHub | 6d5b1af5 (main) | MIT — `LICENSE` (Copyright (c) 2024 Jonas Heinle), `SPDX-License-Identifier: MIT` in allen 101 eigenen Quelldateien, OCI-Label `org.opencontainers.image.licenses="MIT"` in allen drei Image-Definitionen | `third_party/ContainerHub/LICENSE` + SPDX-Header + OCI-Labels |
+| ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 6d5b1af5 (main) | MIT — `LICENSE` (Copyright (c) 2024 Jonas Heinle), `SPDX-License-Identifier: MIT` in allen 101 eigenen Quelldateien, OCI-Label `org.opencontainers.image.licenses="MIT"` in allen drei Image-Definitionen | `third_party/ANTfrastructure/LICENSE` + SPDX-Header + OCI-Labels |
 
 ## Rust-Crate-Abhängigkeiten (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
 
@@ -127,10 +127,10 @@ Derzeit keine offenen Punkte.
 
 Am 2026-08-07 erledigt und daher aus dieser Liste entfernt:
 
-- **ContainerHub, fehlende LICENSE**: das Submodul führt inzwischen
+- **ANTfrastructure, fehlende LICENSE**: das Submodul führt inzwischen
   eine `LICENSE`-Datei; der Pin oben ist zudem von `8687f0c7` auf den aktuellen
   Stand `6d5b1af5` korrigiert.
-- **ContainerHub, MIT/Apache-Widerspruch**: aufgelöst zugunsten von
+- **ANTfrastructure, MIT/Apache-Widerspruch**: aufgelöst zugunsten von
   **MIT**. Zuvor stand in `LICENSE` MIT, während 101 eigene Quelldateien
   `SPDX-License-Identifier: Apache-2.0` trugen und zwei der drei Image-Definitionen
   das OCI-Label `Apache-2.0` setzten. Alle drei Stellen sagen jetzt MIT; die

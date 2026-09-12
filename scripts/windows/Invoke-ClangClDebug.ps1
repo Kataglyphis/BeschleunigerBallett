@@ -18,7 +18,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 # PATH/tool resolution and the CTest metadata rewrite are generic and live in
-# ContainerHub (WindowsScripts.Shared / WindowsCMake.Common) - they were copied
+# ANTfrastructure (WindowsScripts.Shared / WindowsCMake.Common) - they were copied
 # here, which meant a fix had to be made twice. Update-CTestMetadataPaths in
 # particular is about C:/workspace, the container image's own WORKDIR, so it
 # belongs with the image rather than with any one consumer.
@@ -39,7 +39,7 @@ Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsT
 
 # Get-PreferredToolPath -Required, not Resolve-PreferredTool: the latter was
 # deleted upstream on 2026-08-21 as "zero callers anywhere" — that audit grepped
-# ContainerHub only, and these three lines have been calling a function that
+# ANTfrastructure only, and these three lines have been calling a function that
 # does not exist ever since. -Required keeps the throw-on-missing behaviour, so
 # a host without cmake fails HERE naming the tool instead of several lines later
 # on a $null path (which under Set-StrictMode reads as an unrelated defect).

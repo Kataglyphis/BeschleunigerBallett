@@ -741,7 +741,7 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
 
     // Two spellings, both legal: the step used to run in a host-side pwsh
     // block where `$t` needed backtick-escaping so the RUNNER did not expand
-    // it; since the step moved to ContainerHub's run-in-windows-container
+    // it; since the step moved to ANTfrastructure's run-in-windows-container
     // action the command is passed through env, so it is a plain `$t`. Accept
     // either rather than pinning the test to one CI plumbing style.
     static const std::array<std::string, 2> kAnchors = { "foreach (`$t in @(", "foreach ($t in @(" };
@@ -2143,7 +2143,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 // WGSL is byte-identical is never re-copied by the compile scripts, so its
 // mtime stays behind and this gate keeps reporting it stale on every run.
 // The real fix is a content stamp written by the compile scripts (which live
-// upstream in ContainerHub); out of scope here.
+// upstream in ANTfrastructure); out of scope here.
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = repoRoot();
@@ -2246,7 +2246,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 
 // WGSL requires every non-builtin member of an inter-stage (varying) struct to
 // carry @location(N); only @builtin members may omit it. slangc
-// 2026.1-52-gc8ddf20bb (Vulkan SDK 1.4.341.1 - the ContainerHub Linux image)
+// 2026.1-52-gc8ddf20bb (Vulkan SDK 1.4.341.1 - the ANTfrastructure Linux image)
 // drops @location from varying structs in the COMBINED emit (compiled without
 // -entry/-stage, which is exactly how the manifest's wgslMap files are
 // produced) while emitting it correctly per entry point from the SAME binary;

@@ -10,7 +10,7 @@
 # Prerequisites:
 #   - Rust toolchain with wasm32-unknown-unknown target
 #   - binaryen (wasm-opt) - bootstrapped automatically from the pin in
-#     ContainerHub's versions.env when it is not already on PATH
+#     ANTfrastructure's versions.env when it is not already on PATH
 #
 # Install wasm target:
 #   rustup target add wasm32-unknown-unknown
@@ -80,7 +80,7 @@ if (-not ($installed -match 'wasm32-unknown-unknown')) {
 # Bootstrap a pinned, SHA-verified binaryen instead of failing when wasm-opt is
 # missing - parity with scripts/linux/wasm-size-budget.sh, which fetches the
 # same release from the same pin. Both read version + checksums from
-# ContainerHub's linux/scripts/01-core/versions.env.
+# ANTfrastructure's linux/scripts/01-core/versions.env.
 . (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsWasmOpt.Common')
 $null = Install-WasmOpt

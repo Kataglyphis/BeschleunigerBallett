@@ -13,7 +13,7 @@
 #   /usr/bin/x86_64-linux-gnu-ld.bfd: cannot find crtbeginS.o
 #
 # which names neither the flag nor the version. A version-keyed path must be
-# discovered, never hardcoded: ContainerHub installs GCC at
+# discovered, never hardcoded: ANTfrastructure installs GCC at
 # /opt/gcc-${GCC_VERSION} (linux/scripts/01-core/cross-gcc.sh) and bumps
 # GCC_VERSION whenever it likes.
 #

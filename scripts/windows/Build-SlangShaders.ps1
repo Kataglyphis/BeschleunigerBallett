@@ -14,7 +14,7 @@
   reading the manifest, compiling each (file, entry, target) with staleness
   checking, the combined WGSL emit with its post-emit patch table, the
   minSlangcVersionForWgsl floor and the WGSL varying-location validator — lives
-  upstream in ContainerHub's WindowsSlang.Common module (twin of
+  upstream in ANTfrastructure's WindowsSlang.Common module (twin of
   linux/scripts/lib/slang-compile.sh). This script keeps only this project's
   paths.
 
@@ -50,7 +50,7 @@ $slangRoot = Join-Path $scriptRoot 'Resources\ShadersSlang'
 $buildRoot = Join-Path $slangRoot 'build'
 
 # The driver lives upstream; Resolve-BuildModule fails loudly when the
-# ContainerHub submodule is not checked out.
+# ANTfrastructure submodule is not checked out.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsSlang.Common')
 

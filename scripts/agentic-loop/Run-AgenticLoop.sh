@@ -4,7 +4,7 @@ set -euo pipefail
 # ─────────────────────────────────────────────────────────────────────────
 # Agentic loop for BeschleunigerBallett (Linux / Rancher Desktop)
 #
-# Thin wrapper around the reusable library in ContainerHub's
+# Thin wrapper around the reusable library in ANTfrastructure's
 # linux/scripts/lib/agentic-loop.sh.
 #
 # Engines (config .engine, or --engine / AGENTIC_ENGINE):
@@ -30,20 +30,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# ── Source reusable library from ContainerHub ───────────────────────────
-# The bootstrap lives in scripts/linux/lib/containerhub.sh (a verbatim copy of
-# ContainerHub's shared/linux/templates/containerhub.sh) and is the one file
+# ── Source reusable library from ANTfrastructure ───────────────────────────
+# The bootstrap lives in scripts/linux/lib/antfrastructure.sh (a verbatim copy of
+# ANTfrastructure's shared/linux/templates/antfrastructure.sh) and is the one file
 # that cannot come out of the submodule, because it is what FINDS the submodule.
-# It resolves KATAGLYPHIS_REPO_ROOT / CONTAINERHUB_DIR from its OWN location, so
+# It resolves KATAGLYPHIS_REPO_ROOT / ANTFRASTRUCTURE_DIR from its OWN location, so
 # sourcing it from this directory is correct, and it is load-guarded.
 #
-# This replaces a "${REPO_ROOT}/third_party/ContainerHub/..." literal and its
-# hand-rolled if/else: the literal ignored the CONTAINERHUB_DIR override, and
-# containerhub_source fails naming the probed path AND the fix.
-# shellcheck source=../linux/lib/containerhub.sh
-source "${REPO_ROOT}/scripts/linux/lib/containerhub.sh"
+# This replaces a "${REPO_ROOT}/third_party/ANTfrastructure/..." literal and its
+# hand-rolled if/else: the literal ignored the ANTFRASTRUCTURE_DIR override, and
+# antfrastructure_source fails naming the probed path AND the fix.
+# shellcheck source=../linux/lib/antfrastructure.sh
+source "${REPO_ROOT}/scripts/linux/lib/antfrastructure.sh"
 
-containerhub_source linux/scripts/lib/agentic-loop.sh
+antfrastructure_source linux/scripts/lib/agentic-loop.sh
 
 # ── Arg parsing (exported env flags are consumed by the library) ────────
 CONFIG_PATH="${SCRIPT_DIR}/AgenticLoop.config.json"
@@ -169,7 +169,7 @@ assert_prompt_overlays() {
         else
           delivered="${CLAUDE_EXECUTOR_PROMPT_FILE:-}"
         fi
-        mechanism="claude is given --append-system-prompt-file with what load_engine_config resolved, and load_engine_config reads only .engines.claude.${role}PromptFile - it does not implement the ${key} shape at all (ContainerHub linux/scripts/lib/agentic-engines.sh)"
+        mechanism="claude is given --append-system-prompt-file with what load_engine_config resolved, and load_engine_config reads only .engines.claude.${role}PromptFile - it does not implement the ${key} shape at all (ANTfrastructure linux/scripts/lib/agentic-engines.sh)"
         remedy="teach load_engine_config the ${key} shape upstream (compose shared system-prompt + overlay the way the PowerShell half's New-AgenticComposedPrompt does), or drop the declaration and accept the shared prompt alone"
         ;;
       *)

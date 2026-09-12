@@ -153,23 +153,23 @@ else()
   message(STATUS "Your are going to use a non MSVC compiler on windows. Therefore no rust integration possible.")
 endif()
 
-# Reusable CMake modules live upstream in the ContainerHub submodule so other
+# Reusable CMake modules live upstream in the ANTfrastructure submodule so other
 # projects consume the same ones (see AGENTS.md "Reusable Work Belongs in
-# ContainerHub"); this repo's own cmake/ keeps only what encodes THIS project's
+# ANTfrastructure"); this repo's own cmake/ keeps only what encodes THIS project's
 # choices. Both go on CMAKE_MODULE_PATH so every module is included by NAME -
 # `include(Sanitizers)`, not `include(cmake/Sanitizers.cmake)` - which is what
 # lets a module live in either directory without its callers caring.
 #
 # Local first: a project that needs to override an upstream module can drop a
-# same-named file in cmake/ and win, without editing ContainerHub.
-set(KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ContainerHub/cmake")
-if(NOT EXISTS "${KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR}/Sanitizers.cmake")
+# same-named file in cmake/ and win, without editing ANTfrastructure.
+set(KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ANTfrastructure/cmake")
+if(NOT EXISTS "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}/Sanitizers.cmake")
   message(
     FATAL_ERROR
-      "ContainerHub submodule not checked out: ${KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR} has no CMake modules. "
+      "ANTfrastructure submodule not checked out: ${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR} has no CMake modules. "
       "Run: git submodule update --init --recursive")
 endif()
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${KATAGLYPHIS_CONTAINERHUB_CMAKE_DIR}")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}")
 
 include(PreventInSourceBuilds)
 include(ProjectOptions)

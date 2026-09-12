@@ -2,7 +2,7 @@
 # how the reusable modules are composed.
 #
 # The reusable mechanisms this file used to carry inline were upstreamed to
-# ContainerHub and are included by name off CMAKE_MODULE_PATH (see the top of
+# ANTfrastructure and are included by name off CMAKE_MODULE_PATH (see the top of
 # the root CMakeLists.txt):
 #
 #   SanitizerSupport      myproject_supports_sanitizers, myproject_default_debug_sanitizers

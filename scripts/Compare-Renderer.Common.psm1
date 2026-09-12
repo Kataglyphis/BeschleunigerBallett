@@ -3,7 +3,7 @@ Set-StrictMode -Version Latest
 
 # Shared helpers for the cross-renderer comparison scripts
 # (Compare-RendererPixels.ps1 / Compare-RendererTimings.ps1). Deliberately
-# project-local, not ContainerHub material: Dinosaurs scene, this repo's
+# project-local, not ANTfrastructure material: Dinosaurs scene, this repo's
 # Rust crate layout.
 
 # Converts the Dinosaurs OBJ scene to glTF via the Rust crate's obj2gltf

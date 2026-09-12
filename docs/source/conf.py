@@ -15,23 +15,23 @@ from pathlib import Path
 # renders without the project rules.
 PROJECT_CSS_FILE = "css/beschleunigerballett.css"
 
-# Import the shared Sphinx baseline from ContainerHub's vendored DocumANTation.
+# Import the shared Sphinx baseline from ANTfrastructure's vendored DocumANTation.
 #
-# The shared docs tooling lives in DocumANTation, which ContainerHub declares as
-# a submodule at third_party/DocumANTation (see third_party/ContainerHub/
+# The shared docs tooling lives in DocumANTation, which ANTfrastructure declares as
+# a submodule at third_party/DocumANTation (see third_party/ANTfrastructure/
 # .gitmodules) — not under external/, which holds only an untracked leftover of
 # the pre-move layout. Get the path wrong and .exists() is silently False: the
 # else-branch fallback below configures these docs instead, and the shared
 # extension list and theme options are never applied.
-CONTAINER_HUB_CONF = (
+ANTFRASTRUCTURE_CONF = (
     Path(__file__).parent.parent.parent
-    / "third_party/ContainerHub/third_party/DocumANTation"
+    / "third_party/ANTfrastructure/third_party/DocumANTation"
     / "docs-tooling/source_templates/sphinx-book/conf_base.py"
 )
-if CONTAINER_HUB_CONF.exists():
+if ANTFRASTRUCTURE_CONF.exists():
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("conf_base", str(CONTAINER_HUB_CONF))
+    spec = importlib.util.spec_from_file_location("conf_base", str(ANTFRASTRUCTURE_CONF))
     if spec and spec.loader:
         conf_base = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(conf_base)
@@ -180,7 +180,7 @@ linkcheck_ignore = [r"^https?://"]
 graphviz_output_format = "svg"
 
 # -- Warnings that are generated-docs artifacts, not documentation defects ----
-# The docs build runs under `-W --keep-going` (ContainerHub's docs-build.sh), so
+# The docs build runs under `-W --keep-going` (ANTfrastructure's docs-build.sh), so
 # every warning is fatal. That is the right default for the pages we write by
 # hand; it is wrong for two things Exhale/Breathe do to the GENERATED API tree,
 # which no edit on our side can influence:

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# run-static-analysis-format.sh - project wrapper around ContainerHub's generic
+# run-static-analysis-format.sh - project wrapper around ANTfrastructure's generic
 # code-quality driver. Everything reusable (cmake-format bootstrap, the
 # file-enumeration walks, clang-format, clang-tidy, and the container
-# compile-database path remapping) lives in ContainerHub's
+# compile-database path remapping) lives in ANTfrastructure's
 # linux/scripts/lib/code-quality.sh; only this project's source roots, tool
 # arguments and paths live here.
 #
@@ -18,11 +18,11 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
-# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literal this replaces could
+# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
+# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
 # not honour - and fails naming the probed path AND the fix.
-containerhub_source linux/scripts/lib/code-quality.sh
+antfrastructure_source linux/scripts/lib/code-quality.sh
 
 BUILD_DIR="${BUILD_DIR:-build}"
 PRESET="${PRESET:-}"
@@ -60,21 +60,21 @@ CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
 # wrapper defaults to this repo's root requirements.txt, which is the Sphinx
 # DOCS stack (sphinx, breathe, exhale, junit2html, ...) - eleven unpinned
 # packages dragged in merely to run a formatter, and a docs-stack resolution
-# failure would then break the formatting gate. The gate installs ContainerHub's
+# failure would then break the formatting gate. The gate installs ANTfrastructure's
 # pinned cmake-format bootstrap set instead (cmake-format==0.6.13 plus the
 # pyyaml it needs to read .cmake-format.yaml at all) - the very file the hub's
 # own preflight cmake-format gate installs, so both graders run one version.
 #
 # A function is what upstream itself passes here (check_cmake_format in
-# ContainerHub's linux/scripts/preflight.sh): code-quality.sh runs the knob as a
+# ANTfrastructure's linux/scripts/preflight.sh): code-quality.sh runs the knob as a
 # command, so a shell function needs no exec bit and no extra wrapper file. It
 # runs in the subshell code-quality.sh wraps it in, so sourcing python_uv.sh
 # there cannot leak its helpers over this script's own.
 CODE_QUALITY_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
 cmake_format_install_requirements() {
   local requirements
-  requirements="$(containerhub_path linux/scripts/cmake-format.requirements.txt)" || return 1
-  containerhub_source linux/scripts/01-core/python_uv.sh
+  requirements="$(antfrastructure_path linux/scripts/cmake-format.requirements.txt)" || return 1
+  antfrastructure_source linux/scripts/01-core/python_uv.sh
   # Same venv code-quality.sh then activates and probes for cmake-format;
   # honour the knob rather than restating its default.
   uv_pip_install_requirements "${CODE_QUALITY_VENV_DIR:-${ROOT_DIR}/.venv}" "${requirements}"
@@ -170,7 +170,7 @@ run_scan_build() {
 # A failure to resolve is FATAL, exactly as it was in the workflow's `set -e`
 # prologue: analysing against the system GCC's headers by accident is the silent
 # wrong answer this whole path exists to prevent. Run this in the family image
-# (ContainerHub docs/rancher-desktop-linux-containers.md), which is where CI
+# (ANTfrastructure docs/rancher-desktop-linux-containers.md), which is where CI
 # runs it and where GCC_PREFIX is exported for it.
 apply_gcc_toolchain_for_analysis() {
   local gcc_root

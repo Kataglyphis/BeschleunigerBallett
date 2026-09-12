@@ -16,7 +16,7 @@ habit can actually be.
 Thin wrapper: the generic driver (staging vk_layer_settings.txt next to the
 executable and removing it again, VK_LAYER_PATH save/restore, running the
 target, scanning the log, reporting hazard counts) lives upstream in
-third_party/ContainerHub/windows/scripts/modules/WindowsVulkanValidation.Common.psm1
+third_party/ANTfrastructure/windows/scripts/modules/WindowsVulkanValidation.Common.psm1
 and is reusable by any Vulkan project. Only this project's executable, gtest
 filter, SDK path and log location are supplied here.
 

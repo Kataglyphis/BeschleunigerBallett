@@ -20,7 +20,7 @@
 *.cmd   text eol=crlf
 *.bat   text eol=crlf
 
-# Shared config vendored from ContainerHub MUST be LF, byte-identical to the
+# Shared config vendored from ANTfrastructure MUST be LF, byte-identical to the
 # canonical copies upstream. Sync-SharedConfig normalises line endings before
 # it compares, so a CRLF copy drifts past the sync gate without tripping it:
 # .pre-commit-config.yaml was stored CRLF here while the hub ships LF, and the

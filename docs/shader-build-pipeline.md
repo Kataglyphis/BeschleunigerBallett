@@ -19,7 +19,7 @@ Slang source root, the SPIR-V/WGSL output roots and the repository root the
 manifest's `wgslMap` destinations resolve against). The driver itself —
 slangc resolution, `-I` expansion, the manifest walk, staleness checking, the
 combined WGSL emit with its patch table, the toolchain floor and the
-varying-location validator described below — lives upstream in ContainerHub
+varying-location validator described below — lives upstream in ANTfrastructure
 (`linux/scripts/lib/slang-compile.sh` and
 `windows/scripts/modules/WindowsSlang.Common.psm1`), so any Slang project gets
 the same guarantees. Change behaviour there, in both twins, and keep the
@@ -60,7 +60,7 @@ every checked-in WGSL red. One gap survives either way: a dependent shader
 whose emitted output is byte-identical after a `common/` edit is never
 re-copied, so its mtime stays behind and the per-shader gate still reports it
 stale — fixing that needs a content stamp from the compile scripts
-themselves (upstream in ContainerHub), not a smarter mtime comparison here.
+themselves (upstream in ANTfrastructure), not a smarter mtime comparison here.
 
 ## The manifest is data, in one place
 
@@ -69,7 +69,7 @@ copy map, and the depth-texture patch table live in
 `Resources/ShadersSlang/shader-manifest.json` — the single source of truth
 read by BOTH compile scripts (PS via `ConvertFrom-Json`, bash via `python3`,
 which is required and fails loud when missing — `jq` is *not* in the
-ContainerHub Linux image). Add or retarget a shader by
+ANTfrastructure Linux image). Add or retarget a shader by
 editing the JSON, never by editing the scripts; the two scripts stayed in
 sync only by luck before this (they had drifted four ways, including Linux
 silently skipping compilation when slangc was absent). `_comment` fields in
@@ -79,7 +79,7 @@ the JSON carry the rationale that used to be code comments.
 
 WGSL requires every non-builtin member of an inter-stage (varying) struct to
 carry `@location(N)`. **slangc `2026.1-52-gc8ddf20bb`** — the build shipped by
-Vulkan SDK 1.4.341.1, i.e. what the ContainerHub Linux image
+Vulkan SDK 1.4.341.1, i.e. what the ANTfrastructure Linux image
 (`:latest-cross`, `VULKAN_VERSION=1.4.341.1`) puts on `PATH` — drops that
 attribute in the **combined** emit (compiled without `-entry`/`-stage`, which
 is exactly how every `wgslMap` file is produced), turning
@@ -121,7 +121,7 @@ and in both compile scripts:
 rule to the checked-in files on every CI platform, and
 `BuildIntegrity.ShaderManifestPinsAMinimumSlangcVersionForWgsl` keeps the
 floor from being deleted. Raise the floor rather than hand-editing generated
-WGSL; bumping `VULKAN_VERSION` in the ContainerHub image is what re-enables
+WGSL; bumping `VULKAN_VERSION` in the ANTfrastructure image is what re-enables
 WGSL regeneration on Linux.
 
 ## Fast shader iteration

@@ -3,7 +3,7 @@
 # the gitlinks that are safe to move. Dependency upgrades go through this, not
 # by hand.
 #
-# THIN WRAPPER over ContainerHub linux/scripts/renovate-local.sh, which owns the
+# THIN WRAPPER over ANTfrastructure linux/scripts/renovate-local.sh, which owns the
 # whole tool: the on-demand, checksum-verified bootstrap of RENOVATE_NODE_VERSION
 # and RENOVATE_VERSION, both pinned in the hub's linux/scripts/01-core/versions.env
 # (RENOVATE_NODE_VERSION is deliberately NOT the canonical NODE_VERSION - Renovate
@@ -49,14 +49,14 @@
 # committed either way.
 #
 # Full rationale, the local workflow and the GitHub-token variant:
-# third_party/ContainerHub/docs/dependency-updates.md
+# third_party/ANTfrastructure/docs/dependency-updates.md
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# containerhub.sh only - NOT lib/common.sh: nothing here needs its Vulkan/Rust
+# antfrastructure.sh only - NOT lib/common.sh: nothing here needs its Vulkan/Rust
 # environment work, and its info()/warn() write to stdout, where the report
 # table this script exists to print is the only thing that belongs.
-# shellcheck source=lib/containerhub.sh
-source "${SCRIPT_DIR}/lib/containerhub.sh"
+# shellcheck source=lib/antfrastructure.sh
+source "${SCRIPT_DIR}/lib/antfrastructure.sh"
 
-containerhub_exec linux/scripts/renovate-local.sh "${KATAGLYPHIS_REPO_ROOT}" "$@"
+antfrastructure_exec linux/scripts/renovate-local.sh "${KATAGLYPHIS_REPO_ROOT}" "$@"

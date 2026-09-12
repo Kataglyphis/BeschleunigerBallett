@@ -1,31 +1,31 @@
 #!/usr/bin/env bash
 # common.sh - shared utilities for BeschleunigerBallett Linux scripts
-# Sources utilities from ContainerHub when available, provides fallbacks
+# Sources utilities from ANTfrastructure when available, provides fallbacks
 
 SCRIPT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Where ContainerHub is, and how to resolve a file inside it, comes from the
+# Where ANTfrastructure is, and how to resolve a file inside it, comes from the
 # canonical bootstrap — a verbatim copy of upstream's
-# shared/linux/templates/containerhub.sh. It defines CONTAINERHUB_DIR (honouring
+# shared/linux/templates/antfrastructure.sh. It defines ANTFRASTRUCTURE_DIR (honouring
 # an environment override, which matters in the container) plus
-# containerhub_path / containerhub_source / containerhub_exec.
+# antfrastructure_path / antfrastructure_source / antfrastructure_exec.
 #
 # Before this, the submodule path was spelled out here as a ../../.. literal.
-# Six repos each had their own version of that line; see ContainerHub
+# Six repos each had their own version of that line; see ANTfrastructure
 # shared/linux/templates/README.md for what they drifted into.
 # shellcheck source=/dev/null
-source "${SCRIPT_LIB_DIR}/containerhub.sh"
+source "${SCRIPT_LIB_DIR}/antfrastructure.sh"
 
-CONTAINER_HUB_CORE="${CONTAINERHUB_DIR}/linux/scripts/01-core"
+ANTFRASTRUCTURE_CORE="${ANTFRASTRUCTURE_DIR}/linux/scripts/01-core"
 
 # source_module keeps THIS repo's search order, which is deliberately wider than
-# containerhub_source's single path:
+# antfrastructure_source's single path:
 #   1. lib/<name>          — a local override wins
-#   2. ContainerHub        — the submodule checkout
+#   2. ANTfrastructure        — the submodule checkout
 #   3. lib/../<name>       — legacy layout
 #   4. /opt/scripts/core   — where the image bakes these same files, and where
 #                            there is no submodule to resolve against at all
-# That last one is why this cannot simply become containerhub_source.
+# That last one is why this cannot simply become antfrastructure_source.
 # Fills _MODULE_CANDIDATES with the probe list for <name>. ONE definition, used
 # by both source_module and have_module: a second copy of this list is how a
 # presence test and the load that follows it drift apart.
@@ -33,7 +33,7 @@ _module_candidates() {
   local name="$1"
   _MODULE_CANDIDATES=(
     "${SCRIPT_LIB_DIR}/${name}"
-    "${CONTAINER_HUB_CORE}/${name}"
+    "${ANTFRASTRUCTURE_CORE}/${name}"
     "${SCRIPT_LIB_DIR}/../${name}"
     "/opt/scripts/core/${name}"
   )
@@ -72,7 +72,7 @@ have_module() {
   return 1
 }
 
-# Logging: ContainerHub's when reachable, a local definition when it is not.
+# Logging: ANTfrastructure's when reachable, a local definition when it is not.
 # This one is not optional - every script here calls info/warn/err - so the
 # fallback is a real implementation rather than a shrug.
 if have_module logging.sh; then
@@ -88,7 +88,7 @@ else
   log() { info "$@"; }
 fi
 
-# OPTIONAL ContainerHub modules. Every caller of these guards with `declare -F`
+# OPTIONAL ANTfrastructure modules. Every caller of these guards with `declare -F`
 # (source_vulkan_env below, get_build_jobs further down), so a missing one is a
 # documented degraded mode rather than a fault - the image bakes some of them at
 # /opt/scripts/core and a bare checkout has none.
@@ -126,10 +126,10 @@ source_vulkan_env() {
   return 0
 }
 
-# has_tool / require_tools now have ONE owner: ContainerHub
+# has_tool / require_tools now have ONE owner: ANTfrastructure
 # linux/scripts/01-core/tool-checks.sh. Before it, this eight-line primitive
 # existed three times with no canonical copy - here, and as two inline
-# `if ! declare -F has_tool` fallbacks inside ContainerHub's own
+# `if ! declare -F has_tool` fallbacks inside ANTfrastructure's own
 # lib/code-quality.sh and lib/coverage.sh, whose comments said the pair
 # "normally come from the project's common.sh". That is an upside-down
 # ownership arrow: a hub driver should not depend on a CONSUMER to supply its
@@ -140,14 +140,14 @@ source_vulkan_env() {
 # adoption would be cosmetic.
 #
 # THE `else` BRANCH IS A PIN FALLBACK, NOT A SECOND IMPLEMENTATION TO MAINTAIN.
-# tool-checks.sh landed in ContainerHub after the commit third_party/ContainerHub
+# tool-checks.sh landed in ANTfrastructure after the commit third_party/ANTfrastructure
 # currently pins, and this file is sourced by every Linux script in the repo, so
 # a hard dependency would break the whole tree until the gitlink moves. It is
 # reached only when the module is genuinely ABSENT: have_module asks about
 # presence, so a module that exists and fails to load is a hard error rather
 # than a silent downgrade to the local copy.
 #
-# TO RETIRE: in the same commit that bumps third_party/ContainerHub to a hub
+# TO RETIRE: in the same commit that bumps third_party/ANTfrastructure to a hub
 # commit shipping linux/scripts/01-core/tool-checks.sh, replace this whole block
 # with the single line `source_module tool-checks.sh` and delete this comment.
 if have_module tool-checks.sh; then
@@ -202,15 +202,15 @@ get_project_root() {
 
 # source_hub_module() stood here. It was a third, redundant way to reach into
 # the submodule - a <category>/<name> split over a hard-coded
-# "${SCRIPT_LIB_DIR}/../../../third_party/ContainerHub/..." literal that ignored
-# the CONTAINERHUB_DIR override the bootstrap above exists to provide, and that
+# "${SCRIPT_LIB_DIR}/../../../third_party/ANTfrastructure/..." literal that ignored
+# the ANTFRASTRUCTURE_DIR override the bootstrap above exists to provide, and that
 # returned a bare 1 so every caller had to invent its own error text.
 #
 # Its two callers (docs-build-web.sh and wasm-size-budget.sh, both for
-# lib/rust-toolchain.sh) now call containerhub_source directly with the full
+# lib/rust-toolchain.sh) now call antfrastructure_source directly with the full
 # hub-relative path. Nothing else referenced it.
 #
-# source_module() above is NOT redundant with containerhub_source and stays: its
+# source_module() above is NOT redundant with antfrastructure_source and stays: its
 # search order is deliberately wider, ending at /opt/scripts/core, where the
 # image bakes these files and where there is no submodule to resolve against.
 
@@ -218,7 +218,7 @@ get_project_root() {
 # Rust toolchain selection and CARGO_HOME, applied on source so every script in
 # this directory gets it (all 14 source this file).
 #
-# BOTH are ContainerHub's, and this file used to carry its own copies. They were
+# BOTH are ANTfrastructure's, and this file used to carry its own copies. They were
 # not merely duplicates, they were the weaker versions:
 #
 #   * the CARGO_HOME probe defaulted to /usr/local/cargo rather than
@@ -231,5 +231,5 @@ get_project_root() {
 #
 # The guards also ran anyway, transitively, through _cargo_wrapper.sh - so the
 # same algorithm was executing twice per invocation, in two versions.
-containerhub_source linux/scripts/02-toolchain/rust/_rust_toolchain_guard.sh
-containerhub_source linux/scripts/02-toolchain/rust/_cargo_home_guard.sh
+antfrastructure_source linux/scripts/02-toolchain/rust/_rust_toolchain_guard.sh
+antfrastructure_source linux/scripts/02-toolchain/rust/_cargo_home_guard.sh

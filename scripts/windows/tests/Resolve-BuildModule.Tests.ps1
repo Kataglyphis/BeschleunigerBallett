@@ -7,20 +7,20 @@ Describe 'Resolve-BuildModule' {
   }
 
   Context 'Resolve-BuildModulePath preference order' {
-    It 'prefers the ContainerHub upstream copy for a module that lives there' {
+    It 'prefers the ANTfrastructure upstream copy for a module that lives there' {
       $resolved = Resolve-BuildModulePath -Name 'WindowsScripts.Shared'
-      $expectedRoot = Join-Path $script:repoRoot 'third_party\ContainerHub\windows\scripts\modules'
+      $expectedRoot = Join-Path $script:repoRoot 'third_party\ANTfrastructure\windows\scripts\modules'
       $resolved | Should Be (Join-Path $expectedRoot 'WindowsScripts.Shared.psm1')
     }
 
     It 'resolves the once-vendored modules upstream now that they were moved there' {
       # WindowsTesting.Common and WindowsClang.Common were vendored here until
-      # 2026-08-11, when the two-consumer test moved them into ContainerHub
+      # 2026-08-11, when the two-consumer test moved them into ANTfrastructure
       # (OmniAccelerANT needed the same ASan-runtime discovery). The vendored
       # copies were then deleted -- and nothing else had to change, because the
       # preference order below picks up the upstream copy automatically. That
       # automatic pickup is the property this asserts.
-      $expectedRoot = Join-Path $script:repoRoot 'third_party\ContainerHub\windows\scripts\modules'
+      $expectedRoot = Join-Path $script:repoRoot 'third_party\ANTfrastructure\windows\scripts\modules'
       foreach ($moduleName in @('WindowsTesting.Common', 'WindowsClang.Common')) {
         Resolve-BuildModulePath -Name $moduleName | Should Be (Join-Path $expectedRoot "$moduleName.psm1")
       }
@@ -41,7 +41,7 @@ Describe 'Resolve-BuildModule' {
       }
 
       $threw | Should Be $true
-      $message | Should Match ([regex]::Escape('third_party\ContainerHub\windows\scripts\modules\NoSuchModule.psm1'))
+      $message | Should Match ([regex]::Escape('third_party\ANTfrastructure\windows\scripts\modules\NoSuchModule.psm1'))
       $message | Should Match ([regex]::Escape('scripts\windows\modules\NoSuchModule.psm1'))
     }
   }

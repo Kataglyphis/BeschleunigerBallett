@@ -1,20 +1,20 @@
 #requires -Version 7.0
-# Build the project inside the ContainerHub Windows developer image using
-# Stevedore's docker.exe (see third_party/ContainerHub/docs/windows-builds.md
+# Build the project inside the ANTfrastructure Windows developer image using
+# Stevedore's docker.exe (see third_party/ANTfrastructure/docs/windows-builds.md
 # for why nerdctl is not an option on Windows).
 #
 # This is a thin project wrapper: the transport decision (tar pipe vs bind
 # mount), the reusable container, the incremental streaming and the artifact
-# verification all live in ContainerHub's WindowsContainerBuild.Reuse module
+# verification all live in ANTfrastructure's WindowsContainerBuild.Reuse module
 # (Invoke-ContainerBuild), because none of that is specific to this engine.
-# Rationale + measurements: ContainerHub docs/windows-container-build-performance.md
+# Rationale + measurements: ANTfrastructure docs/windows-container-build-performance.md
 # and docs/container-build-caching.md.
 
 param(
 
   # Comma-separated Build-Windows.ps1 configurations to build.
   [string]$Configurations = 'clangcl-debug,clangcl-profile,clangcl-release',
-  # EMPTY means "ask ContainerHub", which is what you want unless you are
+  # EMPTY means "ask ANTfrastructure", which is what you want unless you are
   # testing an image that is not the family one. It cannot default to the
   # resolved value here: a param default is evaluated at bind time, before the
   # module that answers the question has been imported. Resolved below.
@@ -42,23 +42,23 @@ Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
-# Preflight: Build-Windows.ps1 resolves modules from ContainerHub first, then
+# Preflight: Build-Windows.ps1 resolves modules from ANTfrastructure first, then
 # the vendored fallback (scripts/windows/modules). Fail fast if a module that
-# only exists vendored (deleted upstream in ContainerHub b391a1d) is missing.
+# only exists vendored (deleted upstream in ANTfrastructure b391a1d) is missing.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 $null = Resolve-BuildModulePath -Name 'WindowsBuild.Common'
 
-# Reusable build-container helpers live upstream in ContainerHub - they apply to
+# Reusable build-container helpers live upstream in ANTfrastructure - they apply to
 # any project built in that image, not just this engine. Must load before first
 # use (Resolve-DockerExe below).
 Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
 
-# The Windows developer image, resolved from ContainerHub's
+# The Windows developer image, resolved from ANTfrastructure's
 # linux/scripts/01-core/versions.env (CI_IMAGE_WINDOWS_TAG) rather than named
 # here. That file is the fleet's one owner of the two CI image tags -
 # .github/workflows/Windows.yml already inherits it as the container action's
 # `image:` default, and Get-CiImageReference is the PowerShell twin of
-# scripts/linux/ci-image-ref.sh, gated against it by ContainerHub's
+# scripts/linux/ci-image-ref.sh, gated against it by ANTfrastructure's
 # verify_ci_image_refs.py. Before this, a tag bump upstream left this local
 # entry point building in the previous image with nothing to say so.
 #
@@ -117,7 +117,7 @@ $build = @{
 
   # Anchor the build-tree excludes to the repo root (./...): unanchored
   # patterns match at every path depth in bsdtar and would strip nested files
-  # like third_party/ContainerHub/windows/build.ps1. The host-side
+  # like third_party/ANTfrastructure/windows/build.ps1. The host-side
   # cargo target tree is excluded too: the container builds its own Rust
   # artifacts under the build dirs, and a stale incremental cache streamed in
   # once wedged every later transfer ("Can't unlink already-existing object:

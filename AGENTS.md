@@ -18,7 +18,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Invoke-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
 | Refactoring the renderer / device path | The per-unit verification loop in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md); log the change in [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) |
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
-| Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ContainerHub](#rule-reusable-work-belongs-in-containerhub) |
+| Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure) |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
@@ -34,9 +34,9 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `Test/compile/`, `Test/fuzz/`, `Test/perf/` | Compile-time checks, FuzzTest targets, Google Benchmark suite (`perfTestSuite`) |
 | `Resources/ShadersSlang/` | All shaders (Slang) + `shader-manifest.json`; compiled output under `build/` is gitignored |
 | `third_party/OxidANT/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
-| `third_party/ContainerHub/` | The submodule that owns every reusable script, module and doc (see the rule below) |
-| `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ContainerHub drivers + this project's payload |
-| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ContainerHub — see [CMake modules](#cmake-modules-containerhub-first-local-override-wins) |
+| `third_party/ANTfrastructure/` | The submodule that owns every reusable script, module and doc (see the rule below) |
+| `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ANTfrastructure drivers + this project's payload |
+| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ANTfrastructure — see [CMake modules](#cmake-modules-antfrastructure-first-local-override-wins) |
 
 ---
 
@@ -128,7 +128,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 ### Sanitizer semantics (do not guess — this is how it actually works)
 
 - Sanitizer flags are applied **only to the Debug configuration**
-  (`$<$<CONFIG:Debug>:...>` in `third_party/ContainerHub/cmake/Sanitizers.cmake`). Profile/Release builds are
+  (`$<$<CONFIG:Debug>:...>` in `third_party/ANTfrastructure/cmake/Sanitizers.cmake`). Profile/Release builds are
   never sanitized.
 - ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
   see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
@@ -157,20 +157,20 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 
 ## Containerized Windows Builds (Stevedore)
 
-Windows builds run inside the ContainerHub developer image
+Windows builds run inside the ANTfrastructure developer image
 `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` (clang-cl, CMake, Ninja,
 Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 (`.github/workflows/Windows.yml`).
 
-**All Windows-container knowledge lives in ContainerHub** — do not restate it
+**All Windows-container knowledge lives in ANTfrastructure** — do not restate it
 here. When you do not know which document owns a topic, start at
-[`third_party/ContainerHub/docs/INDEX.md`](third_party/ContainerHub/docs/INDEX.md),
+[`third_party/ANTfrastructure/docs/INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md),
 which maps topic → owning document; linking through it keeps these references
 valid when upstream reorganises. For this section, two documents cover it:
 
-- [`third_party/ContainerHub/docs/windows-builds.md`](third_party/ContainerHub/docs/windows-builds.md)
+- [`third_party/ANTfrastructure/docs/windows-builds.md`](third_party/ANTfrastructure/docs/windows-builds.md)
   — the image itself: build sequence, Stevedore setup, invariants.
-- [`third_party/ContainerHub/docs/windows-container-build-performance.md`](third_party/ContainerHub/docs/windows-container-build-performance.md)
+- [`third_party/ANTfrastructure/docs/windows-container-build-performance.md`](third_party/ANTfrastructure/docs/windows-container-build-performance.md)
   — building *inside* it: **both transports and how to set each one up**
   (§ Transports), the reusable-container pattern and its safety rails, why
   sccache cannot cache a C++23 modules build, why a named volume cannot be a
@@ -216,7 +216,7 @@ a silent `|| warn` once left CI green with no SPIR-V at all).
 ### Running the Linux build locally (Rancher Desktop)
 
 Two things that will bite you locally, both documented with the full recipe in
-[ContainerHub § Persisting the cargo cache](third_party/ContainerHub/docs/rancher-desktop-linux-containers.md#persisting-the-cargo-cache):
+[ANTfrastructure § Persisting the cargo cache](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md#persisting-the-cargo-cache):
 pass `--build-dir /tmp/...` (a build dir on the bind-mounted host tree breaks
 FetchContent renames and cargo cleanup), and `--cargo-cache-dir` at a named
 volume so Rust dependencies survive the container.
@@ -233,15 +233,15 @@ iteration: [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md);
 sharing shader code between the two renderers:
 [`docs/shader-sharing.md`](docs/shader-sharing.md).
 
-## Rule: Reusable Work Belongs in ContainerHub
+## Rule: Reusable Work Belongs in ANTfrastructure
 
 **Before writing a script, module, or doc here, ask whether another project
-could use it. If yes, it goes into `third_party/ContainerHub` and
+could use it. If yes, it goes into `third_party/ANTfrastructure` and
 this repo consumes it — never a copy.**
 
-That is the local form of the rule ContainerHub states canonically as *"would
+That is the local form of the rule ANTfrastructure states canonically as *"would
 this still be true in a different project?"* — see
-[`docs/INDEX.md`](third_party/ContainerHub/docs/INDEX.md)
+[`docs/INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md)
 § *Where does a piece of knowledge belong?* for the worked splits and the
 three-broken-copies case that motivated it.
 
@@ -255,7 +255,7 @@ What belongs upstream:
   uv/python, parallelism). Source it by relative path and fail loudly when the
   submodule is missing.
 - **Knowledge about the container image or Windows containers in general** —
-  build performance, platform traps, setup fixes. ContainerHub's `docs/` is the
+  build performance, platform traps, setup fixes. ANTfrastructure's `docs/` is the
   single home; link to it from here.
 - **Anything learned the hard way** that is not about this renderer: write down
   the symptom, not just the fix, so the next person recognises it.
@@ -264,7 +264,7 @@ What stays here: engine code, shaders, this project's presets, and the
 *payload* the shared drivers execute (build-directory names,
 `Build-Windows.ps1` arguments, project-specific exclusions, the Slang
 precompile hook) — plus `Resolve-BuildModule.ps1` itself, the bootstrap that
-*finds* ContainerHub and therefore cannot live inside it.
+*finds* ANTfrastructure and therefore cannot live inside it.
 
 ### The wrapper map
 
@@ -272,7 +272,7 @@ Almost every script under `scripts/` is a thin consumer. **When you need to know
 what one actually does, read the upstream driver, not the wrapper** — the
 wrapper only supplies this project's payload.
 
-| This repo | Upstream driver (in `third_party/ContainerHub/`) |
+| This repo | Upstream driver (in `third_party/ANTfrastructure/`) |
 | --- | --- |
 | `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
 | `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
@@ -295,10 +295,10 @@ wrapper only supplies this project's payload.
 orchestrates CTest and the fuzz executables before launching — but it still
 takes `Resolve-AppExecutablePath` from `WindowsAppRunner.Common`.
 
-### CMake modules (ContainerHub first, local override wins)
+### CMake modules (ANTfrastructure first, local override wins)
 
 The root `CMakeLists.txt` puts **`cmake/` then
-`third_party/ContainerHub/cmake/`** on `CMAKE_MODULE_PATH`, and
+`third_party/ANTfrastructure/cmake/`** on `CMAKE_MODULE_PATH`, and
 every module is included **by name** — `include(Sanitizers)`, never
 `include(cmake/Sanitizers.cmake)`. That indirection is the whole point: a module
 can live in either directory without its callers changing, and a project that
@@ -320,21 +320,21 @@ mechanism:
 
 **The clang-cl `-fms-compatibility-version` pin moved upstream** into
 `CompilerBuildFlags.cmake` as `MYPROJECT_CLANG_CL_MS_COMPATIBILITY_VERSION`
-(default `19.51.36231`). It names the VC Tools version ContainerHub's Windows
+(default `19.51.36231`). It names the VC Tools version ANTfrastructure's Windows
 image ships, so the pin and the toolchain that motivates it now live in the same
 repo — bump them together. Override the cache variable to build against a
 different VC Tools.
 
-### PowerShell module resolution (ContainerHub first, vendored fallback)
+### PowerShell module resolution (ANTfrastructure first, vendored fallback)
 
 `Build-Windows.ps1`, the run helpers and the Pester tests resolve PowerShell
 modules through `scripts/windows/Resolve-BuildModule.ps1`
 (`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
-`third_party/ContainerHub/windows/scripts/modules/` when it exists
+`third_party/ANTfrastructure/windows/scripts/modules/` when it exists
 there (preferred), otherwise from the vendored fallback
 **`scripts/windows/modules/`**.
 
-`Resolve-BuildModule.ps1` is now a **verbatim copy** of ContainerHub's
+`Resolve-BuildModule.ps1` is now a **verbatim copy** of ANTfrastructure's
 `shared/windows/templates/Resolve-BuildModule.ps1` — sync it from upstream
 rather than hand-editing it.
 
@@ -354,14 +354,14 @@ and never reaches the importing session, so a script that imports only
 `WindowsBuild.Common` gets `Write-BuildLog` but **not** `Resolve-WorkspacePath`.
 (The comment that previously called this a shadowing repair misdiagnosed it.)
 
-Everything else was upstreamed to ContainerHub on 2026-08-02
+Everything else was upstreamed to ANTfrastructure on 2026-08-02
 (`WindowsCMake.Common`, `WindowsConfig.Common`, `WindowsFormatting.Common`,
 `WindowsWebDav.Common`, `WindowsMsix.Common`, `WindowsMsix.Signing`;
 `WindowsScripts.Shared` was already upstream-only), and their **Pester suites
 followed on 2026-08-07** — a module's tests belong in the repo that owns the
 module, otherwise upstream can change it with no test signal of its own and only
 a consumer's opt-in lane catches the break. They were converted from Pester 3.4
-to Pester 5+ syntax in the move, since that is what ContainerHub's
+to Pester 5+ syntax in the move, since that is what ANTfrastructure's
 `Invoke-Tests.ps1` requires. Note in particular that
 `Get-CompileCommandsDatabase` (the `ninja -t compdb` fallback) lives in upstream
 `WindowsCMake.Common`, **not** in `WindowsClang.Common`. If a module reappears
@@ -370,13 +370,13 @@ upstreaming it and deleting the vendored copy in the same change.
 
 ### Shipping a change that spans both repos
 
-Both repos are committed and pushed together, ContainerHub **first** (CI
+Both repos are committed and pushed together, ANTfrastructure **first** (CI
 resolves its composite actions at `@main`), and the submodule pin is bumped in
 the same change.
 
 **Adopting any of this in another project** — the loop, both container flows,
 the launchers, the CI actions — is a checklist upstream:
-[`adopting-in-a-new-project.md`](third_party/ContainerHub/docs/adopting-in-a-new-project.md).
+[`adopting-in-a-new-project.md`](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md).
 Read it before hand-rolling equivalents elsewhere.
 
 ## Critical Invariant: Submodule Pins
@@ -394,8 +394,8 @@ Known coupling to watch when bumping pins:
   FuzzTest pin or configure fails with missing `absl::*` targets (observed:
   `absl::random_mocking_access`). Both are `20260526.0` today.
 
-Drift itself is guarded by ContainerHub's repo-agnostic suite,
-`third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1`, run
+Drift itself is guarded by ANTfrastructure's repo-agnostic suite,
+`third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1`, run
 by the **always-on** `submodule-pins` job in `.github/workflows/Windows.yml` —
 no `[build-win]` opt-in, because an invariant that only runs when somebody
 remembers to type a marker is not a gate. For **every** configured submodule it
@@ -403,8 +403,8 @@ asserts the tree is checked out, sits at its recorded gitlink, and is pinned to
 a commit reachable from its remote (a pin on no remote branch cannot be
 restored by a fresh clone). This repo's own copy of the suite was deleted once
 the hub pin carried the promoted one; do not re-add a local fork. To run it by
-hand: `$env:CONTAINERHUB_PIN_CHECK_REPO_ROOT = $PWD; Invoke-Pester
-third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1`. It
+hand: `$env:ANTFRASTRUCTURE_PIN_CHECK_REPO_ROOT = $PWD; Invoke-Pester
+third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1`. It
 does **not** check the Abseil version coupling above — that one is on you.
 
 ### Dependency upgrades: Renovate as a local CLI
@@ -431,7 +431,7 @@ report-only; `requirements.txt` is one of those. `.github/renovate.json` is
 read by this CLI and by nothing else: the Renovate GitHub App is installed on no
 repository in this family and will not be (owner decision, 2026-09-09).
 Rationale, the full local workflow and the GitHub-token variant:
-[`third_party/ContainerHub/docs/dependency-updates.md`](third_party/ContainerHub/docs/dependency-updates.md).
+[`third_party/ANTfrastructure/docs/dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
 ## Running on the Host (Windows)
 
@@ -446,7 +446,7 @@ render (~32 FPS ImGui overlay).
   Install the Vulkan SDK (`winget install VulkanSDK`; 1.4.350.0 is what
   `Invoke-SyncValidation.ps1` defaults to), or point `VK_LAYER_PATH` at a directory
   containing `VkLayer_khronos_validation.{dll,json}` (they can be extracted from
-  the ContainerHub image under
+  the ANTfrastructure image under
   `C:\Users\ContainerAdministrator\scoop\apps\vulkan\current\Bin`).
   Profile/Release builds run without validation layers.
 - The ASAN debug binary needs `clang_rt.asan_dynamic-x86_64.dll`; the build
@@ -475,8 +475,8 @@ render (~32 FPS ImGui overlay).
 - `scripts/Test-AllConfigs.ps1` is a local one-shot gate: the three standard
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
-- ContainerHub's own suites (the modules this repo imports) run via
-  `third_party/ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`
+- ANTfrastructure's own suites (the modules this repo imports) run via
+  `third_party/ANTfrastructure/windows/scripts/tests/Invoke-Tests.ps1`
   and need **Pester >= 5** (it fails rather than silently skipping without it;
   `Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
   -SkipPublisherCheck`). Run it after changing anything upstream — and note that
@@ -536,24 +536,24 @@ commit's message:
 Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
 signal at all.** The marker must be in the HEAD commit of the push, not an
 earlier one. Full rules:
-[`ci-build-triggers.md`](third_party/ContainerHub/docs/ci-build-triggers.md).
+[`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md).
 Reading pipeline status from a shell (`gh`):
-[`github-cli-pipeline-monitoring.md`](third_party/ContainerHub/docs/github-cli-pipeline-monitoring.md).
+[`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md).
 
 `Linux_x86.yml` and `Linux_arm.yml` both call the reusable `Linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
 and synchronization suites are host-only by construction.
 
-### The job bodies are ContainerHub's, resolved at `@main`
+### The job bodies are ANTfrastructure's, resolved at `@main`
 
 The workflows here are mostly wiring: the actual steps come from composite
-actions pulled straight from ContainerHub's default branch —
+actions pulled straight from ANTfrastructure's default branch —
 `prepare-linux-ci-host`, `run-in-linux-container`, `clone-into-short-path`,
 `cleanup-disk-space`, `assert-docker-disk-space`, `run-in-windows-container`,
-`run-pester-suite`. **There is no pin: a push to ContainerHub `main` changes
+`run-pester-suite`. **There is no pin: a push to ANTfrastructure `main` changes
 this repo's CI on the next run**, which is why both repos ship together with
-ContainerHub first (see the rule above). When a lane fails inside a step whose
-`uses:` points at ContainerHub, read the action there — it is not defined here.
+ANTfrastructure first (see the rule above). When a lane fails inside a step whose
+`uses:` points at ANTfrastructure, read the action there — it is not defined here.
 
 ### Lint gates (shellcheck + actionlint + gitleaks, before anything builds)
 
@@ -570,9 +570,9 @@ bash ./scripts/linux/run-lint-gates.sh
 ```
 
 That is the whole `lint` job. The wrapper hands this repo's root to
-ContainerHub's `linux/scripts/run-lint-gates.sh`, which owns all three gates and
+ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns all three gates and
 the scaffolding around them; the binaries (shellcheck, actionlint, gitleaks) are
-ContainerHub's pinned, SHA-verified bootstraps, not a second set installed here.
+ANTfrastructure's pinned, SHA-verified bootstraps, not a second set installed here.
 The bootstrap downloads once and caches, so only the first local run is slow.
 
 | Gate | Covers |
@@ -591,10 +591,10 @@ than assumed here:
   were the two that fell through. Both are covered now, and so is anything that
   lands in a directory nobody has thought of yet.
 - **The consumer root is passed explicitly.** The gate scripts live *inside* the
-  submodule, so a root inferred from their own location resolves to ContainerHub
+  submodule, so a root inferred from their own location resolves to ANTfrastructure
   and every gate reports green over the wrong tree.
 - **An empty file list is a failure, not a pass.** `lint-shell.sh` with zero file
-  arguments falls back to ContainerHub's own tree and would pass having checked
+  arguments falls back to ANTfrastructure's own tree and would pass having checked
   nothing of this repository.
 - **The secret gate self-tests before it scans**: a clean tree must come back
   clean and exit 0, then a planted GitHub PAT must be reported *at the path that
@@ -641,7 +641,7 @@ got no test signal until the submodule was pushed separately.
 ## Code Conventions (PowerShell scripts)
 
 The rules are upstream's, recorded for every consumer in
-[`adopting-in-a-new-project.md`](third_party/ContainerHub/docs/adopting-in-a-new-project.md).
+[`adopting-in-a-new-project.md`](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md).
 They are restated here because the next new script gets written in *this* repo,
 and the exceptions below are this repo's.
 
@@ -662,7 +662,7 @@ and the exceptions below are this repo's.
   (`Repo.GeneratedArtifacts.Tests.ps1`, `SharedConfig.Drift.Tests.ps1`,
   `CMakePresets.Integrity.Tests.ps1`). Modules take the dotted noun form
   `<Area>.Common.psm1` — `scripts/Compare-Renderer.Common.psm1`, matching
-  ContainerHub's `Windows<Area>.Common.psm1` — and export explicitly via
+  ANTfrastructure's `Windows<Area>.Common.psm1` — and export explicitly via
   `Export-ModuleMember`.
 - **Bash is not renamed to match**: `Get-Verb` is a PowerShell notion, so the
   shell scripts stay kebab-case (`scripts/linux/run-release.sh`,
@@ -686,14 +686,14 @@ Two engines are selectable via `engine` in
 `AGENTIC_ENGINE` env var: **`claude`** (default — Claude Code CLI, Opus 5
 planner with Fable 5 fallback, Sonnet executor) and **`opencode`** (GLM 5.2
 planner, DeepSeek v4 Flash executor). Both read the same role prompt, composed
-from ContainerHub's shared prompt plus this repo's overlays in
+from ANTfrastructure's shared prompt plus this repo's overlays in
 `scripts/agentic-loop/prompts/`.
 
-**Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
+**Reusable logic lives in ANTfrastructure's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
 thin consumers: run `scripts/agentic-loop/Invoke-AgenticLoop.ps1` (Windows,
 requires PowerShell 7+) or `scripts/agentic-loop/Run-AgenticLoop.sh` (Linux,
-requires `jq`). Prompts are single-sourced in ContainerHub: the planner/executor
+requires `jq`). Prompts are single-sourced in ANTfrastructure: the planner/executor
 **task** prompts at `shared/agentic-loop/prompts/*.md` (both the PowerShell
 module and the Bash library read them) and the role **system** prompts at
 `shared/agentic-loop/system-prompts/*.md`. This repo owns only a per-role
@@ -706,7 +706,7 @@ appended below the shared system prompt into one composed file at startup, which
 is delivered to `claude` via `--append-system-prompt-file` and stored as
 `.opencode/agents/<role>.md` for `opencode`, which takes no prompt file on its
 command line. Those two files are **tracked**: nothing in the pinned
-ContainerHub generates them, so deleting them (2026-09-07) left a fresh clone on
+ANTfrastructure generates them, so deleting them (2026-09-07) left a fresh clone on
 `engine: opencode` with no role prompt at all. They hold composed output all the
 same — edit the overlay, never them; a Pester suite fails if either stops
 containing the shared prompt or the overlay verbatim. Both runners preflight the
@@ -716,14 +716,14 @@ has never implemented the overlay keys.
 What this repo configures, and its runners and overlays:
 [`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:
-[agentic-loop-build-matrix.md](third_party/ContainerHub/docs/agentic-loop-build-matrix.md);
+[agentic-loop-build-matrix.md](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md);
 module API reference:
-[windows-agentic-loop.md](third_party/ContainerHub/docs/windows-agentic-loop.md).
+[windows-agentic-loop.md](third_party/ANTfrastructure/docs/windows-agentic-loop.md).
 
 ## Docs
 
 Each topic has exactly one home; link, do not copy. Reusable topics live in
-ContainerHub (see the rule above), project-specific ones here.
+ANTfrastructure (see the rule above), project-specific ones here.
 
 | Where | Owns |
 | --- | --- |
@@ -745,17 +745,17 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
-| `scripts/agentic-loop/README.md` | Agentic loop consumer half: what this repo configures (and what deviates from upstream defaults), its two runners, its two prompt overlays — loop architecture and usage live in the two ContainerHub docs below |
-| `third_party/ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
-| `third_party/ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
-| `third_party/ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
-| `third_party/ContainerHub/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
-| `third_party/ContainerHub/docs/dependency-updates.md` | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses |
-| `third_party/ContainerHub/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
-| `third_party/ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
-| `third_party/ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
-| `third_party/ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
-| `third_party/ContainerHub/cmake/README.md` | The shared CMake modules: how to put them on `CMAKE_MODULE_PATH`, what each provides, what stays project-local |
+| `scripts/agentic-loop/README.md` | Agentic loop consumer half: what this repo configures (and what deviates from upstream defaults), its two runners, its two prompt overlays — loop architecture and usage live in the two ANTfrastructure docs below |
+| `third_party/ANTfrastructure/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
+| `third_party/ANTfrastructure/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
+| `third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
+| `third_party/ANTfrastructure/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
+| `third_party/ANTfrastructure/docs/dependency-updates.md` | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses |
+| `third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
+| `third_party/ANTfrastructure/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
+| `third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
+| `third_party/ANTfrastructure/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
+| `third_party/ANTfrastructure/cmake/README.md` | The shared CMake modules: how to put them on `CMAKE_MODULE_PATH`, what each provides, what stays project-local |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.

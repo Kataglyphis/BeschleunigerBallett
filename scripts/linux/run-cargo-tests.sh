@@ -6,8 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 # Runs the Rust renderer crate's own test suite (kataglyphis_webgpu_renderer)
-# from this repo's CI. Delegates to ContainerHub's cargo_test.sh
-# (AGENTS.md § "Reusable Work Belongs in ContainerHub") rather than
+# from this repo's CI. Delegates to ANTfrastructure's cargo_test.sh
+# (AGENTS.md § "Reusable Work Belongs in ANTfrastructure") rather than
 # reimplementing it; the package filter below is just an extra arg forwarded
 # to `cargo test --all --verbose`, so no upstream change was needed.
 #
@@ -18,13 +18,13 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
-# containerhub_path (from lib/containerhub.sh, sourced by lib/common.sh) instead
-# of a "${REPO_ROOT}/third_party/ContainerHub/..." literal: it resolves against
-# CONTAINERHUB_DIR, which the literal ignored, and it already fails naming the
+# antfrastructure_path (from lib/antfrastructure.sh, sourced by lib/common.sh) instead
+# of a "${REPO_ROOT}/third_party/ANTfrastructure/..." literal: it resolves against
+# ANTFRASTRUCTURE_DIR, which the literal ignored, and it already fails naming the
 # probed path AND the fix - so the hand-rolled -f guard that stood here is gone
 # rather than duplicated. This driver is EXEC'd, not sourced, hence _path and
 # not _source.
-CARGO_TEST_SH="$(containerhub_path linux/scripts/02-toolchain/rust/cargo_test.sh)"
+CARGO_TEST_SH="$(antfrastructure_path linux/scripts/02-toolchain/rust/cargo_test.sh)"
 
 [[ -d "${RUST_PROJECT_DIR}" ]] || err "Rust project dir not found at ${RUST_PROJECT_DIR} (is the OxidANT submodule checked out?)"
 
@@ -39,7 +39,7 @@ export CARGO_HOME="${CARGO_HOME:-/tmp/cargo-home}"
 mkdir -p "${CARGO_HOME}"
 
 # The PATH hoist that used to stand here is gone: lib/common.sh (sourced at the
-# top of this file) now sources ContainerHub's
+# top of this file) now sources ANTfrastructure's
 # 02-toolchain/rust/_rust_toolchain_guard.sh, which does exactly this and is the
 # owner of it. This was the third copy of the same seven lines in this repo.
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"

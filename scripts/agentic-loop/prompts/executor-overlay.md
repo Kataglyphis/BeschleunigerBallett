@@ -1,9 +1,9 @@
 # Project: BeschleunigerBallett
 
 The role, the headless-session discipline, the per-task workflow and the generic
-rules come from ContainerHub's shared Executor prompt, which the loop prepends to
+rules come from ANTfrastructure's shared Executor prompt, which the loop prepends to
 this file automatically
-(`third_party/ContainerHub/shared/agentic-loop/system-prompts/executor.md`).
+(`third_party/ANTfrastructure/shared/agentic-loop/system-prompts/executor.md`).
 Everything below is what is specific to **this** repo.
 
 This is a Vulkan graphics engine: C++23/C17, CMake presets, optional Rust WebGPU

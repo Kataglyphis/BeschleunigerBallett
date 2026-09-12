@@ -54,7 +54,7 @@
 # a hardcoded main/master.
 # This also removes the premise of the 2026-07-20 investigation into this
 # submodule's unexplained re-checkouts, recorded in the header of
-# third_party/ContainerHub/shared/windows/tests/Submodule.Pins.Tests.ps1: that
+# third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1: that
 # investigation ruled --remote out BECAUSE the branch is unset, and that is not
 # a reason. --remote belongs back on the list of candidates.
 # Keep `branch` unset regardless - the argument above about main versus a frozen
@@ -71,9 +71,9 @@
 	path = third_party/KOMPUTE
 	url = https://github.com/KomputeProject/kompute.git
 	branch = master
-[submodule "third_party/ContainerHub"]
-	path = third_party/ContainerHub
-	url = git@github.com:Kataglyphis/ContainerHub.git
+[submodule "third_party/ANTfrastructure"]
+	path = third_party/ANTfrastructure
+	url = git@github.com:Kataglyphis/ANTfrastructure.git
 	branch = main
 [submodule "third_party/OxidANT"]
 	path = third_party/OxidANT

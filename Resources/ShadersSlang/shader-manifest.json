@@ -30,7 +30,7 @@
     "minSlangcVersionForWgsl: lowest slangc version whose COMBINED (whole-module,",
     "  no -entry/-stage) WGSL emit is known to be correct. slangc",
     "  2026.1-52-gc8ddf20bb - the version shipped by Vulkan SDK 1.4.341.1, i.e.",
-    "  the ContainerHub Linux image - drops the @location(N) attribute from every",
+    "  the ANTfrastructure Linux image - drops the @location(N) attribute from every",
     "  non-builtin member of a varying struct in that mode (per-entry emits from",
     "  the SAME binary are correct), producing WGSL that wgpu/naga rejects. 2026.8",
     "  (Vulkan SDK 1.4.350.0) is correct and reproduces the checked-in files",

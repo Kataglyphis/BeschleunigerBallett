@@ -2,7 +2,7 @@
 
 # Guards against generated artifacts sneaking into this repo's git index.
 #
-# The check is generic and was upstreamed on 2026-08-07 to ContainerHub's
+# The check is generic and was upstreamed on 2026-08-07 to ANTfrastructure's
 # WindowsRepoHygiene.Common (Get-TrackedIgnoredFile, with its own suite). Only
 # this repo's root stays here.
 #

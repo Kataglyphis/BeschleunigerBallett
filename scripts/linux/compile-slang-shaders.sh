@@ -6,7 +6,7 @@
 # the manifest, compiling each (file, entry, target) with staleness checking,
 # the combined WGSL emit with its post-emit patch table, the
 # minSlangcVersionForWgsl floor and the WGSL varying-location validator - lives
-# upstream in ContainerHub's linux/scripts/lib/slang-compile.sh (twin of
+# upstream in ANTfrastructure's linux/scripts/lib/slang-compile.sh (twin of
 # windows/scripts/modules/WindowsSlang.Common.psm1). This script keeps only this
 # project's paths.
 #
@@ -35,11 +35,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SLANG_ROOT="${REPO_ROOT}/Resources/ShadersSlang"
 BUILD_ROOT="${SLANG_ROOT}/build"
 
-# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
-# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
-# "${REPO_ROOT}/third_party/ContainerHub/..." literal this replaces could not
+# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
+# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
+# "${REPO_ROOT}/third_party/ANTfrastructure/..." literal this replaces could not
 # honour - and fails naming the probed path AND the fix.
-containerhub_source linux/scripts/lib/slang-compile.sh
+antfrastructure_source linux/scripts/lib/slang-compile.sh
 
 # Paths only - the driver holds the behaviour.
 SLANG_COMPILE_MANIFEST="${SLANG_ROOT}/shader-manifest.json"

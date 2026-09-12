@@ -4,15 +4,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
-# lib/common.sh sources lib/containerhub.sh, so containerhub_source is already
-# defined. It resolves against CONTAINERHUB_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ContainerHub/..." literals these calls
+# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
+# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
+# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literals these calls
 # replace could not honour - and fails naming the probed path AND the fix.
 #
-# ensure_wasm32_target lives in ContainerHub: making the wasm32 target usable
+# ensure_wasm32_target lives in ANTfrastructure: making the wasm32 target usable
 # without assuming rustup is not this project's problem, it is a property of
 # the images.
-containerhub_source linux/scripts/lib/rust-toolchain.sh
+antfrastructure_source linux/scripts/lib/rust-toolchain.sh
 
 
 # Builds kataglyphis_webgpu_renderer for wasm32-unknown-unknown, optimises with
@@ -29,10 +29,10 @@ containerhub_source linux/scripts/lib/rust-toolchain.sh
 # measured figure without hiding a real regression.
 
 # binaryen bootstrap (pinned + SHA-verified against versions.env) and the
-# wasm-opt feature flags come from ContainerHub's generic driver; only the
+# wasm-opt feature flags come from ANTfrastructure's generic driver; only the
 # budget and the crate below are this project's data. The driver's PowerShell
 # twin backs scripts/Test-WasmSizeBudget.ps1.
-containerhub_source linux/scripts/lib/wasm-opt.sh
+antfrastructure_source linux/scripts/lib/wasm-opt.sh
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
@@ -55,7 +55,7 @@ info "Ensuring wasm32-unknown-unknown target is installed"
 # committed snapshot in docs/source/_webgpu_demo, exactly as it does when the
 # docs step's best-effort rebuild is skipped.
 if ! ensure_wasm32_target; then
-  echo "::warning::Wasm size budget SKIPPED - this toolchain cannot build wasm32-unknown-unknown (no rustup, no wasm32 std in the image). Nothing was weighed; the committed demo snapshot is unchanged. Fix ContainerHub's install-rust.sh to restore the target."
+  echo "::warning::Wasm size budget SKIPPED - this toolchain cannot build wasm32-unknown-unknown (no rustup, no wasm32 std in the image). Nothing was weighed; the committed demo snapshot is unchanged. Fix ANTfrastructure's install-rust.sh to restore the target."
   info "=== Wasm Size Budget Test: SKIPPED (no wasm32 toolchain) ==="
   exit 0
 fi

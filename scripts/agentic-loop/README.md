@@ -4,7 +4,7 @@ A planner/executor loop that drains `BACKLOG.md` autonomously: an expensive
 planner writes tasks, a cheap executor implements them, and builds, tests and
 quality gates run on a cadence.
 
-**The loop's logic is not in this directory.** It lives in the ContainerHub
+**The loop's logic is not in this directory.** It lives in the ANTfrastructure
 submodule — `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` and
 `linux/scripts/lib/agentic-loop.sh`. What is here is the thin consumer half:
 one config, two runners, two prompt overlays. Everything generic (queue
@@ -16,9 +16,9 @@ used to restate it, and the restatement is what went stale.
 
 | Topic | Doc |
 | --- | --- |
-| Module API, `Invoke-AgenticLoop` parameters, the config-key table (it does not yet list the two `*PromptOverlayFile` keys — see [The prompt overlays](#the-prompt-overlays)), prerequisites, env overrides, usage examples | [`windows-agentic-loop.md`](../../third_party/ContainerHub/docs/windows-agentic-loop.md) |
-| Build-matrix entry fields, sanitizer env vars, cycling order, full-matrix sweeps | [`agentic-loop-build-matrix.md`](../../third_party/ContainerHub/docs/agentic-loop-build-matrix.md) |
-| What a consumer owns, what stays upstream, and the `- [ ]` / `- [b]` / `- [x]` backlog protocol | [`templates/README.md`](../../third_party/ContainerHub/shared/agentic-loop/templates/README.md) |
+| Module API, `Invoke-AgenticLoop` parameters, the config-key table (it does not yet list the two `*PromptOverlayFile` keys — see [The prompt overlays](#the-prompt-overlays)), prerequisites, env overrides, usage examples | [`windows-agentic-loop.md`](../../third_party/ANTfrastructure/docs/windows-agentic-loop.md) |
+| Build-matrix entry fields, sanitizer env vars, cycling order, full-matrix sweeps | [`agentic-loop-build-matrix.md`](../../third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md) |
+| What a consumer owns, what stays upstream, and the `- [ ]` / `- [b]` / `- [x]` backlog protocol | [`templates/README.md`](../../third_party/ANTfrastructure/shared/agentic-loop/templates/README.md) |
 
 ## What this directory owns
 
@@ -28,8 +28,8 @@ used to restate it, and the restatement is what went stale.
 | [`Invoke-AgenticLoop.ps1`](Invoke-AgenticLoop.ps1) | Windows runner — resolves the module, loads the config, calls `Invoke-AgenticLoop` |
 | [`Run-AgenticLoop.sh`](Run-AgenticLoop.sh) | Linux runner — sources the library, maps flags onto the env vars it reads, calls `run_agentic_loop` |
 | [`AgenticPromptOverlay.psm1`](AgenticPromptOverlay.psm1) | Overlay preflight for the Windows runner: fails the loop when a declared overlay never reaches the agent (the Bash runner carries the same assertion inline) |
-| [`prompts/planner-overlay.md`](prompts/planner-overlay.md) | Project delta appended to ContainerHub's shared planner system prompt |
-| [`prompts/executor-overlay.md`](prompts/executor-overlay.md) | Project delta appended to ContainerHub's shared executor system prompt |
+| [`prompts/planner-overlay.md`](prompts/planner-overlay.md) | Project delta appended to ANTfrastructure's shared planner system prompt |
+| [`prompts/executor-overlay.md`](prompts/executor-overlay.md) | Project delta appended to ANTfrastructure's shared executor system prompt |
 
 Both runners are the upstream templates with their header comment, the loop name
 and one preflight added. Keep them that way: no prompt text and no build-config
@@ -41,7 +41,7 @@ them as a warning or as nothing at all. It belongs upstream; it lives here until
 it is there. See [The prompt overlays](#the-prompt-overlays).
 
 The two overlays are the **only** prompt text this repo owns. Both engines are
-fed the same composition of ContainerHub's shared role prompt plus the overlay:
+fed the same composition of ANTfrastructure's shared role prompt plus the overlay:
 `claude` gets it as a temp file behind `--append-system-prompt-file`, composed
 by the module at start-up, and `opencode` gets it as `.opencode/agents/<role>.md`,
 because opencode takes no prompt file on its command line.
@@ -49,7 +49,7 @@ because opencode takes no prompt file on its command line.
 `.opencode/agents/` is **tracked**, and stays tracked. It was deleted and
 gitignored on 2026-09-07 as a build artefact "regenerated on every loop start" —
 but nothing generates it. There is no `Write-AgenticOpenCodeAgentFile`, or any
-other writer of `.opencode/`, anywhere in the pinned ContainerHub, and the Bash
+other writer of `.opencode/`, anywhere in the pinned ANTfrastructure, and the Bash
 half's `invoke_opencode` goes straight to `opencode run --agent <role>`, which
 resolves the file out of the checkout. The delete left a fresh clone on
 `engine: opencode` running both roles with no role prompt at all.
@@ -90,14 +90,14 @@ pwsh -File .\scripts\agentic-loop\Invoke-AgenticLoop.ps1
 `-SkipQuality`, `-PlannerOnly`, `-ExecutorOnly` (and their `--kebab-case`
 equivalents on the Bash side) map one-to-one onto the module parameters
 documented in
-[`windows-agentic-loop.md`](../../third_party/ContainerHub/docs/windows-agentic-loop.md).
+[`windows-agentic-loop.md`](../../third_party/ANTfrastructure/docs/windows-agentic-loop.md).
 
 ## What this repo configures
 
 The config also restates several upstream defaults on purpose, to pin them
 against upstream drift — the bullets below say which values actually deviate.
 The key-by-key reference is upstream in
-[`windows-agentic-loop.md`](../../third_party/ContainerHub/docs/windows-agentic-loop.md).
+[`windows-agentic-loop.md`](../../third_party/ANTfrastructure/docs/windows-agentic-loop.md).
 
 - `engine: "claude"` (upstream default: `opencode`), with
   `plannerModel: claude-opus-5`, `plannerFallbackModel: claude-fable-5` for
@@ -144,7 +144,7 @@ container script
 whose configuration name maps to a preset via
 [`Build-Windows.config.psd1`](../windows/Build-Windows.config.psd1). Stevedore
 setup and service recovery:
-[`windows-stevedore-and-docker.md`](../../third_party/ContainerHub/docs/windows-stevedore-and-docker.md).
+[`windows-stevedore-and-docker.md`](../../third_party/ANTfrastructure/docs/windows-stevedore-and-docker.md).
 
 Linux builds go through
 [`scripts/linux/cmake-configure-build.sh`](../linux/cmake-configure-build.sh),
@@ -160,7 +160,7 @@ defaults to all five presets without it); on Linux it is
 ## The prompt overlays
 
 `--append-system-prompt-file` takes exactly one file, so the module concatenates
-ContainerHub's shared role prompt with this repo's overlay into a temp file at
+ANTfrastructure's shared role prompt with this repo's overlay into a temp file at
 startup rather than making the consumer keep a whole copy of the shared prompt.
 The overlays are declared in the config's top-level `promptOverlays` block
 (engine-agnostic, because both engines are fed the same composition) **and
@@ -186,7 +186,7 @@ renderer:
 
 They reach the `claude` agent on Windows only — an upstream defect, not a design
 choice. The Bash half
-(`third_party/ContainerHub/linux/scripts/lib/agentic-engines.sh`) still reads
+(`third_party/ANTfrastructure/linux/scripts/lib/agentic-engines.sh`) still reads
 only `plannerPromptFile` / `executorPromptFile`, so a Linux `claude` run gets no
 project system prompt at all.
 

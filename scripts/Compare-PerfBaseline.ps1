@@ -6,7 +6,7 @@
 # "Measured baseline" table in BACKLOG.md from prose someone has to eyeball
 # into an executable check.
 #
-# Project wrapper around ContainerHub's generic comparator: the JSON parsing,
+# Project wrapper around ANTfrastructure's generic comparator: the JSON parsing,
 # the time_unit normalisation, the matching, the tolerance check and the report
 # live in WindowsPerfBaseline.Common (nothing in them is specific to this
 # engine); only this repo's baseline path, tolerance and baseline-refresh
