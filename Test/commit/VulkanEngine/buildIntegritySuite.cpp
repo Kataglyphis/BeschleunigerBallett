@@ -10405,7 +10405,7 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
       << joinViolations(violations);
 }
 
-// README.md and docs/source/conf.py drifted to the old "BeschleunigerBallett"
+// README.md and docs/source/conf.py drifted to the old "Kataglyphis-Renderer"
 // repository slug after the rename to BeschleunigerBallett -
 // conf.py's repository_url was fixed but project/breathe_projects/
 // breathe_default_project were not, and the README's build badges kept
@@ -10416,7 +10416,7 @@ TEST(BuildIntegrity, DocsNameThisRepository)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const std::string kStaleSlug = "BeschleunigerBallett";
+    const std::string kStaleSlug = "Kataglyphis-Renderer";
 
     std::vector<fs::path> candidates = { repo_root / "README.md" };
 
