@@ -33,9 +33,9 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
-. (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule 'WindowsContainerImage.Common', 'WindowsBuildSweep.Common'
 
 # The Linux image this project's cross builds run in, resolved from
@@ -57,7 +57,7 @@ $linuxBuildDir = 'build-linux-tsan'
 $results = @()
 
 # --- Windows container builds ---------------------------------------------
-$winScript = Join-Path $PSScriptRoot 'Windows\Build-Windows-Container.ps1'
+$winScript = Join-Path $PSScriptRoot 'Build-Windows-Container.ps1'
 $winArgs = @('-Configurations', $WindowsConfigurations, '-SkipPerfTests')
 if (-not $RunTests) { $winArgs += '-SkipTests' }
 if ($FreshContainer) { $winArgs += '-FreshContainer' }
@@ -68,7 +68,7 @@ $results += Invoke-SweepStep -Name "Windows container builds ($WindowsConfigurat
     -Action { & $winScript @winArgs }
 
 # --- Linux TSan build ------------------------------------------------------
-$linuxScript = Join-Path $PSScriptRoot 'Linux\cmake-configure-build.sh'
+$linuxScript = Join-Path $PSScriptRoot '..\linux\cmake-configure-build.sh'
 $linuxSkipReason = ''
 if ($SkipLinux) {
     $linuxSkipReason = 'Requested with -SkipLinux.'

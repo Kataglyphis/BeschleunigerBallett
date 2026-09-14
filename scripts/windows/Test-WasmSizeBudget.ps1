@@ -29,7 +29,7 @@ param(
     # real measurement and would have failed immediately).
     [int]$BudgetBytes = 12582912,
     # Path to the Rust project template (kataglyphis_webgpu_renderer lives here).
-    [string]$RustProjectDir = (Join-Path $PSScriptRoot '..\third_party\OxidANT'),
+    [string]$RustProjectDir = (Join-Path $PSScriptRoot '..\..\third_party\OxidANT'),
     # Skip the cargo build step (useful for re-checking an existing build).
     [switch]$SkipBuild
 )
@@ -81,7 +81,7 @@ if (-not ($installed -match 'wasm32-unknown-unknown')) {
 # missing - parity with scripts/linux/wasm-size-budget.sh, which fetches the
 # same release from the same pin. Both read version + checksums from
 # ANTfrastructure's linux/scripts/01-core/versions.env.
-. (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsWasmOpt.Common')
 $null = Install-WasmOpt
 

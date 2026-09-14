@@ -33,7 +33,7 @@
 [CmdletBinding()]
 param(
 
-    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$RepoRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-pixels'),
     [int]$Width = 1200,
     [int]$Height = 768,
@@ -205,7 +205,8 @@ if (-not $SkipRust -and -not $ValidationOnly) {
 
     # Convert Dinosaurs OBJ -> glTF (shared helper, reuses cached version)
     $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
-    Import-Module (Join-Path $PSScriptRoot 'Compare-Renderer.Common.psm1') -Force
+    . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+    Import-BuildModule 'Compare-Renderer.Common'
     Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf
     Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
     try {

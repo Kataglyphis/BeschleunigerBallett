@@ -23,7 +23,7 @@ filter, SDK path and log location are supplied here.
 Deliberately NOT wired into CI: the GoldenRender/Integration suites need a
 GPU and skip everywhere except a host with one (see docs/gpu-golden-testing.md),
 so a CI gate here would be vacuous. Run it locally instead, the same way
-scripts/Compare-PerfBaseline.ps1 is a local-only tool.
+scripts/windows/Compare-PerfBaseline.ps1 is a local-only tool.
 
 .PARAMETER ExecutablePath
 Path to the built commitTestSuite.exe. Defaults to the repo root, falling

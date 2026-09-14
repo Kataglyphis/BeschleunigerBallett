@@ -22,20 +22,16 @@ Set-StrictMode -Version Latest
 # here, which meant a fix had to be made twice. Update-CTestMetadataPaths in
 # particular is about C:/workspace, the container image's own WORKDIR, so it
 # belongs with the image rather than with any one consumer.
+# Resolve-AppExecutablePath comes from the upstream WindowsAppRunner.Common
+# module (the twin of app-runner.sh); this script keeps its own flow because it
+# orchestrates tests and fuzz executables before the launch.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-Import-BuildModule @('WindowsScripts.Shared', 'WindowsCMake.Common')
-Set-StrictMode -Version Latest
-
+Import-BuildModule @('WindowsScripts.Shared', 'WindowsBuild.Common', 'WindowsCMake.Common',
+                     'WindowsAppRunner.Common', 'WindowsTesting.Common')
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
 $FuzzDir = $DebugDir
-
-. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-# Resolve-AppExecutablePath comes from the upstream WindowsAppRunner.Common
-# module (the twin of app-runner.sh); this script keeps its own flow because it
-# orchestrates tests and fuzz executables before the launch.
-Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')
 
 # Get-PreferredToolPath -Required, not Resolve-PreferredTool: the latter was
 # deleted upstream on 2026-08-21 as "zero callers anywhere" — that audit grepped
@@ -120,7 +116,7 @@ try {
 
     $ExePath = Resolve-AppExecutablePath -BuildRoot $DebugDir -ExecutableName $ExeName -Configurations @('Debug')
     if (-not $ExePath) {
-        throw "Executable '$ExeName' not found inside $DebugDir. Please run the 'build_clangcl_debug.ps1' script first."
+        throw "Executable '$ExeName' not found inside $DebugDir. Run 'Build-Windows.ps1 -Configurations clangcl-debug' first."
     }
 
     Write-BuildLog -Context $context -Message "Starting $ExePath..."

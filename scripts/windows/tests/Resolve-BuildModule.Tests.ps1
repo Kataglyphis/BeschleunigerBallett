@@ -47,15 +47,18 @@ Describe 'Resolve-BuildModule' {
   }
 
   Context 'Vendored fallback directory contents' {
-    It 'vendors nothing: every module this repo uses now lives upstream' {
+    It 'holds no local module that also exists upstream' {
       # The rule this guards is "no consumer copy of anything that exists
-      # upstream". It is deliberately an EMPTY-set assertion rather than a
-      # deleted test: a new .psm1 appearing here should have to justify itself
-      # by failing this, not slip in unnoticed.
+      # upstream". Project-specific modules (Compare-Renderer.Common) live here
+      # by design; a name ANTfrastructure also ships is a vendored copy.
       $vendoredDir = Join-Path $PSScriptRoot '..\modules'
-      $actual = @(Get-ChildItem -Path $vendoredDir -Filter '*.psm1' -ErrorAction SilentlyContinue |
-        Select-Object -ExpandProperty Name | Sort-Object)
-      $actual.Count | Should Be 0
+      $upstreamDir = Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\modules'
+      $local = @(Get-ChildItem -Path $vendoredDir -Filter '*.psm1' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Name)
+      $upstream = @(Get-ChildItem -Path $upstreamDir -Filter '*.psm1' -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Name)
+      $shadowed = @($local | Where-Object { $upstream -contains $_ })
+      $shadowed.Count | Should Be 0
     }
   }
 

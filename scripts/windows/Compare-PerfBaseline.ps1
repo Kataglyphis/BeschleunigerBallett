@@ -33,7 +33,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$BaselinePath = (Join-Path $PSScriptRoot '..\Test\perf\baselines\win-9070xt-32core.json'),
+    [string]$BaselinePath = (Join-Path $PSScriptRoot '..\..\Test\perf\baselines\win-9070xt-32core.json'),
     [Parameter(Mandatory)] [string]$CandidatePath,
     # Fraction over baseline real_time before a benchmark is flagged as a
     # regression. Default +25% - generous on purpose; wall-clock noise on a
@@ -43,7 +43,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-. (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsPerfBaseline.Common')
 
 # The module formats every number with the invariant culture itself, so no

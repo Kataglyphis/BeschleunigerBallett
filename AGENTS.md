@@ -274,22 +274,22 @@ wrapper only supplies this project's payload.
 
 | This repo | Upstream driver (in `third_party/ANTfrastructure/`) |
 | --- | --- |
-| `scripts/windows/Build-Windows-Container.ps1` (121 lines) | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
-| `scripts/linux/cmake-configure-build.sh` (40 lines) | `linux/scripts/lib/cmake-build.sh` |
+| `scripts/windows/Build-Windows-Container.ps1` | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
+| `scripts/linux/cmake-configure-build.sh` | `linux/scripts/lib/cmake-build.sh` |
 | `scripts/windows/Invoke-ClangCl{Profile,Release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
 | `scripts/linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
 | `scripts/linux/run-static-analysis-format.sh` | `linux/scripts/lib/code-quality.sh` |
 | `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
-| `scripts/linux/wasm-size-budget.sh` / `scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
+| `scripts/linux/wasm-size-budget.sh` / `scripts/windows/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
-| `scripts/linux/run-lint-gates.sh` (34 lines) | `linux/scripts/run-lint-gates.sh` (→ `lint-shell.sh`, `lint-workflows.sh`, `lint-secrets.sh`, `01-core/gates.sh`) |
-| `scripts/linux/renovate-local.sh` (62 lines) | `linux/scripts/renovate-local.sh` (Renovate as a local CLI, plus the git half that applies what it can only detect) |
-| `scripts/linux/ci-image-ref.sh` (54 lines) | `linux/scripts/ci-image-ref.sh`; PowerShell twin `windows/scripts/modules/WindowsContainerImage.Common.psm1` → `Get-CiImageReference` |
+| `scripts/linux/run-lint-gates.sh` | `linux/scripts/run-lint-gates.sh` (→ `lint-shell.sh`, `lint-workflows.sh`, `lint-secrets.sh`, `01-core/gates.sh`) |
+| `scripts/linux/renovate-local.sh` | `linux/scripts/renovate-local.sh` (Renovate as a local CLI, plus the git half that applies what it can only detect) |
+| `scripts/linux/ci-image-ref.sh` | `linux/scripts/ci-image-ref.sh`; PowerShell twin `windows/scripts/modules/WindowsContainerImage.Common.psm1` → `Get-CiImageReference` |
 | `scripts/windows/Invoke-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `scripts/agentic-loop/Invoke-AgenticLoop.ps1` / `scripts/agentic-loop/Run-AgenticLoop.sh` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
-| `scripts/Test-AllConfigs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
+| `scripts/windows/Test-AllConfigs.ps1` | `windows/scripts/modules/WindowsBuildSweep.Common.psm1` → `Invoke-SweepStep`, `Test-LinuxContainerSupport`, `Invoke-InLinuxContainerBuild`, `Write-SweepSummary` |
 | `scripts/windows/tests/Repo.GeneratedArtifacts.Tests.ps1` | `windows/scripts/modules/WindowsRepoHygiene.Common.psm1` → `Get-TrackedIgnoredFile` (the pin-drift half — `Get-SubmodulePinDrift`, `Get-SubmoduleStatusLine`, `Test-SubmoduleCommitReachable` — is consumed by the hub's own suite, see § Critical Invariant: Submodule Pins) |
-| `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (13 modules — see `cmake/README.md` there) |
+| `cmake/ProjectOptions.cmake` | `cmake/*.cmake` (see [`cmake/README.md`](third_party/ANTfrastructure/cmake/README.md) there) |
 
 `Invoke-ClangClDebug.ps1` is the exception: it keeps its own flow because it
 orchestrates CTest and the fuzz executables before launching — but it still
@@ -304,10 +304,8 @@ every module is included **by name** — `include(Sanitizers)`, never
 can live in either directory without its callers changing, and a project that
 needs to override an upstream module just drops a same-named file in `cmake/`.
 
-Upstream (13 modules): `Cache`, `CompilerBuildFlags`, `CompilerWarnings`,
-`Doxygen`, `Hardening`, `InterproceduralOptimization`, `KataglyphisCMakeHelpers`,
-`PreventInSourceBuilds`, `SanitizerSupport`, `Sanitizers`, `Speedup`,
-`StandardProjectSettings`, `StaticAnalyzers`, `Tests`.
+Upstream: the modules listed in
+[`third_party/ANTfrastructure/cmake/README.md`](third_party/ANTfrastructure/cmake/README.md).
 
 Local, because each encodes **this project's policy** rather than a reusable
 mechanism:
@@ -331,15 +329,17 @@ different VC Tools.
 modules through `scripts/windows/Resolve-BuildModule.ps1`
 (`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
 `third_party/ANTfrastructure/windows/scripts/modules/` when it exists
-there (preferred), otherwise from the vendored fallback
-**`scripts/windows/modules/`**.
+there (preferred), otherwise from the project-specific fallback
+**`scripts/windows/modules/`** (today: `Compare-Renderer.Common.psm1`).
 
 `Resolve-BuildModule.ps1` is now a **verbatim copy** of ANTfrastructure's
 `shared/windows/templates/Resolve-BuildModule.ps1` — sync it from upstream
 rather than hand-editing it.
 
-**The vendored directory is now empty**, and a Pester case asserts it stays that
-way. `WindowsClang.Common` and `WindowsTesting.Common` were the last two, and
+**The fallback directory holds no copy of anything upstream**, and a Pester
+case asserts it stays that way; `Compare-Renderer.Common.psm1` lives there
+because it is this project's own. `WindowsClang.Common` and
+`WindowsTesting.Common` were the last two vendored copies, and
 they went upstream on 2026-08-11 under the two-consumer test: OmniAccelerANT
 needed the same ASan-runtime discovery, and needing something twice is what
 makes it shared. Their project-specific values became parameters whose defaults
@@ -424,10 +424,8 @@ through. The script settles that itself — from WSL it switches to `git.exe`,
 and refuses up front when it cannot reach one — so you do not have to. Nothing
 is staged or committed either way.
 
-It moves gitlinks, and only submodules that declare a `branch =`, so
-`third_party/FUZZTEST` comes back as **REFUSED** — move that one by hand, with
-the release-line argument above in mind. Any other manager (`--managers`) is
-report-only; `requirements.txt` is one of those. `.github/renovate.json` is
+It moves gitlinks, and only submodules that declare a `branch =`. Any other
+manager (`--managers`) is report-only; `requirements.txt` is one of those. `.github/renovate.json` is
 read by this CLI and by nothing else: the Renovate GitHub App is installed on no
 repository in this family and will not be (owner decision, 2026-09-09).
 Rationale, the full local workflow and the GitHub-token variant:
@@ -461,7 +459,7 @@ render (~32 FPS ImGui overlay).
   Host `ctest` cannot read a container-generated CMake tree — invoke the test
   executable directly instead (`.\build-clangcl-debug\commitTestSuite.exe`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
-  `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/Compare-PerfBaseline.ps1`,
+  `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/windows/Compare-PerfBaseline.ps1`,
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
   comparison tools (CI runs them in validation-only mode — the runners have no GPU).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
@@ -469,10 +467,13 @@ render (~32 FPS ImGui overlay).
   runs them with a pinned Pester 3.4.0 — gated on `[build-win]` like the rest of
   Windows CI, so they do NOT run on ordinary pushes). **Only suites covering
   project-specific behaviour belong here.** A suite for a module that lives
-  upstream goes upstream with it (2026-08-07); the six that remain cover the two
-  vendored modules, the module-resolution bootstrap, the preset/artifact guards
-  and the renderer comparison tools.
-- `scripts/Test-AllConfigs.ps1` is a local one-shot gate: the three standard
+  upstream goes upstream with it (2026-08-07); the eight that remain cover the
+  module-resolution bootstrap (`Resolve-BuildModule`), the preset, artifact and
+  shared-config guards (`CMakePresets.Integrity`, `Repo.GeneratedArtifacts`,
+  `SharedConfig.Drift`), the validation-layer runner (`Invoke-SyncValidation`)
+  and the three comparison tools (`Compare-PerfBaseline`,
+  `Compare-RendererPixels`, `Compare-RendererTimings`).
+- `scripts/windows/Test-AllConfigs.ps1` is a local one-shot gate: the three standard
   Windows container builds plus the Linux TSan build (`-SkipLinux` drops the
   latter). Not wired into CI.
 - ANTfrastructure's own suites (the modules this repo imports) run via
@@ -530,7 +531,7 @@ commit's message:
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
 | Linux x86_64 (build + test + coverage) | `Linux_x86.yml` → `Linux.yml` | always |
-| Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message |
+| Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message (its `powershell-lint` and `submodule-pins` jobs run unconditionally) |
 | Linux ARM64 | `Linux_arm.yml` → `Linux.yml` | `[build-arm]` in the commit message |
 
 Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
@@ -548,14 +549,14 @@ and synchronization suites are host-only by construction.
 
 The workflows here are mostly wiring: the actual steps come from composite
 actions pulled straight from ANTfrastructure's default branch —
-`prepare-linux-ci-host`, `run-in-linux-container`, `clone-into-short-path`,
-`cleanup-disk-space`, `assert-docker-disk-space`, `run-in-windows-container`,
+`prepare-linux-ci-host`, `run-in-linux-container`,
+`prepare-windows-container-host`, `run-in-windows-container`,
 `run-pester-suite`. **There is no pin: a push to ANTfrastructure `main` changes
 this repo's CI on the next run**, which is why both repos ship together with
 ANTfrastructure first (see the rule above). When a lane fails inside a step whose
 `uses:` points at ANTfrastructure, read the action there — it is not defined here.
 
-### Lint gates (shellcheck + actionlint + gitleaks, before anything builds)
+### Lint gates (before anything builds)
 
 The Linux lane's first job is `lint`. It pulls no image and builds nothing
 (~2 min), and it catches a class the rest of the lane cannot: `yaml.safe_load`
@@ -570,16 +571,12 @@ bash ./scripts/linux/run-lint-gates.sh
 ```
 
 That is the whole `lint` job. The wrapper hands this repo's root to
-ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns all three gates and
+ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns the six gates
+(shell, workflows + CI image refs, secrets, python, shared-config drift,
+consumer pin-forwarding — the list and scopes are in that script's header) and
 the scaffolding around them; the binaries (shellcheck, actionlint, gitleaks) are
 ANTfrastructure's pinned, SHA-verified bootstraps, not a second set installed here.
 The bootstrap downloads once and caches, so only the first local run is slow.
-
-| Gate | Covers |
-| --- | --- |
-| shellcheck (`-S error`) | every tracked `*.sh` outside `third_party/` |
-| actionlint + CI image refs | `.github/workflows/*.yml` |
-| gitleaks | every tracked first-party path, plus this repo's own files inside `third_party/` |
 
 Four properties of that job are load-bearing and are asserted upstream rather
 than assumed here:
@@ -602,7 +599,7 @@ than assumed here:
   with gitleaks skipping it — green over nothing — which is why the canary is
   matched by path rather than by outcome.
 
-All three gates run even after one fails, and the verdict is decided once at the
+All gates run even after one fails, and the verdict is decided once at the
 end, so a triage round sees every finding instead of only the first.
 
 The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
@@ -645,8 +642,8 @@ The rules are upstream's, recorded for every consumer in
 They are restated here because the next new script gets written in *this* repo,
 and the exceptions below are this repo's.
 
-- **Every `.ps1` and `.psm1` declares `#requires -Version 7.0`.** All 24 tracked
-  files outside `third_party/` and `archive/` carry it. It is what makes Windows
+- **Every `.ps1` and `.psm1` declares `#requires -Version 7.0`.** Every tracked
+  file outside `third_party/` carries it. It is what makes Windows
   PowerShell 5.1 refuse the file up front instead of failing somewhere deep in a
   pwsh-7 construct: `Build-Windows.ps1` and everything it reaches assume pwsh.
 - **Executable scripts are PascalCase `Verb-Noun`, with a verb `Get-Verb`
@@ -661,7 +658,7 @@ and the exceptions below are this repo's.
   the repo property under test where there is not
   (`Repo.GeneratedArtifacts.Tests.ps1`, `SharedConfig.Drift.Tests.ps1`,
   `CMakePresets.Integrity.Tests.ps1`). Modules take the dotted noun form
-  `<Area>.Common.psm1` — `scripts/Compare-Renderer.Common.psm1`, matching
+  `<Area>.Common.psm1` — `scripts/windows/modules/Compare-Renderer.Common.psm1`, matching
   ANTfrastructure's `Windows<Area>.Common.psm1` — and export explicitly via
   `Export-ModuleMember`.
 - **Bash is not renamed to match**: `Get-Verb` is a PowerShell notion, so the
@@ -669,8 +666,6 @@ and the exceptions below are this repo's.
   `build-coverage-llvm.sh`). The lone exception is
   `scripts/agentic-loop/Run-AgenticLoop.sh`, spelled to sit beside its
   PowerShell twin `Invoke-AgenticLoop.ps1`.
-- `archive/setup-dependencies.ps1` predates all of this and keeps both its old
-  name and its missing directive. Archived files are not renamed.
 
 ## Agentic Loop
 
@@ -698,21 +693,14 @@ requires `jq`). Prompts are single-sourced in ANTfrastructure: the planner/execu
 module and the Bash library read them) and the role **system** prompts at
 `shared/agentic-loop/system-prompts/*.md`. This repo owns only a per-role
 delta — `scripts/agentic-loop/prompts/planner-overlay.md` and
-`executor-overlay.md`, declared in the config's top-level `promptOverlays` block
-**and mirrored under `engines.claude`**, because the pinned
-`Resolve-AgenticEngine` reads those keys from `engines.<engine>` and nowhere
-else; a top-level-only declaration is read by no one, silently. The overlay is
-appended below the shared system prompt into one composed file at startup, which
-is delivered to `claude` via `--append-system-prompt-file` and stored as
-`.opencode/agents/<role>.md` for `opencode`, which takes no prompt file on its
-command line. Those two files are **tracked**: nothing in the pinned
-ANTfrastructure generates them, so deleting them (2026-09-07) left a fresh clone on
-`engine: opencode` with no role prompt at all. They hold composed output all the
-same — edit the overlay, never them; a Pester suite fails if either stops
-containing the shared prompt or the overlay verbatim. Both runners preflight the
-overlays and refuse to start when a declared overlay does not reach the agent,
-which today means `Run-AgenticLoop.sh --engine claude` exits 1: the Bash library
-has never implemented the overlay keys.
+`executor-overlay.md`, declared in the config's top-level `promptOverlays`
+block. At start-up the loop composes the shared system prompt plus the overlay
+into one text and delivers it to `claude` via `--append-system-prompt-file` and
+to `opencode` by regenerating `.opencode/agents/<role>.md` from the pinned hub
+(opencode takes no prompt file on its command line). `.opencode/agents/` is
+therefore gitignored, per
+[adopting-in-a-new-project.md § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop);
+edit the overlay, never the generated file.
 What this repo configures, and its runners and overlays:
 [`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
 and sanitizer-aware tests:

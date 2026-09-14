@@ -546,7 +546,7 @@ jobs:
           script: bash ./scripts/linux/wasm-size-budget.sh
 
       - name: 📂 Sync files to domain
-        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
+        uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@main
         # A flaky FTP upload of the docs must not red the whole build+test lane:
         # the code already compiled and passed both the clang/ASan and gcc test
         # runs before this deploy step. Mirrors the RPT fix (continue-on-error on

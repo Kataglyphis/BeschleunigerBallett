@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/Compare-PerfBaseline.ps1's pass/fail contract -
+# Pester coverage for scripts/windows/Compare-PerfBaseline.ps1's pass/fail contract -
 # the one script under scripts/ with a pass/fail contract and no test, on a
 # machine where nothing else can catch a regression in it. Invokes the real
 # script as a child process against small fixture baseline/candidate JSON
@@ -14,7 +14,7 @@
 Describe 'Compare-PerfBaseline' {
 
   BeforeAll {
-    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\Compare-PerfBaseline.ps1')).Path
+    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Compare-PerfBaseline.ps1')).Path
     $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('perf-baseline-test-' + (Get-Random))) -Force
     $script:tmpDir = $tmp.FullName
   }

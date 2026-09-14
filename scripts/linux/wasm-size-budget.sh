@@ -18,7 +18,7 @@ antfrastructure_source linux/scripts/lib/rust-toolchain.sh
 # Builds kataglyphis_webgpu_renderer for wasm32-unknown-unknown, optimises with
 # wasm-opt -Oz, and fails the step if the result exceeds the size budget - so a
 # bloat regression is caught here, not discovered after the demo is already
-# deployed by "Sync files to domain". Mirrors scripts/Test-WasmSizeBudget.ps1
+# deployed by "Sync files to domain". Mirrors scripts/windows/Test-WasmSizeBudget.ps1
 # (the local/Windows equivalent), adapted to the container's bash + no
 # guaranteed wasm-opt on PATH.
 #
@@ -31,7 +31,7 @@ antfrastructure_source linux/scripts/lib/rust-toolchain.sh
 # binaryen bootstrap (pinned + SHA-verified against versions.env) and the
 # wasm-opt feature flags come from ANTfrastructure's generic driver; only the
 # budget and the crate below are this project's data. The driver's PowerShell
-# twin backs scripts/Test-WasmSizeBudget.ps1.
+# twin backs scripts/windows/Test-WasmSizeBudget.ps1.
 antfrastructure_source linux/scripts/lib/wasm-opt.sh
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"

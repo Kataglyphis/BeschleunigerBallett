@@ -18,6 +18,20 @@ source "${SCRIPT_LIB_DIR}/antfrastructure.sh"
 
 ANTFRASTRUCTURE_CORE="${ANTFRASTRUCTURE_DIR}/linux/scripts/01-core"
 
+# One value out of ANTfrastructure's linux/scripts/01-core/versions.env, the
+# fleet's owner of toolchain versions, so no script here carries a literal that
+# goes stale on the next pin bump. Fails naming the key and the file.
+antfrastructure_version() {
+  local key="${1:?versions.env key required}" file value
+  file="$(antfrastructure_path linux/scripts/01-core/versions.env)" || return 1
+  value="$(grep -m1 "^${key}=" "${file}" | cut -d= -f2)"
+  if [[ -z "${value}" ]]; then
+    echo "[ERROR] ${key} not found in ${file}" >&2
+    return 1
+  fi
+  printf '%s' "${value}"
+}
+
 # source_module keeps THIS repo's search order, which is deliberately wider than
 # antfrastructure_source's single path:
 #   1. lib/<name>          — a local override wins
@@ -126,54 +140,10 @@ source_vulkan_env() {
   return 0
 }
 
-# has_tool / require_tools now have ONE owner: ANTfrastructure
-# linux/scripts/01-core/tool-checks.sh. Before it, this eight-line primitive
-# existed three times with no canonical copy - here, and as two inline
-# `if ! declare -F has_tool` fallbacks inside ANTfrastructure's own
-# lib/code-quality.sh and lib/coverage.sh, whose comments said the pair
-# "normally come from the project's common.sh". That is an upside-down
-# ownership arrow: a hub driver should not depend on a CONSUMER to supply its
-# helper. Sourcing the module here is the consumer half of removing it.
-#
-# The module guards each definition with `declare -F`, so it must be sourced
-# BEFORE any local definition - a local one first would silently win and the
-# adoption would be cosmetic.
-#
-# THE `else` BRANCH IS A PIN FALLBACK, NOT A SECOND IMPLEMENTATION TO MAINTAIN.
-# tool-checks.sh landed in ANTfrastructure after the commit third_party/ANTfrastructure
-# currently pins, and this file is sourced by every Linux script in the repo, so
-# a hard dependency would break the whole tree until the gitlink moves. It is
-# reached only when the module is genuinely ABSENT: have_module asks about
-# presence, so a module that exists and fails to load is a hard error rather
-# than a silent downgrade to the local copy.
-#
-# TO RETIRE: in the same commit that bumps third_party/ANTfrastructure to a hub
-# commit shipping linux/scripts/01-core/tool-checks.sh, replace this whole block
-# with the single line `source_module tool-checks.sh` and delete this comment.
-if have_module tool-checks.sh; then
-  source_module tool-checks.sh
-else
-  # Ensure required tools are installed. Names EVERY missing tool, not just the
-  # first: reporting one at a time turns "install these four" into four failed
-  # runs.
-  require_tools() {
-    local missing=()
-    for tool in "$@"; do
-      if ! command -v "$tool" >/dev/null 2>&1; then
-        missing+=("$tool")
-      fi
-    done
-
-    if [[ ${#missing[@]} -gt 0 ]]; then
-      err "Required tools not found: ${missing[*]}"
-    fi
-  }
-
-  # Check if tool exists (without error)
-  has_tool() {
-    command -v "$1" >/dev/null 2>&1
-  }
-fi
+# has_tool / require_tools have ONE owner: ANTfrastructure
+# linux/scripts/01-core/tool-checks.sh. The module guards each definition with
+# `declare -F`, so it must be sourced BEFORE any local definition.
+source_module tool-checks.sh
 
 # Compute optimal parallel jobs (with memory cap)
 # Falls back to nproc if parallelism.sh not available

@@ -1,12 +1,17 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Agentic loop: planner adds tasks to BACKLOG.md, executor drains the queue.
-  Uses WindowsAgenticLoop.Common module from ANTfrastructure.
+  Agentic loop for BeschleunigerBallett (Windows): planner adds tasks to
+  BACKLOG.md, executor drains the queue.
+  Uses the WindowsAgenticLoop.Common module from ANTfrastructure, so
+  this wrapper stays thin: it resolves the module, loads the config, and calls
+  Invoke-AgenticLoop. Build configurations come from the config's buildMatrix
+  and the planner/executor task prompts default to ANTfrastructure's
+  shared/agentic-loop/prompts/*.md - do NOT hard-code prompt text here, that
+  is how the two platforms drifted apart once already.
 
-  Engines (config .engine, or -Engine / $env:AGENTIC_ENGINE):
-    claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet
-    opencode — planner: GLM 5.2, executor: DeepSeek v4 Flash
+  Engines are selected by the config's .engine key (or -Engine /
+  $env:AGENTIC_ENGINE); models are configured per engine in the config.
 .PARAMETER Engine  Engine override: claude | opencode (default: config .engine).
 .PARAMETER DryRun  Print actions without executing.
 .PARAMETER MaxIterations  Override max iterations (0 = unlimited).
@@ -36,19 +41,6 @@ $config = Get-Content $configPath -Raw | ConvertFrom-Json
 if (-not $config) { Write-Host "FATAL: Invalid JSON" -ForegroundColor Red; exit 1 }
 
 Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun
-
-# Preflight: a prompt overlay the config DECLARES and no reader picks up is an
-# error, not a silent fallback to the bare shared prompt. Both ways of losing
-# one are quiet upstream - Resolve-AgenticEngine reads the overlay keys from
-# engines.<engine> only, and New-AgenticComposedPrompt downgrades a missing
-# overlay file to a WARN - so the loop would run without this repo's project
-# rules and report nothing. Asserted here, before the first agent invocation,
-# so the failure costs a second instead of a whole session.
-Import-Module (Join-Path $scriptRoot 'AgenticPromptOverlay.psm1') -Force
-$overlayEngine = if ($Engine) { $Engine }
-                 elseif ($env:AGENTIC_ENGINE) { $env:AGENTIC_ENGINE }
-                 else { Get-AgenticConfigValue $config 'engine' 'opencode' }
-Assert-AgenticPromptOverlay -Config $config -RepoRoot $repoRoot -Engine $overlayEngine
 
 # Build configs and planner/executor task prompts come from the module:
 # configs from the config's buildMatrix (legacy buildConfigurations fallback),

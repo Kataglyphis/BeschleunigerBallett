@@ -45,9 +45,12 @@ BeschleunigerBallett is a renderer and graphics-engine playground used to explor
 | --- | --- |
 | `Src/` | Engine and renderer source code |
 | `Resources/` | Shaders and runtime assets |
+| `cmake/` | This project's CMake policy on top of ANTfrastructure's modules |
 | `scripts/linux/` | Linux build, test, coverage, analysis, and docs helpers |
-| `scripts/windows/` | Windows build, run, and dependency setup helpers |
+| `scripts/windows/` | Windows build, run and validation helpers |
+| `scripts/agentic-loop/` | Planner/executor loop config, runners and prompt overlays |
 | `Test/` | Tests |
+| `docs/` | Topic docs specific to this repo |
 | `docs/source/` | Hand-written Sphinx pages |
 | `Documents/` | Generated PDF and reference artifacts |
 | `third_party/` | Third-party dependencies and submodules |
@@ -103,14 +106,9 @@ If Doxygen XML is available, the Sphinx build automatically includes the generat
 
 ## Dependency Updates
 
-Submodule bumps go through `scripts/linux/renovate-local.sh`, not by hand. Run
-it from WSL — there is no node on the Windows host. It runs Renovate as a local
-CLI to report what is behind; `--apply` is then plain git, moving only the
-gitlinks whose submodule declares a branch in `.gitmodules` and naming the rest
-for a deliberate manual bump. That half needs the git that wrote this working
-tree, so from WSL the script switches to `git.exe` and refuses up front when it
-cannot reach one — a Linux git over a Windows checkout would abort half-applied.
-Other managers are report-only. See
+Submodule bumps go through `scripts/linux/renovate-local.sh`, not by hand; how
+and where to run it is in [AGENTS.md § Dependency upgrades](AGENTS.md#dependency-upgrades-renovate-as-a-local-cli)
+and the rationale in
 [`third_party/ANTfrastructure/docs/dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
 ## Packaging
@@ -174,7 +172,7 @@ Project link: [https://github.com/Kataglyphis/BeschleunigerBallett](https://gith
 
 - [Official homepage](https://beschleunigerballette.jonasheinle.de/)
 - [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure)
-- [Doxygen PDF reference](Documents/refman.pdf)
+- [API reference (Doxygen, on the deployed docs site)](https://beschleunigerballette.jonasheinle.de/api/library_root.html)
 - [Sphinx docs source](docs/source)
 
 ## Literature 

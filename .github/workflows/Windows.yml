@@ -266,7 +266,7 @@ jobs:
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           command: >-
-            & 'C:\ws\scripts\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
+            & 'C:\ws\scripts\windows\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
 
       # Cross-renderer pixel comparison. Uses the same GPU-less flag as the
       # timing step above, so a self-hosted runner with an adapter does a real
@@ -290,7 +290,7 @@ jobs:
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@main
         with:
           command: >-
-            & 'C:\ws\scripts\Compare-RendererPixels.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }};
+            & 'C:\ws\scripts\windows\Compare-RendererPixels.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }};
             $code = $LASTEXITCODE;
             if ($code -eq 2 -and '${{ env.TIMING_VALIDATION_FLAG }}'.Length -gt 0) { Write-Host '::warning::Pixel comparison checked NOTHING - this runner has no GPU, so no frames were captured (script exit 2). That is not a pass, only an absence of evidence.'; exit 0 };
             exit $code

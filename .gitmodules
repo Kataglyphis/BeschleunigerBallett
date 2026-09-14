@@ -34,34 +34,15 @@
 	path = third_party/SPDLOG
 	url = https://github.com/gabime/spdlog
 	branch = v1.x
-# third_party/FUZZTEST deliberately carries NO `branch =` entry, unlike every
-# other submodule here. There is no correct value for it. The pin 704efb34 is
-# the exact tip of google/fuzztest's dated release branch release_2026-06-29
-# (and the tag 2026-06-29); it is NOT on main - GitHub's compare of
-# main...704efb34 reports ahead 1, behind 81. So `branch = main` would track a
-# line this pin was never taken from, while `branch = release_2026-06-29`
-# names a frozen branch that can never produce a bump: an entry that looks
-# watched while covering nothing, which is the one failure mode this repo's
-# gates exist to prevent. Upstream cuts a NEW release_<date> branch each time.
-# CORRECTED 2026-09-09 - the paragraph that used to stand here was wrong.
-# Leaving `branch` unset does NOT keep `git submodule update --remote` disarmed
-# for this path. An unset branch makes --remote fall back to the REMOTE'S
-# DEFAULT BRANCH, so a bare --remote in this repo walks FUZZTEST from 704efb34
-# onto main: 82 commits down the very line this pin was never taken from.
-# Established by experiment, not by reading: a synthetic superproject whose
-# submodule declares no branch and whose remote default is named `trunk` had
-# `trunk` checked out by --remote, so the fallback really is remote HEAD and not
-# a hardcoded main/master.
-# This also removes the premise of the 2026-07-20 investigation into this
-# submodule's unexplained re-checkouts, recorded in the header of
-# third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1: that
-# investigation ruled --remote out BECAUSE the branch is unset, and that is not
-# a reason. --remote belongs back on the list of candidates.
-# Keep `branch` unset regardless - the argument above about main versus a frozen
-# release_<date> branch is unaffected - but never run a bare
-# `git submodule update --remote` in this repo. Pass explicit paths. The
-# git-submodules manager is held to dashboard-approval for this path in
-# .github/renovate.json.
+# third_party/FUZZTEST follows google/fuzztest's dated release line, not main:
+# `branch =` names the FROZEN release_<date> line the pin was taken from, so
+# `git submodule update --remote -- third_party/FUZZTEST` cannot walk it onto
+# main (81 commits away on a line this pin was never taken from). A frozen
+# branch never produces a bump by itself; the regex customManager in
+# .github/renovate.json reads the date out of the branch name and surfaces a
+# newer release_<date> when upstream cuts one - moving to it is a deliberate
+# line change (dashboard approval there). Never run a bare
+# `git submodule update --remote` in this repo; pass explicit paths.
 [submodule "third_party/FUZZTEST"]
 	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest

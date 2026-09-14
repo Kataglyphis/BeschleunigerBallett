@@ -122,14 +122,14 @@ committed to.
   2026-08-01): the `KATAGLYPHIS_GPU_TIMING_JSON` export in
   `GpuTimingSubsystem.ixx:211` writes one JSON object keyed by
   `FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES`, the Rust side mirrors it via
-  the `dump_gpu_timings` example, and `scripts/Compare-RendererTimings.ps1`
+  the `dump_gpu_timings` example, and `scripts/windows/Compare-RendererTimings.ps1`
   drives both and prints them side by side. What is still missing is the
   *assertion*: nothing sets a budget for `GpuTimedPass::ShadowCascades` (or
   any other pass), so the artifact is comparable but ungated.
 - **Regression tracking**: Google Benchmark can emit JSON
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
   per machine and diffing beats eyeballing console output. **Done
-  (2026-07-31):** `scripts/Compare-PerfBaseline.ps1` diffs a fresh JSON run
+  (2026-07-31):** `scripts/windows/Compare-PerfBaseline.ps1` diffs a fresh JSON run
   against the checked-in `Test/perf/baselines/win-9070xt-32core.json`, flags
   any benchmark that regressed beyond a configurable tolerance (default
   +25%), and is deliberately not wired into CI (see the "measured baseline"
@@ -723,10 +723,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   scenes (the Colosseum case).
 - ~~**wgpu timestamp queries** to mirror the C++ per-pass GPU timings~~ —
   **done**: `render/gpu_timing.rs` (`TimedPass`, per-pass averaged ms) and the
-  `dump_gpu_timings` example + `scripts/Compare-RendererTimings.ps1` already
+  `dump_gpu_timings` example + `scripts/windows/Compare-RendererTimings.ps1` already
   compare timings across renderers, not just pixels.
 - ~~**Wasm size budget**~~ — **done**: `scripts/linux/wasm-size-budget.sh`
-  (CI) / `scripts/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
+  (CI) / `scripts/windows/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
   release, run `wasm-opt -Oz`, and fail above a 12 MiB budget; wired into
   `Linux.yml` ahead of the docs deploy. The ~3.7 MB figure was stale — measured
   post-opt size is ~8.3 MiB, never previously enforced.
@@ -2486,7 +2486,7 @@ animation samplers** (`keyframe_lerp_indices`/`cubic_spline_weights`/`sample_*`,
 `forward.rs:3188-3324`) out of the 3968-line hub would be pure code motion — they
 already have inline unit tests at `forward.rs:3711-3940`; **a C++ headless
 per-pass GPU-timing JSON dump** already exists (`KATAGLYPHIS_GPU_TIMING_JSON`,
-consumed by `scripts/Compare-RendererTimings.ps1`).
+consumed by `scripts/windows/Compare-RendererTimings.ps1`).
 
 ### Rust WebGPU renderer (`third_party/OxidANT`)
 
@@ -3079,7 +3079,7 @@ This is a cross-renderer parity fix with a free quality win (the 2x2 hardware
 PCF comes with the comparison sampler).
 
 **Task 5 is a defect in a checked-in tool, found by reading it against the two
-enums it claims to track.** `scripts/Compare-RendererTimings.ps1:34` defaults
+enums it claims to track.** `scripts/windows/Compare-RendererTimings.ps1:34` defaults
 `$RustExpectedPasses` to
 `@('Forward','ShadowCascades','Ssao','Bloom','Histogram','Post')`, and
 `Assert-PassesExist` (`:49-63`) sets `exitCode = 1` for any expected pass the
@@ -3139,7 +3139,7 @@ the frame runs all the way to `advanceFrame()` at `:613` → `% 0`. The class
 should defend its own invariant instead of relying on a caller check that
 runs too early.
 
-**Task 2: `scripts/Compare-RendererPixels.ps1` cannot complete a run.**
+**Task 2: `scripts/windows/Compare-RendererPixels.ps1` cannot complete a run.**
 `$bmp.Dispose()` is called and the *next* statement passes `$bmp.Width` /
 `$bmp.Height` as arguments (`:204-205`, and again at `:223-224`).
 `System.Drawing.Image.Width` on a disposed bitmap throws, and the script sets
@@ -3152,7 +3152,7 @@ hard-coded `cpp-vulkan.png` (`:103`) while the capture at `:129-135` actually
 writes `cpp-vulkan-<suffix>.png` — so validation mode always finds nothing;
 and with neither renderer producing a frame, `$exitCode` stays 0 and the
 script prints `PIXEL COMPARISON PASSED`. It is also the only one of the three
-`scripts/Compare-*.ps1` tools with no Pester suite. Sibling precedent for
+`scripts/windows/Compare-*.ps1` tools with no Pester suite. Sibling precedent for
 everything this needs: `scripts/windows/tests/Compare-RendererTimings.Tests.ps1`
 (child-process invocation + fixture files, Pester 3.4.0 dash-less syntax).
 

@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/Compare-RendererTimings.ps1's expected-pass
+# Pester coverage for scripts/windows/Compare-RendererTimings.ps1's expected-pass
 # derivation and gate logic - the script previously hard-coded a Rust pass
 # named 'Post' that TimedPass has never had (a guaranteed FAIL every run)
 # while silently never checking three real passes (Bloom, Histogram,
@@ -15,7 +15,7 @@
 Describe 'Compare-RendererTimings' {
 
   BeforeAll {
-    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\Compare-RendererTimings.ps1')).Path
+    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Compare-RendererTimings.ps1')).Path
     $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('renderer-timings-test-' + (Get-Random))) -Force
     $script:tmpDir = $tmp.FullName
 

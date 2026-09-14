@@ -18,7 +18,7 @@ antfrastructure_source linux/scripts/lib/cmake-build.sh
 
 CMAKE_BUILD_DEFAULT_PRESET="linux-debug-clang"
 CMAKE_BUILD_DEFAULT_BUILD_DIR="build"
-CMAKE_BUILD_DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/1.4.341.1/setup-env.sh"
+CMAKE_BUILD_DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/$(antfrastructure_version VULKAN_VERSION)/setup-env.sh"
 CMAKE_BUILD_DEFAULT_MB_PER_JOB="4000"  # 4GB RAM per parallel job
 CMAKE_BUILD_PREBUILD_LABEL="Slang shader precompilation"
 CMAKE_BUILD_USAGE_INTRO="Configures and builds BeschleunigerBallett inside the Linux container image."

@@ -27,16 +27,6 @@
 # subtree instead. Do not pass a path of your own - a second one is an error
 # upstream; point the hub script at another repo directly.
 #
-# WHAT --apply REFUSES HERE, which is load-bearing in THIS repo: 14 of the 15
-# submodules declare a `branch =`; `third_party/FUZZTEST` deliberately does not,
-# because it is pinned to the tip of a FROZEN release_<date> line. An unset
-# branch does NOT disarm `git submodule update --remote` - it makes it fall back
-# to the REMOTE'S DEFAULT branch, i.e. 82 commits of main for that pin (see the
-# corrected paragraph above the FUZZTEST block in .gitmodules). So --apply
-# passes explicit paths, only for submodules that declare a branch, and prints
-# the rest as REFUSED, to be moved by hand and deliberately - and, for FUZZTEST,
-# with the Abseil coupling in AGENTS.md, "Critical Invariant: Submodule Pins".
-#
 # WHAT --apply DOES NOT COVER: it moves gitlinks, nothing else. Point it at
 # another manager with --managers and you get a report; it applies nothing for
 # them - this repo's requirements.txt included.

@@ -26,7 +26,7 @@
 [CmdletBinding()]
 param(
 
-    [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$RepoRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-timings'),
     # Source files the expected-pass lists are derived from (see
     # Get-ExpectedPassNames below). Overridable so tests can point these at

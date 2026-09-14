@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/Compare-RendererPixels.ps1's structural-metric
+# Pester coverage for scripts/windows/Compare-RendererPixels.ps1's structural-metric
 # gate - the script previously threw an ObjectDisposedException on its own
 # success path (Get-LuminanceMetrics was called with $bmp.Width/$bmp.Height
 # AFTER $bmp.Dispose()), its -ValidationOnly mode checked hard-coded filenames
@@ -16,7 +16,7 @@
 Describe 'Compare-RendererPixels' {
 
   BeforeAll {
-    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\..\Compare-RendererPixels.ps1')).Path
+    $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Compare-RendererPixels.ps1')).Path
     $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('renderer-pixels-test-' + (Get-Random))) -Force
     $script:tmpDir = $tmp.FullName
 

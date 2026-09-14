@@ -51,7 +51,7 @@ CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 # The container image builds against /opt/gcc-<version>; when that exact
 # toolchain is missing on the host, its flags are stripped from the remapped
 # compile DB so a local clang-tidy run still works.
-CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-15.2.0"
+CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-$(antfrastructure_version GCC_VERSION)"
 CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
 
 # cmake-format is installed into the repo-local .venv when it is not on PATH.
