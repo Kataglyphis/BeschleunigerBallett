@@ -12,11 +12,42 @@ name: Submodule pins
 # through - a docs page and a submodule bump in the same commit is the ordinary
 # shape of "vendored docs came along with the pin" - and that push got no pin
 # check. The invariant is cheap (CPU-only, container-free, minutes), so it runs
-# on every push to main/develop and every PR against them, unfiltered.
+# on every push to main/develop and every PR against them, unfiltered. No
+# `paths:` filter either, for the same reason: an invariant a path filter can
+# silence is not a gate.
 #
-# An invariant that only runs when somebody remembers to type a marker is not a
-# gate; neither is one a path filter can silence. Same reasoning as
-# .github/workflows/lint-gates.yml.
+# ONE `uses:` LINE since 2026-09-15. The job became reusable upstream
+# (ANTfrastructure .github/workflows/submodule-pins.yml, workflow_call), where
+# its 40-line Pester rationale lives once instead of in three near-identical
+# consumer copies. It checks out with `submodules: true` at the default depth -
+# which is what makes the reachability check exercise its shallow-clone
+# escalation - and then runs ANTfrastructure's own repo-agnostic suite,
+# shared/windows/tests/Submodule.Pins.Tests.ps1. That suite asserts, for EVERY
+# configured submodule (this repo has 15), that it is checked out, sits at its
+# recorded gitlink, and is pinned to a commit reachable from its remote; a pin
+# on no remote branch cannot be restored by a fresh clone, which turns local
+# drift into a build that only works on the machine that made it. Nothing here
+# names a submodule, so one added later is covered the day it lands.
+#
+# It must be actions/checkout doing the submodule work, not a hand-rolled
+# `git submodule update --init`. .gitmodules pins git@github.com: (SSH) URLs for
+# ANTfrastructure and OxidANT, and a hosted runner has no SSH key - the bare git
+# command dies with "Permission denied (publickey)". checkout installs the
+# `url.<https>.insteadOf git@github.com:` rewrite plus token auth, so the SSH
+# pins resolve over HTTPS. The hub's job does exactly that.
+#
+# WHAT STAYS LOCAL: the `on:` filters and the concurrency group above, and the
+# Pester version below. The suite path defaults upstream to exactly the vendored
+# copy this repo has, so it is not repeated; the runner default is already
+# windows-2025 (pinned, never the moving `windows-latest` alias, because Pester
+# 3.4.0 is a Windows PowerShell-era module). The VERSION is passed explicitly
+# even though 3.4.0 is also the hub's default: that pin is this consumer saying
+# which dialect it was verified against - 5.x loses the per-failure diagnostics
+# and 6.x rejects -Quiet - so a hub-side default change cannot silently blind
+# this lane.
+#
+# @main, like every other ANTfrastructure reference here: upstream is pushed
+# before the consumer change that needs it.
 
 on:
   push:
@@ -33,53 +64,8 @@ permissions:
   contents: read
 
 jobs:
-  # Submodule pins sit at their recorded, restorable commits.
-  #
-  # The suite is ANTfrastructure's promoted, repo-agnostic one - not a copy. It
-  # asserts, for EVERY configured submodule (this repo has 15), that it is
-  # checked out, sitting at its recorded gitlink, and pinned to a commit
-  # reachable from its remote. A pin that is on no remote branch cannot be
-  # restored by a fresh clone, which turns local drift into a build that only
-  # works on the machine that made it.
-  #
-  # windows-2025, matching the hub's own submodule-pins lane, because
-  # run-pester-suite installs Pester 3.4.0 - a Windows PowerShell-era module. The
-  # suite itself asserts with plain `throw` rather than `Should`, so it is
-  # dialect-agnostic and can move to a cheaper runner whenever the action can be
-  # told a Core-compatible version.
   submodule-pins:
-    name: submodule pins
-    runs-on: windows-2025
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      # The suite takes the superproject root as a parameter and the composite
-      # action can only pass a path, so the root comes through the environment.
-      # It would fall back to GITHUB_WORKSPACE by itself; naming it keeps the
-      # wiring visible rather than implied. It must NOT be left to the suite's
-      # last-resort git-toplevel probe either: the file lives inside the
-      # ANTfrastructure submodule, so that probe would answer "ANTfrastructure".
-      ANTFRASTRUCTURE_PIN_CHECK_REPO_ROOT: ${{ github.workspace }}
-    steps:
-      # `submodules: true` is required, not an optimisation: without it nothing
-      # is checked out, and the suite fails on its own vacuity guard rather than
-      # passing over an empty tree. Top-level only, because the drift check is
-      # non-recursive for the same reason. Default fetch depth, which is what
-      # makes the reachability check exercise its shallow-clone escalation.
-      #
-      # It must be actions/checkout doing this, not a hand-rolled
-      # `git submodule update --init` step. .gitmodules pins git@github.com:
-      # (SSH) URLs for ANTfrastructure and OxidANT, and a hosted runner has no SSH
-      # key - the bare git command dies with "Permission denied (publickey)".
-      # checkout installs the `url.<https>.insteadOf git@github.com:` rewrite
-      # plus token auth, so the SSH pins resolve over HTTPS.
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-        with:
-          submodules: true
-
-      - name: Submodule pins sit at their recorded, restorable commits
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@main
-        with:
-          path: third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1
+    name: submodule pins sit at their recorded, restorable commits
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/submodule-pins.yml@main
+    with:
+      pester-version: '3.4.0'

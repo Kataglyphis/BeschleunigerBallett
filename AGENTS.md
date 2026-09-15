@@ -591,8 +591,8 @@ the pushed HEAD commit's message:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
-| Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` | always, **including docs-only commits** — no `paths-ignore` |
-| Submodule pins | `submodule-pins.yml` | always, no `paths-ignore` |
+| Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
+| Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `Linux_x86.yml` → `Linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message |
 | Linux ARM64 | `Linux_arm.yml` → `Linux.yml` | `[build-arm]` in the commit message |
@@ -632,10 +632,19 @@ ANTfrastructure first (see the rule above). When a lane fails inside a step whos
 build lane. It pulls no image and builds nothing (~2 min), and it catches a
 class the rest of CI cannot: `yaml.safe_load` proves a workflow is valid YAML,
 not valid Actions, and a bash quoting or undefined-function bug only surfaces
-when that line finally runs — an hour into a gcc build. It carries the
-Windows-native `powershell-lint` job too (PSScriptAnalyzer plus the mandatory
-parse/AST-trap gate over `scripts/`), on `windows-2025` because that gate script
-resolves its own helper module by backslash path.
+when that line finally runs — an hour into a gcc build.
+
+Its `lint` job is **one `uses:` line**: ANTfrastructure publishes the lane as a
+`workflow_call` workflow, this repo passes `submodules: 'true'` (not the hub's
+`recursive` default — only ANTfrastructure is executed here) and
+`ratchets: true`. It carries the Windows-native `powershell-lint` job too
+(PSScriptAnalyzer plus the mandatory parse/AST-trap gate over `scripts/`), on
+`windows-2025` because that gate script resolves its own helper module by
+backslash path. That one is deliberately **not** collapsed onto the hub's
+equivalent: the hub's passes `-FailOnAnalyzer` unconditionally, and this tree
+has one analyzer finding left (`$WebDavPassword` should be a `SecureString`),
+so adopting it today would make the lane red over a change to the build
+driver's public parameter contract. The file says so at the job.
 
 **One command, and it is the same one CI runs:**
 
