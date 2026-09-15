@@ -18,7 +18,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Invoke-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
 | Refactoring the renderer / device path | The per-unit verification loop in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md); log the change in [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) |
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
-| Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure) |
+| Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — [`docs/webgpu-renderer-roadmap.md`](docs/webgpu-renderer-roadmap.md) |
@@ -37,6 +37,36 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `third_party/ANTfrastructure/` | The submodule that owns every reusable script, module and doc (see the rule below) |
 | `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ANTfrastructure drivers + this project's payload |
 | `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ANTfrastructure — see [CMake modules](#cmake-modules-antfrastructure-first-local-override-wins) |
+
+## What ANTfrastructure owns — links only
+
+Every topic below lives in `third_party/ANTfrastructure` and is consumed from
+there. **This file does not restate any of it**, and neither should the next
+procedure written here: if your topic is in this table, write one sentence of
+orientation and link — upstream's own instruction to consumers,
+[`docs/INDEX.md` § If you are about to write a procedure in a consumer repo](third_party/ANTfrastructure/docs/INDEX.md#if-you-are-about-to-write-a-procedure-in-a-consumer-repo).
+
+| Topic | Upstream document |
+| --- | --- |
+| Which repo a piece of knowledge belongs in — the *"would this still be true in a different project?"* split, with worked examples | [`INDEX.md` § Where does a piece of knowledge belong?](third_party/ANTfrastructure/docs/INDEX.md#where-does-a-piece-of-knowledge-belong) |
+| The full topic → owning-document index for the whole family | [`INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md) |
+| Wiring another project to any of this: the loop, both container flows, launchers, CI actions | [`adopting-in-a-new-project.md`](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md) |
+| The one file a consumer must own itself, and why (`Resolve-BuildModule.ps1`) | [adopting § 1](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#1-the-one-file-that-cannot-live-here) |
+| Agentic loop: architecture, engines, config keys, prompt composition | [adopting § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop), [`windows-agentic-loop.md`](third_party/ANTfrastructure/docs/windows-agentic-loop.md) |
+| Build matrix config, sanitizer env vars, the full matrix sweep | [`agentic-loop-build-matrix.md`](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md) |
+| Calling conventions every consumer wrapper follows (`#requires`, strict mode, sourcing the hub) | [adopting § 8](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#8-calling-conventions-what-every-consumer-looks-like) |
+| The Windows container image: build sequence, Stevedore setup, invariants | [`windows-builds.md`](third_party/ANTfrastructure/docs/windows-builds.md) |
+| Building inside the image: transports, reuse pattern, safety rails | [`windows-container-build-performance.md`](third_party/ANTfrastructure/docs/windows-container-build-performance.md) |
+| Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules | [`rancher-desktop-linux-containers.md`](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md) |
+| Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins | [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md) |
+| Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses | [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md) |
+| Reading and fixing CI status from a shell with `gh` | [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md) |
+| clang-format / clang-tidy / cmake-format rules, and the lint gates' contracts | [`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md) |
+| The shared CMake modules: what each provides, how they reach `CMAKE_MODULE_PATH` | [`cmake/README.md`](third_party/ANTfrastructure/cmake/README.md) |
+
+The [Docs](#docs) table at the end is the same list interleaved with this repo's
+own pages; this section is the upstream half on its own, so *"is there already a
+document for this?"* is one look rather than a scan.
 
 ---
 
@@ -264,31 +294,21 @@ could use it. If yes, it goes into `third_party/ANTfrastructure` and
 this repo consumes it — never a copy.**
 
 That is the local form of the rule ANTfrastructure states canonically as *"would
-this still be true in a different project?"* — see
-[`docs/INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md)
-§ *Where does a piece of knowledge belong?* for the worked splits and the
-three-broken-copies case that motivated it.
-
-What belongs upstream:
-
-- **PowerShell** that is not specific to this engine: container lifecycle,
-  transfers, toolchain discovery, isolation settings, image handling. Add it to
-  `windows/scripts/modules/`.
-- **Bash** likewise, in `linux/scripts/lib/` (consumer-facing libraries) or
-  `linux/scripts/01-core/` (primitives: logging, retry, verified downloads,
-  uv/python, parallelism). Source it by relative path and fail loudly when the
-  submodule is missing.
-- **Knowledge about the container image or Windows containers in general** —
-  build performance, platform traps, setup fixes. ANTfrastructure's `docs/` is the
-  single home; link to it from here.
-- **Anything learned the hard way** that is not about this renderer: write down
-  the symptom, not just the fix, so the next person recognises it.
+this still be true in a different project?"*. Which side of the line a given
+thing falls on — PowerShell, Bash, container or Windows-container knowledge, a
+trap learned the hard way — is settled there, with the worked splits and the
+three-broken-copies case that motivated the rule:
+[`INDEX.md` § Where does a piece of knowledge belong?](third_party/ANTfrastructure/docs/INDEX.md#where-does-a-piece-of-knowledge-belong).
+The destinations, so the link is not a scavenger hunt: `windows/scripts/modules/`
+for PowerShell, `linux/scripts/lib/` or `linux/scripts/01-core/` for Bash,
+`docs/` for everything else.
 
 What stays here: engine code, shaders, this project's presets, and the
 *payload* the shared drivers execute (build-directory names,
 `Build-Windows.ps1` arguments, project-specific exclusions, the Slang
 precompile hook) — plus `Resolve-BuildModule.ps1` itself, the bootstrap that
-*finds* ANTfrastructure and therefore cannot live inside it.
+*finds* ANTfrastructure and therefore cannot live inside it
+([adopting § 1](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#1-the-one-file-that-cannot-live-here)).
 
 ### The wrapper map
 
@@ -351,46 +371,25 @@ different VC Tools.
 
 `Build-Windows.ps1`, the run helpers and the Pester tests resolve PowerShell
 modules through `scripts/windows/Resolve-BuildModule.ps1`
-(`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
-`third_party/ANTfrastructure/windows/scripts/modules/` when it exists
-there (preferred), otherwise from the project-specific fallback
-**`scripts/windows/modules/`** (today: `Compare-Renderer.Common.psm1`).
+(`Resolve-BuildModulePath` / `Import-BuildModule`): ANTfrastructure's
+`windows/scripts/modules/` first, then the project-specific fallback
+**`scripts/windows/modules/`**. `Resolve-BuildModule.ps1` is a **verbatim copy**
+of upstream's `shared/windows/templates/Resolve-BuildModule.ps1` — sync it,
+never hand-edit it ([adopting § 1](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#1-the-one-file-that-cannot-live-here)).
 
-`Resolve-BuildModule.ps1` is now a **verbatim copy** of ANTfrastructure's
-`shared/windows/templates/Resolve-BuildModule.ps1` — sync it from upstream
-rather than hand-editing it.
+**The vendored fallback directory holds no copy of anything upstream, and a
+Pester case asserts it stays that way** — `Compare-Renderer.Common.psm1` is the
+only thing in it, because it is this project's own. Which module moved upstream
+when, and what became a parameter in the move, is in the commit history; there
+is no CHANGELOG.md here and this file is not one.
 
-**The fallback directory holds no copy of anything upstream**, and a Pester
-case asserts it stays that way; `Compare-Renderer.Common.psm1` lives there
-because it is this project's own. `WindowsClang.Common` and
-`WindowsTesting.Common` were the last two vendored copies, and
-they went upstream on 2026-08-11 under the two-consumer test: OmniAccelerANT
-needed the same ASan-runtime discovery, and needing something twice is what
-makes it shared. Their project-specific values became parameters whose defaults
-preserve this repo's behaviour (`-SourceSubdirectory 'Src'`,
-`-ModuleImportPattern 'import kataglyphis'`), so deleting the copies needed no
-call-site change at all. Their Pester suites moved with them.
-
-Worth knowing about `Import-BuildModule`: it imports `WindowsScripts.Shared`
-unconditionally, whether or not you list it. That is not belt-and-braces — a
-nested `Import-Module` inside a `.psm1` binds into *that module's* private scope
-and never reaches the importing session, so a script that imports only
-`WindowsBuild.Common` gets `Write-BuildLog` but **not** `Resolve-WorkspacePath`.
-(The comment that previously called this a shadowing repair misdiagnosed it.)
-
-Everything else was upstreamed to ANTfrastructure on 2026-08-02
-(`WindowsCMake.Common`, `WindowsConfig.Common`, `WindowsFormatting.Common`,
-`WindowsWebDav.Common`, `WindowsMsix.Common`, `WindowsMsix.Signing`;
-`WindowsScripts.Shared` was already upstream-only), and their **Pester suites
-followed on 2026-08-07** — a module's tests belong in the repo that owns the
-module, otherwise upstream can change it with no test signal of its own and only
-a consumer's opt-in lane catches the break. They were converted from Pester 3.4
-to Pester 5+ syntax in the move, since that is what ANTfrastructure's
-`Invoke-Tests.ps1` requires. Note in particular that
-`Get-CompileCommandsDatabase` (the `ninja -t compdb` fallback) lives in upstream
-`WindowsCMake.Common`, **not** in `WindowsClang.Common`. If a module reappears
-upstream it wins automatically; if you improve a fallback module, consider
-upstreaming it and deleting the vendored copy in the same change.
+One trap is worth carrying locally because it bites at the call site:
+`Import-BuildModule` imports `WindowsScripts.Shared` unconditionally, whether or
+not you list it. That is not belt-and-braces — a nested `Import-Module` inside a
+`.psm1` binds into *that module's* private scope and never reaches the importing
+session, so a script that imports only `WindowsBuild.Common` would otherwise get
+`Write-BuildLog` but **not** `Resolve-WorkspacePath`. The conventions around it
+are upstream's: [adopting § 8](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#8-calling-conventions-what-every-consumer-looks-like).
 
 ### Shipping a change that spans both repos
 
@@ -444,14 +443,13 @@ bash ./scripts/linux/renovate-local.sh --apply --dry-run  # the plan
 bash ./scripts/linux/renovate-local.sh --apply            # move the gitlinks
 ```
 
-Run it from WSL — there is no node on the Windows host. `--apply` is git, not
-Renovate, and it wants the git that wrote this working tree: a Linux git over a
-Windows checkout reads every text file as modified and would abort part way
-through. The script settles that itself — from WSL it switches to `git.exe`,
-and refuses up front when it cannot reach one — so you do not have to. Nothing
-is staged or committed either way.
+Run it from WSL — there is no node on the Windows host. How it behaves there
+(why `--apply` is git rather than Renovate, the `git.exe` switch it makes for
+you over a Windows checkout, that nothing is staged or committed either way) is
+upstream's, not this repo's:
+[`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
-It moves gitlinks, and only submodules that declare a `branch =`. Any other
+What is true of **this** repo: it moves gitlinks, and only submodules that declare a `branch =`. Any other
 manager (`--managers`) is report-only; `requirements.txt` is one of those. `.github/renovate.json` is
 read by this CLI and by nothing else: the Renovate GitHub App is installed on no
 repository in this family and will not be (owner decision, 2026-09-09).
@@ -617,27 +615,21 @@ the scaffolding around them; the binaries (shellcheck, actionlint, gitleaks) are
 ANTfrastructure's pinned, SHA-verified bootstraps, not a second set installed here.
 The bootstrap downloads once and caches, so only the first local run is slow.
 
-Four properties of that job are load-bearing and are asserted upstream rather
-than assumed here:
+Four properties of that job are load-bearing. All four are asserted upstream
+rather than assumed here, so this is one line each plus the link to the
+reasoning:
 
-- **Scopes come from `git ls-files`, never a glob.** The globs this replaced
-  (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse and graded 19 of
-  21 tracked scripts while reading as if they graded all of them —
-  `scripts/agentic-loop/Run-AgenticLoop.sh` and what was then the repo-root
-  `bump-version.sh` were the two that fell through (the latter now lives in
-  `scripts/linux/`; the move narrows the gap it exposed, it does not close it). Both are covered now, and so is anything that
-  lands in a directory nobody has thought of yet.
-- **The consumer root is passed explicitly.** The gate scripts live *inside* the
-  submodule, so a root inferred from their own location resolves to ANTfrastructure
-  and every gate reports green over the wrong tree.
-- **An empty file list is a failure, not a pass.** `lint-shell.sh` with zero file
-  arguments falls back to ANTfrastructure's own tree and would pass having checked
-  nothing of this repository.
-- **The secret gate self-tests before it scans**: a clean tree must come back
-  clean and exit 0, then a planted GitHub PAT must be reported *at the path that
-  was passed in* and exit non-zero. A scan root that does not exist is exit 0
-  with gitleaks skipping it — green over nothing — which is why the canary is
-  matched by path rather than by outcome.
+- **Scopes come from `git ls-files`, never a glob** — measured 2026-09-07, the
+  globs this replaced graded 19 of the 21 tracked scripts while reading as if
+  they graded all of them (`scripts/agentic-loop/Run-AgenticLoop.sh` and the
+  then-repo-root `bump-version.sh` were the two that fell through).
+- **The consumer root is passed explicitly**, because the gate scripts live
+  *inside* the submodule and a root inferred from their own location resolves to
+  ANTfrastructure: [`code-quality-tooling.md` § The scan-root contract](third_party/ANTfrastructure/docs/code-quality-tooling.md#the-scan-root-contract).
+- **An empty file list is a failure, not a pass** — upstream's phrasing is *zero
+  files is a refusal, not a green*: [`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md).
+- **The secret gate self-tests before it scans**, and matches its canary by path
+  rather than by outcome: [`code-quality-tooling.md` § The secret scan scans from inside the tree](third_party/ANTfrastructure/docs/code-quality-tooling.md#the-secret-scan-scans-from-inside-the-tree).
 
 All gates run even after one fails, and the verdict is decided once at the
 end, so a triage round sees every finding instead of only the first.
@@ -682,10 +674,10 @@ The rules are upstream's, recorded for every consumer in
 They are restated here because the next new script gets written in *this* repo,
 and the exceptions below are this repo's.
 
-- **Every `.ps1` and `.psm1` declares `#requires -Version 7.0`.** Every tracked
-  file outside `third_party/` carries it. It is what makes Windows
-  PowerShell 5.1 refuse the file up front instead of failing somewhere deep in a
-  pwsh-7 construct: `Build-Windows.ps1` and everything it reaches assume pwsh.
+- **Every `.ps1` and `.psm1` declares `#requires -Version 7.0`**, and every
+  tracked file outside `third_party/` carries it — the rule, and why a version
+  header beats failing deep inside a pwsh-7 construct, are upstream's:
+  [adopting § 8](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#8-calling-conventions-what-every-consumer-looks-like).
 - **Executable scripts are PascalCase `Verb-Noun`, with a verb `Get-Verb`
   approves** — `Build-Windows.ps1`, `Invoke-ClangClRelease.ps1`,
   `Resolve-BuildModule.ps1`, `Test-AllConfigs.ps1`, `Compare-RendererPixels.ps1`.
@@ -724,29 +716,26 @@ planner, DeepSeek v4 Flash executor). Both read the same role prompt, composed
 from ANTfrastructure's shared prompt plus this repo's overlays in
 `scripts/agentic-loop/prompts/`.
 
-**Reusable logic lives in ANTfrastructure's `WindowsAgenticLoop.Common` module
-(PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
-thin consumers: run `scripts/agentic-loop/Invoke-AgenticLoop.ps1` (Windows,
-requires PowerShell 7+) or `scripts/agentic-loop/Run-AgenticLoop.sh` (Linux,
-requires `jq`). Prompts are single-sourced in ANTfrastructure: the planner/executor
-**task** prompts at `shared/agentic-loop/prompts/*.md` (both the PowerShell
-module and the Bash library read them) and the role **system** prompts at
-`shared/agentic-loop/system-prompts/*.md`. This repo owns only a per-role
-delta — `scripts/agentic-loop/prompts/planner-overlay.md` and
-`executor-overlay.md`, declared in the config's top-level `promptOverlays`
-block. At start-up the loop composes the shared system prompt plus the overlay
-into one text and delivers it to `claude` via `--append-system-prompt-file` and
-to `opencode` by regenerating `.opencode/agents/<role>.md` from the pinned hub
-(opencode takes no prompt file on its command line). `.opencode/agents/` is
-therefore gitignored, per
-[adopting-in-a-new-project.md § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop);
-edit the overlay, never the generated file.
-What this repo configures, and its runners and overlays:
-[`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md); build matrix
-and sanitizer-aware tests:
-[agentic-loop-build-matrix.md](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md);
-module API reference:
-[windows-agentic-loop.md](third_party/ANTfrastructure/docs/windows-agentic-loop.md).
+**The loop itself is upstream** — `WindowsAgenticLoop.Common` (PowerShell) and
+`agentic-loop.sh` (Bash) own it, and both role prompts are single-sourced there
+too. Architecture, config keys and the module API:
+[adopting § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop) and
+[`windows-agentic-loop.md`](third_party/ANTfrastructure/docs/windows-agentic-loop.md); build matrix and
+sanitizer-aware tests:
+[`agentic-loop-build-matrix.md`](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md).
+
+What this repo owns is a per-role **delta**:
+`scripts/agentic-loop/prompts/planner-overlay.md` and `executor-overlay.md`,
+declared in the config's top-level `promptOverlays` block. At start-up the loop
+composes the shared system prompt plus the overlay into one text and delivers it
+to `claude` via `--append-system-prompt-file`, and to `opencode` by regenerating
+`.opencode/agents/<role>.md` from the pinned hub (opencode takes no prompt file
+on its command line). **`.opencode/agents/` is therefore gitignored — edit the
+overlay, never the generated file.** Run the loop with
+`scripts/agentic-loop/Invoke-AgenticLoop.ps1` (Windows, PowerShell 7+) or
+`scripts/agentic-loop/Run-AgenticLoop.sh` (Linux, needs `jq`); what this repo
+configures and where it deviates from upstream defaults:
+[`scripts/agentic-loop/README.md`](scripts/agentic-loop/README.md).
 
 ## Docs
 
