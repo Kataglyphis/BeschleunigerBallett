@@ -55,31 +55,14 @@ CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-$(antfrastructure_version GCC_VER
 CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
 
 # cmake-format is installed into the repo-local .venv when it is not on PATH.
-#
-# The install knob is a FUNCTION, not lib/uv-install-requirements.sh: that
-# wrapper defaults to this repo's root requirements.txt, which is the Sphinx
-# DOCS stack (sphinx, breathe, exhale, junit2html, ...) - eleven unpinned
-# packages dragged in merely to run a formatter, and a docs-stack resolution
-# failure would then break the formatting gate. The gate installs ANTfrastructure's
-# pinned cmake-format bootstrap set instead (cmake-format==0.6.13 plus the
-# pyyaml it needs to read .cmake-format.yaml at all) - the very file the hub's
-# own preflight cmake-format gate installs, so both graders run one version.
-#
-# A function is what upstream itself passes here (check_cmake_format in
-# ANTfrastructure's linux/scripts/preflight.sh): code-quality.sh runs the knob as a
-# command, so a shell function needs no exec bit and no extra wrapper file. It
-# runs in the subshell code-quality.sh wraps it in, so sourcing python_uv.sh
-# there cannot leak its helpers over this script's own.
-CODE_QUALITY_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
-cmake_format_install_requirements() {
-  local requirements
-  requirements="$(antfrastructure_path linux/scripts/cmake-format.requirements.txt)" || return 1
-  antfrastructure_source linux/scripts/01-core/python_uv.sh
-  # Same venv code-quality.sh then activates and probes for cmake-format;
-  # honour the knob rather than restating its default.
-  uv_pip_install_requirements "${CODE_QUALITY_VENV_DIR:-${ROOT_DIR}/.venv}" "${requirements}"
-}
-CODE_QUALITY_UV_INSTALL_REQUIREMENTS_SCRIPT=cmake_format_install_requirements
+# The two bootstrap knobs that stood here are the HUB'S DEFAULT since
+# 2026-09-15 (code-quality.sh _code_quality_apply_default_bootstrap): it makes
+# the venv with 01-core/python_uv.sh and installs the hub's pinned
+# linux/scripts/cmake-format.requirements.txt - cmake-format==0.6.13 plus the
+# pyyaml it needs to read .cmake-format.yaml - into CODE_QUALITY_VENV_DIR. That
+# is byte-for-byte what the local pair did, and it is still NOT this repo's root
+# requirements.txt (the eleven-package Sphinx docs stack). Set the knobs again
+# only for a venv policy the default cannot express.
 
 run_format_and_tidy() {
   code_quality_ensure_cmake_format
