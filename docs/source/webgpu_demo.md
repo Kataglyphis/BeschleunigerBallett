@@ -27,7 +27,8 @@ Open the demo full-page ↗
 - **Features shipped**: the renderer is well past the original milestones —
   the authoritative per-feature status (IBL, skybox, animation/skinning/morph
   targets, egui overlay, bloom, SSAO, auto-exposure, LOD, GPU occlusion
-  culling, and more) is `docs/webgpu-renderer-roadmap.md` in the repository.
+  culling, and more) is `webgpu-renderer-roadmap.md` in the repository that owns
+  the renderer, under `third_party/OxidANT/crates/webgpu_renderer/docs/`.
 - **Rebuild the demo**: `scripts/linux/docs-build-web.sh` compiles
   `kataglyphis_webgpu_renderer` to wasm32, runs `wasm-bindgen`, and refreshes
   this folder before Sphinx runs; the CI docs deploy runs it automatically,

@@ -316,7 +316,7 @@ never touches it.
 ## Beyond shaders
 
 The bigger cross-renderer wins on the roadmap
-(`webgpu-renderer-roadmap.md`, Phase G) are:
+(OxidANT's `third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md`, Phase G) are:
 
 - **Shared assets** — OBJ→glTF conversion so both renderers eat the same
   scenes (the C++ engine's `Resources/Models` becomes directly usable).

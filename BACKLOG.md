@@ -2,8 +2,9 @@
 
 The single list of open work across the whole project — sized commitments and
 unsized ideas together. Detailed per-area status lives in `docs/`
-(`cpp-renderer-improvements.md`, `webgpu-renderer-roadmap.md`,
-`shader-sharing.md`); this file is what is still to do.
+(`cpp-renderer-improvements.md`, `shader-sharing.md`) and, for the Rust WebGPU
+renderer, in OxidANT's `third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md`;
+this file is what is still to do.
 
 Sizes: S (< half a day), M (a day-ish), L (multi-day), XL (multi-week).
 Checkbox items are sized and agreed; the prose sections below the fold are
@@ -1629,8 +1630,9 @@ A `cargo check --target wasm32-unknown-unknown` is seconds of compute and would
 have caught it at the migration commit.
 
 The recurring bug class behind many of these is written up in
-`docs/renderer-bounds-invariant.md` - read it before touching anything that
-moves geometry.
+`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`
+(it moved to OxidANT with the renderer under decision D6; `docs/` here keeps a
+pointer) - read it before touching anything that moves geometry.
 
 **Status 2026-07-31 (supersedes the 2026-07-24 status) — re-verified against the
 crate source:**

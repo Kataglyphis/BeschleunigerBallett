@@ -140,11 +140,15 @@ All open work is consolidated in [`BACKLOG.md`](BACKLOG.md) — sized
 commitments first, then unsized ideas and recurring chores (perf tests,
 periodic profile/TSan/sync-validation runs).
 Renderer-specific plans and status live in `docs/`:
-`webgpu-renderer-roadmap.md` (Rust WebGPU renderer),
 `cpp-renderer-improvements.md` (C++ engine improvement campaign),
-`shader-sharing.md` (sharing shader code between both renderers),
-`webgpu-srgb-audit.md` (color-space audit), and
-`webgpu-gltf-rust-plan.md` (glTF loading plan for the Rust renderer).
+`shader-sharing.md` (sharing shader code between both renderers) and
+`webgpu-srgb-audit.md` (color-space audit).
+The Rust WebGPU renderer's own plans moved to the repository that owns that
+renderer, `third_party/OxidANT/crates/webgpu_renderer/docs/`:
+`webgpu-renderer-roadmap.md` (status per feature),
+`webgpu-gltf-rust-plan.md` (the original glTF loading plan) and
+`renderer-bounds-invariant.md` (the bounds rule).
+The `docs/` files of those three names here are pointers, not copies.
 
 ## Contributing
 

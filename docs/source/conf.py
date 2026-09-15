@@ -114,7 +114,7 @@ extensions.extend(
 
 # -- Extra static payloads ------------------------------------------------------
 # Copied verbatim into the site root: the WebGPU/glTF WASM demo (built from
-# third_party/OxidANT/crates/webgpu_renderer; see
+# third_party/OxidANT/crates/webgpu_renderer; see that crate's
 # docs/webgpu-gltf-rust-plan.md for the rebuild commands).
 html_extra_path = ["_webgpu_demo"]
 
