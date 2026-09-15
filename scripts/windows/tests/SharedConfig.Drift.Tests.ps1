@@ -2,6 +2,17 @@
 
 # Guards this repo's copies of the shared tool configs against drift.
 #
+# THIS SUITE IS THE MIRROR, NOT THE GATE. The every-push gate is the Bash twin,
+# `sync-shared-config.sh --repo-root . --check`, which the hub's lint aggregator
+# runs as one of its six gates from .github/workflows/lint-gates.yml - always-on
+# and with no paths-ignore, so it sees every push including docs-only ones. This
+# file runs in Windows.yml's `pester-tests` job, which is opt-in per commit via
+# [build-win]; what it proves is that the PowerShell sync half
+# (Sync-SharedConfig.ps1) agrees with the Bash half about the same seven assets.
+# Do not read a green Windows lane as the drift check having run on this push,
+# and do not "fix" the opt-in by moving this suite: two runners grading the same
+# seven files on every push is a minute spent to learn nothing.
+#
 # .clang-format, .clang-tidy, gcovr.cfg and .pre-commit-config.yaml are owned by
 # ANTfrastructure (shared/config/). They are COPIED here rather than referenced
 # because clang-format, clang-tidy and pre-commit find their config by walking
