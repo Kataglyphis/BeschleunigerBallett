@@ -123,7 +123,7 @@ Shaders are written in [Slang](https://shader-slang.com/) under
 `Resources/ShadersSlang/` and compiled ahead of time by
 `scripts/windows/Build-SlangShaders.ps1` / `scripts/linux/compile-slang-shaders.sh`
 to SPIR-V and WGSL. See `docs/shader-build-pipeline.md` and AGENTS.md §
-Shaders for the full pipeline.
+Shaders, which walks the full pipeline.
 
 ## Docker and Build Environments
 

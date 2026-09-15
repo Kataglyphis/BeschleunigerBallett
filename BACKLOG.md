@@ -2601,7 +2601,7 @@ is NOT a second alignment hazard — `textureID` is assigned from
 
 Candidates found but NOT tasked this cycle (checked, then rejected with a reason —
 do not re-propose without new evidence): **`histogram.wgsl` being the one
-hand-written WGSL** — AGENTS.md § Shaders already records why (Slang has no
+hand-written WGSL** — AGENTS.md § Shaders, which already records why (Slang has no
 `InterlockedAdd` on `RWStructuredBuffer` for WGSL) and it is Rust-only, with no
 C++ counterpart to share; **README/`shader-build-pipeline.md`/`webgpu-renderer-roadmap.md`
 shader drift** that batch IV deferred — re-read this pass and all three are now

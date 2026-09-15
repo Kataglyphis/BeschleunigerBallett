@@ -6,7 +6,7 @@
 # imported out of the submodule, because it is what *finds* the submodule: it
 # runs before anything upstream is importable.
 #
-# Contract (ANTfrastructure docs/adopting-in-a-new-project.md § 1):
+# Contract (third_party/ANTfrastructure/docs/adopting-in-a-new-project.md § 1):
 #
 #   1. third_party/ANTfrastructure/windows/scripts/modules/<Name>.psm1
 #   2. <this script's directory>/modules/<Name>.psm1   (project-specific fallback)

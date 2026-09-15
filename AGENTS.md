@@ -578,6 +578,7 @@ benchmarks mean anything) and a synchronization-validation pass each catch
 classes of problem the debug loop cannot. See [`BACKLOG.md`](BACKLOG.md) for
 what each one is for.
 
+<a id="there-is-no-windows-threadsanitizer"></a>
 **There is no Windows ThreadSanitizer.** Use the Linux
 `linux-debug-tsan-clang` preset, which CI runs, for race detection — see
 "Sanitizer semantics" above.

@@ -21,7 +21,7 @@
 # Local repro of a CI step against exactly the image CI used:
 #   docker run --rm -v "$PWD:/workspace" -w /workspace \
 #     "$(scripts/linux/ci-image-ref.sh)" <cmd>
-# See ANTfrastructure docs/rancher-desktop-linux-containers.md.
+# See third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md.
 #
 # ---------------------------------------------------------------------------
 # HISTORY KEPT HERE ON PURPOSE: why the tag is :latest-cross, and why ONE tag.

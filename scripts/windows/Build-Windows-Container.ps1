@@ -7,7 +7,8 @@
 # mount), the reusable container, the incremental streaming and the artifact
 # verification all live in ANTfrastructure's WindowsContainerBuild.Reuse module
 # (Invoke-ContainerBuild), because none of that is specific to this engine.
-# Rationale + measurements: ANTfrastructure docs/windows-container-build-performance.md
+# Rationale + measurements:
+# third_party/ANTfrastructure/docs/windows-container-build-performance.md
 # and docs/container-build-caching.md.
 
 param(

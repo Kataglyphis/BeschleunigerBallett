@@ -34,7 +34,12 @@ BeschleunigerBallett is a renderer and graphics-engine playground for experiment
 
 - Read [Getting Started](getting_started.md) for clone, configure, build, and run instructions
 - Read [Documentation Workflow](documentation_workflow.md) for Sphinx, Doxygen, and Graphviz details
-- Open [Graphviz Include Graphs](graphviz_files.rst) for the stable entry page for generated diagrams
-- Open [API Reference](api/library_root.rst) for the C++ API landing page
+- Open **Graphviz Include Graphs** (`graphviz_files.rst`) for the stable entry page for generated diagrams
+- Open **API Reference** (`api/library_root.rst`) for the C++ API landing page
+
+The last two pages are WRITTEN BY THE DOCS BUILD - `graphviz_generator.py`, and
+exhale or the placeholder `conf.py` writes when no Doxygen XML is present - so
+they exist in a built tree, not in the checkout. `index.rst` links them there,
+which is why they are named here rather than linked.
 
 If Doxygen XML has already been generated, the API page is automatically replaced with the generated Exhale output.

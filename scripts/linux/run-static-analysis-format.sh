@@ -153,7 +153,8 @@ run_scan_build() {
 # A failure to resolve is FATAL, exactly as it was in the workflow's `set -e`
 # prologue: analysing against the system GCC's headers by accident is the silent
 # wrong answer this whole path exists to prevent. Run this in the family image
-# (ANTfrastructure docs/rancher-desktop-linux-containers.md), which is where CI
+# (third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md), which is
+# where CI
 # runs it and where GCC_PREFIX is exported for it.
 apply_gcc_toolchain_for_analysis() {
   local gcc_root

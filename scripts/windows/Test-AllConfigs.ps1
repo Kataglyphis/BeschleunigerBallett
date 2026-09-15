@@ -48,8 +48,9 @@ Import-BuildModule 'WindowsContainerImage.Common', 'WindowsBuildSweep.Common'
 # fleet-wide tag bump now moves this sweep too, instead of leaving it on a
 # literal that still looks right.
 #
-# `:latest-cross`, NOT the stale `:latest` - see ANTfrastructure
-# docs/rancher-desktop-linux-containers.md, and the measured history of why the
+# `:latest-cross`, NOT the stale `:latest` - see
+# third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md, and the
+# measured history of why the
 # tag is what it is in scripts/linux/ci-image-ref.sh.
 $linuxImage = Get-CiImageReference
 $linuxBuildDir = 'build-linux-tsan'
