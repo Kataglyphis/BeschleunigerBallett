@@ -38,6 +38,41 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ANTfrastructure drivers + this project's payload |
 | `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ANTfrastructure — see [CMake modules](#cmake-modules-antfrastructure-first-local-override-wins) |
 
+### Large tracked assets
+
+**This repository is large on purpose and it is not going to be rewritten.**
+Measured 2026-09-15, outside `third_party/`: **582 MiB across 580 tracked
+files**, of which **37 files account for 556 MiB** — 95% of the weight in 6% of
+the files. Where it sits:
+
+| What | Size | Why it is tracked |
+| --- | --- | --- |
+| 33 Wavefront meshes under `Resources/Models/` | 402 MiB | The scene library the engine's model picker offers. Four of them are test fixtures (`ShadowTest/shadow_rig.obj`, `VikingRoom/viking_room.obj`, `Dinosaurs/dinosaurs.obj`, `GltfTest/cube.glb`); `crytek-sponza/` is the only one the Release install ships. The rest are what makes a fresh clone render something without an asset-download step. |
+| `Resources/Models/Sulo/New_0.9.blend` | 66 MiB | The editable source for the Sulo meshes beside it. Nothing in the build reads it; it is here so the exported `.obj` files are reproducible. |
+| Textures under `Resources/` (PNG/JPG, plus one 16 MiB `.tif`) | ~87 MiB | Runtime material and IBL inputs; `Resources/Textures/` is installed with the Release build. |
+| `Documents/GGD_Kit_milestone_document.pdf` | 16 MiB | Reference document, `linguist-vendored`. |
+| `images/` | 11 MiB | README and homepage screenshots. |
+| `docs/source/_webgpu_demo/.../kataglyphis_webgpu_renderer_bg.wasm` | 8 MiB | The prebuilt WebGPU demo the Sphinx site serves. |
+
+The five largest single files: `buddha.obj` (89 MiB),
+`Sulo/SuloLongDongLampe.obj` (82 MiB), `StanfordDragon/dragon.obj` (71 MiB),
+`Sulo/New_0.9.blend` (66 MiB), `bmw/bmw.obj` (30 MiB).
+
+**No history rewrite and no LFS** (owner decision, 2026-09-15). `filter-repo`,
+`filter-branch` and BFG all invalidate every existing clone, fork and open
+branch to reclaim bytes that a clone pays for once; LFS trades that for a second
+thing that has to be provisioned before a checkout can build. What *is* done is
+this note plus the **large-asset gate** at the bottom of `.gitignore`: DCC
+project files, archives and video are ignored repo-wide, heavy image formats are
+ignored under `Resources/`, and `Resources/**/*.obj` is ignored with the 33
+tracked meshes listed back individually — so a 34th has to be typed rather than
+swept in by `git add .`. An asset that genuinely belongs: `git add -f <path>`,
+then a `!` line in `.gitignore` and a row here.
+
+Two earlier passes already removed what was removable without touching history:
+a Blender autosave twin, a duplicate `dinosaurs.obj` and a 2022 Doxygen snapshot
+(`75328b2f`). Do not re-add them.
+
 ## What ANTfrastructure owns — links only
 
 Every topic below lives in `third_party/ANTfrastructure` and is consumed from

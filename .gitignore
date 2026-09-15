@@ -124,3 +124,111 @@ imgui.ini
 # see them. Ignoring the directory is what makes that guard able to catch a
 # recurrence.
 Testing/
+
+# ---------------------------------------------------------------------------
+# LARGE-ASSET GATE
+#
+# 556 MiB of the 582 MiB this repo tracks outside third_party/ sits in 37 files.
+# AGENTS.md section "Large tracked assets" has the inventory and why those 37
+# stay where they are: documented, not rewritten (owner decision 2026-09-15 - no
+# filter-repo, no BFG, no LFS). The rules below are the other half of that
+# decision - they stop NEW heavy binaries from joining them.
+#
+# These rules are safe to add to a repo that already tracks such files: git
+# never applies an ignore rule to a path that is already in the index. Each rule
+# below that could match a tracked file names it back with a `!` line anyway, so
+# the tracked-and-ignored gate
+# (scripts/windows/tests/Repo.GeneratedArtifacts.Tests.ps1) can keep asserting
+# the general property instead of carrying exceptions.
+#
+# Adding one on purpose is still possible and still deliberate:
+#   git add -f <path>
+# then add a `!` line here and a line to the AGENTS.md inventory. The friction
+# is the feature - a 90 MiB mesh is a decision, not a `git add .`.
+# ---------------------------------------------------------------------------
+
+# DCC project files. Editable source art runs 10-100x the size of the mesh
+# exported from it and nothing in this tree reads it. One is tracked
+# (New_0.9.blend, 66 MiB); it is the ceiling, not the precedent.
+*.blend
+!Resources/Models/Sulo/New_0.9.blend
+*.fbx
+*.max
+*.ma
+*.mb
+*.c4d
+*.3ds
+*.ztl
+*.spp
+*.psd
+*.xcf
+
+# Archives and disk images. A repo that needs one has a packaging step; a
+# committed blob is a packaging step nobody can re-run.
+*.zip
+*.7z
+*.rar
+*.tar
+*.gz
+*.bz2
+*.xz
+*.iso
+
+# Video. Screenshots under images/ are PNG and stay. A capture belongs in a
+# release asset or on the homepage, not in the clone every contributor pays for.
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Heavy image formats under Resources/. Scoped rather than repo-wide on purpose:
+# the vendored third_party/KTX test corpus is tracked directly here and owns its
+# own .exr/.hdr/.dds/.tga files. Runtime textures are PNG/JPG and unaffected.
+Resources/**/*.tif
+Resources/**/*.tiff
+Resources/**/*.exr
+Resources/**/*.hdr
+Resources/**/*.tga
+Resources/**/*.dds
+!Resources/Models/Sulo/WolfStahl/textures/MetalSpottyDiscoloration001_DISP16_4K_METALNESS.tif
+
+# Wavefront meshes: 33 files, 402 MiB, 69% of everything this repo tracks. The
+# 33 are listed back so a 34th has to be typed rather than swept in. (Compiler
+# .obj output never reaches here - it lands under the build*/ directories
+# ignored above, which is why the `# *.obj` line in the Compiled Object files
+# block is commented out.)
+Resources/**/*.obj
+!Resources/Models/Ajax/statue.obj
+!Resources/Models/CornellBox/CornellBox-Empty-CO.obj
+!Resources/Models/CornellBox/CornellBox-Empty-RG.obj
+!Resources/Models/CornellBox/CornellBox-Empty-Squashed.obj
+!Resources/Models/CornellBox/CornellBox-Empty-White.obj
+!Resources/Models/CornellBox/CornellBox-Glossy-Floor.obj
+!Resources/Models/CornellBox/CornellBox-Glossy.obj
+!Resources/Models/CornellBox/CornellBox-Mirror.obj
+!Resources/Models/CornellBox/CornellBox-Original.obj
+!Resources/Models/CornellBox/CornellBox-Sphere.obj
+!Resources/Models/CornellBox/CornellBox-Water.obj
+!Resources/Models/CornellBox/water.obj
+!Resources/Models/Dinosaurs/dinosaurs.obj
+!Resources/Models/JurassicPark/JurassicPark.obj
+!Resources/Models/Pillum/PilumPainting_Export.obj
+!Resources/Models/Plane/plane.obj
+!Resources/Models/ShadowTest/shadow_rig.obj
+!Resources/Models/StanfordDragon/dragon.obj
+!Resources/Models/Sulo/SuloLongDongLampe.obj
+!Resources/Models/Sulo/SuloLongDongLampe_v2.obj
+!Resources/Models/Sulo/SuloLongDongLampe_v2_fix.obj
+!Resources/Models/Sulo/Weinglas_Vol.obj
+!Resources/Models/Sulo/WolfStahl/Wolf-Stahl.obj
+!Resources/Models/VikingRoom/viking_room.obj
+!Resources/Models/bmw/bmw.obj
+!Resources/Models/buddha/buddha.obj
+!Resources/Models/bunny/bunny.obj
+!Resources/Models/crytek-sponza/sponza_triag.obj
+!Resources/Models/mori_knob/testObj.obj
+!Resources/Models/plane.obj
+!Resources/Models/sibenik/sibenik.obj
+!Resources/Models/sportsCar/sportsCar.obj
+!Resources/Models/suzanne.obj
