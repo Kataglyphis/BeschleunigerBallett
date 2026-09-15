@@ -19,7 +19,27 @@ _antfrastructure_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Both are overridable from the environment. That matters in the container,
 # where the workspace is bind-mounted at a different path than on the host.
 KATAGLYPHIS_REPO_ROOT="${KATAGLYPHIS_REPO_ROOT:-$(cd "${_antfrastructure_lib_dir}/${KATAGLYPHIS_REPO_ROOT_RELATIVE}" && pwd)}"
-ANTFRASTRUCTURE_DIR="${ANTFRASTRUCTURE_DIR:-${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure}"
+
+# Three places, in order, and the order is the point:
+#   1. $ANTFRASTRUCTURE_DIR, if the caller set it. A container bind-mounts the
+#      workspace somewhere else than the host, so an explicit answer always wins.
+#   2. the submodule, which is what six of the consumers have.
+#   3. a plain sibling clone at <repo>/antfrastructure-tools, which is what a
+#      consumer with NO submodule has. One repo hand-rolled that probe because
+#      this template could not express it; now it can, and there is no reason
+#      for a seventh bootstrap variant.
+if [ -z "${ANTFRASTRUCTURE_DIR:-}" ]; then
+    if [ -d "${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure" ]; then
+        ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure"
+    elif [ -d "${KATAGLYPHIS_REPO_ROOT}/antfrastructure-tools" ]; then
+        ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/antfrastructure-tools"
+    else
+        # Neither exists: keep the submodule path so the error text below points
+        # at the shape this repo declared, rather than at a directory nobody
+        # asked for.
+        ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure"
+    fi
+fi
 export KATAGLYPHIS_REPO_ROOT ANTFRASTRUCTURE_DIR
 
 # Absolute path of a file inside the submodule, or a hard failure naming it.
@@ -32,9 +52,21 @@ antfrastructure_path() {
     local resolved="${ANTFRASTRUCTURE_DIR}/${relative_path}"
     if [ ! -e "$resolved" ]; then
         echo "Error: ANTfrastructure file not found: ${resolved}" >&2
-        echo "       If the whole directory is missing, the submodule is not checked out:" >&2
-        echo "       git submodule update --init --recursive third_party/ANTfrastructure" >&2
-        echo "       If only this file is missing, it moved upstream — check ${ANTFRASTRUCTURE_DIR}/docs/INDEX.md" >&2
+        # The hint has to match THIS repo's shape. `git submodule update` in a
+        # repo with no such submodule prints "No submodule mapping found" and
+        # sends the reader looking for a broken submodule that never existed.
+        if grep -q 'third_party/ANTfrastructure' "${KATAGLYPHIS_REPO_ROOT}/.gitmodules" 2>/dev/null; then
+            echo "       If the whole directory is missing, the submodule is not checked out:" >&2
+            echo "       git submodule update --init --recursive third_party/ANTfrastructure" >&2
+        else
+            echo "       This repo declares no ANTfrastructure submodule. Clone it beside the" >&2
+            echo "       checkout, or point ANTFRASTRUCTURE_DIR at one you already have:" >&2
+            echo "       git clone --depth 1 https://github.com/Kataglyphis/ANTfrastructure antfrastructure-tools" >&2
+            echo "       export ANTFRASTRUCTURE_DIR=<checkout>" >&2
+        fi
+        echo "       If only this file is missing, the pinned ANTfrastructure predates it or it" >&2
+        echo "       moved: bump the gitlink (git submodule update --remote --merge" >&2
+        echo "       third_party/ANTfrastructure), then check ${ANTFRASTRUCTURE_DIR}/docs/INDEX.md" >&2
         return 1
     fi
     printf '%s' "$resolved"
