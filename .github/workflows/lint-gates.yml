@@ -1,0 +1,203 @@
+name: Lint gates
+
+# WHY THIS IS ITS OWN WORKFLOW (2026-09-15)
+#
+# These three jobs used to be tenants of the build lanes: `lint` sat inside the
+# reusable Linux.yml and `powershell-lint` inside Windows.yml. Nothing about
+# them belongs to a build, and being tenants cost them on both sides:
+#
+#   - Linux.yml is `workflow_call`-only, so `lint` ran once per CALLER. A push
+#     carrying [build-arm] ran the identical shellcheck/actionlint/gitleaks
+#     sweep twice, on an x86 runner and again on an ARM one, grading a tree that
+#     does not vary by runner architecture.
+#   - Both callers declare `paths-ignore: ['**.md', 'docs/**']`, correctly - a
+#     backlog edit is not a reason to spend a 2-3h engine build. But the lint
+#     gates are exactly the gates a docs-only commit still needs: gitleaks scans
+#     the tracked tree, and a leaked credential does not care that the commit
+#     only touched Markdown. A docs-only push got NO secret scan at all.
+#   - `powershell-lint` was reachable only through Windows.yml, whose build job
+#     is opt-in per commit. It already carried no `if:` so it did run on every
+#     push - but it ran under a workflow named for a Windows container build,
+#     and Windows.yml's own paths-ignore silenced it on docs-only commits too.
+#
+# So: no paths-ignore here, on purpose, and no runner input. This runs once per
+# push to main/develop and once per PR against them, whatever the commit
+# touched. Everything below is CPU-only and container-free; the whole workflow
+# finishes in minutes and pulls no image.
+#
+# An invariant that only runs when somebody remembers to type a marker is not a
+# gate - the same reasoning that pulled the submodule-pin check out of the
+# opt-in Windows job (now .github/workflows/submodule-pins.yml).
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  # Lets the gates be re-run against a branch tip without inventing a commit -
+  # useful after a fix lands upstream in ANTfrastructure, since the gate scripts
+  # and their pinned binaries are resolved there rather than here.
+  workflow_dispatch:
+
+# A superseded lint verdict is noise: the tip's answer is the only one that
+# matters and these jobs are cheap to restart. main is exempt for the same
+# reason as the build lanes - its runs are what a release is cut from.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint gates, entirely ANTfrastructure's: shellcheck over this repo's bash,
+  # actionlint over its workflows and gitleaks over its tracked tree, all using
+  # the pinned, SHA-verified binaries ANTfrastructure bootstraps rather than a
+  # second set installed here.
+  #
+  # Cheap and first-to-finish (~2 min, no image pull, no build), and it covers a
+  # class the rest of this lane cannot: `yaml.safe_load` proves a workflow is
+  # valid YAML, not valid Actions, and bash only reports a quoting or
+  # undefined-function bug when the line finally executes - which for a
+  # gcc-lane script can be an hour in.
+  #
+  # THIS JOB USED TO BE ~120 LINES OF SHELL IN `run:` BLOCKS. All of it - the
+  # git-ls-files scope construction, the two empty-list vacuity guards, the
+  # run-all-three-then-fail-once accumulator and the gitleaks self-test
+  # (clean-tree positive control + planted-PAT canary) - now lives in
+  # ANTfrastructure linux/scripts/run-lint-gates.sh and is reached through this
+  # repo's one-line wrapper. Brevity is not the point; THIS is:
+  #     bash ./scripts/linux/run-lint-gates.sh
+  # on a dev box runs exactly what this job runs, which a `run:` block never
+  # could. The gate that blocks a merge here is now testable before the push.
+  #
+  # What upstream carries verbatim, recorded here so the reasons are not lost
+  # with the code that used to state them:
+  #   - both scopes come from `git ls-files`, NOT a glob. The two globs this
+  #     replaced (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse
+  #     and named only the directories somebody remembered: measured 2026-09-07
+  #     they expanded to 19 of the 21 tracked first-party scripts, silently
+  #     missing scripts/agentic-loop/Run-AgenticLoop.sh and what was then the
+  #     repo-root bump-version.sh (moved to scripts/linux/ on 2026-09-15 - a
+  #     move that only narrows the gap, it does not close it: the next script
+  #     that lands outside the two directories somebody remembered is invisible
+  #     to a glob again, and to git ls-files it is not).
+  #   - third_party/ is dropped because the vendored trees are linted in their
+  #     own repositories at their own ratchet. Handing the whole workspace to
+  #     gitleaks measured 82 findings, every one a generic-api-key false
+  #     positive in vendored code, and ZERO in a file this repository owns.
+  #     third_party/CMakeLists.txt is still scanned: upstream keeps the tracked
+  #     plain FILES inside an excluded directory precisely because they are the
+  #     consumer's own.
+  #   - the empty-list guards are load-bearing. lint-shell.sh invoked with ZERO
+  #     file arguments falls back to its own default scope, ANTfrastructure's
+  #     linux/ tree, and would report green having checked none of this
+  #     repository's scripts.
+  #   - the self-test is what separates "the gate ran and found nothing" from
+  #     "the gate never started", and its canary is matched BY PATH because a
+  #     scan root that does not exist is exit 0 with gitleaks skipping it.
+  #
+  # One thing this collapse CHANGES on purpose: the three gates were three
+  # steps, so a shellcheck failure ended the job before gitleaks ever ran.
+  # Upstream runs all three and fails once at the end, so a triage round sees
+  # every finding instead of the first one.
+  #
+  # ENFORCING, and deliberately without continue-on-error: a finding is either a
+  # real leak - rotate the credential and purge it - or a false positive that
+  # earns ONE narrow, justified allowlist entry upstream, never a softening of
+  # this step.
+  # ---------------------------------------------------------------------------
+  lint:
+    name: shell + workflow + secret lint
+    runs-on: ubuntu-26.04
+    # ~2 minutes in practice; the ceiling exists so a hung bootstrap download
+    # fails in minutes instead of running to the six-hour account default.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # Linux.yml sets this file-wide and explains why: the runner's default shell
+    # has no pipefail, so a `tee`d step reports SUCCESS on a failed command. The
+    # gate aggregator pipes nothing today, but it is the same trap and the same
+    # one-line answer.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # ANTfrastructure is a TOP-LEVEL submodule and it is the one these gates
+          # EXECUTE - all three lint scripts and the aggregator that drives them
+          # live inside it - so this deliberately does not recurse; the full
+          # recursive tree costs minutes for no benefit here. The other
+          # top-level submodules come along with it, and nothing below GRADES
+          # them: both scopes drop third_party/.
+          submodules: true
+          fetch-depth: 1
+
+      # uvx is how the shared aggregator runs ruff; the runner carries no uv.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+
+      - name: Lint gates (ANTfrastructure shellcheck + actionlint + gitleaks)
+        run: bash ./scripts/linux/run-lint-gates.sh
+
+  # PowerShell lint: ANTfrastructure's Invoke-Lint.ps1 pointed at THIS repo's
+  # PowerShell tree. Two passes - a mandatory parse + AST-trap gate, and
+  # PSScriptAnalyzer.
+  #
+  # Runs on Windows rather than being folded into the `lint` job above on
+  # purpose: the script is Windows-native (it resolves its own helper module with
+  # a backslash path and excludes `\archive\` by a backslash regex), and
+  # PSScriptAnalyzer is preinstalled on the hosted Windows image. Two jobs in one
+  # workflow, two runners - that is the shape, not an accident of where the file
+  # used to live.
+  powershell-lint:
+    name: PowerShell lint (ANTfrastructure gate)
+    runs-on: windows-2025
+    # Same reasoning as the job above; Install-Module is the step that can hang.
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    # Windows.yml set this file-wide; carried here because every step below is
+    # PowerShell and `pwsh` is not the default shell on a Linux-first workflow.
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Top-level only: the only submodule these steps read is ANTfrastructure,
+      # which carries both the gate script and its ruleset.
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      # Pinned, like the hub pins it for its own lane, so a runner-image module
+      # refresh cannot silently change what this gate reports.
+      - name: Install PSScriptAnalyzer
+        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
+
+      # -Path is the parameter ANTfrastructure added for exactly this case: a
+      # consumer points the gate at ITS tree, while the PSScriptAnalyzer settings
+      # file stays resolved against the SCRIPT's own location - so the hub's
+      # PSScriptAnalyzerSettings.psd1 is consumed BY REFERENCE and no ruleset is
+      # copied into this repo. `scripts` is walked recursively, so scripts\,
+      # scripts\windows\, scripts\windows\tests\ and scripts\agentic-loop\ are all
+      # covered; the dead archive\ tree at the repo root is deliberately outside
+      # the scope.
+      #
+      # -FailOnAnalyzer is deliberately NOT passed, and this step deliberately
+      # carries no continue-on-error - those are not the same thing. The step
+      # FAILS the job on any parse error or AST-trap violation, which are hard
+      # code defects. What is advisory is only the PSScriptAnalyzer pass, and
+      # that ramp is the hub's own documented one: its
+      # PSScriptAnalyzerSettings.psd1 opens with "Deliberately lenient to start
+      # ... Tighten over time", and Invoke-Lint.ps1's own parameter help records
+      # that the analyzer is advisory unless -FailOnAnalyzer is given. Add
+      # -FailOnAnalyzer here once this repo's analyzer findings are triaged; do
+      # not reach for continue-on-error, which would hide the parse gate too.
+      - name: Lint PowerShell (parse gate + PSScriptAnalyzer)
+        run: >-
+          pwsh -NoProfile -File third_party/ANTfrastructure/windows/scripts/Invoke-Lint.ps1
+          -Path scripts

@@ -420,9 +420,12 @@ Known coupling to watch when bumping pins:
 
 Drift itself is guarded by ANTfrastructure's repo-agnostic suite,
 `third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1`, run
-by the **always-on** `submodule-pins` job in `.github/workflows/Windows.yml` —
-no `[build-win]` opt-in, because an invariant that only runs when somebody
-remembers to type a marker is not a gate. For **every** configured submodule it
+by its own always-on workflow, `.github/workflows/submodule-pins.yml` — push
+and PR on `main`/`develop`, no `[build-win]` opt-in and **no `paths-ignore`**,
+because an invariant that only runs when somebody remembers to type a marker is
+not a gate, and neither is one a path filter can silence (it used to live in
+`Windows.yml` and inherited that file's `'**.md'`/`docs/**` filter, so a commit
+that moved a gitlink alongside a docs page went unchecked). For **every** configured submodule it
 asserts the tree is checked out, sits at its recorded gitlink, and is pinned to
 a commit reachable from its remote (a pin on no remote branch cannot be
 restored by a fresh clone). This repo's own copy of the suite was deleted once
@@ -548,15 +551,24 @@ what each one is for.
 
 ## What CI runs, and what it does not
 
-Only the Linux x86_64 lane runs on every push/PR to `main`/`develop`. The
-heavier lanes are **opt-in per commit**, matched against the pushed HEAD
-commit's message:
+The cheap gates and the Linux x86_64 lane run on every push/PR to
+`main`/`develop`. The heavier lanes are **opt-in per commit**, matched against
+the pushed HEAD commit's message:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
-| Linux x86_64 (build + test + coverage) | `Linux_x86.yml` → `Linux.yml` | always |
-| Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message (its `powershell-lint` and `submodule-pins` jobs run unconditionally) |
+| Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` | always, **including docs-only commits** — no `paths-ignore` |
+| Submodule pins | `submodule-pins.yml` | always, no `paths-ignore` |
+| Linux x86_64 (build + test + coverage) | `Linux_x86.yml` → `Linux.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message |
 | Linux ARM64 | `Linux_arm.yml` → `Linux.yml` | `[build-arm]` in the commit message |
+
+The top two are their own workflows rather than jobs inside the build lanes,
+and that is what makes "always" true. As tenants they inherited their host's
+`paths-ignore`, so a docs-only push got no secret scan and a commit that moved a
+gitlink next to a docs page got no pin check; `lint` also lived in the reusable
+`Linux.yml` and therefore ran once per **caller**, grading the same
+runner-independent tree twice whenever `[build-arm]` came along.
 
 Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
 signal at all.** The marker must be in the HEAD commit of the push, not an
@@ -582,11 +594,14 @@ ANTfrastructure first (see the rule above). When a lane fails inside a step whos
 
 ### Lint gates (before anything builds)
 
-The Linux lane's first job is `lint`. It pulls no image and builds nothing
-(~2 min), and it catches a class the rest of the lane cannot: `yaml.safe_load`
-proves a workflow is valid YAML, not valid Actions, and a bash quoting or
-undefined-function bug only surfaces when that line finally runs — an hour into
-a gcc build.
+`.github/workflows/lint-gates.yml` is a workflow of its own, not a job inside a
+build lane. It pulls no image and builds nothing (~2 min), and it catches a
+class the rest of CI cannot: `yaml.safe_load` proves a workflow is valid YAML,
+not valid Actions, and a bash quoting or undefined-function bug only surfaces
+when that line finally runs — an hour into a gcc build. It carries the
+Windows-native `powershell-lint` job too (PSScriptAnalyzer plus the mandatory
+parse/AST-trap gate over `scripts/`), on `windows-2025` because that gate script
+resolves its own helper module by backslash path.
 
 **One command, and it is the same one CI runs:**
 

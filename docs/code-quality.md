@@ -9,7 +9,9 @@ The configs themselves (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are owned
 by ANTfrastructure as well and copied in here; `.antfrastructure-shared.manifest`
 lists the seven assets this repo takes. The every-push gate is
 `bash third_party/ANTfrastructure/shared/config/sync-shared-config.sh --repo-root . --check`
-(the hub's lint aggregator runs it on every push);
+— the hub's lint aggregator runs it as one of its six gates, and the aggregator
+runs from `.github/workflows/lint-gates.yml`, which has no `paths-ignore`, so
+"every push" is literal and includes docs-only ones;
 `scripts/windows/tests/SharedConfig.Drift.Tests.ps1` is its `[build-win]` Pester
 mirror. Edit them upstream in `shared/config/`, then run
 `Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
