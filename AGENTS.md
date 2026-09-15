@@ -127,9 +127,17 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 
 ### Sanitizer semantics (do not guess — this is how it actually works)
 
-- Sanitizer flags are applied **only to the Debug configuration**
-  (`$<$<CONFIG:Debug>:...>` in `third_party/ANTfrastructure/cmake/Sanitizers.cmake`). Profile/Release builds are
-  never sanitized.
+- Sanitizer flags are applied **only to the Debug configuration**, and the guard
+  is in **one** place: every branch of `myproject_enable_sanitizers`
+  (`third_party/ANTfrastructure/cmake/Sanitizers.cmake`) emits its flags through
+  `$<$<CONFIG:Debug>:...>` — the GCC/Clang `-fsanitize=` pair, the clang-cl
+  compile/link/define set, and the MSVC `/fsanitize=` pair alike. Profile and
+  Release builds are never sanitized.
+- The *call site* is deliberately unconditional:
+  `myproject_apply_sanitizers(myproject_options)` in `cmake/ProjectOptions.cmake`
+  runs for every build type. That is not a contradiction of the line above and
+  not a bug to "fix" — the generator expressions one level down decide. A
+  `CMAKE_BUILD_TYPE` test around the call would only restate them.
 - ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
   see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
 - Linux TSan presets (`linux-debug-tsan-clang` / `linux-debug-tsan-GNU`) set

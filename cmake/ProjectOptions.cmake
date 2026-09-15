@@ -157,7 +157,11 @@ macro(myproject_local_options)
     message(WARNING "Disabling exceptions is not supported for this compiler.")
   endif()
 
-  # This project applies the sanitizers in every build type, not only Debug.
+  # The call is unconditional on purpose - the build-type gate lives one level
+  # down, not here. Every branch of myproject_enable_sanitizers (ANTfrastructure
+  # cmake/Sanitizers.cmake) wraps its flags in $<$<CONFIG:Debug>:...>, so Profile
+  # and Release come out unsanitized whichever compiler is selected. Do not add a
+  # CMAKE_BUILD_TYPE test around this line; it would only duplicate that guard.
   myproject_apply_sanitizers(myproject_options)
 
   myproject_apply_unity_pch_cache(myproject_options)
