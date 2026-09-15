@@ -640,10 +640,11 @@ resolves its own helper module by backslash path.
 **One command, and it is the same one CI runs:**
 
 ```bash
-bash ./scripts/linux/run-lint-gates.sh
+bash ./scripts/linux/run-lint-gates.sh            # the six always-on gates
+bash ./scripts/linux/run-lint-gates.sh --ratchets # + doc-links and the eight measurement gates
 ```
 
-That is the whole `lint` job. The wrapper hands this repo's root to
+That is the whole `lint` job; CI passes `--ratchets` too. The wrapper hands this repo's root to
 ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns the six gates
 (shell, workflows + CI image refs, secrets, python, shared-config drift,
 consumer pin-forwarding — the list and scopes are in that script's header) and
@@ -669,6 +670,15 @@ reasoning:
 
 All gates run even after one fails, and the verdict is decided once at the
 end, so a triage round sees every finding instead of only the first.
+
+**`--ratchets` is on.** It adds `doc-links` plus the eight `--root` measurement
+gates (stdout-returns, masked assignments, trailing conditionals, comment size,
+code size, complexity, dead functions, shellcheck warnings). Four freeze files
+at the repo root hold what was over the line when the flag went on —
+`comment-size.allow`, `dead-functions.allow`, `trailing-conditional.allow`,
+`shellcheck-warnings.allow` — and each is **two-way**: a new offender fails, and
+so does a frozen row whose offender is gone. `doc-links` has no freeze file by
+design, so its findings are fixed, never frozen.
 
 The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p

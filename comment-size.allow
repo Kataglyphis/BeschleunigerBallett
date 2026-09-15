@@ -1,0 +1,40 @@
+# Frozen 2026-09-15, the pass that turned `run-lint-gates.sh --ratchets` on.
+# Comment blocks over the 10-line limit that predate the gate. Owner directive
+# (AGENTS.md priority 6): two lines at the point of use; longer text goes into
+# docs/ with a pointer. Two-way, and SHRINKING one is how a row leaves: bring a
+# block under the limit, then DELETE its line here.
+# Format: <file>	<first comment line, truncated to 60 chars>.
+# third_party/ANTfrastructure/docs/code-quality-tooling.md#comment-size-comment-size
+#
+# Nothing here is new debt: these are the file headers this repo writes on
+# purpose - what a script is for, what it delegates upstream, and the measured
+# reason a shape is what it is. Each is a candidate for a docs/ page with a
+# pointer, and each such move is its own edit rather than a side effect of
+# turning the ratchet on.
+
+# FILE HEADERS. The block starts at the shebang, so the key is that line and the
+# block is everything from it down to the first statement.
+scripts/linux/bump-version.sh	#!/usr/bin/env bash
+scripts/linux/ci-image-ref.sh	#!/usr/bin/env bash
+scripts/linux/compile-slang-shaders.sh	#!/usr/bin/env bash
+scripts/linux/gcc-toolchain-root.sh	#!/usr/bin/env bash
+scripts/linux/renovate-local.sh	#!/usr/bin/env bash
+scripts/linux/run-lint-gates.sh	#!/usr/bin/env bash
+scripts/linux/run-static-analysis-format.sh	#!/usr/bin/env bash
+
+# BLOCKS INSIDE A FILE: a function's or a decision's rationale, at the point of
+# use. Same verdict, same route out - move the detail into docs/ and leave a
+# pointer, then delete the row.
+scripts/agentic-loop/Run-AgenticLoop.sh	# ──────────────────────────────────────────────────────────
+scripts/linux/lib/antfrastructure.sh	# Replace this process with a ANTfrastructure driver, forwar
+scripts/linux/lib/common.sh	# ----------------------------------------------------------
+scripts/linux/lib/common.sh	# OPTIONAL ANTfrastructure modules. Every caller of these gu
+scripts/linux/lib/common.sh	# source_hub_module() stood here. It was a third, redundant
+scripts/linux/lib/common.sh	# source_module keeps THIS repo's search order, which is del
+scripts/linux/run-debug.sh	# If no Vulkan SDK was found, attempt an auto-install and th
+scripts/linux/run-debug.sh	# Is a usable Vulkan SDK reachable at all? Used ONLY to deci
+scripts/linux/run-debug.sh	# antfrastructure_path resolves against ANTFRASTRUCTURE_DIR
+scripts/linux/run-static-analysis-format.sh	# Resolves the GCC prefix clang++ must be pointed at, and ap
+scripts/linux/run-static-analysis-format.sh	# The bind-mounted workspace is owned by the host user, not
+scripts/linux/wasm-size-budget.sh	# Builds kataglyphis_webgpu_renderer for wasm32-unknown-unkn
+scripts/linux/wasm-size-budget.sh	# Not `rustup target add` directly: the CI image has no rust

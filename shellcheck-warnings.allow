@@ -1,0 +1,27 @@
+# shellcheck -S warning findings frozen per (file, code) over lint-shell.sh's file set.
+# Format: <file> | SC<code> | <count> | <reason>   (the reason is the rest of the line)
+# The four-way rule applies: a new pair, a higher count, an unrecorded lower count
+# and a row whose pair is gone all FAIL. Record a fix with --write-baseline [--files f].
+# third_party/ANTfrastructure/docs/code-quality-tooling.md#shellcheck-warning-ratchet-shellcheck-warnings
+#
+# Baseline written 2026-09-15, the pass that turned `run-lint-gates.sh --ratchets`
+# on, then reviewed row by row. EVERY finding is SC2034 and every one of them has
+# the same cause: this repo's Linux scripts are WRAPPERS. A wrapper sets the
+# knobs its ANTfrastructure library reads, then sources that library and calls
+# into it, so the assignment and the read sit in two different files and
+# shellcheck - which analyses one file at a time - cannot see the second. The
+# variables are NOT exported on purpose: the library is sourced into the same
+# shell, so exporting would leak this repo's defaults into every child process.
+# `# shellcheck disable=SC2034` per line would silence it, but a per-file row
+# here keeps the COUNT under the ratchet: a knob that stops being read upstream
+# still moves a number, and a disable comment would not.
+scripts/linux/build-coverage-gcovr.sh | SC2034 | 1 | reviewed 2026-09-15, KEEP: COVERAGE_GCOVR_EXCLUDES is read by lib/coverage.sh, which this wrapper sources. Which paths a project excludes from its coverage report is a project decision, so the value belongs here and the reader upstream.
+scripts/linux/build-coverage-llvm.sh | SC2034 | 1 | reviewed 2026-09-15, KEEP: COVERAGE_LLVM_IGNORE_REGEX is read by lib/coverage.sh, same wrapper contract as the gcovr twin above.
+scripts/linux/cmake-configure-build.sh | SC2034 | 6 | reviewed 2026-09-15, KEEP: the six CMAKE_BUILD_* knobs (default preset, build dir, Vulkan setup script, MB per job, prebuild label, usage intro) are read by lib/cmake-build.sh. They are this project's defaults for a driver that lives upstream.
+scripts/linux/compile-slang-shaders.sh | SC2034 | 6 | reviewed 2026-09-15, KEEP: the six SLANG_COMPILE_* knobs (manifest, source root, SPIR-V/WGSL/combined output roots, dest root) are read by lib/slang-compile.sh. The shader layout is this repo's; the compiler driver is not.
+scripts/linux/docs-build-web.sh | SC2034 | 4 | reviewed 2026-09-15, KEEP: the four DOCS_BUILD_* knobs (svg source dir, generator script, and the two uv bootstrap scripts) are read by lib/docs-build.sh. The uv pair is still passed here because the docs build genuinely wants this repo's whole requirements.txt, unlike the cmake-format gate.
+scripts/linux/run-ctest.sh | SC2034 | 3 | reviewed 2026-09-15, KEEP: CTEST_RUN_DEFAULT_BUILD_DIR, CTEST_RUN_DEFAULT_BUILD_TYPE and CTEST_RUN_USAGE_INTRO are read by lib/ctest-run.sh.
+scripts/linux/run-debug.sh | SC2034 | 7 | reviewed 2026-09-15, KEEP: the seven APP_RUNNER_* knobs (exe name, build dir, build type, usage intro, and the three shader-clean settings) are read by lib/app-runner.sh, which this wrapper sources before calling app_runner_main.
+scripts/linux/run-profile.sh | SC2034 | 5 | reviewed 2026-09-15, KEEP: five APP_RUNNER_* knobs read by lib/app-runner.sh. Fewer than run-debug.sh because the profile lane does not clean or recompile shaders.
+scripts/linux/run-release.sh | SC2034 | 8 | reviewed 2026-09-15, KEEP: eight APP_RUNNER_* knobs read by lib/app-runner.sh - run-debug.sh's seven plus APP_RUNNER_LABEL.
+scripts/linux/run-static-analysis-format.sh | SC2034 | 9 | reviewed 2026-09-15, KEEP: nine CODE_QUALITY_* knobs read by lib/code-quality.sh (project root, the three cmake-format inputs, the two GCC-toolchain probe settings, the two clang-tidy settings set inside run_format_and_tidy, and the compile-DB hint refreshed after arg parsing).

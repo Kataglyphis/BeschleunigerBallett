@@ -1,0 +1,27 @@
+# Frozen 2026-09-15, the pass that turned `run-lint-gates.sh --ratchets` on.
+# Shell functions the scanner sees no caller for. Two-way: a frozen function
+# that gains a caller in the corpus, or is deleted, is STALE.
+# Each group names the dispatch the scanner cannot see. Format: <file>\t<function>.
+# third_party/ANTfrastructure/docs/code-quality-tooling.md#dead-shell-functions-dead-functions
+
+# HOOKS DISPATCHED BY NAME FROM ANTfrastructure, which is outside the corpus.
+# The libraries probe with `declare -F <name>` and call it if it exists, so the
+# only textual mention is in the hub:
+#   linux/scripts/lib/cmake-build.sh:311  cmake_build_prebuild_hook
+#   linux/scripts/lib/app-runner.sh:191   app_runner_post_vulkan_hook
+#   linux/scripts/lib/app-runner.sh:201   app_runner_env_hook
+# Deleting one silently drops a build or launch step with nothing to fail.
+scripts/linux/cmake-configure-build.sh	cmake_build_prebuild_hook
+scripts/linux/run-debug.sh	app_runner_env_hook
+scripts/linux/run-debug.sh	app_runner_post_vulkan_hook
+scripts/linux/run-release.sh	app_runner_env_hook
+
+# scripts/linux/lib/common.sh is this repo's own shell library, and these three
+# are its public helpers: no wrapper in the tree calls them today. Frozen rather
+# than deleted in the pass that turned --ratchets on, because removing a library
+# entry point is its own change with its own verification - and get_build_jobs
+# was explicitly kept when the bootstrap fallbacks were retired. The rows are
+# two-way, so each one goes the day it gains a caller or is deleted.
+scripts/linux/lib/common.sh	get_build_jobs
+scripts/linux/lib/common.sh	get_project_root
+scripts/linux/lib/common.sh	get_script_root

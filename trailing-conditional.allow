@@ -1,0 +1,21 @@
+# Frozen 2026-09-15, the pass that turned `run-lint-gates.sh --ratchets` on.
+# Functions whose LAST statement is a conditional, reviewed and KEPT because the
+# caller reads that status as an ANSWER, never as success. Two-way: a frozen
+# function that stops ending on a conditional is STALE and its line goes.
+# Format: <file>\t<function>.
+# third_party/ANTfrastructure/docs/code-quality-tooling.md#trailing-conditional-returns-trailing-conditional
+
+# The one call site is `if build_webgpu_wasm_demo; then ... else ...` at the
+# bottom of the same file, and the else arm is the point: a missing wasm32
+# target, a wasm-bindgen version the Cargo.lock does not match, or a failed
+# cargo build all mean "keep the committed demo snapshot", not "fail the docs
+# build". Ending on the chain is how that answer reaches the caller.
+scripts/linux/docs-build-web.sh	build_webgpu_wasm_demo
+
+# `cd "$(dirname "${BASH_SOURCE[0]}")/..." && pwd` - the value is the path on
+# stdout and the && is the guard on cd, which is exactly the shape every
+# path-resolving helper in the family has. A cd that fails must not print a
+# wrong root, and the caller substitutes the function, so a non-zero status is
+# the only way it can say so.
+scripts/linux/lib/common.sh	get_project_root
+scripts/linux/lib/common.sh	get_script_root
