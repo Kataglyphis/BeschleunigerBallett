@@ -220,10 +220,37 @@ try {
   # sweep that collides with everything in flight and wants a deliberate
   # moment plus a .git-blame-ignore-revs entry. So the default is now the
   # non-destructive check, and applying the sweep is an explicit act.
+  #
+  # THE CMAKE-FORMAT VENV IS THE HUB'S PINNED ONE, not this repo's docs stack.
+  # -RequirementsPath is new in 604294e2 and closes a real gap: without it
+  # Initialize-UvVenvPython installs <workspace>/requirements.txt - sphinx,
+  # sphinx-book-theme, myst-parser, breathe, exhale, sphinx_design, pre-commit,
+  # junit2html - to obtain one formatter, and takes `cmake-format` UNPINNED, so
+  # a floating release could move a verdict with no commit to blame. The hub's
+  # linux/scripts/cmake-format.requirements.txt is the pinned pair
+  # (cmake-format==0.6.13 + pyyaml==6.0.3) that run-static-analysis-format.sh
+  # now installs by the library's own default, so both lanes format with the
+  # SAME cmake-format.
+  #
+  # The other two new parameters are deliberately NOT passed, each measured
+  # 2026-09-15 rather than assumed:
+  #   -ExcludePattern  would add nothing here. The 18 tracked CMake files this
+  #                    repo owns all sit under CMakeLists.txt, Src/, Test/ and
+  #                    cmake/; the module's built-in build*/, third_party/,
+  #                    _deps/ and vcpkg_installed/ filters already cover this
+  #                    repo's whole CODE_QUALITY_CMAKE_EXCLUDE_PATHS list, and
+  #                    .venv is filtered in the only branch where it can bite.
+  #   -Check           would turn this -Critical step into a gate that fails on
+  #                    unformatted input. Measured against the pinned formatter,
+  #                    17 of those 18 files are not cmake-format clean, so it
+  #                    would make the DEFAULT build red and arm exactly the
+  #                    unrequested sweep the paragraph above defers. Adopting a
+  #                    parameter is not the moment to change a policy.
   if (-not $SkipFormat) {
+    $cmakeFormatRequirements = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\cmake-format.requirements.txt'
     if ($ApplyFormat) {
       Invoke-BuildStep -Context $context -StepName 'Python tooling + cmake-format (REWRITING)' -Critical -Script {
-        Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath
+        Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath -RequirementsPath $cmakeFormatRequirements
       } | Out-Null
 
       Invoke-BuildStep -Context $context -StepName 'clang-format (C/C++) (REWRITING)' -Critical -Script {
@@ -339,6 +366,26 @@ try {
     } | Out-Null
   }
 
+  # MSIX packaging.
+  #
+  # STAGING IS THIS SCRIPT'S; EVERYTHING AFTER IT IS THE HUB'S. What goes into
+  # the package is the one part that genuinely differs between the three
+  # consumers that had each written this out, and here it is a `cmake --install`
+  # of the clangcl-release tree. Invoke-MsixPackage (WindowsMsix.Common, reached
+  # through Import-BuildModule above) owns the rest - the four logo assets, the
+  # manifest expansion, the pack, and the assertion that a package actually
+  # appeared. See third_party/ANTfrastructure/docs/windows-builds.md.
+  #
+  # Two things the hand-rolled block this replaces did not do:
+  #   * assert the OUTPUT. makeappx has been seen to report success and produce
+  #     no file; the step then went green and the artifact upload found nothing.
+  #   * write Wide310x150Logo.png. The hub writes all four names an AppxManifest
+  #     references by convention; this manifest names three, and the fourth
+  #     costs nothing and stops being a surprise the day the manifest grows.
+  #
+  # Invoke-MsixSign is still called HERE rather than through the hub's -Sign:
+  # -Sign hands Invoke-MsixSign the staging directory's PARENT as the workspace,
+  # and Invoke-MsixSign looks for the signing *.pfx in the workspace ROOT.
   if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations)) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
@@ -348,25 +395,29 @@ try {
 
       $msixName = Get-OrDefault $env:MSIX_PACKAGE_NAME (Get-ConfigValue -Config $config -Path 'Msix.PackageNameDefault')
       $msixPublisher = Get-OrDefault $env:MSIX_PUBLISHER (Get-ConfigValue -Config $config -Path 'Msix.Publisher')
-      
+
       # VERSION.txt is the ONLY source of the package version - there is no
       # config fallback and no MSIX_VERSION override any more. The old
       # Test-Path/else pair fell back to a `Version` key in
       # Build-Windows.config.psd1 that had been frozen at 1.5.0.0 since it was
       # written, so a missing or misspelled VERSION.txt did not fail the build:
       # it shipped an installer stamped with a version the repo left behind.
-      # Missing is now a hard error, which is the only way that surfaces before
-      # the artifact is published.
+      #
+      # The PRESENCE check stays here and stays fatal; only the PARSE is the
+      # hub's. Get-PackageVersion falls back to 0.0.1.0 when it finds no version
+      # file, which is right for a repo that has none and wrong for this one -
+      # missing must surface before the artifact is published. What it buys is
+      # the padding: `.Trim() + '.0'` assumed exactly three components, and
+      # makeappx rejects a three-component version outright.
       $versionFile = Join-Path $workspacePath 'VERSION.txt'
       if (-not (Test-Path $versionFile)) {
         throw "VERSION.txt not found at $versionFile - it is the source of the MSIX package version."
       }
-      $msixVersion = (Get-Content -Path $versionFile).Trim() + '.0'
-      
+      $msixVersion = Get-PackageVersion -WorkspacePath $workspacePath -Components 4
+
       $msixMinVersion = Get-OrDefault $env:MSIX_MIN_VERSION (Get-ConfigValue -Config $config -Path 'Msix.MinVersion')
 
       $msixStaging = Join-Path $buildPathClangRelease 'msix-staging'
-      $assetsDir = Join-Path $msixStaging 'Assets'
       if (Test-Path $msixStaging) {
         Remove-BuildRoot -Context $context -Path $msixStaging | Out-Null
       }
@@ -377,38 +428,37 @@ try {
         '--prefix', $msixStaging
       ) | Out-Null
 
-      Resolve-DirectoryPath -Path $assetsDir | Out-Null
-
       $manifestTemplateRel = Get-ConfigValue -Config $config -Path 'Msix.ManifestTemplate'
       $manifestTemplatePath = if ([System.IO.Path]::IsPathRooted($manifestTemplateRel)) { $manifestTemplateRel } else { Join-Path $workspacePath $manifestTemplateRel }
       if (-not (Test-Path $manifestTemplatePath)) {
         throw "MSIX manifest template not found: $manifestTemplatePath"
       }
 
+      # The staging assertion stays in front of the hub call: what `cmake
+      # --install` did or did not lay down is a caller question, and the hub
+      # would otherwise pack a manifest that names an executable nobody put there.
       $exeRelPath = "bin/$msixName.exe"
-      $template = Get-Content -Path $manifestTemplatePath -Raw -Encoding UTF8
-      $manifestXml = Expand-XmlTemplateTokens -Template $template -TokenMap @{
-        '__MSIX_NAME__' = $msixName
-        '__MSIX_PUBLISHER__' = $msixPublisher
-        '__MSIX_VERSION__' = $msixVersion
-        '__MSIX_MIN_VERSION__' = $msixMinVersion
-        '__EXE_REL_PATH__' = $exeRelPath
-        '__STORE_LOGO_REL__' = 'Assets/StoreLogo.png'
-        '__LOGO150_REL__' = 'Assets/Square150x150Logo.png'
-        '__LOGO44_REL__' = 'Assets/Square44x44Logo.png'
-      }
-
-      Set-Content -Path (Join-Path $msixStaging 'AppxManifest.xml') -Value $manifestXml -Encoding UTF8
-      New-TransparentPng -Path (Join-Path $msixStaging 'Assets\StoreLogo.png') -Width 50 -Height 50
-      New-TransparentPng -Path (Join-Path $msixStaging 'Assets\Square150x150Logo.png') -Width 150 -Height 150
-      New-TransparentPng -Path (Join-Path $msixStaging 'Assets\Square44x44Logo.png') -Width 44 -Height 44
-
       if (-not (Test-Path (Join-Path $msixStaging $exeRelPath))) {
         throw "Expected executable not found in MSIX staging: $exeRelPath"
       }
 
       $msixOutPath = Join-Path $buildPathClangRelease "$msixName.msix"
-      Invoke-BuildExternal -Context $context -File $makeappxPath -Parameters @('pack', '/d', $msixStaging, '/p', $msixOutPath, '/o') | Out-Null
+      Invoke-MsixPackage -Context $context `
+        -StagingDir $msixStaging `
+        -ManifestTemplatePath $manifestTemplatePath `
+        -TokenMap @{
+          '__MSIX_NAME__' = $msixName
+          '__MSIX_PUBLISHER__' = $msixPublisher
+          '__MSIX_VERSION__' = $msixVersion
+          '__MSIX_MIN_VERSION__' = $msixMinVersion
+          '__EXE_REL_PATH__' = $exeRelPath
+          '__STORE_LOGO_REL__' = 'Assets/StoreLogo.png'
+          '__LOGO150_REL__' = 'Assets/Square150x150Logo.png'
+          '__LOGO44_REL__' = 'Assets/Square44x44Logo.png'
+        } `
+        -OutputPath $msixOutPath `
+        -GenerateTransparentLogos `
+        -MakeAppxPath $makeappxPath | Out-Null
 
       # Attempt to sign the generated MSIX using the signing helper module.
       Invoke-MsixSign -Context $context -WorkspacePath $workspacePath -MsixOutPath $msixOutPath
