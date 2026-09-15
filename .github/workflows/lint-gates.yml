@@ -62,12 +62,29 @@ jobs:
   #
   #   bash ./scripts/linux/run-lint-gates.sh [--ratchets]
   #
-  # submodules: 'true', NOT the hub's 'recursive' default. ANTfrastructure is
-  # the submodule these gates EXECUTE - all the lint scripts and the aggregator
-  # live inside it - and the other fourteen top-level submodules come along at
-  # depth 1 with nothing below grading them, since every scope drops
-  # third_party/. Recursing into their trees costs minutes and changes no
-  # verdict.
+  # submodules: 'recursive', which is the hub's documented default. This file
+  # shipped on 2026-09-15 overriding it to 'true', arguing that depth 1 was
+  # enough because every scope drops third_party/. That is true of the SCOPES
+  # and false of the CHECKOUT, and run 35015672838 is the proof:
+  #
+  #   docs/source/_static/css/custom.css is a tracked SYMLINK into
+  #   third_party/ANTfrastructure/third_party/DocumANTation - a submodule of a
+  #   submodule. At depth 1 DocumANTation is never cloned, so the link dangles.
+  #   gate_scope.tracked() tests os.path.exists(), which FOLLOWS the link, so a
+  #   dangling symlink reads as a tracked path missing from disk and the gate
+  #   refuses to grade what it takes for a partial tree. doc-links and
+  #   code-size - the two gates scoped `*` - aborted on that ScopeError while
+  #   the other seven ratchets passed.
+  #
+  # A dev box does not see this: there the nested DocumANTation checkout is
+  # present, the link resolves, and `run-lint-gates.sh --ratchets` is green.
+  # The runner and the container disagreed about the CHECKOUT, not the code.
+  #
+  # Recursing changes no verdict - the scopes still drop third_party/, so the
+  # recursed trees add no findings - it only lets the '*' gates be computed at
+  # all. It also restores the reason the hub makes 'recursive' the default: the
+  # secret scan reads the working tree, and a half-checked-out submodule
+  # changes what it sees from run to run.
   #
   # ratchets: true since 2026-09-15. That adds doc-links plus the eight --root
   # measurement gates over this tree, with the freeze files committed at the
@@ -95,7 +112,7 @@ jobs:
     name: shell + workflow + secret + config gates
     uses: Kataglyphis/ANTfrastructure/.github/workflows/lint-gates.yml@main
     with:
-      submodules: 'true'
+      submodules: 'recursive'
       ratchets: true
 
   # PowerShell lint: ANTfrastructure's Invoke-Lint.ps1 pointed at THIS repo's
