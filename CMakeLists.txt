@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.28.0)
 
 # set the project name
-file(READ "version.txt" PROJECT_VERSION_STR)
+file(READ "VERSION.txt" PROJECT_VERSION_STR)
 string(STRIP "${PROJECT_VERSION_STR}" PROJECT_VERSION_STR)
 
 project(

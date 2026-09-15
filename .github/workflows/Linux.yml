@@ -127,8 +127,11 @@ jobs:
   #     replaced (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse
   #     and named only the directories somebody remembered: measured 2026-09-07
   #     they expanded to 19 of the 21 tracked first-party scripts, silently
-  #     missing scripts/agentic-loop/Run-AgenticLoop.sh and the repo-root
-  #     bump-version.sh.
+  #     missing scripts/agentic-loop/Run-AgenticLoop.sh and what was then the
+  #     repo-root bump-version.sh (moved to scripts/linux/ on 2026-09-15 - a
+  #     move that only narrows the gap, it does not close it: the next script
+  #     that lands outside the two directories somebody remembered is invisible
+  #     to a glob again, and to git ls-files it is not).
   #   - third_party/ is dropped because the vendored trees are linted in their
   #     own repositories at their own ratchet. Handing the whole workspace to
   #     gitleaks measured 82 findings, every one a generic-api-key false

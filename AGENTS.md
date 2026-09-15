@@ -87,6 +87,22 @@ this repo's presets (see below).
 Everything is driven by `CMakePresets.json`. Do not invent ad-hoc CMake command
 lines; pick a preset.
 
+**The repository and the CMake project are not spelled the same, on purpose.**
+`GraphicsEngine` is the CMake project and executable name (`CMakeLists.txt:8`),
+matching the source tree it builds, `Src/GraphicsEngineVulkan/`; Sphinx
+(`docs/source/conf.py:96`) and Doxygen (`Doxyfile.in:45`) both publish under
+`BeschleunigerBallett`, the repository name. Build directories, preset names and
+the MSIX package (`Msix.PackageNameDefault` in
+`scripts/windows/Build-Windows.config.psd1`) follow the CMake name; nothing here
+is a leftover to be unified.
+
+The version behind both is the repo-root **`VERSION.txt`**, read by
+`CMakeLists.txt:4` (into `project(... VERSION ...)` and the `PROJECT_VERSION`
+compile definition), `docs/source/conf.py:99` and
+`scripts/windows/Build-Windows.ps1` (the MSIX package version, a hard error if
+the file is missing). Bump it with `bash ./scripts/linux/bump-version.sh <x.y.z>`
+and nothing else — no reader keeps a copy of the number.
+
 > **Trap:** `cmake --list-presets` does **not** work on this host. The host
 > CMake (3.29) cannot read `CMakePresets.json` (`"version": 10`,
 > `cmakeMinimumRequired` 4.1) and fails with
@@ -592,8 +608,9 @@ than assumed here:
 - **Scopes come from `git ls-files`, never a glob.** The globs this replaced
   (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse and graded 19 of
   21 tracked scripts while reading as if they graded all of them —
-  `scripts/agentic-loop/Run-AgenticLoop.sh` and the repo-root `bump-version.sh`
-  were the two that fell through. Both are covered now, and so is anything that
+  `scripts/agentic-loop/Run-AgenticLoop.sh` and what was then the repo-root
+  `bump-version.sh` were the two that fell through (the latter now lives in
+  `scripts/linux/`; the move narrows the gap it exposed, it does not close it). Both are covered now, and so is anything that
   lands in a directory nobody has thought of yet.
 - **The consumer root is passed explicitly.** The gate scripts live *inside* the
   submodule, so a root inferred from their own location resolves to ANTfrastructure

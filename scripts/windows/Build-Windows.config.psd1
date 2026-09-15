@@ -40,7 +40,9 @@
   Msix = @{
     PackageNameDefault = 'GraphicsEngine'
     Publisher = 'CN=Jonas Heinle'
-    Version = '1.5.0.0'
+    # No Version key: the MSIX package version comes from the repo-root
+    # VERSION.txt and from nowhere else (Build-Windows.ps1, MSIX packaging).
+    # The key that used to sit here was a silent fallback pinned at 1.5.0.0.
     MinVersion = '10.0.17763.0'
     ManifestTemplate = 'scripts/windows/AppxManifest.xml.template'
   }

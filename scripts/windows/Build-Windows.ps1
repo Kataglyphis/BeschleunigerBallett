@@ -349,12 +349,19 @@ try {
       $msixName = Get-OrDefault $env:MSIX_PACKAGE_NAME (Get-ConfigValue -Config $config -Path 'Msix.PackageNameDefault')
       $msixPublisher = Get-OrDefault $env:MSIX_PUBLISHER (Get-ConfigValue -Config $config -Path 'Msix.Publisher')
       
-      $versionFile = Join-Path $workspacePath 'version.txt'
-      if (Test-Path $versionFile) {
-        $msixVersion = (Get-Content -Path $versionFile).Trim() + '.0'
-      } else {
-        $msixVersion = Get-OrDefault $env:MSIX_VERSION (Get-ConfigValue -Config $config -Path 'Msix.Version')
+      # VERSION.txt is the ONLY source of the package version - there is no
+      # config fallback and no MSIX_VERSION override any more. The old
+      # Test-Path/else pair fell back to a `Version` key in
+      # Build-Windows.config.psd1 that had been frozen at 1.5.0.0 since it was
+      # written, so a missing or misspelled VERSION.txt did not fail the build:
+      # it shipped an installer stamped with a version the repo left behind.
+      # Missing is now a hard error, which is the only way that surfaces before
+      # the artifact is published.
+      $versionFile = Join-Path $workspacePath 'VERSION.txt'
+      if (-not (Test-Path $versionFile)) {
+        throw "VERSION.txt not found at $versionFile - it is the source of the MSIX package version."
       }
+      $msixVersion = (Get-Content -Path $versionFile).Trim() + '.0'
       
       $msixMinVersion = Get-OrDefault $env:MSIX_MIN_VERSION (Get-ConfigValue -Config $config -Path 'Msix.MinVersion')
 

@@ -96,7 +96,7 @@ def _find_doxygen_xml_dir() -> Path | None:
 project = "BeschleunigerBallett"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
-release = (REPO_ROOT / "version.txt").read_text(encoding="utf-8").strip()
+release = (REPO_ROOT / "VERSION.txt").read_text(encoding="utf-8").strip()
 
 # -- Project-specific overrides ------------------------------------------------
 # Update repository URL for this project
