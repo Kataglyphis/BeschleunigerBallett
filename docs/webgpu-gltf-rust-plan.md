@@ -4,7 +4,7 @@
 code *and* its documentation, so the page now lives beside the crate it
 describes:
 
-- in a checkout of this repository: `third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md`
+- in a checkout of this repository: [`third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md`](../third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md)
 - on the web: <https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md>
   (`HEAD`, not a branch name: OxidANT's default branch is being moved from
   `develop` to `main` and this link has to survive the flip)

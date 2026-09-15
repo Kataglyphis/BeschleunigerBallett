@@ -145,9 +145,9 @@ Renderer-specific plans and status live in `docs/`:
 `webgpu-srgb-audit.md` (color-space audit).
 The Rust WebGPU renderer's own plans moved to the repository that owns that
 renderer, `third_party/OxidANT/crates/webgpu_renderer/docs/`:
-`webgpu-renderer-roadmap.md` (status per feature),
-`webgpu-gltf-rust-plan.md` (the original glTF loading plan) and
-`renderer-bounds-invariant.md` (the bounds rule).
+[`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) (status per feature),
+[`webgpu-gltf-rust-plan.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md) (the original glTF loading plan) and
+[`renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) (the bounds rule).
 The `docs/` files of those three names here are pointers, not copies.
 
 ## Contributing

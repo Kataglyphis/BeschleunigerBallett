@@ -21,7 +21,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
 | Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
-| Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): `third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md`, [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md). Not a relative link: the submodule pin here still predates the move until the fleet-wide pin sweep bumps it |
+| Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): [`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md), which the pin bump to `ee7e5a1b` made reachable in this checkout; [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) for a reader without the submodule |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
 ### Repo map
@@ -784,8 +784,8 @@ ANTfrastructure (see the rule above), project-specific ones here.
 | `AGENTS.md` (this file) | How to build/test/run here, invariants, code conventions |
 | `docs/cpp-renderer-improvements.md` | C++ engine chronological change log |
 | `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
-| `docs/webgpu-renderer-roadmap.md` | **Pointer only.** Rust WebGPU renderer status per feature; owned by OxidANT at `third_party/OxidANT/crates/webgpu_renderer/docs/` (decision D6) |
-| `docs/webgpu-gltf-rust-plan.md` | **Pointer only.** Original WebGPU + glTF Rust renderer plan (milestones 1–5), kept for the record; owned by OxidANT |
+| `docs/webgpu-renderer-roadmap.md` | **Pointer only.** Rust WebGPU renderer status per feature; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) (decision D6) |
+| `docs/webgpu-gltf-rust-plan.md` | **Pointer only.** Original WebGPU + glTF Rust renderer plan (milestones 1–5), kept for the record; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md) |
 | `docs/shader-sharing.md` | Why/how one Slang source serves both renderers, where the two diverge, and which C++ shading path reads which `ObjMaterial` field |
 | `docs/shader-build-pipeline.md` | The Slang→SPIR-V/WGSL build step: manifest, staleness rules, fast iteration |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions (no known deviations) |
@@ -794,7 +794,7 @@ ANTfrastructure (see the rule above), project-specific ones here.
 | `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, host verification loop, synchronization validation |
 | `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
 | `docs/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
-| `docs/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT |
+| `docs/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
 | `scripts/agentic-loop/README.md` | Agentic loop consumer half: what this repo configures (and what deviates from upstream defaults), its two runners, its two prompt overlays — loop architecture and usage live in the two ANTfrastructure docs below |
