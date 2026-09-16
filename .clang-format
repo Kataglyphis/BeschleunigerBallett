@@ -95,7 +95,7 @@ SpacesInCStyleCastParentheses: false
 SpacesInContainerLiterals: true
 SpacesInParentheses: false
 SpacesInSquareBrackets: false
-Standard: c++23
+Standard: Latest
 IndentWidth: 4
 TabWidth: 4
 UseTab: Never
