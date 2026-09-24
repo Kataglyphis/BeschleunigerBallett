@@ -205,7 +205,16 @@ builds it with `COMPILER_RT_BUILD_PROFILE=OFF`: the profile runtime does not
 compile under clang-cl). With coverage on, the option's default, configure
 stopped at `Coverage was requested, but the clang-cl profile runtime is missing`
 (run 36042436962). No Windows step consumed coverage; the Linux lanes' coverage
-job is where it is measured. Turn it back on once the image ships that runtime.
+job is where it is measured. Turn it back on once the image ships that runtime
+(ANTfrastructure backlog CON9).
+
+**No `find`/`count`/`remove` on a defaulted-`==` struct under ClangCL.** The
+image's MSVC STL 14.51 takes its vectorized path for any type clang calls
+trivially equality-comparable, then `static_assert`s (`unexpected size`) unless
+the type is 1, 2, 4 or 8 bytes (microsoft/STL#6294, open). Run 36052511207 stopped
+there on `findSampler`'s 24-byte `SamplerKey`. Use `find_if` with a predicate,
+which is a plain loop. The same gate guards `count`, `remove`, `remove_copy` and
+`replace` and their `ranges::` forms, so the rule covers them too.
 
 Typical full sweep (ASAN debug, profile, release):
 

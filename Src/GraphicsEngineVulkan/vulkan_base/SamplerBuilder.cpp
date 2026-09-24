@@ -70,7 +70,10 @@ auto Kataglyphis::usesNearestFiltering(const GltfSamplerDesc &desc) -> bool
 auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key)
   -> std::optional<std::size_t>
 {
-    const auto it = std::ranges::find(createdSamplers, key);
+    // find_if, not find: MSVC STL 14.51 under clang-cl static_asserts on find over a struct with a defaulted ==
+    // whose size is not 1/2/4/8 bytes (SamplerKey is 24) - microsoft/STL#6294.
+    const auto it =
+      std::ranges::find_if(createdSamplers, [&key](const SamplerKey &candidate) { return candidate == key; });
     if (it == createdSamplers.end()) { return std::nullopt; }
     return static_cast<std::size_t>(std::ranges::distance(createdSamplers.begin(), it));
 }
