@@ -466,7 +466,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   ```
 
   Then repoint `WINDOWS_CONTAINER_IMAGE` in BOTH consumers - the superproject's
-  `Windows.yml` and RustProjectTemplate's `rust_windows2025.yml` (and the
+  `windows-x64.yml` and RustProjectTemplate's `rust_windows2025.yml` (and the
   superproject `Build-Windows-Container.ps1` default) - at `:winamd64-toolchain`.
   Mirrors the Linux `:toolchain` split. Relocating Docker data-root only helps
   if a drive has >54 GB free (the diagnostic says); the slim image is the
@@ -483,9 +483,9 @@ cleanUp+recreate pair at the four scene-changed sites.
   answer yes with no device present and then abort during device creation.
   Closing that gap needs a self-hosted runner with a GPU. **A suite added to
   the repo does not run in CI unless it is added to the filter in
-  `Windows.yml`.**
+  `windows-x64.yml`.**
 
-  **And none of it runs by default.** `Windows.yml` is gated on
+  **And none of it runs by default.** `windows-x64.yml` is gated on
   `if: contains(github.event.head_commit.message, '[build-win]')`, so the
   whole workflow — build included — is skipped unless a commit message opts
   in. That predates this work and is presumably a runner-cost decision, but
@@ -493,12 +493,12 @@ cleanUp+recreate pair at the four scene-changed sites.
   never ran. Worth deciding deliberately: run on PRs to `main`, run nightly,
   or keep it opt-in and stop treating a green tick as Windows coverage.
 - **Packaging paths are only half exercised** (corrected 2026-08-01 — the
-  previous "never exercised" was stale). Linux CI *does* package: `Linux.yml`
+  previous "never exercised" was stale). Linux CI *does* package: `reusable-linux.yml`
   runs a `linux-release-clang` configure/build followed by a
   `--build-target package` step and uploads `*.deb` / `*.tar.gz` / `*.tgz` /
   `*.AppImage` / `*.flatpak`. Still unexercised: **WiX**
   (`windows-clang-release-wix`), which nothing builds anywhere, and **MSIX**,
-  which `Windows.yml` collects (`**/*.msix`) but only inside the workflow
+  which `windows-x64.yml` collects (`**/*.msix`) but only inside the workflow
   that is itself gated on `[build-win]` — so in practice neither Windows
   packaging path runs unless a commit message opts in.
 - **Coverage is clang-only** (Linux). GCC and Windows contribute no
@@ -729,7 +729,7 @@ cleanUp+recreate pair at the four scene-changed sites.
 - ~~**Wasm size budget**~~ — **done**: `scripts/linux/wasm-size-budget.sh`
   (CI) / `scripts/windows/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
   release, run `wasm-opt -Oz`, and fail above a 12 MiB budget; wired into
-  `Linux.yml` ahead of the docs deploy. The ~3.7 MB figure was stale — measured
+  `reusable-linux.yml` ahead of the docs deploy. The ~3.7 MB figure was stale — measured
   post-opt size is ~8.3 MiB, never previously enforced.
 
 ## Housekeeping candidates
@@ -1555,7 +1555,7 @@ model loader is race-clean; GUI/renderer state is single-threaded.
    `update_frame_timing` applies, so the first frame's whole-startup-wallclock
    delta — and any later hitch — becomes slow motion instead of a camera teleport.
    Guarded by `FrameInputUnit.{FirstFrameStartupSpikeIsClamped,OrdinaryFrameDeltasPassThroughUnchanged,NegativeDeltasBecomeZero}`
-   in `frontendInputSuite.cpp`, wired into the Windows CI filter (`Windows.yml:211`).
+   in `frontendInputSuite.cpp`, wired into the Windows CI filter (`windows-x64.yml:211`).
    Original text: — `last_time` starts at 0.0 (`App.cpp:32-33`) so the first
    `update_frame_timing` returns the whole startup wall-clock (seconds); a key held
    during load lurches the camera. Seed or clamp; pure gtest.
@@ -1572,7 +1572,7 @@ model loader is race-clean; GUI/renderer state is single-threaded.
    clamp) and `WindowInputUnit.*` (key press/release tracking, out-of-range keys
    ignored, first-mouse-move does not jump the camera, axis-delta consume+reset,
    and the ImGui-capture gate swallowing input). All eight run in Windows CI
-   (`Windows.yml:211-212`). Original text: — `WindowInputCallbacks.ixx:24-83` and
+   (`windows-x64.yml:211-212`). Original text: — `WindowInputCallbacks.ixx:24-83` and
    `FrameInput.ixx:9-21` are pure, device-free, and route all input into the camera;
    no suite in Test/commit references them. This is also where #4 gets its
    regression guard.
@@ -2170,7 +2170,7 @@ shadow-factor fix (see the first task — do it before any other Rust work);
 `Resources/Shaders/` tree is fully deleted (Slang-only now), so the reference
 kernel must come from git history; `PushConstantRasterizerUnit` is the ONLY
 CPU suite missing from the Windows CI filter (checked every `TEST(` suite name
-against `Windows.yml:209-229`); the ANTfrastructure commit the RPT working tree
+against `windows-x64.yml:209-229`); the ANTfrastructure commit the RPT working tree
 points at (`1de9aff`) is already on ANTfrastructure `origin/main`, so committing
 that bump is safe.
 
@@ -2394,7 +2394,7 @@ pass:
   shadow — the exact gap that produced the "shadow baked into the model reported
   as cast" retraction recorded above.
 - **The Windows CI test filter is a hand-maintained list that has already
-  drifted twice.** `.github/workflows/Windows.yml:209-237` enumerates 27
+  drifted twice.** `.github/workflows/windows-x64.yml:209-237` enumerates 27
   `<Suite>.*` globs. `Test/commit/VulkanEngine/*.cpp` defines 29 suite names, of
   which `GoldenRender` and `Integration` are the deliberate GPU exclusions — so
   the list is complete *right now*, but only because commit `eb077041` had to
@@ -3177,7 +3177,7 @@ module doc at `cascades.rs:26-34` records that an earlier attempt at exactly
 that regressed `shadow_darkens_plane_under_cube` to zero shadowed pixels.
 
 **Task 4: the Windows CI GPU probe asks a question that is not about the
-GPU.** `Windows.yml:315` runs `commitTestSuite.exe --gtest_list_tests |
+GPU.** `windows-x64.yml:315` runs `commitTestSuite.exe --gtest_list_tests |
 Select-String "GoldenRender"` and prints `GPU_AVAILABLE` if it matches — but
 gtest lists registered test names without touching an adapter, so it matches
 on every runner that has the binary, and `:318` prints `GPU_NOT_AVAILABLE`
@@ -3343,13 +3343,13 @@ consumer of the same unwritten contract. The extraction precedents are
 
 **Task 4: the Windows CI fuzz step re-hand-maintains the list that
 `EveryCpuSuiteIsInTheWindowsCiFilter` already exists to stop being
-hand-maintained.** `Windows.yml:277` hard-codes
+hand-maintained.** `windows-x64.yml:277` hard-codes
 `@('obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')`
 while the targets themselves are declared by seven
 `kataglyphis_add_fuzz_test(...)` calls in `Test/fuzz/CMakeLists.txt:106-164` —
 a new fuzz target is silently not run in CI, which is the same drift class
 `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`
-(`buildIntegritySuite.cpp:682`) was written for. Worse, `Windows.yml:279`
+(`buildIntegritySuite.cpp:682`) was written for. Worse, `windows-x64.yml:279`
 reads `if (-not (Test-Path $exe)) { Write-Host ('missing ' + ...); continue }`
 — a fuzz target that stops being built makes the step print one line and pass.
 The step only runs after a successful `clangcl-debug` build in which fuzzing
@@ -3476,7 +3476,7 @@ Every `file:line` below was read out of the tree this pass.
 
 **Tasks 1 and 2 are the priority: both are `BuildIntegrity` tests that are RED
 right now, and `'BuildIntegrity.*'` is in the Windows CI filter
-(`Windows.yml:210`), so any `[build-win]` commit fails the Test step.** Batch
+(`windows-x64.yml:210`), so any `[build-win]` commit fails the Test step.** Batch
 XV's executor notes spotted both as "unrelated, pre-existing failures … worth
 their own task" and correctly did not chase them mid-task; this is that task.
 Neither needs a GPU — they are pure file-scanning CPU gtests.
@@ -3631,7 +3631,7 @@ span.
 
   **Test:** Add to `Test/commit/VulkanEngine/memoryHelperSuite.cpp` (suite name
   is **`MemoryHelperUnit`**, already in the Windows CI filter at
-  `Windows.yml:239` — no workflow edit needed):
+  `windows-x64.yml:239` — no workflow edit needed):
   `MemoryHelperUnit.SbtSourceOffsetsArePackedAtHandleSize` and
   `MemoryHelperUnit.SbtRecordOffsetsUseTheAlignedStride`, both exercising the
   **`handleSize = 32`, `alignment = 64`** case (so `aligned = 64 != 32`) where
@@ -4324,7 +4324,7 @@ pass; the actionable queue was empty when this batch was written.
 **The headline is that `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` is
 currently RED, and it is red about the thing it exists to catch.** Three
 device-free suites are defined under `Test/commit/VulkanEngine` but appear
-neither in `Windows.yml`'s `$cpuOnlySuites` array (`.github/workflows/Windows.yml:209-244`)
+neither in `windows-x64.yml`'s `$cpuOnlySuites` array (`.github/workflows/windows-x64.yml:209-244`)
 nor in the test's `gpu_excluded_suites` set (`buildIntegritySuite.cpp:1066`):
 `BlasGeometryLimitsUnit` (`blasGeometryLimitsSuite.cpp`, added by `20c242ef`),
 `ShadowResolutionUnit` (`guiSceneVarsRoundTripSuite.cpp:193,202,212`, added by
@@ -4334,10 +4334,10 @@ nor in the test's `gpu_excluded_suites` set (`buildIntegritySuite.cpp:1066`):
 (`buildIntegritySuite.cpp:226-258`) against `parse_ci_filter_suites`'s
 `$cpuOnlySuites` scrape (`:355-386`) yields exactly those three names and no dead
 filter entries. Because `'BuildIntegrity.*'` *is* in the filter
-(`Windows.yml:210`), the Windows CI test step runs this assertion and fails on
+(`windows-x64.yml:210`), the Windows CI test step runs this assertion and fails on
 it — so the three suites do not run in CI *and* the gate that reports it is
 itself failing the job. The comment directly above the array
-(`Windows.yml:196`, "If you add a suite, add it to this filter or it will not
+(`windows-x64.yml:196`, "If you add a suite, add it to this filter or it will not
 run in CI") is the instruction three consecutive executor commits missed.
 
 **Second finding: `SceneConfig.cpp` contains a literal NUL byte, so grep and
@@ -5597,7 +5597,7 @@ same timestamp — so even the fixed mtime gate is a coin flip in CI and a
 content check is needed alongside it. That the drift survived six commits *and*
 the Linux lane (which does run this test) is the proof.
 
-**Third, `Windows.yml`'s `$cpuOnlySuites` is a hand-maintained 50-entry
+**Third, `windows-x64.yml`'s `$cpuOnlySuites` is a hand-maintained 50-entry
 allowlist and four suites have already fallen out of it**, so
 `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`:1051-1107`) is RED
 right now: `ExtensionSupportUnit` (`93d435e2`), `PipelineLayoutHelperUnit`
@@ -5606,9 +5606,9 @@ right now: `ExtensionSupportUnit` (`93d435e2`), `PipelineLayoutHelperUnit`
 `'SamplerBuilderUnit.*'` glob does not match it, because `.` is a literal in a
 gtest filter). The gate turns a silent gap into a loud one but cannot stop it
 recurring: it only fires *after* someone runs `BuildIntegrity.*`, which the
-last four suite-adding commits did not. **`Linux.yml` already solved this the
+last four suite-adding commits did not. **`reusable-linux.yml` already solved this the
 other way round** — `--ctest-exclude "^(Integration|GoldenRender)\."` over
-gtest-discovered tests (`Linux.yml:114,160,186,337`), a negative filter that
+gtest-discovered tests (`reusable-linux.yml:114,160,186,337`), a negative filter that
 needs no maintenance and keeps the GPU suites out by name just as explicitly.
 Windows is the odd one out. The four orphaned suites run green on Linux on
 every push, so un-orphaning them on Windows is low risk.
@@ -6945,7 +6945,7 @@ this pass.
 golden verification is still blocked over RDP (see the `- [b]` entry below).
 Tasks 1 and 2 are Slang edits whose evidence is a recompile plus new
 `BuildIntegrity` source scans; tasks 3 and 4 land in the Rust crate's own
-`cargo test` lane (which `Linux.yml` runs on `ubuntu-24.04`); task 5 is a new
+`cargo test` lane (which `reusable-linux.yml` runs on `ubuntu-24.04`); task 5 is a new
 `BuildIntegrity` gate over two checked-in files.
 
 **The headline is that the deferred geometry pass applies an alpha cutoff of
@@ -7019,9 +7019,9 @@ leaving it on", `forward.rs:2169-2177`): skip the pass, keep the consumer.
 
 **Fifth, `Test/perf/baselines/win-9070xt-32core.json` is the last
 hand-maintained list in this repo with nothing gating it.** The fuzz-target
-array in `Windows.yml` got its gate at `buildIntegritySuite.cpp:1351-1395`
+array in `windows-x64.yml` got its gate at `buildIntegritySuite.cpp:1351-1395`
 precisely because "a fuzz target declared in `Test/fuzz/CMakeLists.txt` but
-never added to Windows.yml's array does not run and nothing says so"; the
+never added to windows-x64.yml's array does not run and nothing says so"; the
 Windows CPU-suite allowlist was replaced by "run everything except the two GPU
 suites". The perf baseline has the same shape and no gate:
 `Compare-PerfBaseline.ps1:29-32` documents that "benchmarks present in only one
@@ -7091,7 +7091,7 @@ this pass.
 golden verification is still blocked over RDP (see the `- [b]` entry near the
 end of this file), so nothing here may depend on it. Task 1 is a header-linkage
 change gated by a new `BuildIntegrity` source scan; task 2 lands entirely in the
-Rust crate's `cargo test` lane (which `Linux.yml` runs on `ubuntu-24.04`); task
+Rust crate's `cargo test` lane (which `reusable-linux.yml` runs on `ubuntu-24.04`); task
 3 is a signature change covered by the 19 existing `CascadedShadowMapUnit`
 tests plus one new one. `Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp`
 with `CONFIGURE_DEPENDS`, so no new suite file needs registering.
@@ -7287,7 +7287,7 @@ targets, and the two it skips are the two that touch real engine surface.**
 `texture_loading_fuzz_test` (`:166`). Both CI lanes hand-list a subset, and the
 two lists disagree with each other and with the CMake file:
 
-| target | `Linux.yml:139-146` | `Windows.yml:240` |
+| target | `reusable-linux.yml:139-146` | `windows-x64.yml:240` |
 | --- | --- | --- |
 | `first_fuzz_test` | yes | no |
 | `example_fuzz_test` | no | no |
@@ -7297,13 +7297,13 @@ two lists disagree with each other and with the CMake file:
 | `shader_file_reader_fuzz_test` | **no** | yes |
 | `texture_loading_fuzz_test` | **no** | yes |
 
-The asymmetry matters because the lanes are not equal: `Linux_x86.yml` runs on
-every push/PR, while `Windows.yml` is opt-in per commit via `[build-win]`. So
+The asymmetry matters because the lanes are not equal: `linux-x64.yml` runs on
+every push/PR, while `windows-x64.yml` is opt-in per commit via `[build-win]`. So
 the two targets that only Windows runs get a signal on a minority of commits —
-and `Windows.yml:224-226` records that *"the shader-file reader target found a
+and `windows-x64.yml:224-226` records that *"the shader-file reader target found a
 real terminate-on-throw bug from a seed on its first run"*. `example_fuzz_test`
 runs on neither lane. Windows at least fails loudly on a missing binary
-(`Windows.yml:242`); the Linux step has no such check and no gate ties either
+(`windows-x64.yml:242`); the Linux step has no such check and no gate ties either
 list to `Test/fuzz/CMakeLists.txt`, so target #7 will be born unrun and nothing
 will say so. This repo has already single-sourced two hand-maintained lists for
 exactly this reason (the Slang shader manifest, the perf-baseline/benchmark gate
@@ -7328,8 +7328,8 @@ the asymmetry is one missing three-line helper — and the gate that stops it
 being reintroduced.
 
 Ordering: the five tasks are disjoint. Tasks 1, 2 and 5 each touch one
-PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
-`Windows.yml` and `buildIntegritySuite.cpp`; task 4 touches `Texture.cpp`,
+PowerShell file plus one new Pester suite; task 3 touches `reusable-linux.yml`,
+`windows-x64.yml` and `buildIntegritySuite.cpp`; task 4 touches `Texture.cpp`,
 `Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
 (`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
 
@@ -7402,7 +7402,7 @@ Three consequences, all real:
   `x64-ClangCL-Windows-Profile`, i.e. at `build_release/` — a directory the
   container build never creates. The one preset AGENTS.md advertises for
   benchmarking cannot find the tree that holds `perfTestSuite.exe`.
-- `Windows.yml:293-308` uploads installers from **both** `build_release/**` and
+- `windows-x64.yml:293-308` uploads installers from **both** `build_release/**` and
   `build-clangcl-release/**`, commented "legacy/expected CMake preset output"
   and "also include the build directory used by the PowerShell build script".
   That is the drift, written down, in CI.
@@ -7468,7 +7468,7 @@ nothing. A fifth stage gets it wrong by default. The ordering constraint is why
 the destroy cannot simply move into the callee.
 
 Ordering: the five tasks are disjoint. Task 1 touches `CMakePresets.json`, the
-`.psd1`, `Windows.yml`, `AGENTS.md` and one Pester suite; task 2 touches
+`.psd1`, `windows-x64.yml`, `AGENTS.md` and one Pester suite; task 2 touches
 `docs/shader-sharing.md` and `buildIntegritySuite.cpp`; task 3 touches
 `GUISceneSharedVars.ixx` (a module interface — needs `-FreshContainer`) plus its
 readers; task 4 touches one Slang source, one header and two test files; task 5
@@ -7964,7 +7964,7 @@ gone, and CI runs them from `build-asan-clang` instead of the plain Debug tree.
 - `:latest` had not been rebuilt since 2026-04-16 while `:latest-cross` is
   refreshed routinely. CI now builds against `:latest-cross`.
 - That switch exposed a hardcoded `--gcc-toolchain=/opt/gcc-15.2.0` in 32
-  places in `Linux.yml`; the cross image ships **gcc-16.1.0**, so linking
+  places in `reusable-linux.yml`; the cross image ships **gcc-16.1.0**, so linking
   failed with `cannot find crtbeginS.o`. Updated. Worth deriving rather than
   hardcoding if it moves again.
 
@@ -7973,7 +7973,7 @@ the lane's whole history of lying.** The ODR-fix run failed differently:
 `build-asan-clang/first_fuzz_test: No such file or directory`. The ASan build
 step had reported success in ~30 seconds — because it failed at configure and
 `cmd 2>&1 | tee log` reports tee's exit code, and the runner's default shell
-has no pipefail. **Every build step in `Linux.yml` was masked this way**; only
+has no pipefail. **Every build step in `reusable-linux.yml` was masked this way**; only
 the fuzzer step, which has no `tee`, could ever surface failure. That is why
 the lane's failures always landed on the fuzzer step regardless of what was
 actually broken. Fixed with an explicit `shell: bash` default (`-eo pipefail`).
@@ -8094,7 +8094,7 @@ expose to a different grey than the CPU oracle in `tests/histogram.rs`
 asserts, silently.
 
 **Fifth, this repo compiles the Rust crate twice and lints it zero times.**
-`Linux.yml:277-286` runs `scripts/linux/run-cargo-tests.sh` on the
+`reusable-linux.yml:277-286` runs `scripts/linux/run-cargo-tests.sh` on the
 `ubuntu-24.04` leg, and its comment states the case exactly: the crate is
 compiled here by the Rust bridge and the wasm demo, but its tests only ran in
 `Kataglyphis-RustProjectTemplate`'s own workflow, "so edits made to
@@ -8155,12 +8155,12 @@ here does.
   `run-cargo-tests.sh`, delegates to
   `linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` workspace-wide, no
   `-p` filter) and confirmed to correctly delegate and correctly fail (exit
-  1) on the diffs above — it is not wired into `Linux.yml` yet. Once the pin
+  1) on the diffs above — it is not wired into `reusable-linux.yml` yet. Once the pin
   is clean, step 3 (add the CI step right after `:286`) and step 4 (AGENTS.md
   wrapper-map + "What CI runs" updates) are a small follow-up.
 
   **Files to read:**
-  - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
+  - `.github/workflows/reusable-linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
   - `scripts/linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
   - `third_party/ANTfrastructure/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
   - `third_party/OxidANT/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
@@ -8169,15 +8169,15 @@ here does.
   **Steps:**
   1. Before writing anything, run the linters locally from `third_party/OxidANT` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
   2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ANTfrastructure script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
-  3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
+  3. Add a "Lint Rust renderer crate" step to `.github/workflows/reusable-linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
   4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
   5. If step 1 surfaced findings in crates **other than** `webgpu_renderer`, do not fix them here and do not silence them with `#[allow]`: the submodule's own CI owns those crates. Fall back to a crate-scoped wrapper instead — `cargo fmt -p kataglyphis_webgpu_renderer -- --check` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets --all-features -- -D warnings` invoked directly rather than via the upstream script — and say in the script's header comment why the upstream delegation was not usable.
 
-  **Test:** Run `bash ./scripts/linux/run-cargo-lints.sh` (Git Bash on the host, or in the Linux container per `AGENTS.md` § "Running the Linux build locally") and confirm it exits 0. There is no unit test for a CI step; the acceptance is a clean local run plus the workflow YAML parsing (`gh workflow view` or a `yq`/`python -c "import yaml"` parse of `Linux.yml`).
+  **Test:** Run `bash ./scripts/linux/run-cargo-lints.sh` (Git Bash on the host, or in the Linux container per `AGENTS.md` § "Running the Linux build locally") and confirm it exits 0. There is no unit test for a CI step; the acceptance is a clean local run plus the workflow YAML parsing (`gh workflow view` or a `yq`/`python -c "import yaml"` parse of `reusable-linux.yml`).
 
   **Build:** none (CI/scripts). The Linux lane runs on every push, so no `[build-win]`/`[build-arm]` marker is needed to get the signal.
 
-  **Context:** This closes the last gap in the argument `Linux.yml:277-281` already makes. The submodule pin is at a commit whose own workflow runs this script green, so a red first run means the pin drifted or this repo's working tree has uncommitted crate edits — both worth knowing, and both invisible today.
+  **Context:** This closes the last gap in the argument `reusable-linux.yml:277-281` already makes. The submodule pin is at a commit whose own workflow runs this script green, so a red first run means the pin drifted or this repo's working tree has uncommitted crate edits — both worth knowing, and both invisible today.
 
 ## 2026-08-04 batch IV — planner (refactor: a formatting-drift figure quoted three times, all three wrong and two of them contradicting each other, behind a build check that reports and never fails; the cloud half of the GUI→UBO marshalling, where one of four `vec4`s goes through the shared header and three are packed inline against a shader nothing pins them to; the depth attachment, created by the same seven-argument chain in three raster stages)
 
@@ -8398,7 +8398,7 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   local run of `linux/scripts/build-cross-chain.sh`, which `preflight.sh`
   itself documents as taking **hours under QEMU** across 3 architectures,
   requires `GHCR_PAT` push credentials, and mutates a shared registry tag
-  that CI (`Linux.yml`) pulls for every build. That's an hours-long,
+  that CI (`reusable-linux.yml`) pulls for every build. That's an hours-long,
   hard-to-reverse, shared-infrastructure action outside a one-shot headless
   executor turn — needs to be run by the owner (or a long-lived session)
   with registry credentials, not attempted unattended.
@@ -9127,7 +9127,7 @@ There is a portability wrinkle that makes this more than tidying, and the
 helper must handle it explicitly. All 50 copies open in **text** mode
 (`std::ifstream file(path)`, no `std::ios::binary`), which on Windows strips
 `\r` and on Linux does not — while `readFileText` opens binary. `.gitattributes`
-pins `*.ps1`/`*.psm1`/`*.cmd` to CRLF, and `.github/workflows/Windows.yml` is
+pins `*.ps1`/`*.psm1`/`*.cmd` to CRLF, and `.github/workflows/windows-x64.yml` is
 CRLF on this checkout (`file` reports "with CRLF line terminators"). Several of
 these parsers read exactly those files —
 `parse_local_runner_fuzz_targets` (a `.ps1`), `parse_ci_fuzz_targets` and

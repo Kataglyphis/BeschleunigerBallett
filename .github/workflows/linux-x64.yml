@@ -1,4 +1,4 @@
-name: Linux build + test + coverage on Ubuntu 26.04 x86
+name: Linux x64 · build + test
 
 on:
   push:
@@ -32,7 +32,12 @@ permissions:
 
 jobs:
   build-x64:
-    uses: ./.github/workflows/Linux.yml
+    uses: ./.github/workflows/reusable-linux.yml
+    # Same scope as the top-level block, stated on the job. No timeout-minutes:
+    # GitHub rejects it on a job that calls a reusable workflow; every
+    # runner-owning job lives in reusable-linux.yml.
+    permissions:
+      contents: read
     with:
       runner: ubuntu-26.04
     secrets:

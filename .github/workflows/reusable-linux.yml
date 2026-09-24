@@ -1,4 +1,4 @@
-name: Linux build reusable
+name: Linux · reusable build
 
 on:
   workflow_call:

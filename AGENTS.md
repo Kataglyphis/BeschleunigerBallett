@@ -249,7 +249,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 Windows builds run inside the ANTfrastructure developer image
 `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` (clang-cl, CMake, Ninja,
 Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
-(`.github/workflows/Windows.yml`).
+(`.github/workflows/windows-x64.yml`).
 
 **All Windows-container knowledge lives in ANTfrastructure** — do not restate it
 here. When you do not know which document owns a topic, start at
@@ -458,7 +458,7 @@ by its own always-on workflow, `.github/workflows/submodule-pins.yml` — push
 and PR on `main`/`develop`, no `[build-win]` opt-in and **no `paths-ignore`**,
 because an invariant that only runs when somebody remembers to type a marker is
 not a gate, and neither is one a path filter can silence (it used to live in
-`Windows.yml` and inherited that file's `'**.md'`/`docs/**` filter, so a commit
+`windows-x64.yml` and inherited that file's `'**.md'`/`docs/**` filter, so a commit
 that moved a gitlink alongside a docs page went unchecked). For **every** configured submodule it
 asserts the tree is checked out, sits at its recorded gitlink, and is pinned to
 a commit reachable from its remote (a pin on no remote branch cannot be
@@ -523,7 +523,7 @@ render (~32 FPS ImGui overlay).
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
   comparison tools (CI runs them in validation-only mode — the runners have no GPU).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
-  (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/Windows.yml`
+  (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/windows-x64.yml`
   runs them with a pinned Pester 3.4.0 — gated on `[build-win]` like the rest of
   Windows CI, so they do NOT run on ordinary pushes). **Only suites covering
   project-specific behaviour belong here.** A suite for a module that lives
@@ -593,16 +593,23 @@ the pushed HEAD commit's message:
 | --- | --- | --- |
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
-| Linux x86_64 (build + test + coverage) | `Linux_x86.yml` → `Linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows (clang-cl/MSVC container build, Pester) | `Windows.yml` | `[build-win]` in the commit message |
-| Linux ARM64 | `Linux_arm.yml` → `Linux.yml` | `[build-arm]` in the commit message |
+| Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows (clang-cl/MSVC container build, Pester) | `windows-x64.yml` | `[build-win]` in the commit message |
+| Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | `[build-arm]` in the commit message |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
 `paths-ignore`, so a docs-only push got no secret scan and a commit that moved a
-gitlink next to a docs page got no pin check; `lint` also lived in the reusable
-`Linux.yml` and therefore ran once per **caller**, grading the same
+gitlink next to a docs page got no pin check; `lint` also lived in
+`reusable-linux.yml` and therefore ran once per **caller**, grading the same
 runner-independent tree twice whenever `[build-arm]` came along.
+
+Workflow files follow the fleet naming convention (owner decision 2026-09-24):
+kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,
+`windows-x64.yml`), repo-local reusables as `reusable-<platform>.yml`, and
+display names `<Platform> <Arch> · <what>`. The job ids are unchanged, so the
+check-run names a branch protection rule matches did not move; badge and
+`actions/workflows/<file>` URLs did.
 
 Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
 signal at all.** The marker must be in the HEAD commit of the push, not an
@@ -611,7 +618,7 @@ earlier one. Full rules:
 Reading pipeline status from a shell (`gh`):
 [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md).
 
-`Linux_x86.yml` and `Linux_arm.yml` both call the reusable `Linux.yml`, so a fix
+`linux-x64.yml` and `linux-arm64.yml` both call `reusable-linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
 and synchronization suites are host-only by construction.
 

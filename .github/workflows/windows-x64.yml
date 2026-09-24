@@ -1,4 +1,4 @@
-name: CMake on Windows MSVC/Clang x64 (Container)
+name: Windows x64 · build + test
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main, develop]
-  # Same escape hatch as Linux_x86.yml: lets a run be requested against the
+  # Same escape hatch as linux-x64.yml: lets a run be requested against the
   # branch tip without inventing a commit. The `[build-win]` gate below is a
   # head_commit check, which is null for a dispatch, so the jobs opt in
   # explicitly on this event instead.

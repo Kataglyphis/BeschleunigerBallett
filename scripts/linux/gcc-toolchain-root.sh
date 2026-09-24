@@ -6,7 +6,7 @@
 # --gcc-toolchain flags CMake computes.
 #
 # Why this exists at all: the prefix used to be written out literally as
-# /opt/gcc-16.1.0 - in the presets and in Linux.yml. When the build image
+# /opt/gcc-16.1.0 - in the presets and in reusable-linux.yml. When the build image
 # bumped GCC 16.1.0 -> 16.2.0 that path stopped existing, and every Linux job
 # died in compiler detection with
 #

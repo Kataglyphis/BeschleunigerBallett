@@ -17,9 +17,9 @@
 
 see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 
-[![Linux build + test + coverage on Ubuntu 26.04 ARM](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_arm.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_arm.yml)
-[![Linux build + test + coverage on Ubuntu 26.04 x86](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_x86.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Linux_x86.yml)
-[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Windows.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/Windows.yml)
+[![Linux arm64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-arm64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-arm64.yml)
+[![Linux x64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-x64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-x64.yml)
+[![Windows x64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-x64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-x64.yml)
 [![Lint gates](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/lint-gates.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/lint-gates.yml)
 [![Submodule pins](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/submodule-pins.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/submodule-pins.yml)  
 [![CodeQL](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/github-code-scanning/codeql)
@@ -127,7 +127,7 @@ Shaders, which walks the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/windows-x64.yml` runs the same flow in CI.
 
 ## Roadmap
 

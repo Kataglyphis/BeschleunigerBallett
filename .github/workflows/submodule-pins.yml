@@ -2,7 +2,7 @@ name: Submodule pins
 
 # WHY THIS IS ITS OWN WORKFLOW (2026-09-15)
 #
-# The pin check used to live in Windows.yml, whose build job is opt-in per
+# The pin check used to live in windows-x64.yml, whose build job is opt-in per
 # commit ([build-win]). It already carried no `if:` of its own, so it did run on
 # every push - but it sat under a workflow named for a 2-3h Windows container
 # build, and it inherited that file's `paths-ignore: ['**.md', 'docs/**']`.

@@ -2,23 +2,24 @@ name: Lint gates
 
 # WHY THIS IS ITS OWN WORKFLOW (2026-09-15)
 #
-# These jobs used to be tenants of the build lanes: `lint` sat inside the
-# reusable Linux.yml and `powershell-lint` inside Windows.yml. Nothing about
+# These jobs used to be tenants of the build lanes: `lint` sat inside
+# reusable-linux.yml and `powershell-lint` inside windows-x64.yml. Nothing about
 # them belongs to a build, and being tenants cost them on both sides:
 #
-#   - Linux.yml is `workflow_call`-only, so `lint` ran once per CALLER. A push
-#     carrying [build-arm] ran the identical shellcheck/actionlint/gitleaks
-#     sweep twice, on an x86 runner and again on an ARM one, grading a tree that
-#     does not vary by runner architecture.
+#   - reusable-linux.yml is `workflow_call`-only, so `lint` ran once per CALLER.
+#     A push carrying [build-arm] ran the identical
+#     shellcheck/actionlint/gitleaks sweep twice, on an x86 runner and again on
+#     an ARM one, grading a tree that does not vary by runner architecture.
 #   - Both callers declare `paths-ignore: ['**.md', 'docs/**']`, correctly - a
 #     backlog edit is not a reason to spend a 2-3h engine build. But the lint
 #     gates are exactly the gates a docs-only commit still needs: gitleaks scans
 #     the tracked tree, and a leaked credential does not care that the commit
 #     only touched Markdown. A docs-only push got NO secret scan at all.
-#   - `powershell-lint` was reachable only through Windows.yml, whose build job
-#     is opt-in per commit. It already carried no `if:` so it did run on every
-#     push - but it ran under a workflow named for a Windows container build,
-#     and Windows.yml's own paths-ignore silenced it on docs-only commits too.
+#   - `powershell-lint` was reachable only through windows-x64.yml, whose build
+#     job is opt-in per commit. It already carried no `if:` so it did run on
+#     every push - but it ran under a workflow named for a Windows container
+#     build, and windows-x64.yml's own paths-ignore silenced it on docs-only
+#     commits too.
 #
 # So: no paths-ignore here, on purpose, and no runner input. This runs once per
 # push to main/develop and once per PR against them, whatever the commit
@@ -133,7 +134,7 @@ jobs:
   #     either SecureString or PSCredential  (PSAvoidUsingPlainTextForPassword)
   #
   # So adopting it today makes this lane red over ONE finding whose fix changes
-  # the build driver's public parameter contract and how Windows.yml forwards
+  # the build driver's public parameter contract and how windows-x64.yml forwards
   # the WebDAV credentials - a change that wants its own commit and its own
   # verification, not a ride inside a workflow collapse. Fix that parameter,
   # then delete this job and pass `lint-powershell: true` instead.
@@ -150,7 +151,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-    # Windows.yml set this file-wide; carried here because every step below is
+    # windows-x64.yml set this file-wide; carried here because every step below is
     # PowerShell and `pwsh` is not the default shell on a Linux-first workflow.
     defaults:
       run:

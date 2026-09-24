@@ -83,7 +83,7 @@ If build dependencies are missing on the host, prefer the containerized workflow
 
 ## Windows Container Workflow (Stevedore)
 
-The Windows builds also run fully containerized in the ANTfrastructure developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64`, exactly like CI (`.github/workflows/Windows.yml`). Install [Stevedore](https://github.com/slonopotamus/stevedore) with `winget install stevedore` and reboot, then:
+The Windows builds also run fully containerized in the ANTfrastructure developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64`, exactly like CI (`.github/workflows/windows-x64.yml`). Install [Stevedore](https://github.com/slonopotamus/stevedore) with `winget install stevedore` and reboot, then:
 
 ```pwsh
 # defaults to clangcl-debug,clangcl-profile,clangcl-release
@@ -128,7 +128,7 @@ cmake --build build-release-appimage --config Release --target package
 
 The Windows release workflow can produce an MSIX package. If signing is enabled, place the PFX certificate at the repository root and provide the certificate password through `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
 
-CI retrieves the certificate over WebDAV instead of committing it: `Build-Windows.ps1 -WebDavHostname/-WebDavUsername/-WebDavPassword/-RemoteBasePath` (see the "Build/Test/Package" step of `.github/workflows/Windows.yml`) drives ANTfrastructure's `windows/scripts/certificates/download_webdav_files.py` through the `WindowsWebDav.Common` module (`--extension .pfx`; generating and importing certificates is documented in ANTfrastructure `windows/scripts/certificates/README.md`).
+CI retrieves the certificate over WebDAV instead of committing it: `Build-Windows.ps1 -WebDavHostname/-WebDavUsername/-WebDavPassword/-RemoteBasePath` (see the "Build/Test/Package" step of `.github/workflows/windows-x64.yml`) drives ANTfrastructure's `windows/scripts/certificates/download_webdav_files.py` through the `WindowsWebDav.Common` module (`--extension .pfx`; generating and importing certificates is documented in ANTfrastructure `windows/scripts/certificates/README.md`).
 
 ## Shader Include Workflow
 

@@ -21,7 +21,7 @@ CTEST_RUN_DEFAULT_BUILD_TYPE="Debug"
 CTEST_RUN_USAGE_INTRO="Runs the BeschleunigerBallett test suite inside the Linux container image."
 
 # No default --ctest-exclude: which suites are GPU/device-dependent differs per
-# lane (Linux.yml excludes Integration/GoldenRender and the shader-freshness
+# lane (reusable-linux.yml excludes Integration/GoldenRender and the shader-freshness
 # check on the headless runners), so the exclusion stays an explicit CI
 # argument rather than a silent default here.
 

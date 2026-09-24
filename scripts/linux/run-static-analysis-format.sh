@@ -129,7 +129,7 @@ run_scan_build() {
 
 # Resolves the GCC prefix clang++ must be pointed at, and applies it.
 #
-# This lived in Linux.yml as a `bash -lc` prologue in front of the
+# This lived in reusable-linux.yml as a `bash -lc` prologue in front of the
 # --only-clang-analyze-html step, which meant CI analysed against the image's
 # libstdc++ and a human running the same flag locally analysed against whatever
 # the system GCC happened to be - with nothing saying the two differed. It

@@ -57,7 +57,7 @@ Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -For
 # The Windows developer image, resolved from ANTfrastructure's
 # linux/scripts/01-core/versions.env (CI_IMAGE_WINDOWS_TAG) rather than named
 # here. That file is the fleet's one owner of the two CI image tags -
-# .github/workflows/Windows.yml already inherits it as the container action's
+# .github/workflows/windows-x64.yml already inherits it as the container action's
 # `image:` default, and Get-CiImageReference is the PowerShell twin of
 # scripts/linux/ci-image-ref.sh, gated against it by ANTfrastructure's
 # verify_ci_image_refs.py. Before this, a tag bump upstream left this local

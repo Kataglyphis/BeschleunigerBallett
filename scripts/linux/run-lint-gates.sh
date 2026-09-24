@@ -7,7 +7,7 @@
 # self-test (clean-tree positive control + planted-PAT canary).
 #
 # WHY THIS FILE EXISTS AT ALL, given the logic is upstream: before it, the lint
-# job was ~120 lines of shell embedded in .github/workflows/Linux.yml `run:`
+# job was ~120 lines of shell embedded in .github/workflows/reusable-linux.yml `run:`
 # blocks, so the gate that blocks this repo's merges could not be reproduced on
 # a dev box - the only way to test a change to it was to push. (The job itself
 # now lives in .github/workflows/lint-gates.yml, its own always-on workflow.)

@@ -6,7 +6,7 @@
 # `sync-shared-config.sh --repo-root . --check`, which the hub's lint aggregator
 # runs as one of its six gates from .github/workflows/lint-gates.yml - always-on
 # and with no paths-ignore, so it sees every push including docs-only ones. This
-# file runs in Windows.yml's `pester-tests` job, which is opt-in per commit via
+# file runs in windows-x64.yml's `pester-tests` job, which is opt-in per commit via
 # [build-win]; what it proves is that the PowerShell sync half
 # (Sync-SharedConfig.ps1) agrees with the Bash half about the same seven assets.
 # Do not read a green Windows lane as the drift check having run on this push,

@@ -9,7 +9,7 @@
 # that all three compose the same string.
 #
 # This file stays because the invocation stays: `scripts/linux/ci-image-ref.sh`
-# is what .github/workflows/Linux.yml types and what a human types on a dev box.
+# is what .github/workflows/reusable-linux.yml types and what a human types on a dev box.
 # The wrapper keeps that spelling working while the implementation lives in one
 # place. It adds NOTHING to the upstream contract - same arguments, same
 # stdout-only output, same non-zero exit on a missing key.
