@@ -262,6 +262,14 @@ jobs:
             --build-dir "build-tsan"
           log-file: output-tsan.log
 
+      # TSan maps its shadow memory at fixed ranges that the runner kernel's ASLR
+      # entropy (vm.mmap_rnd_bits=32) collides with, and inside the container it
+      # cannot re-exec without ASLR: "FATAL: ThreadSanitizer: encountered an
+      # incompatible memory layout but was unable to re-exec" (runs 36020443791
+      # x64 and 36020443030 arm64). The container shares the host kernel.
+      - name: Lower ASLR entropy for ThreadSanitizer
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+
       - name: Run tests under ThreadSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
         with:
