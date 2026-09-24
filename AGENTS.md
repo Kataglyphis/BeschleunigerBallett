@@ -20,7 +20,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
-| Pushing and expecting CI to tell you something | Windows and ARM lanes are **opt-in per commit** — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
+| Pushing and expecting CI to tell you something | Every lane runs on every push/PR; the three platform lanes skip docs-only commits — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): [`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md), which the pin bump to `ee7e5a1b` made reachable in this checkout; [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) for a reader without the submodule |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
@@ -93,7 +93,7 @@ orientation and link — upstream's own instruction to consumers,
 | The Windows container image: build sequence, Stevedore setup, invariants | [`windows-builds.md`](third_party/ANTfrastructure/docs/windows-builds.md) |
 | Building inside the image: transports, reuse pattern, safety rails | [`windows-container-build-performance.md`](third_party/ANTfrastructure/docs/windows-container-build-performance.md) |
 | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules | [`rancher-desktop-linux-containers.md`](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md) |
-| Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins | [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md) |
+| Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins (this repo dropped both on 2026-09-24) | [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md) |
 | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses | [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md) |
 | Reading and fixing CI status from a shell with `gh` | [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md) |
 | clang-format / clang-tidy / cmake-format rules, and the lint gates' contracts | [`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md) |
@@ -524,8 +524,8 @@ render (~32 FPS ImGui overlay).
   comparison tools (CI runs them in validation-only mode — the runners have no GPU).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/windows-x64.yml`
-  runs them with a pinned Pester 3.4.0 — gated on `[build-win]` like the rest of
-  Windows CI, so they do NOT run on ordinary pushes). **Only suites covering
+  runs them with a pinned Pester 3.4.0 on every push and PR, like the rest of
+  Windows CI). **Only suites covering
   project-specific behaviour belong here.** A suite for a module that lives
   upstream goes upstream with it (2026-08-07); the eight that remain cover the
   module-resolution bootstrap (`Resolve-BuildModule`), the preset, artifact and
@@ -542,7 +542,7 @@ render (~32 FPS ImGui overlay).
   `Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
   -SkipPublisherCheck`). Run it after changing anything upstream — and note that
   upstream has its own CI for them (`windows-scripts.yml`), so a break there is
-  caught without waiting on this repo's `[build-win]` lane.
+  caught without waiting on this repo's 2-3 h Windows lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in containers and run
   only on the host — procedure, cwd requirement and the golden-writing
   cautions are in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
@@ -585,24 +585,25 @@ what each one is for.
 
 ## What CI runs, and what it does not
 
-The cheap gates and the Linux x86_64 lane run on every push/PR to
-`main`/`develop`. The heavier lanes are **opt-in per commit**, matched against
-the pushed HEAD commit's message:
+Every lane runs on every push/PR to `main`/`develop`. The `[build-win]` and
+`[build-arm]` commit-message opt-ins are gone (owner decision 2026-09-24: Linux
+x64, Linux arm64 and Windows x64 always run). The three platform lanes still skip
+a docs-only commit through `paths-ignore`:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows (clang-cl/MSVC container build, Pester) | `windows-x64.yml` | `[build-win]` in the commit message |
-| Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | `[build-arm]` in the commit message |
+| Windows (clang-cl/MSVC container build, Pester) | `windows-x64.yml` | always, minus `'**.md'`/`docs/**` |
+| Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
 `paths-ignore`, so a docs-only push got no secret scan and a commit that moved a
 gitlink next to a docs page got no pin check; `lint` also lived in
 `reusable-linux.yml` and therefore ran once per **caller**, grading the same
-runner-independent tree twice whenever `[build-arm]` came along.
+runner-independent tree twice on every ARM run.
 
 Workflow files follow the fleet naming convention (owner decision 2026-09-24):
 kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,
@@ -611,9 +612,10 @@ display names `<Platform> <Arch> · <what>`. The job ids are unchanged, so the
 check-run names a branch protection rule matches did not move; badge and
 `actions/workflows/<file>` URLs did.
 
-Consequence: **a Windows-only change pushed without `[build-win]` gets no CI
-signal at all.** The marker must be in the HEAD commit of the push, not an
-earlier one. Full rules:
+To re-run a lane at the branch tip without a commit (a fix to a docs path the
+filter skips, say), use `workflow_dispatch` on `linux-x64.yml` or
+`windows-x64.yml`. The hub's trigger rules, including the opt-in markers other
+repos still use:
 [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md).
 Reading pipeline status from a shell (`gh`):
 [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md).
@@ -828,7 +830,7 @@ ANTfrastructure (see the rule above), project-specific ones here.
 | `third_party/ANTfrastructure/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
 | `third_party/ANTfrastructure/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
 | `third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
-| `third_party/ANTfrastructure/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins |
+| `third_party/ANTfrastructure/docs/ci-build-triggers.md` | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins (this repo dropped both on 2026-09-24) |
 | `third_party/ANTfrastructure/docs/dependency-updates.md` | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses |
 | `third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md` | Reading and fixing CI status from a shell with `gh` |
 | `third_party/ANTfrastructure/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |

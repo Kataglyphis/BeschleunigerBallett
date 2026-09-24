@@ -12,8 +12,8 @@ lists the seven assets this repo takes. The every-push gate is
 — the hub's lint aggregator runs it as one of its six gates, and the aggregator
 runs from `.github/workflows/lint-gates.yml`, which has no `paths-ignore`, so
 "every push" is literal and includes docs-only ones;
-`scripts/windows/tests/SharedConfig.Drift.Tests.ps1` is its `[build-win]` Pester
-mirror. Edit them upstream in `shared/config/`, then run
+`scripts/windows/tests/SharedConfig.Drift.Tests.ps1` is its Pester mirror in the
+Windows lane. Edit them upstream in `shared/config/`, then run
 `Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
 this repo's root.
 

@@ -12,9 +12,8 @@ on:
   pull_request:
     branches: [main, develop]
   # Same escape hatch as linux-x64.yml: lets a run be requested against the
-  # branch tip without inventing a commit. The `[build-win]` gate below is a
-  # head_commit check, which is null for a dispatch, so the jobs opt in
-  # explicitly on this event instead.
+  # branch tip without inventing a commit. No `[build-win]` opt-in any more
+  # (owner decision 2026-09-24): every platform lane runs on every push and PR.
   workflow_dispatch:
 
 # Cancel superseded runs on develop and PRs so the tip's verdict arrives without
@@ -55,7 +54,6 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-win]')
     runs-on: windows-2025
     permissions:
       contents: read
@@ -316,7 +314,6 @@ jobs:
   # runner's default Pester 5 cannot parse them). Cheap gate for the module
   # moves to ANTfrastructure: every module must still resolve and behave.
   pester-tests:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[build-win]')
     runs-on: windows-2025
     permissions:
       contents: read

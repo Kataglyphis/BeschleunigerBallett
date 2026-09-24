@@ -25,7 +25,6 @@ permissions:
   
 jobs:
   build-arm:
-    if: contains(github.event.head_commit.message, '[build-arm]')
     uses: ./.github/workflows/reusable-linux.yml
     # Same scope as the top-level block, stated on the job. No timeout-minutes:
     # GitHub rejects it on a job that calls a reusable workflow; every
