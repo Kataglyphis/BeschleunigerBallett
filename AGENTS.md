@@ -198,6 +198,15 @@ Debug, Debug-ASan and Profile. The plain-Clang
 2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
 stays: the `windows-clang-release-wix` package preset builds on it.
 
+**Coverage is OFF for every ClangCL preset** (`myproject_ENABLE_COVERAGE` in
+`x64-ClangCL-Windows-Base`, 2026-09-24). The image compiles with its patched LLVM,
+which ships no `clang_rt.profile` (ANTfrastructure's `Build-LlvmFromSource.ps1`
+builds it with `COMPILER_RT_BUILD_PROFILE=OFF`: the profile runtime does not
+compile under clang-cl). With coverage on, the option's default, configure
+stopped at `Coverage was requested, but the clang-cl profile runtime is missing`
+(run 36042436962). No Windows step consumed coverage; the Linux lanes' coverage
+job is where it is measured. Turn it back on once the image ships that runtime.
+
 Typical full sweep (ASAN debug, profile, release):
 
 ```pwsh

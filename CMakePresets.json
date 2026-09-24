@@ -318,7 +318,8 @@
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "ON",
-				"COMPILER_CACHE": "sccache"
+				"COMPILER_CACHE": "sccache",
+				"myproject_ENABLE_COVERAGE": "OFF"
 			},
 			"condition": {
 				"type": "equals",
