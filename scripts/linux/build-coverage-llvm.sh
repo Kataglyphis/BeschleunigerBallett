@@ -13,6 +13,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
 # not honour - and fails naming the probed path AND the fix.
 antfrastructure_source linux/scripts/lib/coverage.sh
+antfrastructure_source linux/scripts/lib/compiler-llvm-tools.sh
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -36,6 +37,9 @@ done
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-build}}"
 COVERAGE_JSON="${COVERAGE_JSON_ARG:-${COVERAGE_JSON:-${BUILD_DIR}/coverage.json}}"
 
+# The pair must be the compiler's own: PATH's llvm-profdata is an older LLVM than the
+# image's clang and refused its raw profile ("no profile can be merged", 2026-09-24).
+use_compiler_llvm_tools "${BUILD_DIR}" llvm-profdata llvm-cov
 require_tools llvm-profdata llvm-cov
 
 # compileTestSuite is device-free (it links VulkanEngineCore but touches no
