@@ -54,11 +54,11 @@
 	branch = master
 [submodule "third_party/ANTfrastructure"]
 	path = third_party/ANTfrastructure
-	url = git@github.com:Kataglyphis/ANTfrastructure.git
-	branch = main
+	url = https://github.com/Kataglyphis/ANTfrastructure.git
+	branch = develop
 [submodule "third_party/OxidANT"]
 	path = third_party/OxidANT
-	url = git@github.com:Kataglyphis/OxidANT.git
+	url = https://github.com/Kataglyphis/OxidANT.git
 	branch = develop
 [submodule "third_party/tomlplusplus"]
 	path = third_party/tomlplusplus
