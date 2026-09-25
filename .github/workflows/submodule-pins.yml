@@ -46,7 +46,7 @@ name: Submodule pins
 # and 6.x rejects -Quiet - so a hub-side default change cannot silently blind
 # this lane.
 #
-# @main, like every other ANTfrastructure reference here: upstream is pushed
+# @develop, like every other ANTfrastructure reference here: upstream is pushed
 # before the consumer change that needs it.
 
 on:
@@ -66,6 +66,6 @@ permissions:
 jobs:
   submodule-pins:
     name: submodule pins sit at their recorded, restorable commits
-    uses: Kataglyphis/ANTfrastructure/.github/workflows/submodule-pins.yml@main
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/submodule-pins.yml@develop
     with:
       pester-version: '3.4.0'

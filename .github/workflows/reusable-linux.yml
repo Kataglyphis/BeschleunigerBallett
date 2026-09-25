@@ -111,13 +111,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -126,7 +126,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/run-ctest.sh
@@ -145,7 +145,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -153,7 +153,7 @@ jobs:
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -225,7 +225,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: >-
             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"
@@ -245,7 +245,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -254,7 +254,7 @@ jobs:
       # data races could only be found by hand. Non-GPU tests only - the
       # Integration suites need an adapter the CI container does not have.
       - name: Configure/build with ThreadSanitizer
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -271,7 +271,7 @@ jobs:
         run: sudo sysctl -w vm.mmap_rnd_bits=28
 
       - name: Run tests under ThreadSanitizer
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: >-
             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"
@@ -292,13 +292,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Build for coverage
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -307,7 +307,7 @@ jobs:
           log-file: output.log
 
       - name: Build Code Coverage
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/build-coverage-llvm.sh
@@ -333,7 +333,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
@@ -343,7 +343,7 @@ jobs:
       # in the old single job happened to exist only because an earlier step had
       # already built into the same directory.
       - name: Configure/build for analysis
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -365,7 +365,7 @@ jobs:
       # like every other step in this lane.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/run-static-analysis-format.sh
@@ -374,7 +374,7 @@ jobs:
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/run-static-analysis-format.sh
@@ -391,13 +391,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -407,7 +407,7 @@ jobs:
           log-file: output.log
 
       - name: Run performance benchmarks
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -425,13 +425,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Run Rust renderer tests
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
@@ -450,13 +450,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Generate Doxygen XML
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -466,7 +466,7 @@ jobs:
           log-file: output.log
 
       - name: Build web page
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
@@ -476,12 +476,12 @@ jobs:
         # below, not surface as a slow page load after it is already live.
         # (It skips itself, loudly, when the image cannot build wasm at all -
         # see scripts/linux/wasm-size-budget.sh.)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/wasm-size-budget.sh
 
       - name: 📂 Sync files to domain
-        uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@develop
         # A flaky FTP upload of the docs must not red the whole build+test lane:
         # the code already compiled and passed both the clang/ASan and gcc test
         # runs before this deploy step. Mirrors the RPT fix (continue-on-error on
@@ -502,13 +502,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -518,7 +518,7 @@ jobs:
           log-file: output.log
 
       - name: Run Unit/Integration tests (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/run-ctest.sh
@@ -539,7 +539,7 @@ jobs:
       # gcovr walks the build tree for the .gcda files the ctest run above left
       # behind, so it has to stay in the same job as those tests.
       - name: Build Code Coverage (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
@@ -555,13 +555,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Profiling (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -585,7 +585,7 @@ jobs:
       # `[[ -f ]]` guard, so a non-zero exit from the suite is the step's exit
       # code here just as it was before.
       - name: Run performance benchmarks (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
@@ -598,13 +598,13 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
@@ -614,7 +614,7 @@ jobs:
           log-file: output.log
 
       - name: Package
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@main
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh

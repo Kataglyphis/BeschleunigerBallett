@@ -107,11 +107,11 @@ jobs:
   #     tracked plain FILES inside an excluded directory precisely because they
   #     are the consumer's own.
   #
-  # @main, like every other ANTfrastructure reference here: upstream is pushed
+  # @develop, like every other ANTfrastructure reference here: upstream is pushed
   # before the consumer change that needs it.
   lint:
     name: shell + workflow + secret + config gates
-    uses: Kataglyphis/ANTfrastructure/.github/workflows/lint-gates.yml@main
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/lint-gates.yml@develop
     with:
       submodules: 'recursive'
       ratchets: true

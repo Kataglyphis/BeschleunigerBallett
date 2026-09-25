@@ -447,7 +447,7 @@ are upstream's: [adopting § 8](third_party/ANTfrastructure/docs/adopting-in-a-n
 ### Shipping a change that spans both repos
 
 Both repos are committed and pushed together, ANTfrastructure **first** (CI
-resolves its composite actions at `@main`), and the submodule pin is bumped in
+resolves its composite actions at `@develop`), and the submodule pin is bumped in
 the same change.
 
 **Adopting any of this in another project** — the loop, both container flows,
@@ -642,13 +642,14 @@ Reading pipeline status from a shell (`gh`):
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
 and synchronization suites are host-only by construction.
 
-### The job bodies are ANTfrastructure's, resolved at `@main`
+### The job bodies are ANTfrastructure's, resolved at `@develop`
 
 The workflows here are mostly wiring: the actual steps come from composite
-actions pulled straight from ANTfrastructure's default branch —
+actions pulled straight from ANTfrastructure's `develop` branch (owner directive
+2026-09-25; `main` lags it and still names the retired `:latest-cross` image) —
 `prepare-linux-ci-host`, `run-in-linux-container`,
 `prepare-windows-container-host`, `run-in-windows-container`,
-`run-pester-suite`. **There is no pin: a push to ANTfrastructure `main` changes
+`run-pester-suite`. **There is no pin: a push to ANTfrastructure `develop` changes
 this repo's CI on the next run**, which is why both repos ship together with
 ANTfrastructure first (see the rule above). When a lane fails inside a step whose
 `uses:` points at ANTfrastructure, read the action there — it is not defined here.
