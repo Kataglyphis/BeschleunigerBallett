@@ -36,7 +36,7 @@ BeschleunigerBallett is a renderer and graphics-engine playground used to explor
 
 ## Highlights
 
-- Vulkan renderer (C++23 modules) with forward + deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps (consumed by both lighting paths), skybox, volumetric clouds, OBJ loading, and mip mapping
+- Vulkan renderer (C++23 modules) with forward + deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps (consumed by both lighting paths), skybox, volumetric clouds, OBJ and glTF 2.0/GLB loading, and mip mapping
 - VMA-backed memory, fence-synced uploads with a persistent staging buffer, a persisted `VkPipelineCache`, and fail-fast Vulkan error handling (exceptions are disabled project-wide)
 - Companion Rust WebGPU renderer (`third_party/OxidANT/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shares Slang shader sources with the C++ Vulkan renderer (see `docs/shader-sharing.md`)
 - Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing (including a real OBJ-parsing fuzz target), packaging, Sphinx, Doxygen, and Graphviz
@@ -97,7 +97,7 @@ Each topic has exactly one home; the full topic-guide inventory is the Docs tabl
 To build the Sphinx HTML docs locally, see
 [docs/source/documentation_workflow.md](docs/source/documentation_workflow.md).
 
-If Doxygen XML is available, the Sphinx build automatically includes the generated C++ API reference. If no XML is present, the hand-written docs still build cleanly and the API section stays hidden.
+If Doxygen XML is available, the Sphinx build automatically includes the generated C++ API reference. If no XML is present, the hand-written docs still build cleanly and the API page is a placeholder that says so (`docs/source/conf.py` writes it).
 
 ## Tests and Analysis
 
@@ -116,7 +116,7 @@ and the rationale in
 
 ## Packaging
 
-Linux binary packages are generated with CPack (optionally as AppImage); the Windows release build can produce a signed MSIX. The workflows live in [docs/source/getting_started.md](docs/source/getting_started.md#packaging).
+Linux binary packages (TGZ, DEB and, unless `CPACK_ENABLE_APPIMAGE=OFF`, an AppImage) are generated with CPack; the Windows release build can produce a signed MSIX. The workflows live in [docs/source/getting_started.md](docs/source/getting_started.md#packaging).
 
 ## Shaders
 
@@ -128,7 +128,7 @@ Shaders, which walks the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/windows-x64.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [ANTfrastructure](https://github.com/Kataglyphis/ANTfrastructure). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `scripts/windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/windows-x64.yml` runs the same `Build-Windows.ps1` in the same image in CI (bind-mounted, one container per step).
 
 ## Roadmap
 

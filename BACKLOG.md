@@ -227,8 +227,9 @@ that are *not* exercised that way and should be run periodically:
   This bullet stays as the record of why a green Windows "TSan" run meant
   nothing.
 - **Synchronization validation** — run
-  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1`
-  (documented in `docs/gpu-golden-testing.md`). It sets
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1`
+  (documented in `docs/gpu-golden-testing.md`; `Run-SyncValidation.ps1` until
+  the 2026-09-06 rename). It sets
   `khronos_validation.validate_sync = true` via `scripts/vk_layer_settings.txt`,
   copied next to the executable for the run, and exits non-zero on any
   `SYNC-HAZARD` in the log. This found 10 real WRITE-AFTER-WRITE hazards in
@@ -258,9 +259,11 @@ that are *not* exercised that way and should be run periodically:
   `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp`, and it is in the
   Windows CI filter.
 - Headless offscreen assertions in the C++ engine — **re-scoped, largely done.**
-  `goldenRenderSuite.cpp` now carries 29 runnable GPU tests (forward/deferred raster,
-  shadows, frustum culling, RT, path tracing incl. white furnace, textures,
-  mask alpha, double-sided, KHR texture transform, second-model load). What is
+  `goldenRenderSuite.cpp` carried 29 runnable GPU tests when this was written
+  (forward/deferred raster, shadows, frustum culling, RT, path tracing incl.
+  white furnace, textures, mask alpha, double-sided, KHR texture transform,
+  second-model load); today's count is the `golden-counts` marker in
+  `docs/gpu-golden-testing.md`. What is
   still genuinely missing is coverage of the *shadow* path beyond the single
   darkened-pixel ratio, and of the post-processing chain (both need careful
   oracle design — see `docs/gpu-golden-testing.md` on why the tonemap is hard
@@ -304,8 +307,8 @@ unconditional control capture before its output is believed.
 
 ## Code quality (see `docs/code-quality.md` for the commands)
 
-- **Decide on the formatting sweep.** **140 of 211** own sources under
-  `Src/` and `Test/` do not match `.clang-format` (measured 2026-08-04; see
+- **Decide on the formatting sweep.** **142 of 216** own sources under
+  `Src/` and `Test/` do not match `.clang-format` (measured 2026-08-05; see
   `docs/code-quality.md` "Known state" for the commands and the
   `format-drift-denominator` marker it pins). Every container build already
   runs a non-destructive `clang-format --dry-run -Werror` pass and logs this
@@ -436,6 +439,15 @@ cleanUp+recreate pair at the four scene-changed sites.
   fails fast if the data-root drive can't hold ~54 GB (owner chose "diagnostic
   first").
 
+  **Status 2026-09-25 — looks done; closing it is the owner's call.** The pull
+  no longer exhausts the runner: ANTfrastructure's `prepare-windows-container-host`
+  moves Docker's data-root to `D:\docker` and checks 70 GB free there before
+  pulling (`required-free-gb`), and the Windows x64 lane gets past the pull
+  (run 36042436962 reached configure, run 36052511207 compiled 727 of 1091
+  steps). The slim image below was never built; the `WINDOWS_CONTAINER_IMAGE`
+  variable, the hub's `windows/build.ps1` and `rust_windows2025.yml` it names
+  no longer exist (the image comes from the hub's `versions.env`).
+
   **What's in the 54 GB** (ANTfrastructure `windows/build.ps1`): the chain is
   `base → nvidia (CUDA+cuDNN+TensorRT ~50 GB) → toolchain (clang/cmake) → media
   (ONNX/GenAI+OpenCV+FFmpeg+LiteRT+TVM+GStreamer) → final`. **The graphics engine
@@ -453,7 +465,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   CUDA/nvidia). So the exact command is:
 
   ```pwsh
-  .\windowsuild.ps1 -Stages base,sdk,toolchain   # NO -Gpu
+  .\windows\build.ps1 -Stages base,sdk,toolchain   # NO -Gpu
   ```
 
   That produces `local/kataglyphis:windows-toolchain` (build.ps1:632) - the
@@ -473,34 +485,38 @@ cleanUp+recreate pair at the four scene-changed sites.
   reliable fix. **The previously-written `-Stages base,toolchain` would throw
   "requires existing image not found: windows-sdk" - do not use it.**
 
-- **Windows CI runs the CPU-only tests** (since 2026-07-20): 36 tests across
-  BuildIntegrity, CameraUnit, SceneConfigUnit, CascadedShadowMapUnit,
-  GuiSceneVarsRoundTrip and HelloTestCommit, plus the three fuzz targets'
-  seed corpora. Runs in ~14 ms. **The GPU suites (Integration, GoldenRender)
+- **Windows CI runs the CPU-only tests** (since 2026-07-20, when that was 36
+  tests across BuildIntegrity, CameraUnit, SceneConfigUnit,
+  CascadedShadowMapUnit, GuiSceneVarsRoundTrip and HelloTestCommit, in ~14 ms):
+  every suite but the two GPU ones, plus the seven fuzz targets' seed corpora.
+  **The GPU suites (Integration, GoldenRender)
   still do not run anywhere except locally** - they are excluded by name
   rather than left to self-skip, because the container ships the Vulkan
   loader and `SKIP_WITHOUT_GPU` only asks `glfwVulkanSupported()`, which can
   answer yes with no device present and then abort during device creation.
-  Closing that gap needs a self-hosted runner with a GPU. **A suite added to
-  the repo does not run in CI unless it is added to the filter in
-  `windows-x64.yml`.**
+  Closing that gap needs a self-hosted runner with a GPU. The filter is an
+  exclusion list (`$gpuOnlySuites` in `windows-x64.yml`, pinned by
+  `BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites`), so a suite added to
+  the repo runs in CI with no workflow edit.
 
-  **And none of it runs by default.** `windows-x64.yml` is gated on
+  ~~**And none of it runs by default.**~~ **Resolved 2026-09-24** (owner
+  decision: every platform lane runs on every push and PR; docs-only commits
+  still skip). Until then `windows-x64.yml` was gated on
   `if: contains(github.event.head_commit.message, '[build-win]')`, so the
-  whole workflow — build included — is skipped unless a commit message opts
-  in. That predates this work and is presumably a runner-cost decision, but
-  it means "Windows CI passes" is usually a statement about a workflow that
-  never ran. Worth deciding deliberately: run on PRs to `main`, run nightly,
-  or keep it opt-in and stop treating a green tick as Windows coverage.
-- **Packaging paths are only half exercised** (corrected 2026-08-01 — the
-  previous "never exercised" was stale). Linux CI *does* package: `reusable-linux.yml`
-  runs a `linux-release-clang` configure/build followed by a
-  `--build-target package` step and uploads `*.deb` / `*.tar.gz` / `*.tgz` /
-  `*.AppImage` / `*.flatpak`. Still unexercised: **WiX**
-  (`windows-clang-release-wix`), which nothing builds anywhere, and **MSIX**,
-  which `windows-x64.yml` collects (`**/*.msix`) but only inside the workflow
-  that is itself gated on `[build-win]` — so in practice neither Windows
-  packaging path runs unless a commit message opts in.
+  whole workflow — build included — was skipped unless a commit message opted
+  in, and "Windows CI passes" was usually a statement about a workflow that
+  never ran.
+- **Packaging paths** (corrected 2026-08-01, and again 2026-09-25). Linux CI
+  packages: `reusable-linux.yml` runs a `linux-release-clang` configure/build
+  followed by a `--build-target package` step and uploads `*.deb` /
+  `*.tar.gz` / `*.tgz` / `*.AppImage` / `*.flatpak` (CPack writes no flatpak
+  here, so that glob matches nothing). Since the `[build-win]` gate went on
+  2026-09-24 the Windows packaging runs on every push too: `windows-x64.yml`
+  builds `clangcl-release`'s `package` target (NSIS, ZIP and, with
+  `ENABLE_WIX_PACKAGING` ON by default, a WiX MSI) and the MSIX, and uploads
+  them; `windows-arm64-cross.yml` produces the arm64 MSI, ZIP and MSIX in
+  `dist/windows-arm64`. Still unbuilt: the `windows-clang-release-wix` package
+  preset itself.
 - **Coverage is clang-only** (Linux). GCC and Windows contribute no
   coverage data, which skews what Codecov reports.
 - ~~**Docs builds are unverified.**~~ — **done** (2026-07-31): `docs-build-web.sh`
@@ -580,11 +596,13 @@ cleanUp+recreate pair at the four scene-changed sites.
   `cmake --list-presets` on the host gets a confusing parse error. Host
   `ctest` cannot read the build trees either — run the gtest executables
   directly.
-- **LLVM is not on `PATH`** despite being installed — see
-  `docs/code-quality.md` for the absolute paths.
-- **`run-clangcl-debug.ps1` sets `VK_LAYER_PATH = ''`**, which crashes the
-  app at startup with `0xC0000409`. Launch with
-  `VK_LAYER_PATH='C:\VulkanSDK\1.4.350.0\Bin'`.
+- **No host LLVM** (checked 2026-09-25: `C:\Program Files\LLVM` is gone; it
+  used to be installed but not on `PATH`) — `docs/code-quality.md` has the
+  commands, which need a host `clang-tidy.exe` installed first.
+- **`Invoke-ClangClDebug.ps1` (`run-clangcl-debug.ps1` until 2026-09-06) sets
+  `VK_LAYER_PATH = ''`**, which crashes the app at startup with `0xC0000409`.
+  Launch with `VK_LAYER_PATH` at the installed SDK's `Bin`
+  (`C:\VulkanSDK\1.4.357.0\Bin` on this host as of 2026-09-25).
 - **Swapchain screenshots read black while the desktop session is
   locked**, with no error — a capture path that silently lies. Always
   take a control capture of a known-good app before believing a black
@@ -599,8 +617,8 @@ cleanUp+recreate pair at the four scene-changed sites.
   still running. Compare the newest `logs/windows/build-summary-*.json`
   timestamp against container start before assuming.
 - `scripts/windows/Build-Windows-Container.ps1` takes `-Configurations`,
-  not `-Preset`; passing the wrong one silently builds **all four**
-  configurations.
+  not `-Preset`; passing the wrong one silently builds **all three** default
+  configurations (`clangcl-debug,clangcl-profile,clangcl-release`).
 - ~~A source file deleted on the host keeps building inside the reusable
   container~~ — **done** (`37a7fdbf`, 2026-07-24). Reproduced 2026-07-19: added
   a probe test, built (it ran), deleted the file, rebuilt — the test still
@@ -2151,7 +2169,7 @@ and unchecked rather than guessed at.
   `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
   (`-FreshContainer` needed here because `PathTracing.ixx` changed), then host
   GPU runs per `docs/gpu-golden-testing.md`. Shader-only iterations:
-  `pwsh scripts/windows/compile-slang-shaders.ps1`, no C++ rebuild needed.
+  `pwsh scripts/windows/Build-SlangShaders.ps1`, no C++ rebuild needed.
 
   **Verified 2026-07-31:** 18/20 in
   `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
@@ -3583,7 +3601,7 @@ span.
   session on this box. `tscon 2 /dest:console` failed with access denied
   (needs admin). Next executor with a live/attached GPU session: rerun
   `.\commitTestSuite.exe --gtest_filter='GoldenRender.Raytrac*:GoldenRender.*Raytraced*:GoldenRender.PathTracing*:GoldenRender.AddedModelAppearsInPathTracing'`
-  and `Run-SyncValidation.ps1` from repo root to close this out, then delete
+  and `Invoke-SyncValidation.ps1` from repo root to close this out, then delete
   this entry.
 
   **Files to read:**
@@ -3630,17 +3648,18 @@ span.
      bug and the next reader will otherwise re-collapse them.
 
   **Test:** Add to `Test/commit/VulkanEngine/memoryHelperSuite.cpp` (suite name
-  is **`MemoryHelperUnit`**, already in the Windows CI filter at
-  `windows-x64.yml:239` — no workflow edit needed):
+  is **`MemoryHelperUnit`**; Windows CI runs every suite except the two GPU
+  ones — no workflow edit needed):
   `MemoryHelperUnit.SbtSourceOffsetsArePackedAtHandleSize` and
   `MemoryHelperUnit.SbtRecordOffsetsUseTheAlignedStride`, both exercising the
   **`handleSize = 32`, `alignment = 64`** case (so `aligned = 64 != 32`) where
   every current formula is wrong: source offsets must be `0, 32, 64, 96`, record
   offsets `0, 64`. Also assert the degenerate `alignment == handleSize` case
   still yields today's values, so the change is provably a no-op on this
-  hardware. These are pure CPU. If you do add a new suite name,
-  `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` will tell you to register
-  it.
+  hardware. These are pure CPU. A new suite name needs no registration either:
+  the Windows CI filter only excludes `GoldenRender`/`Integration`
+  (`BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites`, which replaced
+  `EveryCpuSuiteIsInTheWindowsCiFilter`).
 
   **Build:** `clangcl-debug` for the CPU tests. **Then GPU-verify on the host RX
   9070 XT** — this is a render-path change and the CPU tests cannot see it:
@@ -3650,7 +3669,7 @@ span.
   and the five path-tracing tests). A wrong handle offset shows up as the wrong
   shader being invoked — expect visibly broken RT output, not a subtle shift, if
   step 1 or 2 is done wrong. Also run
-  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Run-SyncValidation.ps1`;
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1`;
   the validation layers check SBT region sizes against the miss indices used, so
   step 3 is directly observable there.
 
@@ -3927,8 +3946,9 @@ is gitignored.
      `float4 clipPos = float4(In.uv.x * 2.0 - 1.0, 1.0 - In.uv.y * 2.0, depth, 1.0);`
      Add a one-line comment pointing at `ssao.slang:42` as the shared inverse.
      Do **not** touch `lighting_vs_main` in this task — that is task 3.
-  4. Recompile shaders (`scripts/windows/compile-slang-shaders.ps1`). `deferred`
-     is SPIR-V-only (`compile-slang-shaders.ps1:72-75`), so no WGSL is affected.
+  4. Recompile shaders (`scripts/windows/Build-SlangShaders.ps1`). `deferred`
+     is SPIR-V-only (its four `shader-manifest.json` rows target only `spirv`),
+     so no WGSL is affected.
   5. Add the oracle, `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand`:
      for each of `Forward` and `Deferred`, capture once with
      `scene_vars.cascaded_shadow_intensity = 0.0F` and once with the default
@@ -3952,12 +3972,12 @@ is gitignored.
   **Test:** `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand` (new) plus
   the corrected `GoldenRender.DeferredMatchesForwardRoughly`. Update the golden
   counts in `docs/gpu-golden-testing.md` — `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
-  (`buildIntegritySuite.cpp:1841`) will fail otherwise.
+  will fail otherwise.
 
   **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\`
-  and run it from the repo root on the host GPU (containers have no swapchain —
+  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  which streams the build tree back, then run `.\build-clangcl-debug\commitTestSuite.exe`
+  from the repo root on the host GPU (containers have no swapchain —
   AGENTS.md § Running on the Host).
 
   **Context:** Same bug class as `8b28543c` (tile-light binning) and the same
@@ -3999,12 +4019,12 @@ is gitignored.
      `return fullscreen_vs(vid);` returning `FullscreenVsOut`, change
      `lighting_fs_main`'s parameter type to `FullscreenVsOut`, and build
      `clipPos` from `fullscreen_uv_to_ndc(In.uv)`. Entry-point **names** must not
-     change — `compile-slang-shaders.ps1:74-75` and
-     `buildIntegritySuite.cpp:944-947` both list them.
+     change — `Resources/ShadersSlang/shader-manifest.json` lists them and
+     `DeferredRasterizer.cpp` loads `deferred.<entry>.spv` by those names.
   3. In `ssao.slang`, rewrite `view_pos_at`'s first line to use
      `fullscreen_uv_to_ndc(uv)` so there is exactly one copy of the y term.
   4. Recompile shaders; `ssao` emits WGSL, so re-run
-     `scripts/windows/compile-slang-shaders.ps1` and commit the regenerated
+     `scripts/windows/Build-SlangShaders.ps1` and commit the regenerated
      `crates/webgpu_renderer/src/shaders/ssao.wgsl` in the submodule
      (`BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource` and
      `CheckedInWgslHasNoHandEdits` enforce this).
@@ -4067,7 +4087,7 @@ is gitignored.
      eAllCommands`). That reasoning is not duplicated anywhere.
 
   **Test:** No new test. Re-run `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
-  on the host GPU; it must stay green. If `scripts/windows/Run-SyncValidation.ps1`
+  on the host GPU; it must stay green. If `scripts/windows/Invoke-SyncValidation.ps1`
   is runnable in this environment, re-run it and confirm no `SYNC-HAZARD`,
   matching the measurement the comment records.
 
@@ -8120,6 +8140,15 @@ here does.
 
 - [b] **(M) Run the Rust crate's `rustfmt`/`clippy` on this repo's always-on Linux lane** (**blocked on owner decision**) — the crate is compiled twice here and linted zero times, so edits to `crates/webgpu_renderer` from this working tree get no lint signal until the submodule is pushed separately.
 
+  **Status 2026-09-25 — the blocker below no longer holds; unblocking is the
+  owner's call.** `cargo fmt --all -- --check` passes at the current OxidANT pin
+  `ed0493c2` (run on the host, 2026-09-25), and OxidANT's own lane now gates
+  fmt and clippy: the "Check formatting and clippy" step of its
+  `reusable-linux.yml` has no `continue-on-error` and runs the hub's
+  `cargo_fmt_clippy.sh` with `CARGO_CLIPPY_ARGS='--workspace --locked'`
+  (`--all-features` does not build in the image). The wrapper this entry added
+  was deleted again (see below), so step 2 has to be redone.
+
   **Blocker (found while doing step 1, "run the linters locally to learn
   whether the pinned commit is clean"):** it is not clean. `cargo fmt --all
   -- --check` against the pinned commit
@@ -8151,25 +8180,26 @@ here does.
   or (b) accept the new step running non-blocking, which weakens the gate
   this task exists to add.
 
-  `scripts/linux/run-cargo-lints.sh` has been added (mirrors
+  `scripts/linux/run-cargo-lints.sh` was added (`f88dd634`: mirrors
   `run-cargo-tests.sh`, delegates to
   `linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` workspace-wide, no
   `-p` filter) and confirmed to correctly delegate and correctly fail (exit
-  1) on the diffs above — it is not wired into `reusable-linux.yml` yet. Once the pin
-  is clean, step 3 (add the CI step right after `:286`) and step 4 (AGENTS.md
+  1) on the diffs above. It was never wired into `reusable-linux.yml` and was
+  deleted as callerless on 2026-09-08 (`65a135a3`). Once the pin
+  is clean, step 3 (a CI step in the `rust` job) and step 4 (AGENTS.md
   wrapper-map + "What CI runs" updates) are a small follow-up.
 
   **Files to read:**
-  - `.github/workflows/reusable-linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
+  - `.github/workflows/reusable-linux.yml` — the `rust` job ("Rust renderer tests"), whose comment already makes this exact argument for tests
   - `scripts/linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
   - `third_party/ANTfrastructure/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
-  - `third_party/OxidANT/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
+  - `third_party/OxidANT/.github/workflows/reusable-linux.yml` — the "Check formatting and clippy" step (`scripts/linux/ci-container-steps.sh fmt-clippy`), where the submodule runs the same script workspace-wide (`rust_ubuntu24_04.yml` when this entry was written)
   - `AGENTS.md` § "Rule: Reusable Work Belongs in ANTfrastructure" and the wrapper map
 
   **Steps:**
   1. Before writing anything, run the linters locally from `third_party/OxidANT` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
   2. Add `scripts/linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ANTfrastructure script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
-  3. Add a "Lint Rust renderer crate" step to `.github/workflows/reusable-linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
+  3. Add a "Lint Rust renderer crate" step to the `rust` job of `.github/workflows/reusable-linux.yml`, after its test step (the job's `if: ${{ inputs.runner == 'ubuntu-26.04' }}` gate then covers it), same `run-in-linux-container@develop` action, `script: bash ./scripts/linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the `rust` job's comment gives for tests.
   4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
   5. If step 1 surfaced findings in crates **other than** `webgpu_renderer`, do not fix them here and do not silence them with `#[allow]`: the submodule's own CI owns those crates. Fall back to a crate-scoped wrapper instead — `cargo fmt -p kataglyphis_webgpu_renderer -- --check` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets --all-features -- -D warnings` invoked directly rather than via the upstream script — and say in the script's header comment why the upstream delegation was not usable.
 
@@ -8177,7 +8207,7 @@ here does.
 
   **Build:** none (CI/scripts). The Linux lane runs on every push, so no `[build-win]`/`[build-arm]` marker is needed to get the signal.
 
-  **Context:** This closes the last gap in the argument `reusable-linux.yml:277-281` already makes. The submodule pin is at a commit whose own workflow runs this script green, so a red first run means the pin drifted or this repo's working tree has uncommitted crate edits — both worth knowing, and both invisible today.
+  **Context:** This closes the last gap in the argument the `rust` job's comment in `reusable-linux.yml` already makes. The submodule pin is at a commit whose own workflow runs this script green, so a red first run means the pin drifted or this repo's working tree has uncommitted crate edits — both worth knowing, and both invisible today.
 
 ## 2026-08-04 batch IV — planner (refactor: a formatting-drift figure quoted three times, all three wrong and two of them contradicting each other, behind a build check that reports and never fails; the cloud half of the GUI→UBO marshalling, where one of four `vec4`s goes through the shared header and three are packed inline against a shader nothing pins them to; the depth attachment, created by the same seven-argument chain in three raster stages)
 
@@ -8360,6 +8390,11 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   terms. Pick a license (sibling Kataglyphis repos use MIT) and add the
   file in ANTfrastructure. Also queued in ANTfrastructure's
   docs/refactoring-backlog.md.
+  **Status 2026-09-25 — looks done; closing it is the owner's call:** the hub
+  has carried an MIT `LICENSE` since `709756eb` (2026-08-02), which
+  `docs/LICENSES-README.md` records. What is open instead is the 25 hub files
+  that declare `SPDX-License-Identifier: Apache-2.0` again (same page,
+  "Unverifiziert — zu prüfen").
 
 ## 2026-08-02 batch II — findings from the Stevedore + Rancher verification pass
 
@@ -8406,6 +8441,14 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   10 combined WGSL files and leaves
   `git -C third_party/OxidANT status` clean.
   Build preset: none (container tooling).
+  **Status 2026-09-25 — probably overtaken; not verified against the
+  registry:** the value now lives in the hub's `linux/scripts/01-core/versions.env`
+  (`Dockerfile.base` defaults to the same), which has named a 1.4.357 SDK since
+  `6935f392` (2026-08-03) and names `VULKAN_VERSION=1.4.357.0` at this repo's
+  pin; the Windows SDK of that version ships slangc 2026.13.1. The tag is
+  `:latest` now (`:latest-cross` is retired) and the hub's CI file is
+  `linux-x64.yml`. What is left is the final check above, run against the
+  published `:latest`.
 
 ## 2026-08-04 batch VII — planner (refactor: 83 declaration lines that take the engine's one `shared_ptr<VulkanDevice>` by value, against five newer helpers that take it by reference, with exactly three real sinks among them; the colour twin of the depth-attachment chain, hand-rolled in the same three raster stages the depth helper was extracted from; eleven `wgpu::TextureDescriptor` literals in the Rust crate that differ in four fields and repeat four)
 
@@ -11515,7 +11558,8 @@ task 4 is where most of that ratio comes from.
 
   **Files to read:**
   - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11372-11412` — the gate,
-    its `std::array<const char *, 23> kTunables` and the exemption comment
+    its `std::array<const char *, 24> kTunables` (23 when this was written;
+    task 1 added `camera_fov`) and the exemption comment
     above it. Its own header comment says the list "must be kept in sync with
     `GUISceneSharedVars.ixx`" — which is the hand-maintained claim this repo
     gates everywhere else.
@@ -11568,7 +11612,9 @@ task 4 is where most of that ratio comes from.
   then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
 
   **Context:** Land **after** task 1 (both edit `GUI.cpp` and this file, and
-  task 1's `camera_fov` is the first member the derived gate will check).
+  task 1's `camera_fov` is the first member the derived gate will check). Task 1
+  has landed: `camera_fov` is in `GUISceneSharedVars.ixx`, `GUI.cpp`'s
+  "Field of view" slider and `kTunables`.
   This is the same lesson as `PerfBaselineCoversEveryRegisteredBenchmark` and
   `ImprovementLogQuotesTheCurrentCommitSuiteTestCount`: a gate that reads a
   hand-maintained list is a gate on the list, not on the thing.

@@ -4,7 +4,7 @@ BeschleunigerBallett is a renderer and graphics-engine playground for experiment
 
 ## What is in Scope?
 
-- Vulkan rendering with rasterization, ray tracing, path tracing, PBR, OBJ loading, and mip mapping
+- Vulkan rendering with rasterization, ray tracing, path tracing, PBR, OBJ and glTF loading, and mip mapping
 - A companion Rust WebGPU renderer (native and browser) sharing Slang shader sources with the Vulkan engine
 - Tooling around CMake presets, CI, coverage, benchmarks, fuzzing, packaging, Sphinx, Doxygen, and Graphviz
 - Linux and Windows as the primary development platforms

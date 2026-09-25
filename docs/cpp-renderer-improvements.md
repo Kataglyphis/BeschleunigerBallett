@@ -111,8 +111,9 @@ entry for the reasoning rather than restating it here.)
    resolution it superseded are gone entirely with the Slang migration (see
    `docs/shader-sharing.md`) — there is no runtime compile path left to skip.
    Shaders are Slang sources compiled ahead of time to SPIR-V/WGSL by
-   `Build-SlangShaders.ps1`/`.sh`, and the C++ engine loads the committed
-   `.spv` via plain `File` I/O. What remains is only a micro-optimisation:
+   `Build-SlangShaders.ps1`/`compile-slang-shaders.sh`, and the C++ engine
+   loads the generated (gitignored) `.spv` via plain file I/O
+   (`Kataglyphis::Shared::readBinaryFile`). What remains is only a micro-optimisation:
    pipelines still read the `.spv` and create shader modules at startup
    rather than consuming a fully cached pipeline binary, which the
    VkPipelineCache already covers on the second run.
@@ -122,7 +123,8 @@ entry for the reasoning rather than restating it here.)
    hand-ordered teardown and the device-lost special-casing in `App.cpp` —
    tracked as the `- [b]` "Renderer-level RAII cleanup consolidation" entry
    in `BACKLOG.md`, blocked on inducing device loss to test it.
-5. **Redundant same-layout swapchain barrier** — **done** (`VulkanRenderer.cpp:1064-1067`).
+5. **Redundant same-layout swapchain barrier** — **done** (the `NOTE: a same-layout
+   swapchain barrier` comment before the post pass in `VulkanRenderer.cpp`).
    A sync-validation run (`VK_LAYER_KHRONOS_validation` with
    `VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION`) confirmed the post
    render pass's external dependency already covers the ordering, so the
@@ -137,7 +139,7 @@ entry for the reasoning rather than restating it here.)
 ## Verification pattern
 
 The canonical description of the per-unit verification loop - container
-build (tar-pipe fallback on Dev Drive), running
+build (tar-pipe transport by default), running
 `build-clangcl-debug/commitTestSuite.exe` directly from the repo root, the
 fresh-container rule for module-interface and shared-header changes, the
 validation-grep runtime check, and the cheap shader-only iteration path -

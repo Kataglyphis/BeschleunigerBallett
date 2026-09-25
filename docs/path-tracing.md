@@ -8,8 +8,10 @@ open work is listed at the end with its BACKLOG anchors.
 
 One compute kernel, `Resources/ShadersSlang/path_tracing/path_tracing.slang`,
 dispatched by `PathTracing::recordCommands` between two image barriers that
-hand the rasterizer's offscreen target (`rgba16f` since the HDR unit,
-`OUT_IMAGE_BINDING`) from the graphics to the compute queue family and back. The post pass then samples
+move the rasterizer's offscreen target (`rgba16f` since the HDR unit,
+`OUT_IMAGE_BINDING`) to `eGeneral` for the compute write and on to
+`eShaderReadOnlyOptimal` for the post pass. Both sit in the frame's graphics
+command buffer, so no queue-family ownership transfer is involved. The post pass then samples
 that target like any other mode - path tracing replaces the *lighting*, not
 the presentation path.
 
@@ -85,7 +87,8 @@ radiance, for any geometry.
 The kernel folds the frame index into the RNG seed (without it, every frame
 drew bit-identical samples) and maintains a running mean in a dedicated
 `rgba32f` history image (`ACCUMULATION_IMAGE_BINDING`) - full float because
-averaging in the `rgba8` output would quantize and stall after a few frames.
+averaging in the output target (`rgba8` before the HDR unit) would quantize
+and stall after a few frames.
 There is exactly **one** history image, deliberately not per swapchain
 image; a compute→compute barrier orders each frame's read-modify-write
 against the previous frame's dispatch across command buffers.
@@ -108,8 +111,8 @@ naive golden pass with per-frame sampling disabled.
 
 <!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
 
-Seven PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
-each red/green-proven against the pre-fix kernel (numbers are post-HDR;
+Eight PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
+each red/green-proven against the pre-fix shader (numbers are post-HDR;
 lifting the UNORM ceiling widened several of them dramatically):
 
 - `PathTracingAccumulatesAndConverges` - consecutive-frame changed-pixel
@@ -137,6 +140,11 @@ lifting the UNORM ceiling widened several of them dramatically):
   reproducer hits on the same mesh (KNOWN ISSUE comment in
   `path_tracing.slang`, BACKLOG.md) to `path_tracing.slang`/`RayQuery`
   specifically versus the shared vertex-upload/BDA path.
+- `RaytracedShadowsAreDarkerThanLitGround` - the RT closest-hit path, not
+  PT: on the shadow rig the darkest decile of a GUI-free crop must stay
+  under 5% of the brightest decile's luminance. Measured 0 vs 244 with the
+  fix, 41.6 vs 248 when `raytrace.rchit.slang` seeds its payload with the
+  unlit albedo (`d35e6212`).
 
 The instrument lessons these goldens were built on (ImGui panel coverage,
 measuring changed-pixel fractions in the panel-free right edge, dumping

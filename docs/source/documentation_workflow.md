@@ -41,7 +41,7 @@ The Sphinx configuration auto-enables the API reference when it finds a Doxygen 
 - `build-clangcl-release/xml`
 - `build-clangcl-profile/xml`
 
-If none of these locations exists, the API section stays hidden and the rest of the docs still builds.
+If none of these locations exists, `conf.py` writes a placeholder `api/library_root.rst` that says so, and the rest of the docs still builds.
 
 ## Graphviz Include Graphs
 

@@ -28,8 +28,9 @@ When running that inside a container with the repo bind-mounted, pass a
 FetchContent rename and cargo's temp cleanup both fail on the mounted host
 filesystem, and the build dies partway through on a stale artifact.
 
-After building in the container you can copy a binary out with `docker cp` if you
-need to run it on the host.
+The Windows container script streams the finished build trees back into the
+working tree (`build-clangcl-debug\` and so on), so the binaries are already on
+the host: no `docker cp` needed.
 
 ## Running tests
 

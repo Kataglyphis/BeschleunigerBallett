@@ -20,7 +20,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
-| Pushing and expecting CI to tell you something | Every lane runs on every push/PR; the three platform lanes skip docs-only commits — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
+| Pushing and expecting CI to tell you something | Every lane runs on every push/PR; the four platform lanes skip docs-only commits — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): [`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md), which the pin bump to `ee7e5a1b` made reachable in this checkout; [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) for a reader without the submodule |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
@@ -28,7 +28,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 
 | Path | What lives there |
 | --- | --- |
-| `Src/GraphicsEngineVulkan/` | The C++ Vulkan engine (`app`, `renderer`, `vulkan_base`, `memory`, `scene`, `gui`, `window`, `common`, `util`) |
+| `Src/GraphicsEngineVulkan/` | The C++ Vulkan engine (`app`, `renderer`, `vulkan_base`, `memory`, `scene`, `gui`, `window`, `common`) |
 | `Src/shared/`, `Src/KomputePlayground/` | Renderer-agnostic frontend/scene/imgui/util code; the Kompute compute playground |
 | `Test/commit/VulkanEngine/` | The main gtest suite (`commitTestSuite.exe`) — CPU suites plus `GoldenRender.*` / `Integration.*` |
 | `Test/compile/`, `Test/fuzz/`, `Test/perf/` | Compile-time checks, FuzzTest targets, Google Benchmark suite (`perfTestSuite`) |
@@ -47,7 +47,7 @@ the files. Where it sits:
 
 | What | Size | Why it is tracked |
 | --- | --- | --- |
-| 33 Wavefront meshes under `Resources/Models/` | 402 MiB | The scene library the engine's model picker offers. Four of them are test fixtures (`ShadowTest/shadow_rig.obj`, `VikingRoom/viking_room.obj`, `Dinosaurs/dinosaurs.obj`, `GltfTest/cube.glb`); `crytek-sponza/` is the only one the Release install ships. The rest are what makes a fresh clone render something without an asset-download step. |
+| 33 Wavefront meshes under `Resources/Models/` | 402 MiB | The scene library the engine's model picker offers. Three of them are test fixtures (`ShadowTest/shadow_rig.obj`, `VikingRoom/viking_room.obj`, `Dinosaurs/dinosaurs.obj`), as is the glTF `GltfTest/cube.glb` beside them; `crytek-sponza/` is the only one the Release install ships. The rest are what makes a fresh clone render something without an asset-download step. |
 | `Resources/Models/Sulo/New_0.9.blend` | 66 MiB | The editable source for the Sulo meshes beside it. Nothing in the build reads it; it is here so the exported `.obj` files are reproducible. |
 | Textures under `Resources/` (PNG/JPG, plus one 16 MiB `.tif`) | ~87 MiB | Runtime material and IBL inputs; `Resources/Textures/` is installed with the Release build. |
 | `Documents/GGD_Kit_milestone_document.pdf` | 16 MiB | Reference document, `linguist-vendored`. |
@@ -92,6 +92,7 @@ orientation and link — upstream's own instruction to consumers,
 | Calling conventions every consumer wrapper follows (`#requires`, strict mode, sourcing the hub) | [adopting § 8](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#8-calling-conventions-what-every-consumer-looks-like) |
 | The Windows container image: build sequence, Stevedore setup, invariants | [`windows-builds.md`](third_party/ANTfrastructure/docs/windows-builds.md) |
 | Building inside the image: transports, reuse pattern, safety rails | [`windows-container-build-performance.md`](third_party/ANTfrastructure/docs/windows-container-build-performance.md) |
+| Windows arm64 cross builds: the `:winarm64` bundle, the arch gate, why Release only, the `container-ci-windows.yml` caller contract | [`windows-cross-builds.md`](third_party/ANTfrastructure/docs/windows-cross-builds.md) |
 | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules | [`rancher-desktop-linux-containers.md`](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md) |
 | Which CI lanes run when; the `[build-win]` / `[build-arm]` commit-message opt-ins (this repo dropped both on 2026-09-24) | [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md) |
 | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses | [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md) |
@@ -192,8 +193,9 @@ and nothing else — no reader keeps a copy of the number.
 
 There is also an `x64-ClangCL-Windows-Debug-ASan` preset (AddressSanitizer
 without the fuzzing-mode extras; not wired into `Build-Windows.config.psd1`).
-Test presets (`test-<configure-preset>`) exist for exactly three configurations:
-Debug, Debug-ASan and Profile. The plain-Clang
+Windows test presets (`test-<configure-preset>`) exist for exactly three ClangCL
+configurations: Debug, Debug-ASan and Profile (the other two, plus `default`, are
+Linux ones). The plain-Clang
 `x64-Clang-Windows-{Debug,Profile,RelWithDebInfo}` presets were removed in
 2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
 stays: the `windows-clang-release-wix` package preset builds on it.
@@ -237,8 +239,11 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   runs for every build type. That is not a contradiction of the line above and
   not a bug to "fix" — the generator expressions one level down decide. A
   `CMAKE_BUILD_TYPE` test around the call would only restate them.
-- ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
-  see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
+- ASAN defaults **ON** for Debug builds on Linux (GCC/Clang), MSVC and clang-cl;
+  UBSan on Linux and clang-cl only (plain MSVC has none). See
+  `myproject_default_debug_sanitizers` (ANTfrastructure's `SanitizerSupport.cmake`,
+  called from `cmake/ProjectOptions.cmake`); the `x64-MSVC-Windows-Debug` preset
+  switches ASAN off again.
 - Linux TSan presets (`linux-debug-tsan-clang` / `linux-debug-tsan-GNU`) set
   `myproject_ENABLE_SANITIZER_THREAD=ON` and force
   `myproject_ENABLE_SANITIZER_ADDRESS=OFF` (TSan and ASAN are mutually exclusive —
@@ -249,18 +254,23 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   A Windows `clangcl-tsan` preset existed for "preset parity" until 2026-07-20
   and was removed — it silently built a duplicate of `clangcl-debug`, cost ~185 s
   per full build, and its green runs read as evidence of race-freedom.
-- **On clang-cl, UBSan only works together with ASAN — never standalone.** With
+- **On clang-cl, UBSan reports only together with ASAN.** With
   ASAN on, the UBSan handlers are folded into `clang_rt.asan_dynamic` (release
   CRT, `/MD`), and three places switch the whole Debug build to the release CRT,
-  keyed on `myproject_ENABLE_SANITIZER_ADDRESS`: the `/MDd` strip and the
-  `CMAKE_MSVC_RUNTIME_LIBRARY` override in `cmake/ProjectOptions.cmake`, plus the
-  Rust-bridge `CXXFLAGS` in `Src/CMakeLists.txt`
-  (`_myproject_configure_windows_rust_crate`). Standalone UBSan instead pulls
-  `clang_rt.ubsan_standalone*`, which is built `MT_StaticRelease` (static CRT) —
-  it can never link against this project's `/MD`/`/MDd` dependency mix; lld-link
-  fails with `/failifmismatch` on `RuntimeLibrary`/`_ITERATOR_DEBUG_LEVEL`
-  (verified 2026-07-16). So on Windows: enable UBSan only alongside ASAN, and
-  turn both off together.
+  keyed on `myproject_ENABLE_SANITIZER_ADDRESS`: the `/MDd` strip (ANTfrastructure's
+  `CompilerBuildFlags.cmake`, handed the option by `cmake/ProjectOptions.cmake`),
+  the `CMAKE_MSVC_RUNTIME_LIBRARY` override in `cmake/ProjectOptions.cmake`, and
+  the Rust-bridge `CXXFLAGS` in `Src/CMakeLists.txt`
+  (`_myproject_configure_windows_rust_crate`). There is no `/MD` standalone UBSan
+  runtime: `clang_rt.ubsan_standalone*` is built `MT_StaticRelease` (static CRT),
+  and linking it against this project's `/MD`/`/MDd` dependency mix fails in
+  lld-link with `/failifmismatch` on `RuntimeLibrary`/`_ITERATOR_DEBUG_LEVEL`
+  (verified 2026-07-16). Since hub `9108466e` (2026-09-07) `Sanitizers.cmake`
+  therefore builds UBSan without ASAN in trap mode (`-fsanitize-trap=undefined`):
+  it links, but undefined behaviour is a fast-fail at the faulting instruction
+  with no report
+  ([`windows-clang-cl-sanitizers.md`](third_party/ANTfrastructure/docs/windows-clang-cl-sanitizers.md)).
+  So on Windows: for UBSan reports, keep UBSan alongside ASAN.
 
 ## Containerized Windows Builds (Stevedore)
 
@@ -290,10 +300,14 @@ What you need in hand to not get burned:
 - Default transport is a **tar-pipe into the reusable container
   `bb-build-persistent`**; `-UseBindMount` opts into a bind mount instead
   (measured slower on this Dev Drive host — measure before switching).
-- **A file deleted on the host keeps building in a reused container** — sources
-  are overwritten in place, never pruned. Use `-FreshContainer` after deleting
-  files, and after ANY C++23 module-interface change (see the fresh-container
-  rule in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)).
+- **A reused container prunes stale sources before every build.** Since hub
+  `a092834e` (2026-08-02) `Invoke-ContainerBuild` deletes every top-level
+  directory under `C:\ws` except `build*`, `logs` and `sccache-local`, then
+  streams the tree in again, so a file deleted on the host no longer keeps
+  building there (a file deleted at the repo root is the exception: top-level
+  files are overwritten, not pruned). `-FreshContainer` is still required after
+  ANY C++23 module-interface change (see the fresh-container rule in
+  [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)).
 - **A green build is not proof anything was produced or delivered.** Both halves
   have failed silently here. The script compares the executables present in the
   container against those that reached the host and **fails the build** if the
@@ -373,6 +387,10 @@ wrapper only supplies this project's payload.
 | --- | --- |
 | `scripts/windows/Build-Windows-Container.ps1` | `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1` → `Invoke-ContainerBuild` (+ `Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`, `Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`, `Test-ContainerBindMount`, `Get-SccacheContainerEnv`, `Remove-BuildContainerSafe`) |
 | `scripts/linux/cmake-configure-build.sh` | `linux/scripts/lib/cmake-build.sh` |
+| `scripts/windows/Build-SlangShaders.ps1` / `scripts/linux/compile-slang-shaders.sh` | `windows/scripts/modules/WindowsSlang.Common.psm1` → `Invoke-SlangShaderCompile` / `linux/scripts/lib/slang-compile.sh` |
+| `scripts/linux/run-ctest.sh` | `linux/scripts/lib/ctest-run.sh` |
+| `scripts/linux/docs-build-web.sh` | `linux/scripts/lib/docs-build.sh` (the WebGPU wasm demo rebuild in front of it is this repo's) |
+| `scripts/windows/Compare-PerfBaseline.ps1` | `windows/scripts/modules/WindowsPerfBaseline.Common.psm1` |
 | `scripts/windows/Invoke-ClangCl{Profile,Release}.ps1` | `windows/scripts/modules/WindowsAppRunner.Common.psm1` → `Invoke-AppRun`, `Resolve-AppExecutablePath` |
 | `scripts/linux/run-{debug,profile,release}.sh` | `linux/scripts/lib/app-runner.sh` (the Bash twin of the above) |
 | `scripts/linux/run-static-analysis-format.sh` | `linux/scripts/lib/code-quality.sh` |
@@ -539,7 +557,9 @@ render (~32 FPS ImGui overlay).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/windows/Compare-PerfBaseline.ps1`,
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
-  comparison tools (CI runs them in validation-only mode — the runners have no GPU).
+  comparison tools (`windows-x64.yml` runs the two renderer comparisons in
+  validation-only mode — the runners have no GPU; `Compare-PerfBaseline.ps1` is
+  not in CI at all).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/windows-x64.yml`
   runs them with a pinned Pester 3.4.0 on every push and PR, like the rest of
@@ -559,8 +579,9 @@ render (~32 FPS ImGui overlay).
   and need **Pester >= 5** (it fails rather than silently skipping without it;
   `Install-Module Pester -MinimumVersion 5.7 -Scope CurrentUser -Force
   -SkipPublisherCheck`). Run it after changing anything upstream — and note that
-  upstream has its own CI for them (`windows-scripts.yml`), so a break there is
-  caught without waiting on this repo's 2-3 h Windows lane.
+  upstream has its own CI for them (its `windows-x64.yml`, "Windows x64 · script
+  tests", `windows-scripts.yml` until 2026-09-24), so a break there is caught
+  without waiting on this repo's 2-3 h Windows lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in containers and run
   only on the host — procedure, cwd requirement and the golden-writing
   cautions are in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
@@ -573,7 +594,8 @@ render (~32 FPS ImGui overlay).
   ```pwsh
   pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
   ```
-  It exits non-zero iff the run log contains `SYNC-HAZARD`. Deliberately not in
+  It exits non-zero when the run log contains `SYNC-HAZARD`, and with the test
+  executable's own code when the run itself fails. Deliberately not in
   CI (needs a GPU) — details in
   [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
 
@@ -613,7 +635,7 @@ The four platform lanes still skip a docs-only commit through `paths-ignore`:
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows (clang-cl/MSVC container build, Pester) | `windows-x64.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, packaging; Pester) | `windows-x64.yml` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
 | Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
@@ -624,9 +646,16 @@ gitlink next to a docs page got no pin check; `lint` also lived in
 `reusable-linux.yml` and therefore ran once per **caller**, grading the same
 runner-independent tree twice on every ARM run.
 
+**Known red on 2026-09-25, and not this repo's defect:** in `linux-arm64.yml` the
+two GNU jobs (`gcc + tests + coverage`, `gcc profiling + benchmarks`) stop at
+configure with `Could NOT find X11 (missing: X11_X11_LIB)` (run 36042437555). The
+arm64 image's GCC prints no multiarch triplet, so CMake never searches
+`/usr/lib/aarch64-linux-gnu`. It is fixed in hub source (ANTfrastructure backlog
+CON8) and reaches this lane with the next Linux `:latest`.
+
 **The Windows ARM64 lane cross-builds, then runs** (owner decision 2026-09-25).
 `Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release` runs in the
-family image's arm64 bundle. On a cross build it:
+family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build it:
 
 - refuses every other configuration: Debug links an x64-only ASan runtime and
   runs FuzzTest's grammar generator at build time, Profile runs benchmarks, and the
@@ -643,19 +672,21 @@ The hub's `Hardening.cmake` links `/CETCOMPAT` on x64 only. The run job borrows 
 Khronos loader from LunarG's arm64 runtime, pinned by hash, and calls
 `GraphicsEngine.exe --version`. The engine imports `vulkan-1.dll`, which a device gets
 from its GPU driver and the GPU-less runner has not got. The bundle never ships the
-loader.
+loader. The image, the arch gate over `dist/windows-arm64`, the upload and the run
+job are the hub's:
+[`windows-cross-builds.md` § Consumer cross lanes](third_party/ANTfrastructure/docs/windows-cross-builds.md#consumer-cross-lanes-container-ci-windowsyml).
 
 Workflow files follow the fleet naming convention (owner decision 2026-09-24):
 kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,
-`windows-x64.yml`), repo-local reusables as `reusable-<platform>.yml`, and
+`windows-x64.yml`, `windows-arm64-cross.yml`), repo-local reusables as `reusable-<platform>.yml`, and
 display names `<Platform> <Arch> · <what>`. The job ids are unchanged, so the
 check-run names a branch protection rule matches did not move; badge and
 `actions/workflows/<file>` URLs did.
 
 To re-run a lane at the branch tip without a commit (a fix to a docs path the
-filter skips, say), use `workflow_dispatch` on `linux-x64.yml` or
-`windows-x64.yml`. The hub's trigger rules, including the opt-in markers other
-repos still use:
+filter skips, say), use `workflow_dispatch` on `linux-x64.yml`,
+`windows-x64.yml` or `windows-arm64-cross.yml` (`linux-arm64.yml` has none). The
+hub's trigger rules, including the opt-in markers other repos still use:
 [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md).
 Reading pipeline status from a shell (`gh`):
 [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md).
@@ -669,12 +700,14 @@ and synchronization suites are host-only by construction.
 The workflows here are mostly wiring: the actual steps come from composite
 actions pulled straight from ANTfrastructure's `develop` branch (owner directive
 2026-09-25; `main` lags it and still names the retired `:latest-cross` image) —
-`prepare-linux-ci-host`, `run-in-linux-container`,
+`prepare-linux-ci-host`, `run-in-linux-container`, `deploy-over-ftp`,
 `prepare-windows-container-host`, `run-in-windows-container`,
-`run-pester-suite`. **There is no pin: a push to ANTfrastructure `develop` changes
-this repo's CI on the next run**, which is why both repos ship together with
-ANTfrastructure first (see the rule above). When a lane fails inside a step whose
-`uses:` points at ANTfrastructure, read the action there — it is not defined here.
+`run-pester-suite` — and from three of its reusable workflows (`lint-gates.yml`,
+`submodule-pins.yml`, `container-ci-windows.yml`). **There is no pin: a push to
+ANTfrastructure `develop` changes this repo's CI on the next run**, which is why
+both repos ship together with ANTfrastructure first (see the rule above). When a
+lane fails inside a step whose `uses:` points at ANTfrastructure, read the action
+or workflow there — it is not defined here.
 
 ### Lint gates (before anything builds)
 
@@ -685,9 +718,10 @@ not valid Actions, and a bash quoting or undefined-function bug only surfaces
 when that line finally runs — an hour into a gcc build.
 
 Its `lint` job is **one `uses:` line**: ANTfrastructure publishes the lane as a
-`workflow_call` workflow, this repo passes `submodules: 'true'` (not the hub's
-`recursive` default — only ANTfrastructure is executed here) and
-`ratchets: true`. It carries the Windows-native `powershell-lint` job too
+`workflow_call` workflow, and this repo passes `submodules: 'recursive'` (the
+hub's default: at depth 1 the tracked symlink `docs/source/_static/css/custom.css`
+into the nested DocumANTation submodule dangles, and the `*`-scoped ratchets
+refuse the tree, run 35015672838) and `ratchets: true`. It carries the Windows-native `powershell-lint` job too
 (PSScriptAnalyzer plus the mandatory parse/AST-trap gate over `scripts/`), on
 `windows-2025` because that gate script resolves its own helper module by
 backslash path. That one is deliberately **not** collapsed onto the hub's
@@ -741,7 +775,7 @@ design, so its findings are fixed, never frozen.
 
 The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
-kataglyphis_webgpu_renderer`) after the performance benchmarks step. Before
+kataglyphis_webgpu_renderer`) in its own `rust` job of `reusable-linux.yml`. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree
@@ -866,7 +900,7 @@ ANTfrastructure (see the rule above), project-specific ones here.
 | `docs/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
 | `docs/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) |
 | `docs/LICENSES-README.md` | Third-party license documentation (German) |
-| `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
+| `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, and `graphviz_files.rst`, which `graphviz_generator.py` writes during the docs build) |
 | `scripts/agentic-loop/README.md` | Agentic loop consumer half: what this repo configures (and what deviates from upstream defaults), its two runners, its two prompt overlays — loop architecture and usage live in the two ANTfrastructure docs below |
 | `third_party/ANTfrastructure/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
 | `third_party/ANTfrastructure/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |

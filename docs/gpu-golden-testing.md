@@ -62,8 +62,9 @@ For a behaviour-preserving refactor of the record path, a pipeline, a device
 feature, an image transition, or the loader upload path:
 
 1. Build in the container: `scripts/windows/Build-Windows-Container.ps1
-   -Configurations 'clangcl-debug'` (tar-pipe fallback on a Dev Drive, where
-   bind mounts break). Fresh-container rule: `-FreshContainer` (after
+   -Configurations 'clangcl-debug'` (the tar-pipe transport is the default; a
+   bind mount on a Dev Drive needs its filters allow-listed and measured
+   slower, see `docs/container-build-caching.md`). Fresh-container rule: `-FreshContainer` (after
    deleting the local build tree) is required after ANY module-interface
    change — `.ixx` member edits AND plain shared headers whose structs cross
    module boundaries (`ObjectDescription.hpp` taught this with an exit-3

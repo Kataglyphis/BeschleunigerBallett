@@ -25,23 +25,25 @@ varying-location validator described below — lives upstream in ANTfrastructure
 the same guarantees. Change behaviour there, in both twins, and keep the
 `BuildIntegrity` tests in step.
 
-The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
-runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
+The C++ renderer loads pre-compiled SPIR-V via plain file I/O
+(`Kataglyphis::Shared::readBinaryFile`, called from `ShaderHelper.cpp`) — there
+is no runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
 name (not the Slang function name), so all `pName` values in pipeline
 creation use `"main"`.
 
 `histogram.wgsl` in the Rust crate is hand-written with no generating Slang
 source at all: Slang's `InterlockedAdd` on `RWStructuredBuffer` is not
 supported for the WGSL target (atomics require `array<atomic<u32>>`
-storage), and the WGSL fallback policy above is that such a shader's WGSL
-stays hand-written rather than kept in sync with a Slang source nothing
-consumes on the C++ side.
+storage), and the WGSL fallback policy in
+[`shader-sharing.md`](shader-sharing.md) is that such a shader's WGSL stays
+hand-written rather than kept in sync with a Slang source nothing consumes on
+the C++ side.
 
 ## Staleness rules
 
 An output is reused only when it is newer than its source **and** every
-`.slang` file under the Slang tree (conservative — an import edit rebuilds
-every dependent). The compile scripts walk the manifest and recompile only
+`.slang` file under the Slang tree **and** `shader-manifest.json` itself
+(conservative — an import or manifest edit rebuilds every dependent). The compile scripts walk the manifest and recompile only
 stale entries.
 
 The `BuildIntegrity` gates that verify already-compiled/checked-in output
@@ -79,8 +81,8 @@ the JSON carry the rationale that used to be code comments.
 
 WGSL requires every non-builtin member of an inter-stage (varying) struct to
 carry `@location(N)`. **slangc `2026.1-52-gc8ddf20bb`** — the build shipped by
-Vulkan SDK 1.4.341.1, i.e. what the ANTfrastructure Linux image
-(`:latest-cross`, `VULKAN_VERSION=1.4.341.1`) puts on `PATH` — drops that
+Vulkan SDK 1.4.341.1, i.e. what the ANTfrastructure Linux image put on `PATH`
+when this was found (then `:latest-cross` with `VULKAN_VERSION=1.4.341.1`) — drops that
 attribute in the **combined** emit (compiled without `-entry`/`-stage`, which
 is exactly how every `wgslMap` file is produced), turning
 
@@ -122,7 +124,10 @@ rule to the checked-in files on every CI platform, and
 `BuildIntegrity.ShaderManifestPinsAMinimumSlangcVersionForWgsl` keeps the
 floor from being deleted. Raise the floor rather than hand-editing generated
 WGSL; bumping `VULKAN_VERSION` in the ANTfrastructure image is what re-enables
-WGSL regeneration on Linux.
+WGSL regeneration on Linux. The pinned hub's `versions.env` now names
+`VULKAN_VERSION=1.4.357.0`, whose Windows SDK ships slangc `2026.13.1` (read
+from the host SDK on 2026-09-25), above the floor. That the published
+`:latest` carries this SDK was not checked here.
 
 ## Fast shader iteration
 
@@ -138,9 +143,10 @@ Or on Linux:
 bash scripts/linux/compile-slang-shaders.sh
 ```
 
-The C++ engine loads the `.spv` files at startup via `File::readCharSequence`,
-so no rebuild of the C++ binary is needed for a shader-only change — just
-recompile the shaders and run.
+The C++ engine loads the `.spv` files at startup via
+`Kataglyphis::Shared::readBinaryFile` (`File::readCharSequence` until
+2026-08-04), so no rebuild of the C++ binary is needed for a shader-only
+change — just recompile the shaders and run.
 
 ## Historical note: the retired GLSL/glslc pipeline (until the Slang migration)
 

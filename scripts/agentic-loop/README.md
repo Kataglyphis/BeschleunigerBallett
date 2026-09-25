@@ -131,10 +131,12 @@ Linux builds go through
 natively or in a Rancher Desktop container.
 
 The quality gate on Windows is
-`Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix`
-(clang-tidy + cmake-format over the clangcl-debug build — keep the
-`-Configurations` flag when running it by hand, because `Build-Windows.ps1`
-defaults to all five presets without it); on Linux it is
+`Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix`.
+`-SkipBuild` clears the selected configurations, so this runs only the
+report-only clang-format check: not clang-tidy, which is a step of the
+`clangcl-debug` build, and not cmake-format, which runs only with
+`-ApplyFormat` (see [`docs/code-quality.md`](../../docs/code-quality.md)). On
+Linux it is
 [`scripts/linux/run-static-analysis-format.sh`](../linux/run-static-analysis-format.sh).
 
 ## The prompt overlays

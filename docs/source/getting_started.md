@@ -8,7 +8,7 @@ Make sure these tools are available before you build the project:
 - a C17 capable compiler
 - CMake 4.1 or newer
 - a Vulkan SDK installation for Vulkan-enabled builds
-- Python plus the packages from `requirements.txt` for docs and formatting tasks
+- Python plus the packages from `requirements.txt` for the docs build (the formatting steps install their own pinned `cmake-format` from ANTfrastructure)
 - optionally Rust if you want to enable the experimental Rust path
 
 ## Clone the Repository
@@ -70,6 +70,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
+`-TargetArch arm64` cross-builds `clangcl-release` for Windows on Arm inside the container image's arm64 bundle (`:winarm64`) and writes the portable bundle, MSI, ZIP and MSIX to `dist/windows-arm64`; that is what `.github/workflows/windows-arm64-cross.yml` runs.
+
 Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target); use `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` for real TSan runs.
 
 After building, these run helpers are available:
@@ -95,7 +97,7 @@ Details worth knowing:
 - The script always uses Stevedore's `docker.exe`; `nerdctl` is not usable for builds or runs on Windows.
 - Process isolation is the default so the container sees all host CPUs.
 - By default the script streams the sources into a reusable container via tar and streams the resulting build trees and logs back into the working tree; `-UseBindMount` opts into bind-mounting the repo instead. On a Dev Drive the bind mount additionally requires the container filesystem filters to be allow-listed once from an elevated prompt, followed by a reboot: `fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"` — the filter list must be one quoted argument (unquoted `bindFlt, wcifs` is parsed as two arguments and fails). Setup, verification, and revert steps live in `third_party/ANTfrastructure/docs/windows-container-build-performance.md`; this repo's measured transport numbers and incremental-build wiring live in `docs/container-build-caching.md` (on this Dev Drive host the tar-pipe measured faster than the bind mount — measure before switching).
-- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `third_party/ANTfrastructure` submodule when available, falling back to vendored copies in `scripts/windows/modules` (see `scripts/windows/Resolve-BuildModule.ps1`). When bumping `third_party/FUZZTEST`, keep `ABSL_TAG` in `third_party/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
+- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `third_party/ANTfrastructure` submodule first, then from this project's own modules in `scripts/windows/modules`, which holds no copy of an upstream module (see `scripts/windows/Resolve-BuildModule.ps1`). When bumping `third_party/FUZZTEST`, keep `ABSL_TAG` in `third_party/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
 
 ## Packaging
 
@@ -103,30 +105,23 @@ Details worth knowing:
 
 ```bash
 bash ./scripts/linux/cmake-configure-build.sh \
-  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --preset linux-release-clang \
   --build-dir build-release \
   --build-config Release
 
 bash ./scripts/linux/cmake-configure-build.sh \
-  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --build-dir build-release \
   --skip-configure true \
   --build-target package
 ```
 
-Artifacts land in the selected build directory. For AppImage packaging, enable `CPACK_ENABLE_APPIMAGE=ON` on a separate release build tree and ensure `appimagetool` is on `PATH`:
+The Vulkan SDK environment defaults to the image's `/opt/vulkan/<VULKAN_VERSION>/setup-env.sh`, with the version read from ANTfrastructure's `linux/scripts/01-core/versions.env`; `--vulkan-setup-script` points it elsewhere.
 
-```bash
-cmake -S . -B build-release-appimage \
-  --preset linux-release-clang \
-  -DCPACK_ENABLE_APPIMAGE=ON
-cmake --build build-release-appimage --config Release --target package
-```
+Artifacts land in the selected build directory: a TGZ, a DEB and an AppImage (`CPACK_ENABLE_APPIMAGE` defaults to `ON`; configure with `-DCPACK_ENABLE_APPIMAGE=OFF` to skip it). CPack uses a readable `appimagetool` from `PATH`, or downloads the release pinned with its SHA256 in ANTfrastructure's `versions.env`; a configure that cannot get a verified tool fails instead of silently dropping the AppImage.
 
 ### Windows MSIX
 
-The Windows release workflow can produce an MSIX package. If signing is enabled, place the PFX certificate at the repository root and provide the certificate password through `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
+The Windows release workflow can produce an MSIX package. It is signed when a PFX certificate sits at the repository root (the first `*.pfx` there, gitignored; without one the build warns and the MSIX stays unsigned), with the certificate password from `MSIX_PFX_PASSWORD` or, as a fallback, `MSIX_CERT_PASSWORD`. The signing itself is ANTfrastructure's `Invoke-MsixPackage -Sign -SigningRoot <repo root>`.
 
 CI retrieves the certificate over WebDAV instead of committing it: `Build-Windows.ps1 -WebDavHostname/-WebDavUsername/-WebDavPassword/-RemoteBasePath` (see the "Build/Test/Package" step of `.github/workflows/windows-x64.yml`) drives ANTfrastructure's `windows/scripts/certificates/download_webdav_files.py` through the `WindowsWebDav.Common` module (`--extension .pfx`; generating and importing certificates is documented in ANTfrastructure `windows/scripts/certificates/README.md`).
 

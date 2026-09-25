@@ -19,13 +19,16 @@ this repo's root.
 
 ## This repo's paths
 
-Host LLVM is 22.1.8 at `C:\Program Files\LLVM\bin\`. The container build
-database rewrite (upstream trap 1) resolves here to:
+This dev box has no host LLVM any more (checked 2026-09-25: there is no
+`C:\Program Files\LLVM`; it held LLVM 22.1.8 when these commands were verified
+on 2026-07-19), so install one before pointing upstream's `$CT` at its
+`clang-tidy.exe`. The container build database rewrite (upstream trap 1)
+resolves here, for the checkout at `C:\GitHub\BeschleunigerBallett`, to:
 
 ```pwsh
 $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
 (Get-Content build-clangcl-debug\compile_commands.json -Raw) `
-  -replace 'C:/ws', 'D:/GitHub/BeschleunigerBallett' |
+  -replace 'C:/ws', 'C:/GitHub/BeschleunigerBallett' |
   Set-Content "$db\compile_commands.json" -NoNewline
 & $CT -p $db --quiet Src/GraphicsEngineVulkan/Main.cpp
 ```

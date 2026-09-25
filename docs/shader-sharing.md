@@ -11,10 +11,12 @@ coincide.
 Compile commands, output directories, staleness rules, and fast shader
 iteration are owned by
 [`shader-build-pipeline.md`](shader-build-pipeline.md) — this document does
-not restate them. The compile step is wired into the C++ build
-unconditionally (no opt-in flag needed): compiling either `clangcl-*` or
-`linux-*` configuration compiles the Slang manifest first, so a `.slang`
-edit reaches the Vulkan engine on the next build. `slangc` is resolved from
+not restate them. The compile step is wired into the build scripts (no
+opt-in flag needed): `scripts/linux/cmake-configure-build.sh` compiles the
+Slang manifest before every Linux build, and `Build-Windows.ps1` does so before
+its `clangcl-debug`, `clangcl-release` and `msvc-release` builds (not before
+`clangcl-profile` or `msvc-debug`), so a `.slang` edit reaches the Vulkan
+engine on the next such build. A bare `cmake --build` compiles no shaders. `slangc` is resolved from
 `VULKAN_SDK\Bin` then `PATH` (the Vulkan SDK ships it; verified against
 1.4.350.0).
 

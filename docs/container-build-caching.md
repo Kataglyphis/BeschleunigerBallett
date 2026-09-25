@@ -82,9 +82,13 @@ not relink, so the executables are legitimately older than the run.
   meant, which reads as a mysteriously slow build rather than an error.
 - Host `cmake` (3.29) cannot read this repo's `CMakePresets.json`
   (`version: 10`); only the container's newer CMake can.
-- **A file deleted on the host keeps building in the container** — sources are
-  overwritten in place, never pruned. Use `-FreshContainer` after deleting
-  files. Measured reproduction and the proposed fix: `BACKLOG.md`.
+- **A file deleted on the host no longer keeps building in the container.**
+  That was reproduced on 2026-07-19 (tar extracts over the old tree and never
+  removes a file); since ANTfrastructure `a092834e` (2026-08-02) a reused
+  container is pruned before the sources stream in: every top-level directory
+  under `C:\ws` except `build*` and the `KeepDirs` (`logs`, `sccache-local`) is
+  deleted. Top-level files are only overwritten, so a file deleted at the repo
+  root still needs `-FreshContainer`.
 - Reset an incremental build if it ever behaves strangely:
   `docker rm -f bb-build-persistent`, or
   `Remove-Item -Recurse -Force build-clangcl-debug` for a cold but clean host
