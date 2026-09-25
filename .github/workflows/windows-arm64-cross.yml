@@ -1,0 +1,68 @@
+name: Windows arm64 · cross build + run
+
+# The Windows arm64 lane (owner decision 2026-09-25): Build-Windows.ps1
+# -TargetArch arm64 cross-builds the clangcl-release configuration in the
+# family image's arm64 bundle on an amd64 runner, and GitHub's windows-11-arm
+# then RUNS the product. A thin caller of ANTfrastructure's
+# container-ci-windows.yml, which owns the image, the arch gate, the upload and
+# the run job; what is left here is what only this repo knows. Why Release
+# only: third_party/ANTfrastructure/docs/windows-cross-builds.md.
+#
+# ALWAYS RUNS, like every lane here: no job-level `if:`.
+
+on:
+  push:
+    branches: [main, develop]
+    # Same rule as windows-x64.yml: a docs-only commit does not rebuild the engine.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Same rule as windows-x64.yml: superseded runs are cancelled, except on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  cross:
+    name: Cross build (arm64)
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-windows.yml@develop
+    with:
+      target-arch: arm64
+      build-script: scripts/windows/Build-Windows.ps1
+      # Format, tidy, the tests and the benchmarks are the x64 lane's: they read
+      # the source or execute binaries, and nothing arm64 runs on this host.
+      build-args: |
+        -TargetArch
+        arm64
+        -Configurations
+        clangcl-release
+        -SkipFormat
+        -SkipTidy
+        -SkipTests
+        -SkipPerfTests
+      artifact-name: BeschleunigerBallett-windows-arm64
+      artifact-dir: dist/windows-arm64
+      # The engine and the VC++ runtime at the least.
+      arch-gate-min-inspected: 2
+      # The engine imports vulkan-1.dll, which a device gets from its GPU driver and
+      # this GPU-less runner has not got. CI alone borrows the Khronos loader from
+      # LunarG's arm64 runtime (pinned by hash; the bundle never ships it) and
+      # asks abseil for --version, which exits 0 once every import has loaded.
+      run-command: |
+        $rt = 'VulkanRT-ARM64-1.4.357.0-Components'
+        $zip = Join-Path $env:RUNNER_TEMP "$rt.zip"
+        Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/1.4.357.0/warm/$rt.zip" -OutFile $zip
+        $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash
+        if ($sha -ne '0A51A619525E0C7A156125C4F80C4F591C494CEF9FF59DC4481735779A9A280C') { throw "$rt.zip is $sha, not the pinned build" }
+        Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
+        $env:PATH = "$(Join-Path $env:RUNNER_TEMP $rt);$env:PATH"
+        ./bundle/bin/GraphicsEngine.exe --version
+    secrets:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}

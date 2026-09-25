@@ -4,7 +4,7 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap rescap">
-  <Identity Name="__MSIX_NAME__" Publisher="__MSIX_PUBLISHER__" Version="__MSIX_VERSION__" ProcessorArchitecture="x64" />
+  <Identity Name="__MSIX_NAME__" Publisher="__MSIX_PUBLISHER__" Version="__MSIX_VERSION__" ProcessorArchitecture="__MSIX_ARCH__" />
   <Properties>
     <DisplayName>__MSIX_NAME__</DisplayName>
     <PublisherDisplayName>__MSIX_NAME__</PublisherDisplayName>

@@ -20,7 +20,12 @@ param(
   [string]$WebDavUsername,
   [string]$WebDavPassword,
   [string]$RemoteBasePath,
-  [string]$LocalAssetsFolder
+  [string]$LocalAssetsFolder,
+  # amd64 (alias x64) or arm64. Empty: the image's WINDOWS_TARGET_ARCH, else amd64,
+  # resolved by the hub's Get-WindowsTargetArch, which throws on anything else.
+  # arm64 is the cross build of windows-arm64-cross.yml: clangcl-release only,
+  # packaged to dist\windows-arm64 (third_party/ANTfrastructure/docs/windows-cross-builds.md).
+  [string]$TargetArch = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,8 +55,17 @@ Import-BuildModule @(
   'WindowsMsix.Signing',
   'WindowsCMake.Common',
   'WindowsFormatting.Common',
-  'WindowsTesting.Common'
+  'WindowsTesting.Common',
+  'WindowsTargetArch.Common'
 )
+# The cross lanes' configure arguments, package arch and DLL closure. A hub pin older than
+# the cross lanes lacks the module and says which commit it needs.
+try { Import-BuildModule @('WindowsCrossBundle.Common') } catch {
+  throw "This build needs ANTfrastructure's WindowsCrossBundle.Common (hub commit of 2026-09-25, third_party/ANTfrastructure/docs/windows-cross-builds.md); move third_party/ANTfrastructure to it or later. ($($_.Exception.Message))"
+}
+$TargetArch = Get-WindowsTargetArch -Arch $TargetArch
+$isCross = Test-WindowsCrossTarget -Arch $TargetArch
+$packageArch = Get-WindowsPackageArch -Arch $TargetArch
 
 $defaultConfigPath = Join-Path $PSScriptRoot 'Build-Windows.config.psd1'
 $configPath = Get-OrDefault $env:BUILD_WINDOWS_CONFIG $defaultConfigPath
@@ -119,6 +133,18 @@ $presetClangRelease = $buildConfigurationSpecs['clangcl-release']['Preset']
 
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
+# A cross build is clangcl-release only: Debug links an ASan runtime the bundle has no
+# aarch64 copy of and runs FuzzTest's grammar generator during the build, Profile runs
+# benchmarks, and the MSVC presets pin x64. Its tree sits beside the host's.
+if ($isCross) {
+  $notCross = @($selectedConfigurations | Where-Object { $_ -ne 'clangcl-release' })
+  if ($notCross.Count -gt 0) {
+    throw "-TargetArch $TargetArch builds clangcl-release only, not $($notCross -join ', ') (third_party/ANTfrastructure/docs/windows-cross-builds.md)."
+  }
+  $buildPathClangRelease = "$buildPathClangRelease-$TargetArch"
+}
+$distArch = Join-Path $workspacePath "dist\windows-$TargetArch"
+
 # If SkipBuild is requested, clear any selected build configurations so
 # configuration-specific configure/build steps are not executed. This keeps
 # non-build steps such as formatting running.
@@ -132,10 +158,11 @@ function Invoke-ConfiguredBuild {
   param(
     [Parameter(Mandatory)][string]$BuildPath,
     [Parameter(Mandatory)][string]$Preset,
-    [Parameter(Mandatory)][string]$Configuration
+    [Parameter(Mandatory)][string]$Configuration,
+    [string[]]$ConfigureExtraArgs = @()
   )
 
-  Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+  Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache -ConfigureExtraArgs $ConfigureExtraArgs
 }
 
 
@@ -337,14 +364,15 @@ try {
   }
 
   if (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations) {
-    Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease" -Critical -Script {
+    Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease$(if ($isCross) { " (cross, $TargetArch)" })" -Critical -Script {
       if ($SkipBuild) {
         # When -SkipBuild is requested, skip configure/build but still run
         # the packaging step (assumes a previous Release build exists).
         Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
         Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Release'
-        Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release'
+        Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release' `
+          -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
       }
 
       # Always attempt packaging when clangcl-release is selected; packaging
@@ -364,6 +392,28 @@ try {
       Write-BuildLog -Context $context -Message "DEBUG: Package command: cmake $($packageArgs -join ' ')"
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
     } | Out-Null
+
+    # The cross lane's product (windows-arm64-cross.yml): the install tree the installers
+    # pack, plus every DLL its binaries import from the image, so it runs on a clean arm64
+    # device (Copy-PeImportClosure). vulkan-1.dll is the device's GPU driver's, never
+    # shipped. The MSI and ZIP travel beside it; NSIS's installer stub is x86 by design,
+    # and the arch gate walks this tree.
+    if ($isCross) {
+      Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {
+        $bundle = Join-Path $distArch 'bundle'
+        if (Test-Path $bundle) { Remove-BuildRoot -Context $context -Path $bundle | Out-Null }
+        Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @('--install', $buildPathClangRelease, '--config', 'Release', '--prefix', $bundle) | Out-Null
+        $bundleBin = Join-Path $bundle 'bin'
+        $seeds = @(Get-ChildItem -LiteralPath $bundleBin -File | Where-Object { $_.Extension -in '.exe', '.dll' } | ForEach-Object FullName)
+        $copied = @(Copy-PeImportClosure -Path $seeds -SearchDirectory @('C:\runtime\bin') -Destination $bundleBin -Arch $TargetArch)
+        $packages = Join-Path $distArch 'packages'
+        if (Test-Path $packages) { Remove-BuildRoot -Context $context -Path $packages | Out-Null }
+        New-Item -ItemType Directory -Force -Path $packages | Out-Null
+        Get-ChildItem -LiteralPath $buildPathClangRelease -File | Where-Object { $_.Extension -in '.msi', '.zip' } |
+          Copy-Item -Destination $packages
+        Write-BuildLog -Context $context -Message "Portable bundle $bundle; DLL closure: $(@($copied | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
+      } | Out-Null
+    }
   }
 
   # MSIX packaging.
@@ -422,11 +472,17 @@ try {
         Remove-BuildRoot -Context $context -Path $msixStaging | Out-Null
       }
 
-      Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
-        '--install', $buildPathClangRelease,
-        '--config', 'Release',
-        '--prefix', $msixStaging
-      ) | Out-Null
+      # A cross package stages the portable bundle, whose bin\ already carries the DLL
+      # closure an arm64 device lacks; the host package installs the tree as before.
+      if ($isCross) {
+        Copy-Item -Path (Join-Path $distArch 'bundle') -Destination $msixStaging -Recurse
+      } else {
+        Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
+          '--install', $buildPathClangRelease,
+          '--config', 'Release',
+          '--prefix', $msixStaging
+        ) | Out-Null
+      }
 
       $manifestTemplateRel = Get-ConfigValue -Config $config -Path 'Msix.ManifestTemplate'
       $manifestTemplatePath = if ([System.IO.Path]::IsPathRooted($manifestTemplateRel)) { $manifestTemplateRel } else { Join-Path $workspacePath $manifestTemplateRel }
@@ -442,7 +498,7 @@ try {
         throw "Expected executable not found in MSIX staging: $exeRelPath"
       }
 
-      $msixOutPath = Join-Path $buildPathClangRelease "$msixName.msix"
+      $msixOutPath = if ($isCross) { Join-Path $distArch "msix\${msixName}_$packageArch.msix" } else { Join-Path $buildPathClangRelease "$msixName.msix" }
       Invoke-MsixPackage -Context $context `
         -StagingDir $msixStaging `
         -ManifestTemplatePath $manifestTemplatePath `
@@ -450,6 +506,7 @@ try {
           '__MSIX_NAME__' = $msixName
           '__MSIX_PUBLISHER__' = $msixPublisher
           '__MSIX_VERSION__' = $msixVersion
+          '__MSIX_ARCH__' = $packageArch
           '__MSIX_MIN_VERSION__' = $msixMinVersion
           '__EXE_REL_PATH__' = $exeRelPath
           '__STORE_LOGO_REL__' = 'Assets/StoreLogo.png'

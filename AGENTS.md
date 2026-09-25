@@ -605,8 +605,8 @@ what each one is for.
 
 Every lane runs on every push/PR to `main`/`develop`. The `[build-win]` and
 `[build-arm]` commit-message opt-ins are gone (owner decision 2026-09-24: Linux
-x64, Linux arm64 and Windows x64 always run). The three platform lanes still skip
-a docs-only commit through `paths-ignore`:
+x64, Linux arm64 and Windows x64 always run; Windows arm64 joined on 2026-09-25).
+The four platform lanes still skip a docs-only commit through `paths-ignore`:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
@@ -615,6 +615,7 @@ a docs-only commit through `paths-ignore`:
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows (clang-cl/MSVC container build, Pester) | `windows-x64.yml` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
+| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
@@ -622,6 +623,27 @@ and that is what makes "always" true. As tenants they inherited their host's
 gitlink next to a docs page got no pin check; `lint` also lived in
 `reusable-linux.yml` and therefore ran once per **caller**, grading the same
 runner-independent tree twice on every ARM run.
+
+**The Windows ARM64 lane cross-builds, then runs** (owner decision 2026-09-25).
+`Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release` runs in the
+family image's arm64 bundle. On a cross build it:
+
+- refuses every other configuration: Debug links an x64-only ASan runtime and
+  runs FuzzTest's grammar generator at build time, Profile runs benchmarks, and the
+  MSVC presets pin x64;
+- configures with the hub's `Get-CrossConfigureArgs -Corrosion -Vulkan`, so
+  Corrosion targets aarch64 and FindVulkan takes `Lib-ARM64/vulkan-1.lib` instead
+  of the pointer-size x64 `Lib`;
+- builds into `build-clangcl-release-arm64`;
+- writes `dist/windows-arm64`: the portable bundle (the install tree plus its DLL
+  closure), the `aarch64` MSI and ZIP, and the arm64 MSIX (manifest token
+  `__MSIX_ARCH__`).
+
+The hub's `Hardening.cmake` links `/CETCOMPAT` on x64 only. The run job borrows the
+Khronos loader from LunarG's arm64 runtime, pinned by hash, and calls
+`GraphicsEngine.exe --version`. The engine imports `vulkan-1.dll`, which a device gets
+from its GPU driver and the GPU-less runner has not got. The bundle never ships the
+loader.
 
 Workflow files follow the fleet naming convention (owner decision 2026-09-24):
 kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,
