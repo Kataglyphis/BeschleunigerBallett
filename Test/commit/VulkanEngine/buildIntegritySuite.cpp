@@ -595,14 +595,14 @@ std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &
     return std::nullopt;
 }
 
-// Parses the exact suite-name globs out of windows-x64.yml's hand-written
-// `$gpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
-// container" step). Anchored on the array opener and its `-join ':'` closer
-// so an unrelated array elsewhere in the file cannot be picked up. Returns
-// std::nullopt only if the file cannot be opened.
-std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::path &workflow_path)
+// Parses the exact suite-name globs out of the Windows x64 lane's hand-written
+// `$gpuOnlySuites` PowerShell array (scripts/windows/Invoke-WindowsLane.ps1, its
+// CPU-suite run; windows-x64.yml until 2026-09-26). Anchored on the array opener
+// and its `-join ':'` closer so an unrelated array elsewhere in the file cannot
+// be picked up. Returns std::nullopt only if the file cannot be opened.
+std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::path &lane_path)
 {
-    const auto lines = readFileLines(workflow_path);
+    const auto lines = readFileLines(lane_path);
     if (!lines) { return std::nullopt; }
 
     std::vector<std::string> suites;
@@ -726,17 +726,18 @@ std::optional<std::vector<std::string>> parse_perf_baseline_names(const fs::path
     return names;
 }
 
-// Parses the fuzz-target names out of windows-x64.yml's "Run fuzz target seeds
-// inside the container" step: a PowerShell `foreach (`$t in @('a','b',...))`
-// loop. Anchored on "foreach (`$t in @(" (the backtick escapes $t inside the
+// Parses the fuzz-target names out of the Windows x64 lane's fuzz-seed loop
+// (scripts/windows/Invoke-WindowsLane.ps1; windows-x64.yml until 2026-09-26):
+// a PowerShell `foreach (`$t in @('a','b',...))` loop. Anchored on
+// "foreach (`$t in @(" (the backtick escapes $t inside the
 // surrounding double-quoted PowerShell string) and the following "))", so an
 // unrelated foreach loop elsewhere in the file cannot be picked up. Returns
 // std::nullopt only if the file cannot be opened; an empty vector means the
 // anchor text itself was not found, which the caller must fail loudly on
 // rather than skip.
-std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &workflow_path)
+std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &lane_path)
 {
-    const auto lines = readFileLines(workflow_path);
+    const auto lines = readFileLines(lane_path);
     if (!lines) { return std::nullopt; }
 
     // Two spellings, both legal: the step used to run in a host-side pwsh
@@ -1798,9 +1799,10 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("GBUFFER_DEPTH_BINDING"), GBUFFER_DEPTH_BINDING);
 }
 
-// windows-x64.yml now runs every CPU suite by default and excludes GPU suites by
-// name (`$gpuOnlySuites`), the same negative-filter shape reusable-linux.yml already
-// uses via `--ctest-exclude`. A suite added to Test/commit/VulkanEngine no
+// The Windows x64 lane (scripts/windows/Invoke-WindowsLane.ps1) runs every CPU suite
+// by default and excludes GPU suites by name (`$gpuOnlySuites`), the same
+// negative-filter shape reusable-linux.yml already uses via `--ctest-exclude`.
+// A suite added to Test/commit/VulkanEngine no
 // longer needs to be added anywhere to run in CI - the only thing that can
 // still drift silently is the GPU-exclusion list itself: an entry there that
 // does not match the hardcoded set below, or that does not name a suite that
@@ -1810,14 +1812,14 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path workflow_path = repo_root / ".github" / "workflows" / "windows-x64.yml";
-    const auto filter_suites_opt = parse_ci_gpu_excluded_suites(workflow_path);
+    const fs::path lane_path = repo_root / "scripts" / "windows" / "Invoke-WindowsLane.ps1";
+    const auto filter_suites_opt = parse_ci_gpu_excluded_suites(lane_path);
     if (!filter_suites_opt.has_value()) {
-        GTEST_SKIP() << "could not open " << workflow_path.string() << " - not running from the repo root?";
+        GTEST_SKIP() << "could not open " << lane_path.string() << " - not running from the repo root?";
     }
     const std::vector<std::string> &filter_suites = *filter_suites_opt;
     ASSERT_FALSE(filter_suites.empty())
-      << "parsed zero suites out of the $gpuOnlySuites array in " << workflow_path.string()
+      << "parsed zero suites out of the $gpuOnlySuites array in " << lane_path.string()
       << " - the anchor text ('$gpuOnlySuites = @(' / \"-join ':'\") may have changed";
     const std::set<std::string> filter_set(filter_suites.begin(), filter_suites.end());
 
@@ -1834,24 +1836,23 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
     const std::set<std::string> gpu_excluded_suites = { "GoldenRender", "Integration" };
 
     EXPECT_EQ(filter_set, gpu_excluded_suites)
-      << "windows-x64.yml's $gpuOnlySuites exclusion list no longer matches the expected GPU-suite set - "
-         "update either the workflow or this test's gpu_excluded_suites";
+      << "Invoke-WindowsLane.ps1's $gpuOnlySuites exclusion list no longer matches the expected GPU-suite set - "
+         "update either the lane script or this test's gpu_excluded_suites";
 
     for (const auto &suite : filter_suites) {
         EXPECT_TRUE(defined_suites.contains(suite))
-          << "windows-x64.yml excludes '" << suite
+          << "Invoke-WindowsLane.ps1 excludes '" << suite
           << "' from $gpuOnlySuites, but no such suite is defined under Test/commit/VulkanEngine "
              "(renamed or deleted?)";
     }
 }
 
-// The fuzz step's target list in windows-x64.yml is a hand-maintained array, and
-// the step silently `continue`s past a missing executable rather than
-// failing. Unlike the gtest suites above, this list has no negative-filter
-// equivalent (fuzz targets are per-target executables, not gtest_filter
-// globs), so it still needs an explicit check: a fuzz target declared in
-// Test/fuzz/CMakeLists.txt but never added to windows-x64.yml's array does not
-// run in CI, and nothing says so.
+// The Windows lane's fuzz target list (Invoke-WindowsLane.ps1) is a hand-maintained
+// array. Unlike the gtest suites above, it has no negative-filter equivalent
+// (fuzz targets are per-target executables, not gtest_filter globs), so it
+// still needs an explicit check: a fuzz target declared in
+// Test/fuzz/CMakeLists.txt but never added to that array does not run in CI,
+// and nothing says so.
 TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 {
     const fs::path repo_root = repoRoot();
@@ -1864,20 +1865,20 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
          "anchor text ('kataglyphis_add_fuzz_test(') may have changed";
     const std::set<std::string> declared_set(declared_targets.begin(), declared_targets.end());
 
-    const fs::path workflow_path = repo_root / ".github" / "workflows" / "windows-x64.yml";
-    const auto ci_targets_opt = parse_ci_fuzz_targets(workflow_path);
+    const fs::path lane_path = repo_root / "scripts" / "windows" / "Invoke-WindowsLane.ps1";
+    const auto ci_targets_opt = parse_ci_fuzz_targets(lane_path);
     if (!ci_targets_opt.has_value()) {
-        GTEST_SKIP() << "could not open " << workflow_path.string() << " - not running from the repo root?";
+        GTEST_SKIP() << "could not open " << lane_path.string() << " - not running from the repo root?";
     }
     const std::vector<std::string> &ci_targets = *ci_targets_opt;
     ASSERT_FALSE(ci_targets.empty())
-      << "parsed zero fuzz targets out of the foreach array in " << workflow_path.string()
+      << "parsed zero fuzz targets out of the foreach array in " << lane_path.string()
       << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
     const std::set<std::string> ci_set(ci_targets.begin(), ci_targets.end());
 
     // FuzzTest smoke targets (dummy.cpp / example_fuzz_test.cpp) - they exist
     // to prove the fuzzing harness itself works, not to cover engine surface.
-    // windows-x64.yml now runs them alongside every other declared target (see
+    // The Windows lane runs them alongside every other declared target (see
     // BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi below), so this set is
     // currently empty; it stays here as the extension point for a future
     // smoke-only target that should not gate CI.
@@ -1890,8 +1891,8 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
     }
     EXPECT_TRUE(missing_from_ci.empty())
       << missing_from_ci.size()
-      << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt are neither in windows-x64.yml's fuzz-seed foreach "
-         "array nor in the smoke-target exclusion list, so they silently do not run in CI: "
+      << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt are neither in Invoke-WindowsLane.ps1's "
+         "fuzz-seed foreach array nor in the smoke-target exclusion list, so they silently do not run in CI: "
       << joinViolations(missing_from_ci);
 
     std::vector<std::string> dead_ci_entries;
@@ -1900,7 +1901,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
     }
     EXPECT_TRUE(dead_ci_entries.empty())
       << dead_ci_entries.size()
-      << " entry/entries in windows-x64.yml's fuzz-seed foreach array do not correspond to any target declared "
+      << " entry/entries in Invoke-WindowsLane.ps1's fuzz-seed foreach array do not correspond to any target declared "
          "in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
       << joinViolations(dead_ci_entries);
 }
@@ -1910,9 +1911,10 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // every push, windows-x64.yml only on [build-win]), so a real engine-surface
 // fuzzer could sit unexercised for weeks between opt-in runs, and nothing
 // noticed when a new target was added to neither lane. This gates every
-// target declared in Test/fuzz/CMakeLists.txt against both workflow files
-// AND the local host runner (Invoke-ClangClDebug.ps1), which used to hard-code
-// only the two FuzzTest smoke targets and silently skip the five with real
+// target declared in Test/fuzz/CMakeLists.txt against the Linux workflow, the
+// Windows lane script (Invoke-WindowsLane.ps1) AND the local host runner
+// (Invoke-ClangClDebug.ps1), which used to hard-code only the two FuzzTest smoke
+// targets and silently skip the five with real
 // engine-surface coverage.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 {
@@ -1927,16 +1929,16 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     const std::set<std::string> declared_set(declared_targets.begin(), declared_targets.end());
 
     const fs::path linux_workflow_path = repo_root / ".github" / "workflows" / "reusable-linux.yml";
-    const fs::path windows_workflow_path = repo_root / ".github" / "workflows" / "windows-x64.yml";
+    const fs::path windows_lane_path = repo_root / "scripts" / "windows" / "Invoke-WindowsLane.ps1";
     const fs::path local_runner_path = repo_root / "scripts" / "windows" / "Invoke-ClangClDebug.ps1";
 
     const auto linux_targets_opt = parse_linux_ci_fuzz_targets(linux_workflow_path);
     if (!linux_targets_opt.has_value()) {
         GTEST_SKIP() << "could not open " << linux_workflow_path.string() << " - not running from the repo root?";
     }
-    const auto windows_targets_opt = parse_ci_fuzz_targets(windows_workflow_path);
+    const auto windows_targets_opt = parse_ci_fuzz_targets(windows_lane_path);
     if (!windows_targets_opt.has_value()) {
-        GTEST_SKIP() << "could not open " << windows_workflow_path.string() << " - not running from the repo root?";
+        GTEST_SKIP() << "could not open " << windows_lane_path.string() << " - not running from the repo root?";
     }
     const auto local_targets_opt = parse_local_runner_fuzz_targets(local_runner_path);
     if (!local_targets_opt.has_value()) {
@@ -1946,7 +1948,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
       << "parsed zero fuzz targets out of the for-loop in " << linux_workflow_path.string()
       << " - the anchor text ('for t in ' / '; do') may have changed";
     ASSERT_FALSE(windows_targets_opt->empty())
-      << "parsed zero fuzz targets out of the foreach array in " << windows_workflow_path.string()
+      << "parsed zero fuzz targets out of the foreach array in " << windows_lane_path.string()
       << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
     ASSERT_FALSE(local_targets_opt->empty())
       << "parsed zero fuzz targets out of the foreach array in " << local_runner_path.string()
@@ -1963,7 +1965,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     struct NotRunInCi
     {
         std::string target;
-        std::string lane;// "reusable-linux.yml", "windows-x64.yml", or "Invoke-ClangClDebug.ps1"
+        std::string lane;// "reusable-linux.yml", "Invoke-WindowsLane.ps1", or "Invoke-ClangClDebug.ps1"
         std::string reason;
     };
     const std::vector<NotRunInCi> kNotRunInCi;
@@ -1980,7 +1982,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
         }
     };
     check_lane("reusable-linux.yml", linux_set);
-    check_lane("windows-x64.yml", windows_set);
+    check_lane("Invoke-WindowsLane.ps1", windows_set);
     check_lane("Invoke-ClangClDebug.ps1", local_set);
 
     EXPECT_TRUE(missing.empty())
@@ -1989,7 +1991,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
          "in kNotRunInCi with a reason: "
       << joinViolations(missing);
 
-    // Unlike the two workflow files (whose foreach arrays are cross-checked
+    // Unlike the Linux workflow and the Windows lane script (whose loops are cross-checked
     // against declared_targets in BuildIntegrity.EveryFuzzTargetIsInTheWindowsCiFuzzList
     // and mirrored by construction for reusable-linux.yml), the local runner has no
     // other test catching a stale/renamed entry, so check both directions here.

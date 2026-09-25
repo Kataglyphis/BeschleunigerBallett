@@ -1,5 +1,17 @@
 name: Windows x64 · build + test
 
+# The Windows x64 lane: a thin caller of ANTfrastructure's container-ci-windows.yml
+# since 2026-09-26 (the family's hub reusable lanes), like windows-arm64-cross.yml.
+# The container half is scripts/windows/Invoke-WindowsLane.ps1, which a local
+# container run executes too: Build-Windows.ps1 (clangcl-debug + clangcl-release),
+# the CPU-only suites, every fuzz target's seeds, and the renderer timing and pixel
+# comparisons. BuildIntegrity's Windows-list tests read their lists from that
+# script now, not from this file. The product lands in dist/windows-x64, with its
+# DLL closure, and uploads as one artifact.
+#
+# NO CONTAINER IMAGE IS NAMED HERE: the hub's prepare-windows-container-host
+# carries the tag from versions.env, which verify_ci_image_refs.py holds it to.
+
 on:
   push:
     branches: [main, develop]
@@ -24,290 +36,35 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# NO CONTAINER IMAGE IS NAMED IN THIS FILE, and that is the point.
-#
-# The tag used to sit here as `GHCR_IMAGE_WIN: ...:winamd64`, referenced by the
-# six container steps below. One literal per repo is not drift-free, it is
-# drift-per-repo: a fleet-wide tag bump had to find and edit this line in every
-# consumer.
-#
-# The value now comes from ANTfrastructure's linux/scripts/01-core/versions.env
-# (IMAGE_REGISTRY_PREFIX + CI_IMAGE_WINDOWS_TAG), which prepare-windows-container-host
-# and run-in-windows-container carry as the DEFAULT of their `image` input - so
-# every step below OMITS `image:` and inherits it. ANTfrastructure's
-# linux/scripts/verify_ci_image_refs.py, which the actionlint gate in
-# .github/workflows/lint-gates.yml runs against this tree, rejects any
-# non-canonical kataglyphis_beschleuniger tag under .github/ AND a Windows action
-# handed the Linux ref, so neither a stale literal nor a crossed platform can
-# pass quietly.
-#
-# Do NOT "make it explicit" by passing an `image:` expression back in: GitHub
-# applies an action default only when the key is ABSENT, so an expression that
-# resolves empty yields an EMPTY image reference rather than the default.
-
-defaults:
-  run:
-    shell: pwsh
-
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: windows-2025
-    permissions:
-      contents: read
-      packages: read
-    steps:
-
-      # Der komplette Prolog - long paths, Checkout ohne Submodule,
-      # Kurzpfad-Klon, data-root auf D:, Disk-Cleanup, Registry-Login, Pull,
-      # Disk-Report - kommt aus ANTfrastructure. Er war hier ~60 Zeilen und in drei
-      # Schwester-Repos identisch; jede der drei Fallen darin hatte schon eine
-      # Lane gekostet.
-      #
-      # Der Kurzpfad-Klon bleibt Pflicht (MAX_PATH auf der Submodulkette), und
-      # required-free-gb ersetzt den separaten assert-docker-disk-space-Schritt:
-      # die Action prueft die ZIELplatte, bevor sie die data-root dorthin
-      # verschiebt - frueher als eine Pruefung nach dem Cleanup, und auf genau
-      # dem Laufwerk, auf dem das Image dann landet.
-      - name: Prepare Windows container host
-        id: prep
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-windows-container-host@develop
-        with:
-          registry-password: ${{ secrets.GHCR_PAT }}
-          fetch-depth: 0
-          short-path-target: /d/ws
-          required-free-gb: '70'
-
-      # Bind-mount target is C:\ws (a FRESH path), NOT C:\workspace. The image
-      # bakes `WORKDIR C:\workspace` + `VOLUME ["C:\workspace"]` (windows/
-      # Dockerfile:48-49); mounting a bind OVER that baked-in dir dies at
-      # `hcs::CreateComputeSystem: The request is not supported` whenever the
-      # host OS build differs from the image base build - and it does here: the
-      # image is validated on a build-26200 host (ANTfrastructure BUILD-OBSERVATIONS)
-      # while the github windows-2025 runner is 26100. ANTfrastructure's own
-      # Test-ContainerBindMount defaults to a fresh C:\ws-mnt for exactly this.
-      # D:\ws -> C:\ws and --memory 16g are the composite action's defaults, and
-      # --cpus defaults to NUMBER_OF_PROCESSORS (min 2) - the identical
-      # computation this step used to do inline.
-      #
-      # This step kept an inline `docker run` long after the others moved to the
-      # composite action, because it is the only one that (a) passes a secret as
-      # `-e VAR=value` and (b) runs `pwsh -File <script> <argv...>` rather than
-      # `pwsh -Command <text>`. Both now have first-class inputs: `extra-args`
-      # and `file`/`file-args`, each one argv element per line, each delivered to
-      # the action through an env var instead of being interpolated into its
-      # script - so the secrets still never enter a host command STRING, and the
-      # script arguments are still literal (never re-parsed by PowerShell, which
-      # is what a rewrite to `-Command` would have done to them).
-      # Caveat of the line-per-argument encoding: a secret whose value contains
-      # a newline cannot be expressed. None of these are multi-line (passwords,
-      # a hostname, a username, a remote path).
-      - name: Build/Test/Package inside the Windows CI container
-        continue-on-error: false
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@develop
-        with:
-          extra-args: |
-            -e
-            MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}
-          file: C:\ws\scripts\windows\Build-Windows.ps1
-          # clangcl-profile is deliberately NOT built here. Nothing in this
-          # workflow consumes it: the CPU tests and fuzz seeds run out of
-          # build-clangcl-debug, the artifacts come from build-clangcl-release,
-          # and the step already passes -SkipPerfTests, so the profiling
-          # build's only purpose is skipped. Building it cost roughly a third
-          # of the compile time for nothing. Re-add it the day CI actually
-          # runs the perf suite.
-          file-args: |
-            -Configurations
-            clangcl-debug,clangcl-release
-            -SkipFormat
-            -SkipTidy
-            -SkipTests
-            -SkipPerfTests
-            -WebDavHostname
-            ${{ secrets.WEBDAV_HOSTNAME }}
-            -WebDavUsername
-            ${{ secrets.WEBDAV_USERNAME }}
-            -WebDavPassword
-            ${{ secrets.WEBDAV_PASSWORD }}
-            -RemoteBasePath
-            ${{ secrets.REMOTE_BASE_PATH }}
-            -LocalAssetsFolder
-            C:\ws
-
-      # Until 2026-07-20 this workflow passed -SkipTests -SkipPerfTests and
-      # nothing else ran, so Windows CI proved only that the code compiles -
-      # every behavioural guarantee came from a human running the suite locally.
-      #
-      # The build step above still skips ctest deliberately. GitHub's hosted
-      # runners have no GPU, but the container DOES ship the Vulkan loader, so
-      # the GPU suites do not reliably self-skip: SKIP_WITHOUT_GPU only asks
-      # glfwVulkanSupported(), which can answer yes on a machine with a loader
-      # and no device, after which device creation aborts the process. So the
-      # GPU suites (Integration, GoldenRender) stay out, by name rather than by
-      # hoping they skip, and the CPU-only ones run here.
-      #
-      # New suites now run automatically; nothing to add here.
-      # The GPU-only suite list is built HOST-side and the container is handed
-      # one flat command line, which is how the last green Windows run
-      # (2026-07-21) did it: it composed `$cmd` on the runner and passed that
-      # single string to `powershell.exe -Command`. When the step moved to the
-      # composite action the whole multi-line script started being passed to
-      # `pwsh -Command` instead, and no Windows run reached this step again
-      # until 2026-08-05 - where the container produced ZERO output and exited
-      # 1 after 12 s, far too fast for a 650-test suite and with none of
-      # gtest's banner. The action's other user here, the build step, passes
-      # `file:` (an argv list), not a multi-line `-Command` payload; the
-      # timing/pixel steps below use folded single-line commands. This step is
-      # now the same shape as those.
-      #
-      # The array below stays multi-line and stays in THIS file on purpose:
-      # BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites parses it across
-      # lines out of the workflow, from its opening line to its joining line,
-      # so collapsing it to one line would fail that test with "parsed zero
-      # suites". For the same reason this comment does not spell either of
-      # those two anchor strings out - the parser takes the first line that
-      # matches.
-      - name: Determine the GPU-only suite filter
-        shell: pwsh
-        run: |
-          $gpuOnlySuites = @(
-            'GoldenRender.*'
-            'Integration.*'
-          ) -join ':'
-          Write-Host "Excluding GPU-only suites: $gpuOnlySuites"
-          "GPU_ONLY_SUITES=$gpuOnlySuites" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Run CPU-only tests inside the container
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@develop
-        with:
-          # Test-Path first: a missing or unbuilt executable must say so, not
-          # surface as a bare "exit code 1" with an empty log the way the
-          # 2026-08-05 run did.
-          command: >-
-            $exe = 'C:\ws\build-clangcl-debug\commitTestSuite.exe';
-            if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe); exit 1 };
-            Write-Host ('running ' + $exe + ' (' + (Get-Item $exe).Length + ' bytes)');
-            & $exe --gtest_filter='-${{ env.GPU_ONLY_SUITES }}';
-            exit $LASTEXITCODE
-
-      # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
-      # and the shader-file reader target found a real terminate-on-throw bug
-      # from a seed on its first run.
-      #
-      # timeout-minutes because this step is where a hang actually happened:
-      # the "con" seed spent 68 minutes inside readTextFile on 2026-08-05 (see
-      # FileReader.ixx) and the run had to be killed by hand rather than going
-      # red. Seven targets need about a minute in total; 20 leaves room for a
-      # cold container start and still fails the same day.
-      - name: Run fuzz target seeds inside the container
-        timeout-minutes: 20
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@develop
-        with:
-          # Inner strings use single quotes and concatenation, NOT \" escapes:
-          # backslash is not an escape character in PowerShell (backtick is), so
-          # \" terminated the surrounding double-quoted string and the whole
-          # command died with "Unexpected token 'missing'". This step had never
-          # actually run before - every earlier attempt died at the docker run in
-          # the build step - so the bug sat latent until the container finally
-          # built successfully.
-          # Folded to ONE line for the same reason as the CPU-test step above:
-          # a multi-line payload to `pwsh -Command` is not a shape this action
-          # has ever been observed to run. Every line here is indented
-          # identically - a more-indented line in a YAML folded scalar keeps
-          # its newlines instead of being joined, which would quietly put the
-          # multi-line shape back.
-          #
-          # The loop's target list stays on a single line below because
-          # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi and
-          # EveryFuzzTargetIsInTheWindowsCiFuzzList parse that one line out of
-          # this file. Do not spell the loop's opening text in a comment
-          # either: both parsers take the FIRST line that matches it, so a
-          # comment quoting it wins over the real list and they fail with
-          # "parsed zero fuzz targets".
-          #
-          # It collects every failure instead of stopping at the first, as the
-          # Linux lane's loop now does: seven targets and a ~2.5 h round trip
-          # means aborting early costs a whole run per broken fuzzer.
-          command: >-
-            $failed = @();
-            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) { $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe'); if (-not (Test-Path $exe)) { Write-Host ('::error::missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); $failed += $t; continue }; Write-Host ('--- ' + $t); & $exe; if ($LASTEXITCODE -ne 0) { Write-Host ('::error::fuzz target ' + $t + ' failed'); $failed += $t } else { Write-Host ('--- ' + $t + ' OK') } };
-            if ($failed.Count -gt 0) { Write-Host ('::error::fuzz targets failed: ' + ($failed -join ' ')); exit 1 };
-            exit 0
-
-      # GPU timing comparison — runs the Compare-RendererTimings.ps1 script
-      # which drives both renderers headlessly and prints per-pass GPU ms side
-      # by side.  GitHub-hosted runners have no GPU (Vulkan loader present but
-      # no device), so this step is validation-only by default: it checks the
-      # JSON schema and pass names without actually rendering.  There is no
-      # reliable in-container GPU probe — `glfwVulkanSupported()` can answer
-      # yes with no device present and then abort during device creation, and
-      # `--gtest_list_tests` only enumerates registered names, never touching
-      # a device, so it always "succeeds". A self-hosted runner with a real
-      # adapter opts in explicitly by setting the KATAGLYPHIS_CI_HAS_GPU
-      # repository/environment variable to '1', which drops -ValidationOnly
-      # for a full timing comparison.
-      # The GPU probe must run on the HOST (the repository/environment
-      # variable is runner-side and unreachable from inside the container),
-      # so a small host step computes the flag and the container step below
-      # consumes it through the shared composite action.
-      - name: Determine GPU timing mode
-        shell: pwsh
-        run: |
-          $hasGpu = $env:KATAGLYPHIS_CI_HAS_GPU -eq '1'
-          $flag = if (-not $hasGpu) { '-ValidationOnly' } else { '' }
-          Write-Host "GPU available: $hasGpu (validation flag: $($flag -replace '-',''))"
-          "TIMING_VALIDATION_FLAG=$flag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: GPU timing comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@develop
-        with:
-          command: >-
-            & 'C:\ws\scripts\windows\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
-
-      # Cross-renderer pixel comparison. Uses the same GPU-less flag as the
-      # timing step above, so a self-hosted runner with an adapter does a real
-      # comparison instead of the degenerate one.
-      #
-      # Exit 2 is the script's documented "nothing was checked" code, kept
-      # deliberately distinct from 1 ("a frame was found and it regressed")
-      # and pinned by Compare-RendererPixels.Tests.ps1 - an empty run used to
-      # report PASSED, and that silent green was fixed on purpose. Do not
-      # "fix" this by making the script return 0.
-      #
-      # On a GPU-less runner there are never any frames, so 2 is the
-      # GUARANTEED outcome and this step could never pass: it failed the first
-      # Windows run that ever reached it (2026-08-05), after the CPU tests,
-      # the fuzz seeds and the timing comparison had all gone green. So 2 is
-      # tolerated here, but ONLY while -ValidationOnly is in effect, and it is
-      # announced as a warning - a run that checked nothing must never read as
-      # a run that verified something. With KATAGLYPHIS_CI_HAS_GPU=1 the flag
-      # is empty and 2 stays fatal, because then frames SHOULD exist.
-      - name: Pixel comparison (validation-only on GPU-less runners)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-windows-container@develop
-        with:
-          command: >-
-            & 'C:\ws\scripts\windows\Compare-RendererPixels.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }};
-            $code = $LASTEXITCODE;
-            if ($code -eq 2 -and '${{ env.TIMING_VALIDATION_FLAG }}'.Length -gt 0) { Write-Host '::warning::Pixel comparison checked NOTHING - this runner has no GPU, so no frames were captured (script exit 2). That is not a pass, only an absence of evidence.'; exit 0 };
-            exit $code
-
-      # I limited the size of the builded package for storage restriction reasons on a github runner
-      # see also the install commands in the bottom of the CMakeLists.txt
-      - name: Upload Installers & Zip
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: windows-installers-container
-          path: |
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.msi
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.msix
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.exe
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.zip
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.dll
-            ${{ steps.prep.outputs.workspace }}/build-clangcl-release/**/*.lib
-
+    name: Build, test, package (x64)
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-windows.yml@develop
+    with:
+      target-arch: amd64
+      build-script: scripts/windows/Invoke-WindowsLane.ps1
+      # A self-hosted runner with a real adapter sets the repository/environment
+      # variable KATAGLYPHIS_CI_HAS_GPU to '1', which drops -ValidationOnly from the
+      # renderer comparisons; a hosted runner leaves it empty.
+      container-env: |
+        KATAGLYPHIS_CI_HAS_GPU=${{ vars.KATAGLYPHIS_CI_HAS_GPU }}
+      artifact-name: BeschleunigerBallett-windows-x64
+      artifact-dir: dist/windows-x64
+      # The last green runs of the hand-rolled lane took 2-3 hours.
+      timeout-minutes: 240
+    secrets:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
+      # The signing certificate comes over WebDAV and signs the MSIX. Each value is
+      # masked and reaches the container through an --env-file, never an argument.
+      CONTAINER_SECRET_ENV: |
+        WEBDAV_HOSTNAME=${{ secrets.WEBDAV_HOSTNAME }}
+        WEBDAV_USERNAME=${{ secrets.WEBDAV_USERNAME }}
+        WEBDAV_PASSWORD=${{ secrets.WEBDAV_PASSWORD }}
+        REMOTE_BASE_PATH=${{ secrets.REMOTE_BASE_PATH }}
+        MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}
 
   # CPU-only, container-free: the PowerShell module Pester suites (this repo's
   # scripts/windows/tests, written for Pester 3.4 syntax — pinned install, the
@@ -321,19 +78,7 @@ jobs:
       # `submodules: true` is top-level only (NOT recursive) - exactly what these
       # suites need: they resolve their modules and shared config out of the
       # ANTfrastructure submodule, so that one working tree must be present, and
-      # none of the nested ones are read. (The pin-drift suite that also needed
-      # a non-recursive `git submodule status` is no longer here: it moved to
-      # the always-on `.github/workflows/submodule-pins.yml`, which does its own
-      # checkout.)
-      #
-      # It must be actions/checkout doing this, not a hand-rolled
-      # `git submodule update --init` step. .gitmodules pins git@github.com:
-      # (SSH) URLs for ANTfrastructure and OxidANT,
-      # and a hosted runner has no SSH key - the bare git command died with
-      # "git@github.com: Permission denied (publickey)" on both, every single run.
-      # checkout's submodule support installs the same `url.<https>.insteadOf
-      # git@github.com:` rewrite plus token auth that the build job's clone step
-      # sets up by hand, so the SSH pins resolve over HTTPS.
+      # none of the nested ones are read.
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:

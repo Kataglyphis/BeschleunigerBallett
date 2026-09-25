@@ -143,7 +143,8 @@ if ($isCross) {
   }
   $buildPathClangRelease = "$buildPathClangRelease-$TargetArch"
 }
-$distArch = Join-Path $workspacePath "dist\windows-$TargetArch"
+# The product both Windows lanes upload: dist\windows-<x64|arm64>, named as a package names its arch.
+$distArch = Join-Path $workspacePath "dist\windows-$packageArch"
 
 # If SkipBuild is requested, clear any selected build configurations so
 # configuration-specific configure/build steps are not executed. This keeps
@@ -393,27 +394,31 @@ try {
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
     } | Out-Null
 
-    # The cross lane's product (windows-arm64-cross.yml): the install tree the installers
-    # pack, plus every DLL its binaries import from the image, so it runs on a clean arm64
-    # device (Copy-PeImportClosure). vulkan-1.dll is the device's GPU driver's, never
-    # shipped. The MSI and ZIP travel beside it; NSIS's installer stub is x86 by design,
-    # and the arch gate walks this tree.
-    if ($isCross) {
-      Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {
-        $bundle = Join-Path $distArch 'bundle'
-        if (Test-Path $bundle) { Remove-BuildRoot -Context $context -Path $bundle | Out-Null }
-        Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @('--install', $buildPathClangRelease, '--config', 'Release', '--prefix', $bundle) | Out-Null
-        $bundleBin = Join-Path $bundle 'bin'
-        $seeds = @(Get-ChildItem -LiteralPath $bundleBin -File | Where-Object { $_.Extension -in '.exe', '.dll' } | ForEach-Object FullName)
-        $copied = @(Copy-PeImportClosure -Path $seeds -SearchDirectory @('C:\runtime\bin') -Destination $bundleBin -Arch $TargetArch)
-        $packages = Join-Path $distArch 'packages'
-        if (Test-Path $packages) { Remove-BuildRoot -Context $context -Path $packages | Out-Null }
-        New-Item -ItemType Directory -Force -Path $packages | Out-Null
-        Get-ChildItem -LiteralPath $buildPathClangRelease -File | Where-Object { $_.Extension -in '.msi', '.zip' } |
-          Copy-Item -Destination $packages
-        Write-BuildLog -Context $context -Message "Portable bundle $bundle; DLL closure: $(@($copied | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
-      } | Out-Null
-    }
+    # Each lane's product: the install tree the installers pack, plus every DLL its binaries
+    # import from the image, so it runs on a clean machine of either arch (Copy-PeImportClosure
+    # over the hub's Get-ProductDllSearchPath, as OxidANT and AccelerANTgine do; owner decision
+    # 2026-09-25: x64 exactly like arm64). vulkan-1.dll is the device's GPU driver's, never
+    # shipped. The MSI and ZIP travel beside it, on x64 NSIS's installer too; its stub is x86
+    # by design, which the arm64 lane's arch gate would refuse.
+    Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {
+      $bundle = Join-Path $distArch 'bundle'
+      if (Test-Path $bundle) { Remove-BuildRoot -Context $context -Path $bundle | Out-Null }
+      Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @('--install', $buildPathClangRelease, '--config', 'Release', '--prefix', $bundle) | Out-Null
+      $bundleBin = Join-Path $bundle 'bin'
+      $seeds = @(Get-ChildItem -LiteralPath $bundleBin -File | Where-Object { $_.Extension -in '.exe', '.dll' } | ForEach-Object FullName)
+      $copied = @(Copy-PeImportClosure -Path $seeds -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $bundleBin -Arch $TargetArch)
+      $packages = Join-Path $distArch 'packages'
+      if (Test-Path $packages) { Remove-BuildRoot -Context $context -Path $packages | Out-Null }
+      New-Item -ItemType Directory -Force -Path $packages | Out-Null
+      $installers = @(Get-ChildItem -LiteralPath $buildPathClangRelease -File | Where-Object { $_.Extension -in '.msi', '.zip' })
+      if (-not $isCross) {
+        # NSIS names its installer like the MSI; the build root's other .exe files are tests.
+        $installers += @($installers | ForEach-Object { Join-Path $buildPathClangRelease "$($_.BaseName).exe" } |
+            Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Get-Item)
+      }
+      $installers | Copy-Item -Destination $packages
+      Write-BuildLog -Context $context -Message "Portable bundle $bundle; DLL closure: $(@($copied | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
+    } | Out-Null
   }
 
   # MSIX packaging.
@@ -474,17 +479,9 @@ try {
         Remove-BuildRoot -Context $context -Path $msixStaging | Out-Null
       }
 
-      # A cross package stages the portable bundle, whose bin\ already carries the DLL
-      # closure an arm64 device lacks; the host package installs the tree as before.
-      if ($isCross) {
-        Copy-Item -Path (Join-Path $distArch 'bundle') -Destination $msixStaging -Recurse
-      } else {
-        Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
-          '--install', $buildPathClangRelease,
-          '--config', 'Release',
-          '--prefix', $msixStaging
-        ) | Out-Null
-      }
+      # The package stages the portable bundle, whose bin\ already carries the DLL closure a
+      # clean machine lacks, on both arches.
+      Copy-Item -Path (Join-Path $distArch 'bundle') -Destination $msixStaging -Recurse
 
       $manifestTemplateRel = Get-ConfigValue -Config $config -Path 'Msix.ManifestTemplate'
       $manifestTemplatePath = if ([System.IO.Path]::IsPathRooted($manifestTemplateRel)) { $manifestTemplateRel } else { Join-Path $workspacePath $manifestTemplateRel }
@@ -500,7 +497,7 @@ try {
         throw "Expected executable not found in MSIX staging: $exeRelPath"
       }
 
-      $msixOutPath = if ($isCross) { Join-Path $distArch "msix\${msixName}_$packageArch.msix" } else { Join-Path $buildPathClangRelease "$msixName.msix" }
+      $msixOutPath = Join-Path $distArch "msix\${msixName}_$packageArch.msix"
       Invoke-MsixPackage -Context $context `
         -StagingDir $msixStaging `
         -ManifestTemplatePath $manifestTemplatePath `

@@ -277,7 +277,8 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
 Windows builds run inside the ANTfrastructure developer image
 `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` (clang-cl, CMake, Ninja,
 Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
-(`.github/workflows/windows-x64.yml`).
+(`.github/workflows/windows-x64.yml`, which runs `scripts/windows/Invoke-WindowsLane.ps1`
+in the container through the hub's `container-ci-windows.yml`).
 
 **All Windows-container knowledge lives in ANTfrastructure** — do not restate it
 here. When you do not know which document owns a topic, start at
@@ -557,9 +558,9 @@ render (~32 FPS ImGui overlay).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/windows/Compare-PerfBaseline.ps1`,
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
-  comparison tools (`windows-x64.yml` runs the two renderer comparisons in
-  validation-only mode — the runners have no GPU; `Compare-PerfBaseline.ps1` is
-  not in CI at all).
+  comparison tools (the Windows x64 lane's `Invoke-WindowsLane.ps1` runs the two
+  renderer comparisons in validation-only mode — the runners have no GPU;
+  `Compare-PerfBaseline.ps1` is not in CI at all).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/windows-x64.yml`
   runs them with a pinned Pester 3.4.0 on every push and PR, like the rest of
@@ -635,7 +636,7 @@ The four platform lanes still skip a docs-only commit through `paths-ignore`:
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, packaging; Pester) | `windows-x64.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
 | Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
@@ -675,6 +676,23 @@ from its GPU driver and the GPU-less runner has not got. The bundle never ships 
 loader. The image, the arch gate over `dist/windows-arm64`, the upload and the run
 job are the hub's:
 [`windows-cross-builds.md` § Consumer cross lanes](third_party/ANTfrastructure/docs/windows-cross-builds.md#consumer-cross-lanes-container-ci-windowsyml).
+
+**The Windows x64 lane is a thin caller too** (2026-09-26, the family's hub reusable
+lanes). `windows-x64.yml` names `scripts/windows/Invoke-WindowsLane.ps1`, which a local
+container run executes too: `Build-Windows.ps1 -Configurations clangcl-debug,clangcl-release`,
+the CPU-only suites (the GPU suites excluded by name), every fuzz target's seed corpus
+(ten minutes each, where the old step had one 20-minute limit), and the renderer
+timing and pixel comparisons. Every check after the build runs, and the lane fails if any
+did. The WebDAV credentials and `MSIX_CERT_PASSWORD` reach the container through the hub's
+`CONTAINER_SECRET_ENV` secret, as an `--env-file`, and `Build-Windows.ps1` reads them from the
+environment; `KATAGLYPHIS_CI_HAS_GPU` comes from the repository variable through
+`container-env`. The product is `dist/windows-x64`, as arm64's is `dist/windows-arm64`: the
+portable bundle with its DLL closure (the hub's `Get-ProductDllSearchPath`, both arches), the
+MSI, ZIP and NSIS installer, and the MSIX, which now packs that bundle. It uploads as
+`BeschleunigerBallett-windows-x64`, which replaced `windows-installers-container` and its globs
+over `build-clangcl-release`. `BuildIntegrity`'s three Windows-list tests read the lane script,
+not the workflow. The job's check-run name moved with it, to
+`Build, test, package (x64) / build (amd64)`.
 
 Workflow files follow the fleet naming convention (owner decision 2026-09-24):
 kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,

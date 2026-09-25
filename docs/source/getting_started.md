@@ -70,7 +70,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
-`-TargetArch arm64` cross-builds `clangcl-release` for Windows on Arm inside the container image's arm64 bundle (`:winarm64`) and writes the portable bundle, MSI, ZIP and MSIX to `dist/windows-arm64`; that is what `.github/workflows/windows-arm64-cross.yml` runs.
+`-TargetArch arm64` cross-builds `clangcl-release` for Windows on Arm inside the container image's arm64 bundle (`:winarm64`) and writes the portable bundle, MSI, ZIP and MSIX to `dist/windows-arm64`; that is what `.github/workflows/windows-arm64-cross.yml` runs. A host build of `clangcl-release` writes the same to `dist/windows-x64`, plus the NSIS installer; `.github/workflows/windows-x64.yml` runs it through `scripts/windows/Invoke-WindowsLane.ps1`, with the CPU tests, the fuzz seeds and the renderer comparisons.
 
 Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target); use `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` for real TSan runs.
 
