@@ -433,9 +433,11 @@ try {
   #     references by convention; this manifest names three, and the fourth
   #     costs nothing and stops being a surprise the day the manifest grows.
   #
-  # Invoke-MsixSign is still called HERE rather than through the hub's -Sign:
-  # -Sign hands Invoke-MsixSign the staging directory's PARENT as the workspace,
-  # and Invoke-MsixSign looks for the signing *.pfx in the workspace ROOT.
+  # -Sign -SigningRoot $workspacePath: the hub signs with the first *.pfx at the
+  # repository root (gitignored) and MSIX_PFX_PASSWORD, then verifies; with no
+  # .pfx it warns and the package stays unsigned. This script called
+  # Invoke-MsixSign itself until the hub's -Sign stopped searching the staging
+  # directory's parent (hub, 2026-09-25).
   if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations)) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
@@ -515,10 +517,8 @@ try {
         } `
         -OutputPath $msixOutPath `
         -GenerateTransparentLogos `
-        -MakeAppxPath $makeappxPath | Out-Null
-
-      # Attempt to sign the generated MSIX using the signing helper module.
-      Invoke-MsixSign -Context $context -WorkspacePath $workspacePath -MsixOutPath $msixOutPath
+        -MakeAppxPath $makeappxPath `
+        -Sign -SigningRoot $workspacePath | Out-Null
     }
   } elseif (-not $SkipMsix) {
     Write-BuildLog -Context $context -Message 'DEBUG: MSIX packaging skipped because clangcl-release was not selected.'
