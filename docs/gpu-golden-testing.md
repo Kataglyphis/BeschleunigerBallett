@@ -33,6 +33,9 @@ What that does not cover:
   `PathTracedMaskCardShowsItsCutout` and `AddedModelAppearsInPathTracing`. The
   measured numbers are in `BACKLOG.md` ("GPU suites on llvmpipe"); whether they
   are llvmpipe artefacts or real regressions needs a host-GPU run.
+- **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a runner.** It
+  passes on llvmpipe (266 s on 32 cores) but hit ctest's 1500 s timeout on a
+  4-vCPU GitHub runner (run 36627716804), so CI excludes it as well.
 - **Not on arm64.** The arm64 image's Vulkan loader
   (`/opt/vulkan/<ver>/aarch64`) offers no `VK_KHR_xcb_surface`,
   `VK_KHR_xlib_surface` or `VK_KHR_wayland_surface`, so GLFW stops with

@@ -155,7 +155,8 @@ jobs:
       # x64 only: the image's llvmpipe is a CPU Vulkan device with ray tracing,
       # and --virtual-display gives GLFW an X server. They cost ~20 min of
       # llvmpipe on 32 cores, so the sanitizer and gcc lanes keep excluding them.
-      # Five GoldenRender tests miss their thresholds on llvmpipe, and arm64's
+      # Five GoldenRender tests miss their thresholds on llvmpipe, the GUI input
+      # sweep outlasts ctest's 1500 s timeout on a 4-vCPU runner, and arm64's
       # Vulkan loader has no X11/Wayland surface extension, so it cannot create
       # a window surface at all (BACKLOG.md "GPU suites on llvmpipe").
       - name: Run Unit/Integration tests
@@ -165,7 +166,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh --virtual-display
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "${{ runner.arch == 'X64' && '^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing)$' || '^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder' }}"
+            --ctest-exclude "${{ runner.arch == 'X64' && '^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing|GuiInputSweepNeverCrashesOrLosesTheDevice)$' || '^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder' }}"
           log-file: output.log
 
   # ---------------------------------------------------------------------------

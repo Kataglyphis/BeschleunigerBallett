@@ -442,6 +442,12 @@ cleanUp+recreate pair at the four scene-changed sites.
   llvmpipe. The emissive pair reading identical is the most suspicious: its
   deferred twin (`EmissiveStrengthSurvivesTheDeferredGBuffer`) passes.
 
+  A sixth, `GuiInputSweepNeverCrashesOrLosesTheDevice`, passes on llvmpipe
+  (266 s locally) but ran into ctest's 1500 s timeout on the 4-vCPU x64 runner
+  (run 36627716804, where all 32 other GPU tests that finished passed, the
+  path-tracing ones taking 150-385 s each), so CI excludes it for time, not
+  correctness.
+
   arm64 runs none of them: the arm64 image's Vulkan loader
   (`/opt/vulkan/1.4.357.0/aarch64`) exposes no X11/Wayland surface extension,
   so every GPU test aborts in surface creation ("Vulkan: Window surface creation
