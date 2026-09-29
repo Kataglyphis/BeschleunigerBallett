@@ -476,7 +476,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-profile
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1000M'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -701,7 +701,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-release
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build CMake for Release
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
