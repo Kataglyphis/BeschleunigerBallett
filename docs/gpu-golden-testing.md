@@ -17,9 +17,8 @@ prove a render/device refactor is behaviour-preserving.
 ## Linux CI runs them on llvmpipe
 
 Since 2026-09-29 the family Linux image ships lavapipe/llvmpipe, a CPU Vulkan
-device with ray tracing, and `Xvfb`. The Linux `clang-tests` job
-(`reusable-linux.yml`, both architectures) therefore runs the GPU suites for
-real: `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
+device with ray tracing, and `Xvfb`. The Linux x64 `clang-tests` job
+(`reusable-linux.yml`) therefore runs the GPU suites for real: `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
 `glfwInit()` finds an X server and nothing skips. Locally, the same:
 
 ```bash
@@ -34,6 +33,11 @@ What that does not cover:
   `PathTracedMaskCardShowsItsCutout` and `AddedModelAppearsInPathTracing`. The
   measured numbers are in `BACKLOG.md` ("GPU suites on llvmpipe"); whether they
   are llvmpipe artefacts or real regressions needs a host-GPU run.
+- **Not on arm64.** The arm64 image's Vulkan loader
+  (`/opt/vulkan/<ver>/aarch64`) offers no `VK_KHR_xcb_surface`,
+  `VK_KHR_xlib_surface` or `VK_KHR_wayland_surface`, so GLFW stops with
+  "Vulkan: Window surface creation extensions not found" and every GPU test
+  aborts (run 36615897603). The arm64 job keeps excluding both suites.
 - **Only that one job runs them.** They cost ~20 minutes of llvmpipe on a
   32-core host; the ASan, TSan and gcc jobs keep excluding them.
 - **The Windows container still has no Vulkan device**, so there they skip or

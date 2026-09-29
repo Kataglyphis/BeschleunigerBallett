@@ -419,7 +419,7 @@ cleanUp+recreate pair at the four scene-changed sites.
 ## CI and release gaps
 
 - [b] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
-  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux `clang-tests`
+  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux x64 `clang-tests`
   job runs `GoldenRender.*`/`Integration.*` on the image's llvmpipe under Xvfb
   (hub CON19/CON37; `docs/gpu-golden-testing.md`). Measured that day on the
   published amd64 `:latest` (`e1bc35af`), linux-debug-clang, 32-core host:
@@ -441,6 +441,12 @@ cleanUp+recreate pair at the four scene-changed sites.
   regression. Either way, drop the name from the exclusion once it passes on
   llvmpipe. The emissive pair reading identical is the most suspicious: its
   deferred twin (`EmissiveStrengthSurvivesTheDeferredGBuffer`) passes.
+
+  arm64 runs none of them: the arm64 image's Vulkan loader
+  (`/opt/vulkan/1.4.357.0/aarch64`) exposes no X11/Wayland surface extension,
+  so every GPU test aborts in surface creation ("Vulkan: Window surface creation
+  extensions not found", run 36615897603). That is a hub image gap; once the
+  loader carries WSI, drop the arm64 arm of the exclusion expression.
 
 - **Latent: a `VulkanEngineCore` global constructor faults in a headless
   process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some

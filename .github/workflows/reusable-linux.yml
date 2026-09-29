@@ -151,13 +151,13 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
 
-      # The one lane that runs the GPU suites (Integration, GoldenRender): the
-      # image's llvmpipe is a CPU Vulkan device with ray tracing, and
-      # --virtual-display gives GLFW an X server. They cost ~20 min of llvmpipe
-      # on 32 cores, so the sanitizer and gcc lanes keep excluding them. Five
-      # GoldenRender tests miss their thresholds on llvmpipe (measured
-      # 2026-09-29, numbers in BACKLOG.md "GPU suites on llvmpipe"), so they
-      # stay host-GPU only.
+      # The one lane that runs the GPU suites (Integration, GoldenRender), on
+      # x64 only: the image's llvmpipe is a CPU Vulkan device with ray tracing,
+      # and --virtual-display gives GLFW an X server. They cost ~20 min of
+      # llvmpipe on 32 cores, so the sanitizer and gcc lanes keep excluding them.
+      # Five GoldenRender tests miss their thresholds on llvmpipe, and arm64's
+      # Vulkan loader has no X11/Wayland surface extension, so it cannot create
+      # a window surface at all (BACKLOG.md "GPU suites on llvmpipe").
       - name: Run Unit/Integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -165,7 +165,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh --virtual-display
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing)$"
+            --ctest-exclude "${{ runner.arch == 'X64' && '^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing)$' || '^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder' }}"
           log-file: output.log
 
   # ---------------------------------------------------------------------------
