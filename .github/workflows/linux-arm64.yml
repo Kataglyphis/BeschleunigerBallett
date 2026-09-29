@@ -31,6 +31,8 @@ jobs:
     # runner-owning job lives in reusable-linux.yml.
     permissions:
       contents: read
+      # The reusable build's compiler-cache writers delete their key's older entries.
+      actions: write
     with:
       runner: ubuntu-26.04-arm
     secrets:

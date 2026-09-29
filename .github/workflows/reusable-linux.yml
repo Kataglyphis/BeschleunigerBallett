@@ -18,6 +18,10 @@ on:
       GHCR_PAT:
         required: true
 
+# Least privilege: a job that needs more says so itself (the compiler-cache writers).
+permissions:
+  contents: read
+
 # Every build step here pipes through `tee`, and the runner's default shell
 # has no pipefail - so for months, failed configures and builds reported
 # SUCCESS and only steps without tee (the fuzzer run) ever surfaced failure.
@@ -110,6 +114,10 @@ jobs:
   clang-tests:
     name: clang debug + tests
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      # compiler-cache-save deletes this key's older cache entries.
+      actions: write
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -168,6 +176,10 @@ jobs:
   asan:
     name: AddressSanitizer + fuzz seeds
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      # compiler-cache-save deletes this key's older cache entries.
+      actions: write
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -286,6 +298,10 @@ jobs:
   tsan:
     name: ThreadSanitizer
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      # compiler-cache-save deletes this key's older cache entries.
+      actions: write
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -460,6 +476,10 @@ jobs:
   profiling:
     name: clang profiling + benchmarks
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      # compiler-cache-save deletes this key's older cache entries.
+      actions: write
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -685,6 +705,8 @@ jobs:
   release:
     name: release + package
     runs-on: ${{ inputs.runner }}
+    # No compiler cache: of the six presets it saved the least per GB (21.3 -> 15.0 min for
+    # 1.2 GB, 2026-09-29), and the repository's 10 GB cache quota holds five of them.
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -692,19 +714,9 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
-      - name: Restore compiler cache
-        id: cc
-        if: runner.arch == 'X64'
-        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
-        with:
-          key: ${{ runner.arch }}-clang-release
-          mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1200M'
-
       - name: Configure/build CMake for Release
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
@@ -715,19 +727,12 @@ jobs:
       - name: Package
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
             --skip-configure true
             --build-target package
           log-file: output.log
-
-      - name: Save compiler cache
-        if: always() && steps.cc.outputs.path != ''
-        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
-        with:
-          key: ${{ runner.arch }}-clang-release
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v7.0.1
