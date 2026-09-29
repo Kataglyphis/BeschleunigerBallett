@@ -307,8 +307,8 @@ unconditional control capture before its output is believed.
 
 ## Code quality (see `docs/code-quality.md` for the commands)
 
-- **Decide on the formatting sweep.** **142 of 216** own sources under
-  `Src/` and `Test/` do not match `.clang-format` (measured 2026-08-05; see
+- **Decide on the formatting sweep.** **134 of 217** own sources under
+  `Src/` and `Test/` do not match `.clang-format` (measured 2026-09-29; see
   `docs/code-quality.md` "Known state" for the commands and the
   `format-drift-denominator` marker it pins). Every container build already
   runs a non-destructive `clang-format --dry-run -Werror` pass and logs this
@@ -418,6 +418,30 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## CI and release gaps
 
+- [b] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
+  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux `clang-tests`
+  job runs `GoldenRender.*`/`Integration.*` on the image's llvmpipe under Xvfb
+  (hub CON19/CON37; `docs/gpu-golden-testing.md`). Measured that day on the
+  published amd64 `:latest` (`e1bc35af`), linux-debug-clang, 32-core host:
+  34 of 39 pass their assertions (1188 s of test time, the GUI input sweep alone
+  266 s; `DumpsFrameToPng` is disabled). The five below fail and are excluded by
+  name in `reusable-linux.yml`:
+
+  | Test | Assertion | llvmpipe |
+  | --- | --- | --- |
+  | `ShadowsMoveWhenTheLightRotates` | moved fraction > 0.5 | 0.339 (64142 of a 189154-px union) |
+  | `EmissiveMaterialBrightensTheFrame` | emissive > metallic + 10 | 181.24 vs 181.13 |
+  | `MaskCardDiscardsCutoutTexelsInRaytracing` | changed fraction < 0.35 | 0.501 |
+  | `PathTracedMaskCardShowsItsCutout` | changed fraction > 0.15 | 0.090 |
+  | `AddedModelAppearsInPathTracing` | crop detail > 0.07 | 0.058 |
+
+  Unblock: run the five on the RX 9070 XT host. Where they pass there, the
+  difference is llvmpipe (rasterization rules, RT traversal, clamping) and the
+  test wants a device-independent assertion; where they fail there too, it is a
+  regression. Either way, drop the name from the exclusion once it passes on
+  llvmpipe. The emissive pair reading identical is the most suspicious: its
+  deferred twin (`EmissiveStrengthSurvivesTheDeferredGBuffer`) passes.
+
 - **Latent: a `VulkanEngineCore` global constructor faults in a headless
   process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some
   engine global ctor null-derefs when it runs without the app's `main()` having
@@ -490,7 +514,8 @@ cleanUp+recreate pair at the four scene-changed sites.
   CascadedShadowMapUnit, GuiSceneVarsRoundTrip and HelloTestCommit, in ~14 ms):
   every suite but the two GPU ones, plus the seven fuzz targets' seed corpora.
   **The GPU suites (Integration, GoldenRender)
-  still do not run anywhere except locally** - they are excluded by name
+  do not run in the Windows container** (Linux CI runs them on llvmpipe since
+  2026-09-29, see "GPU suites on llvmpipe" above) - they are excluded by name
   rather than left to self-skip, because the container ships the Vulkan
   loader and `SKIP_WITHOUT_GPU` only asks `glfwVulkanSupported()`, which can
   answer yes with no device present and then abort during device creation.

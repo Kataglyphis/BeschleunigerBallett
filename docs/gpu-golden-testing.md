@@ -14,6 +14,38 @@ they report **skipped**, not passed. A green container build therefore proves
 the code *compiles and links* and that the CPU suites pass — it does **not**
 prove a render/device refactor is behaviour-preserving.
 
+## Linux CI runs them on llvmpipe
+
+Since 2026-09-29 the family Linux image ships lavapipe/llvmpipe, a CPU Vulkan
+device with ray tracing, and `Xvfb`. The Linux `clang-tests` job
+(`reusable-linux.yml`, both architectures) therefore runs the GPU suites for
+real: `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
+`glfwInit()` finds an X server and nothing skips. Locally, the same:
+
+```bash
+bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-type Debug
+```
+
+What that does not cover:
+
+- **Five GoldenRender tests miss their thresholds on llvmpipe** and stay
+  excluded there: `ShadowsMoveWhenTheLightRotates`,
+  `EmissiveMaterialBrightensTheFrame`, `MaskCardDiscardsCutoutTexelsInRaytracing`,
+  `PathTracedMaskCardShowsItsCutout` and `AddedModelAppearsInPathTracing`. The
+  measured numbers are in `BACKLOG.md` ("GPU suites on llvmpipe"); whether they
+  are llvmpipe artefacts or real regressions needs a host-GPU run.
+- **Only that one job runs them.** They cost ~20 minutes of llvmpipe on a
+  32-core host; the ASan, TSan and gcc jobs keep excluding them.
+- **The Windows container still has no Vulkan device**, so there they skip or
+  are excluded (`$gpuOnlySuites`), as above.
+- A software rasterizer is not the RX 9070 XT. A pass on llvmpipe is a strong
+  behavioural signal, not a substitute for the host loop below after a
+  render/device change.
+
+`commitTestSuite` carries its own LeakSanitizer suppression for libX11
+(`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `glfwInit()` on X11 leaks
+libX11's locale state, which failed every GPU test in an ASan build.
+
 ## Running them on the host GPU
 
 The container build delivers the built test executable back into the working

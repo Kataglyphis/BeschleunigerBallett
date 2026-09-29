@@ -59,16 +59,19 @@ accumulates even when every build is green — and format drift accumulates too,
 for the reason upstream calls "the failure mode to watch for": the clang-format
 check that does run reports its deviating count but never fails the build on it.
 
-## Known state (2026-08-05)
+## Known state (2026-09-29)
 
-<!-- format-drift-denominator: 216 -->
+<!-- format-drift-denominator: 217 -->
 
-**142 of 216** own sources under `Src/` and `Test/` differ from
-`.clang-format` (up from 72 of 125 on 2026-07-19, and 140 of 215 on
-2026-08-04 — the two new deviating files arrived between those dates;
-`TextureDecode.ixx`, the 216th source, was formatted before it landed).
-Re-measured 2026-08-05 with `Get-ProjectCppFiles` + `clang-format --dry-run
--Werror`, the same pair `Invoke-ClangFormatCheck` uses.
+**134 of 217** own sources under `Src/` and `Test/` differ from
+`.clang-format`. Measured 2026-09-29 in the Linux image with its
+`clang-format` 21.1.8 and `--dry-run -Werror` over the eight extensions
+`Get-ProjectCppFiles` walks; the 217th source,
+`Test/commit/VulkanEngine/lsanSuppressions.cpp`, was formatted before it
+landed. Earlier figures came from the Windows container's pair
+(`Get-ProjectCppFiles` + `Invoke-ClangFormatCheck`): 72 of 125 on 2026-07-19,
+140 of 215 on 2026-08-04 and 142 of 216 on 2026-08-05, so part of the drop to
+134 may be the other `clang-format` build rather than fixed files.
 `Invoke-ClangFormatCheck` (see the caveat above) reports this count on every
 container build and **never fails the build** on it — that is why it grew
 from 72 to 142 while every build stayed green.

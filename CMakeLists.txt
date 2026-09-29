@@ -29,117 +29,14 @@ set(MYPROJECT_CMAKE_DEBUG_LOG
     OFF
     CACHE BOOL "Enable additional verbose CMake configure logging")
 
-set(MYPROJECT_GCC_TOOLCHAIN_PATH
-    ""
-    CACHE PATH "Optional GCC toolchain root used by Clang and Rust tooling on Linux (for example /opt/gcc-16.2.0)")
-
-# Discover the GCC toolchain root instead of hardcoding it.
-#
-# The CI presets used to carry "--gcc-toolchain=/opt/gcc-16.1.0" literally, in
-# 24 places across six presets. When the build image bumped GCC 16.1.0 -> 16.2.0
-# the prefix became /opt/gcc-16.2.0, the flag pointed at a directory that no
-# longer existed, and EVERY Linux job died in the compiler-detection try-compile
-# with a message that names neither the flag nor the version:
-#
-#   /usr/bin/x86_64-linux-gnu-ld.bfd: cannot find crtbeginS.o: No such file or directory
-#
-# (clang could not locate a GCC install under the given prefix, so it emitted
-# the crt objects unqualified and left the linker to fail on them.)
-#
-# Resolution order: explicit -D wins, then MYPROJECT_GCC_TOOLCHAIN_PATH from the
-# environment, then GCC_PREFIX (which the build image EXPORTS itself, currently
-# /opt/gcc-16.2.0, derived from GCC_VERSION - so it is authoritative inside the
-# container), and finally the newest /opt/gcc-* that actually CONTAINS
-# crtbeginS.o. That last clause is the point: a prefix which cannot supply the
-# startup objects is not a usable toolchain, so it is not selected merely for
-# existing. scripts/linux/gcc-toolchain-root.sh implements the same order for
-# the non-CMake steps.
-if(UNIX AND NOT APPLE AND NOT MYPROJECT_GCC_TOOLCHAIN_PATH)
-  if(DEFINED ENV{MYPROJECT_GCC_TOOLCHAIN_PATH})
-    set(MYPROJECT_GCC_TOOLCHAIN_PATH "$ENV{MYPROJECT_GCC_TOOLCHAIN_PATH}")
-    message(STATUS "GCC toolchain from environment: ${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-  elseif(DEFINED ENV{GCC_PREFIX} AND IS_DIRECTORY "$ENV{GCC_PREFIX}")
-    set(MYPROJECT_GCC_TOOLCHAIN_PATH "$ENV{GCC_PREFIX}")
-    message(STATUS "GCC toolchain from image GCC_PREFIX: ${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-  else()
-    file(GLOB _gcc_candidates LIST_DIRECTORIES true "/opt/gcc-*")
-    list(SORT _gcc_candidates COMPARE NATURAL ORDER DESCENDING)
-    foreach(_gcc_candidate IN LISTS _gcc_candidates)
-      file(GLOB _gcc_crtbegin "${_gcc_candidate}/lib/gcc/*/*/crtbeginS.o")
-      if(_gcc_crtbegin)
-        set(MYPROJECT_GCC_TOOLCHAIN_PATH "${_gcc_candidate}")
-        message(STATUS "Auto-detected GCC toolchain: ${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-        break()
-      endif()
-    endforeach()
-    unset(_gcc_candidates)
-    unset(_gcc_candidate)
-    unset(_gcc_crtbegin)
-  endif()
-endif()
-
-# A configured-but-missing prefix must not reach the compiler: clang does not
-# error on an unusable --gcc-toolchain, it just fails to find the crt objects
-# much later. Fail here, where the message can name the cause.
-if(UNIX
-   AND NOT APPLE
-   AND MYPROJECT_GCC_TOOLCHAIN_PATH
-   AND NOT IS_DIRECTORY "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-  message(
-    FATAL_ERROR
-      "MYPROJECT_GCC_TOOLCHAIN_PATH is set to '${MYPROJECT_GCC_TOOLCHAIN_PATH}', "
-      "which does not exist. Passing it to Clang as --gcc-toolchain would fail "
-      "later and far less clearly (\"cannot find crtbeginS.o\"). Point it at an "
-      "installed GCC prefix, or leave it empty to auto-detect one under /opt.")
-endif()
-
-# --gcc-toolchain is a CLANG option. GCC itself rejects it outright:
-#   g++: error: unrecognized command-line option '--gcc-toolchain=/opt/gcc-16.2.0'
-# This never came up while the flags lived in CMakePresets.json, because only
-# the linux-*-clang presets carried them. Applying them from here reaches every
-# Linux configure, so the gcc lanes have to be excluded explicitly.
-#
-# The compiler ID is not known yet (enable_language is below, and the flags must
-# be in place before it so the compiler test exercises the real ones), so decide
-# from the configured compiler path - which the presets always set - and fall
-# back to $ENV{CXX}/$ENV{CC} for a bare `cmake -S . -B build`.
-set(_gcc_toolchain_for_clang FALSE)
-foreach(_cc_probe
-        "${CMAKE_CXX_COMPILER}" "${CMAKE_C_COMPILER}"
-        "$ENV{CXX}" "$ENV{CC}")
-  if(_cc_probe MATCHES "clang")
-    set(_gcc_toolchain_for_clang TRUE)
-    break()
-  endif()
-endforeach()
-
-if(UNIX
-   AND NOT APPLE
-   AND MYPROJECT_GCC_TOOLCHAIN_PATH
-   AND _gcc_toolchain_for_clang)
-  set(_GCC_TOOLCHAIN_ROOT "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-  set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
-  if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
-    set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib")
-  endif()
-
-  if(EXISTS "${_GCC_TOOLCHAIN_LIB}")
-    message(STATUS "Using GCC toolchain at ${_GCC_TOOLCHAIN_ROOT} for Clang")
-    string(APPEND CMAKE_C_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-    string(APPEND CMAKE_CXX_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS
-           " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS
-           " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-  else()
-    message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
-  endif()
-elseif(UNIX AND NOT APPLE AND MYPROJECT_GCC_TOOLCHAIN_PATH)
-  message(STATUS
-    "GCC toolchain ${MYPROJECT_GCC_TOOLCHAIN_PATH} detected but NOT applied: "
-    "--gcc-toolchain is a Clang option and this configure uses "
-    "'${CMAKE_CXX_COMPILER}'. GCC finds its own toolchain.")
-endif()
+# No --gcc-toolchain is injected here any more. A bare clang/clang++ in the
+# family image selects the image's GCC (${GCC_PREFIX}, /opt/gcc-16.2.0 today)
+# on its own, through the <native-triple>-clang{,++}.cfg files beside the
+# compiler (ANTfrastructure CON16, in :latest since 2026-09-29), and the image's
+# LD_LIBRARY_PATH carries that GCC's runtime. The block that used to discover the
+# prefix and append --gcc-toolchain/-L/-rpath to every clang configure existed
+# only because clang picked the distro GCC; it was retired under the hub's
+# CON37. A --target cross build loads no .cfg and never got the flag either.
 
 enable_language(CXX C)
 

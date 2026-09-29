@@ -335,6 +335,14 @@ The Slang precompile is `cmake-configure-build.sh`'s pre-build hook and a
 failure there is **fatal** (use `--allow-prebuild-failure` only deliberately —
 a silent `|| warn` once left CI green with no SPIR-V at all).
 
+**Nothing injects `--gcc-toolchain` any more** (retired 2026-09-29, hub CON37).
+In the family image a bare `clang`/`clang++` selects the image's GCC through the
+`<triple>-clang{,++}.cfg` beside the compiler, and the image's `LD_LIBRARY_PATH`
+carries that GCC's runtime. The one exception is clang-tidy: LibTooling looks
+for the `.cfg` beside the compile DB's `/usr/bin/clang++` symlink, finds none
+and picks the distro GCC, so `run-static-analysis-format.sh` hands it
+`--extra-arg=--gcc-toolchain=${GCC_PREFIX}` inside the image.
+
 ### Running the Linux build locally (Rancher Desktop)
 
 Two things that will bite you locally, both documented with the full recipe in
@@ -583,9 +591,12 @@ render (~32 FPS ImGui overlay).
   upstream has its own CI for them (its `windows-x64.yml`, "Windows x64 · script
   tests", `windows-scripts.yml` until 2026-09-24), so a break there is caught
   without waiting on this repo's 2-3 h Windows lane.
-- **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in containers and run
-  only on the host — procedure, cwd requirement and the golden-writing
-  cautions are in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
+- **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows
+  container and run for real on the host GPU. Linux CI's `clang-tests` job runs
+  them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
+  minus five tests that miss their thresholds there. Procedure, cwd requirement,
+  the llvmpipe exclusions and the golden-writing cautions are in
+  [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
   Known trap: over an RDP session the swapchain reports zero images and every
   golden fails with "No synchronization frames available" — that is the
   session, not a renderer regression (see `BACKLOG.md`).
@@ -710,8 +721,10 @@ Reading pipeline status from a shell (`gh`):
 [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md).
 
 `linux-x64.yml` and `linux-arm64.yml` both call `reusable-linux.yml`, so a fix
-to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
-and synchronization suites are host-only by construction.
+to the x86 lane applies to ARM automatically. No CI lane has a hardware GPU: the
+Linux `clang-tests` job runs the golden suites on llvmpipe (a CPU Vulkan device,
+[`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), and synchronization
+validation stays host-only.
 
 ### The job bodies are ANTfrastructure's, resolved at `@develop`
 
@@ -913,7 +926,7 @@ ANTfrastructure (see the rule above), project-specific ones here.
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions (no known deviations) |
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
 | `docs/container-build-caching.md` | This repo's container transport numbers, sccache volume, incremental-build wiring |
-| `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, host verification loop, synchronization validation |
+| `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, the Linux CI run on llvmpipe, host verification loop, synchronization validation |
 | `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
 | `docs/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
 | `docs/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) |

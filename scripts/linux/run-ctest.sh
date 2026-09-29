@@ -20,9 +20,17 @@ CTEST_RUN_DEFAULT_BUILD_DIR="build"
 CTEST_RUN_DEFAULT_BUILD_TYPE="Debug"
 CTEST_RUN_USAGE_INTRO="Runs the BeschleunigerBallett test suite inside the Linux container image."
 
-# No default --ctest-exclude: which suites are GPU/device-dependent differs per
-# lane (reusable-linux.yml excludes Integration/GoldenRender and the shader-freshness
-# check on the headless runners), so the exclusion stays an explicit CI
-# argument rather than a silent default here.
+# No default --ctest-exclude: which suites run differs per lane (see
+# reusable-linux.yml), so the exclusion stays an explicit CI argument.
+
+# --virtual-display (first argument only): run under Xvfb, so the GPU suites'
+# glfwInit() finds an X server and render on the image's llvmpipe instead of
+# skipping. xvfb-run must not be PID 1 - there it never sees Xvfb's ready
+# signal and hangs (measured in :latest 2026-09-29) - hence a child, not exec.
+if [[ "${1:-}" == "--virtual-display" ]]; then
+  shift
+  xvfb-run -a -s "-screen 0 1920x1080x24" bash "${BASH_SOURCE[0]}" "$@"
+  exit 0
+fi
 
 ctest_run_main "$@"

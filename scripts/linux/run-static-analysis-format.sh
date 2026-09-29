@@ -48,12 +48,6 @@ CODE_QUALITY_CMAKE_SEARCH_ROOT="."
 CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './third_party/*')
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
-# The container image builds against /opt/gcc-<version>; when that exact
-# toolchain is missing on the host, its flags are stripped from the remapped
-# compile DB so a local clang-tidy run still works.
-CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-$(antfrastructure_version GCC_VERSION)"
-CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
-
 # cmake-format is installed into the repo-local .venv when it is not on PATH.
 # The two bootstrap knobs that stood here are the HUB'S DEFAULT since
 # 2026-09-15 (code-quality.sh _code_quality_apply_default_bootstrap): it makes
@@ -104,6 +98,15 @@ run_format_and_tidy() {
 
   warn "Disabling for internal bug of clang-tidy..."
   CODE_QUALITY_CLANG_TIDY_ARGS=(-checks=-modernize-use-scoped-lock)
+  # clang-tidy is the one tool the image's <triple>-clang++.cfg does not reach:
+  # LibTooling looks for the .cfg beside the compile DB's compiler path
+  # (/usr/bin/clang++, a symlink), not beside the real binary, so it selects the
+  # distro GCC's headers while the build used ${GCC_PREFIX}'s. Measured in
+  # :latest 2026-09-29 ("Selected GCC installation: /usr/bin/../lib/gcc/...").
+  # Only inside the image, where the build that wrote the DB used that prefix.
+  if [[ -n "${GCC_PREFIX:-}" && -d "${GCC_PREFIX}" ]]; then
+    CODE_QUALITY_CLANG_TIDY_ARGS+=("--extra-arg=--gcc-toolchain=${GCC_PREFIX}")
+  fi
   CODE_QUALITY_CLANG_TIDY_FIX="${CLANG_TIDY_FIX}"
 
   if [[ ${#clang_tidy_files[@]} -gt 0 ]]; then
@@ -127,48 +130,8 @@ run_scan_build() {
   "${scan_cmd[@]}"
 }
 
-# Resolves the GCC prefix clang++ must be pointed at, and applies it.
-#
-# This lived in reusable-linux.yml as a `bash -lc` prologue in front of the
-# --only-clang-analyze-html step, which meant CI analysed against the image's
-# libstdc++ and a human running the same flag locally analysed against whatever
-# the system GCC happened to be - with nothing saying the two differed. It
-# belongs here, where both callers get it.
-#
-# clang++ --analyze runs DIRECTLY: no CMake, no preset, so it cannot inherit the
-# --gcc-toolchain flags CMakeLists.txt computes for every preset-driven step.
-#
-# The flag goes on the COMMAND LINE, via ANALYZE_EXTRA_ARGS. The workflow only
-# ever exported CXXFLAGS, and clang++ does not read CXXFLAGS - that is a
-# make/CMake convention, not a compiler one - so the toolchain never actually
-# reached the analyzer. The exports are kept as well, unchanged, because that is
-# the environment the CI step has always run with and the cmake-driven modes of
-# this same script do honour them.
-#
-# The prefix is DISCOVERED, never hardcoded: it used to be the literal
-# /opt/gcc-16.1.0, the image bumped to 16.2.0, and every Linux job died on
-# "cannot find crtbeginS.o" - a message naming neither the flag nor the version.
-# gcc-toolchain-root.sh shares the resolution with CMakeLists.txt.
-#
-# A failure to resolve is FATAL, exactly as it was in the workflow's `set -e`
-# prologue: analysing against the system GCC's headers by accident is the silent
-# wrong answer this whole path exists to prevent. Run this in the family image
-# (third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md), which is
-# where CI
-# runs it and where GCC_PREFIX is exported for it.
-apply_gcc_toolchain_for_analysis() {
-  local gcc_root
-  gcc_root="$(bash "${SCRIPT_DIR}/gcc-toolchain-root.sh")"
-  info "Using GCC toolchain: ${gcc_root}"
-  export CXXFLAGS="--gcc-toolchain=${gcc_root}"
-  export LDFLAGS="-L${gcc_root}/lib64 -Wl,-rpath,${gcc_root}/lib64 --gcc-toolchain=${gcc_root}"
-  ANALYZE_EXTRA_ARGS+=("--gcc-toolchain=${gcc_root}")
-}
-
 run_clang_analyze_html() {
   require_tools clang++
-
-  apply_gcc_toolchain_for_analysis
 
   if [[ ! -d "${ANALYZE_SOURCE_ROOT}" ]]; then
     warn "Skipping clang++ --analyze: ${ANALYZE_SOURCE_ROOT} directory not found."

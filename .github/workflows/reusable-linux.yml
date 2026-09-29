@@ -143,14 +143,21 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
 
+      # The one lane that runs the GPU suites (Integration, GoldenRender): the
+      # image's llvmpipe is a CPU Vulkan device with ray tracing, and
+      # --virtual-display gives GLFW an X server. They cost ~20 min of llvmpipe
+      # on 32 cores, so the sanitizer and gcc lanes keep excluding them. Five
+      # GoldenRender tests miss their thresholds on llvmpipe (measured
+      # 2026-09-29, numbers in BACKLOG.md "GPU suites on llvmpipe"), so they
+      # stay host-GPU only.
       - name: Run Unit/Integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
-            bash ./scripts/linux/run-ctest.sh
+            bash ./scripts/linux/run-ctest.sh --virtual-display
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
+            --ctest-exclude "^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing)$"
           log-file: output.log
 
   # ---------------------------------------------------------------------------
@@ -296,8 +303,8 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
       # ThreadSanitizer: the presets existed but nothing ever ran them, so
-      # data races could only be found by hand. Non-GPU tests only - the
-      # Integration suites need an adapter the CI container does not have.
+      # data races could only be found by hand. Non-GPU tests only - the GPU
+      # suites run once, in clang-tests (see there).
       - name: Configure/build with ThreadSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -424,18 +431,9 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # `clang++ --analyze` runs DIRECTLY here - no CMake, no preset - so it
-      # cannot inherit the --gcc-toolchain flags CMakeLists.txt computes for
-      # every preset-driven step, and without them clang++ resolves libstdc++
-      # headers from the system GCC instead of the image's.
-      #
-      # Those four lines (resolve the prefix, export CXXFLAGS/LDFLAGS) used to
-      # be a `bash -lc` prologue spelled out in THIS step, which meant a human
-      # running --only-clang-analyze-html locally analysed against a different
-      # toolchain than CI did and had no way to know. They now live inside
-      # run-static-analysis-format.sh's run_clang_analyze_html, where the local
-      # invocation gets them too - so this step is a plain one-line script call
-      # like every other step in this lane.
+      # `clang++ --analyze` runs DIRECTLY here - no CMake, no preset. It needs
+      # no --gcc-toolchain: the image's <triple>-clang++.cfg selects its GCC for
+      # a bare clang++ (ANTfrastructure CON16; the injection went under CON37).
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop

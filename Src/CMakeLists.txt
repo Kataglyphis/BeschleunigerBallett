@@ -1,20 +1,3 @@
-function(_myproject_resolve_rust_gcc_toolchain_root out_var)
-  if(NOT DEFINED GCC_TOOLCHAIN_PATH)
-    set(GCC_TOOLCHAIN_PATH
-        ""
-        CACHE PATH "Optional GCC toolchain root")
-  endif()
-
-  set(_gcc_toolchain_root "")
-  if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
-    set(_gcc_toolchain_root "${GCC_TOOLCHAIN_PATH}")
-  elseif(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND EXISTS "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-    set(_gcc_toolchain_root "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-  endif()
-
-  set(${out_var} "${_gcc_toolchain_root}" PARENT_SCOPE)
-endfunction()
-
 function(_myproject_configure_windows_rust_crate rust_target)
   target_link_libraries(
     ${rust_target}
@@ -42,8 +25,6 @@ function(_myproject_configure_windows_rust_crate rust_target)
 endfunction()
 
 function(_myproject_configure_native_rust_crate rust_target)
-  _myproject_resolve_rust_gcc_toolchain_root(_gcc_toolchain_root)
-
   set(RUST_CC "${CMAKE_C_COMPILER}")
   set(RUST_CXX "${CMAKE_CXX_COMPILER}")
   if(NOT RUST_CC)
@@ -53,10 +34,9 @@ function(_myproject_configure_native_rust_crate rust_target)
     set(RUST_CXX "c++")
   endif()
 
+  # No --gcc-toolchain: cc-rs runs this clang++ natively (its --target is the
+  # host triple), so the image's <triple>-clang++.cfg selects its GCC.
   set(RUST_CXXFLAGS "-fexceptions")
-  if(_gcc_toolchain_root AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(RUST_CXXFLAGS "--gcc-toolchain=${_gcc_toolchain_root} -fexceptions")
-  endif()
   if(DEFINED ENV{CXXFLAGS})
     set(RUST_CXXFLAGS "$ENV{CXXFLAGS} ${RUST_CXXFLAGS}")
   endif()
