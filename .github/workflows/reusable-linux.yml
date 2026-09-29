@@ -482,6 +482,8 @@ jobs:
 
       - name: 📂 Sync files to domain
         uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@develop
+        # A manual dispatch (any branch) never deploys.
+        if: github.event_name != 'workflow_dispatch'
         # A flaky FTP upload of the docs must not red the whole build+test lane:
         # the code already compiled and passed both the clang/ASan and gcc test
         # runs before this deploy step. Mirrors the RPT fix (continue-on-error on
