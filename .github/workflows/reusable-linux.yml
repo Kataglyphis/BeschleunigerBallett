@@ -80,12 +80,13 @@ env:
 # own job gives each its own workspace and the contention disappears; the lane
 # now costs about as long as its slowest single build.
 #
-# Compiler caching was measured FIRST and rejected, so nobody re-proposes it:
-# this is a C++20 modules codebase, ccache cannot cache module compilations at
-# all (79% of calls uncacheable, 0 hits) and sccache - which does accept them -
-# hit 57% on a byte-identical tree yet saved 22 seconds of 5m30s, because the
-# hits land on cheap TUs while the expensive work (module BMI generation,
-# clang-scan-deps) is uncacheable either way.
+# Compiler caching, measured again 2026-09-29 (it was rejected on 2026-08-06
+# after sccache hit 57% on a byte-identical tree): on today's image, sccache
+# 0.18.0 caches the clang build completely, module interface units and their
+# BMIs included - 738/738 hits on a clean tree, 340 s -> 60 s locally - and an
+# interface edit misses exactly its importers. The clang jobs therefore keep an
+# sccache per preset across runs (ANTfrastructure's compiler-cache actions).
+# The gcc jobs do not: neither ccache nor sccache caches -fmodules-ts TUs.
 #
 # The jobs are deliberately INDEPENDENT - no `needs:` - because each has to
 # build what it tests anyway (build-coverage-llvm.sh runs compileTestSuite,
@@ -116,14 +117,31 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      # The one writer of the debug cache; coverage and static-analysis build the
+      # same preset and only restore it.
+      - name: Restore compiler cache
+        id: cc
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-debug
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
+
       - name: Prepare for unit/integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
+
+      - name: Save compiler cache
+        if: always() && steps.cc.outputs.path != ''
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
+        with:
+          key: ${{ runner.arch }}-clang-debug
 
       - name: Run Unit/Integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -150,16 +168,34 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      # x64 only: the 10 GB cache quota holds one generation of the x64 presets
+      # plus arm64's debug cache, not every preset on both arches.
+      - name: Restore compiler cache
+        id: cc
+        if: runner.arch == 'X64'
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-asan
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
+
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-asan-clang"
             --build-dir "build-asan-clang"
           log-file: output-asan.log
+
+      - name: Save compiler cache
+        if: always() && steps.cc.outputs.path != ''
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
+        with:
+          key: ${{ runner.arch }}-clang-asan
 
       # Every target declared in Test/fuzz/CMakeLists.txt runs here.
       # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi gates this list against
@@ -250,17 +286,33 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      - name: Restore compiler cache
+        id: cc
+        if: runner.arch == 'X64'
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-tsan
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
+
       # ThreadSanitizer: the presets existed but nothing ever ran them, so
       # data races could only be found by hand. Non-GPU tests only - the
       # Integration suites need an adapter the CI container does not have.
       - name: Configure/build with ThreadSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-tsan-clang"
             --build-dir "build-tsan"
           log-file: output-tsan.log
+
+      - name: Save compiler cache
+        if: always() && steps.cc.outputs.path != ''
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
+        with:
+          key: ${{ runner.arch }}-clang-tsan
 
       # TSan maps its shadow memory at fixed ranges that the runner kernel's ASLR
       # entropy (vm.mmap_rnd_bits=32) collides with, and inside the container it
@@ -297,9 +349,19 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      # Reads clang-tests' debug cache: same preset, same objects.
+      - name: Restore compiler cache
+        id: cc
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-debug
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
+
       - name: Build for coverage
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
@@ -309,6 +371,7 @@ jobs:
       - name: Build Code Coverage
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/build-coverage-llvm.sh
             --build-dir "${{ env.BUILD_DIR }}"
@@ -338,6 +401,15 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      # Reads clang-tests' debug cache: same preset, same objects.
+      - name: Restore compiler cache
+        id: cc
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-debug
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1500M'
+
       # run-static-analysis-format.sh refuses to start without
       # ${BUILD_DIR}/compile_commands.json ("Run CMake configure first"), which
       # in the old single job happened to exist only because an earlier step had
@@ -345,6 +417,7 @@ jobs:
       - name: Configure/build for analysis
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
@@ -396,15 +469,31 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      - name: Restore compiler cache
+        id: cc
+        if: runner.arch == 'X64'
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-profile
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1000M'
+
       - name: Configure/build CMake for Profiling (select preset by compiler)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.CLANG_PROFILE_PRESET }}"
             --clean-build-dir true
           log-file: output.log
+
+      - name: Save compiler cache
+        if: always() && steps.cc.outputs.path != ''
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
+        with:
+          key: ${{ runner.arch }}-clang-profile
 
       - name: Run performance benchmarks
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -605,9 +694,19 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      - name: Restore compiler cache
+        id: cc
+        if: runner.arch == 'X64'
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-release
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=500M'
+
       - name: Configure/build CMake for Release
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
@@ -618,12 +717,19 @@ jobs:
       - name: Package
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
             --skip-configure true
             --build-target package
           log-file: output.log
+
+      - name: Save compiler cache
+        if: always() && steps.cc.outputs.path != ''
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
+        with:
+          key: ${{ runner.arch }}-clang-release
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v7.0.1
