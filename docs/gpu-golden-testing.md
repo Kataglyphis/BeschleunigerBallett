@@ -17,8 +17,9 @@ prove a render/device refactor is behaviour-preserving.
 ## Linux CI runs them on llvmpipe
 
 Since 2026-09-29 the family Linux image ships lavapipe/llvmpipe, a CPU Vulkan
-device with ray tracing, and `Xvfb`. The Linux x64 `clang-tests` job
-(`reusable-linux.yml`) therefore runs the GPU suites for real: `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
+device with ray tracing, and `Xvfb`. The Linux `clang-tests` job
+(`reusable-linux.yml`, x64 and arm64) therefore runs the GPU suites for real:
+`run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
 `glfwInit()` finds an X server and nothing skips. Locally, the same:
 
 ```bash
@@ -36,11 +37,11 @@ What that does not cover:
 - **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a runner.** It
   passes on llvmpipe (266 s on 32 cores) but hit ctest's 1500 s timeout on a
   4-vCPU GitHub runner (run 36627716804), so CI excludes it as well.
-- **Not on arm64.** The arm64 image's Vulkan loader
-  (`/opt/vulkan/<ver>/aarch64`) offers no `VK_KHR_xcb_surface`,
-  `VK_KHR_xlib_surface` or `VK_KHR_wayland_surface`, so GLFW stops with
-  "Vulkan: Window surface creation extensions not found" and every GPU test
-  aborts (run 36615897603). The arm64 job keeps excluding both suites.
+- **arm64 runs the same list since 2026-09-30.** Until then the arm64 image's
+  Vulkan loader offered no X11/Wayland surface extension, so every GPU test
+  aborted in surface creation (run 36615897603). The republished `:latest`
+  (hub CON41) carries `VK_KHR_xcb_surface`/`xlib`/`wayland` on arm64 too, and the
+  arm64 job excludes exactly what x64 does.
 - **Only that one job runs them.** They cost ~20 minutes of llvmpipe on a
   32-core host; the ASan, TSan and gcc jobs keep excluding them.
 - **The Windows container still has no Vulkan device**, so there they skip or
