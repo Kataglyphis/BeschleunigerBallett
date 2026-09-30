@@ -16,27 +16,7 @@ if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (WIN32 AND MSVC AND KATAGLYPHIS_ENA
   return()
 endif()
 
-# On Linux the fuzz targets require ASan to be enabled for the WHOLE project,
-# not just for themselves.
-#
-# This is not a preference. Abseil's raw_hash_set layout depends on whether
-# ASan is active, so instrumenting only the fuzz executable while FuzzTest's
-# abseil is built without it is an ODR violation, and the binary dies during
-# startup before reaching a single test. It cost this repository the Linux
-# lane from 2026-05-17 to 2026-07-20, presenting as a bare
-# "SEGV on unknown address 0x000000000000" in CI.
-#
-# Reproduced in the CI image, same source, same compiler, ONE variable:
-#
-#   ASan on the fuzz target only -> raw_hash_set.h:1016 assertion
-#                                   "Try enabling sanitizers." / SEGV
-#   ASan on every TU             -> 2 tests PASSED
-#
-# So: build with preset linux-debug-asan-clang (myproject_ENABLE_SANITIZER_ADDRESS
-# ON) and run the targets from that build directory. Windows already solves the
-# same problem differently, via the kataglyphis_fuzztest_windows_asan interface
-# library in third_party/CMakeLists.txt, which propagates the flags to abseil,
-# re2 and the fuzztest_* targets by hand.
+# Abseil's raw_hash_set layout follows ASan, so ASan on the fuzz targets alone is an ODR violation that SEGVs.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT myproject_ENABLE_SANITIZER_ADDRESS)
   message(
     STATUS
@@ -53,9 +33,7 @@ include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 function(kataglyphis_add_fuzz_test fuzz_target source_file)
   add_executable(${fuzz_target} ${source_file})
 
-  # Fuzz targets that import engine modules need module scanning enabled,
-  # exactly like the unit-test targets (see Test/cmake/CommonTestBuild.cmake).
-  # Without it clang reports: module 'kataglyphis.vulkan.*' not found.
+  # Without module scanning clang reports: module 'kataglyphis.vulkan.*' not found.
   set_target_properties(${fuzz_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
   if(MSVC)
@@ -68,9 +46,7 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
               -fsanitize-coverage=inline-8bit-counters
               -fsanitize-coverage=trace-cmp)
   else()
-    # NOTE: no -fsanitize=address here on purpose. It arrives project-wide from
-    # the ASan preset (enforced above), so abseil and this target agree.
-    # Setting it per target is exactly the ODR bug described at the top.
+    # No -fsanitize=address here: it must come project-wide from the preset, or abseil disagrees.
     target_compile_options(
       ${fuzz_target}
       PRIVATE -g
@@ -93,14 +69,7 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
 
   link_fuzztest(${fuzz_target})
 
-  # Deliberately NOT gtest_discover_tests'd. The CI "Run fuzzer tests" step
-  # invokes these binaries DIRECTLY (build-asan-clang/first_fuzz_test ...), so
-  # ctest never needs to know about them. Registering them for discovery makes
-  # ctest EXECUTE each fuzz binary at discovery time to enumerate its cases -
-  # and in the plain linux-debug-clang unit/integration build (no project-wide
-  # ASan) that binary hits the abseil-container ODR SEGV at startup, failing
-  # the entire unit/integration ctest run. Fuzzers are not unit tests; keep
-  # them out of ctest discovery.
+  # Not ctest-discovered: discovery runs the binary, which SEGVs in a build without project-wide ASan.
 endfunction()
 
 kataglyphis_add_fuzz_test(first_fuzz_test dummy.cpp)
@@ -109,27 +78,11 @@ kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)
 kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
 target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 
-# The glTF sibling of obj_parsing: cgltf is the untrusted-input surface the
-# GUI model picker reaches. Self-contained (cgltf is header-only, CGLTF_
-# IMPLEMENTATION in the source); links only the cgltf interface library, no
-# VulkanEngineCore - same minimal-target rule as obj_parsing above.
+# cgltf is what the GUI model picker exposes to untrusted files; like every target here it links no renderer.
 kataglyphis_add_fuzz_test(gltf_parsing_fuzz_test gltf_parsing_fuzz_test.cpp)
 target_link_libraries(gltf_parsing_fuzz_test PRIVATE cgltf)
 
-# Real engine surface: scene-config path resolution (GUI model selection).
-#
-# It links ONLY the scene_config module (plus its model_file_kind dependency),
-# not VulkanEngineCore. Both are self-contained (glm + std::filesystem, no
-# other engine import), but linking the whole engine dragged every renderer
-# global constructor - the Vulkan
-# dynamic-dispatch loader, ImGui/GLFW statics - into a bare fuzztest main with
-# no window and no Vulkan instance. One of them dereferenced null during static
-# init, so the binary died with "SEGV on unknown address 0x000000000000"
-# AFTER "Sanitizer coverage enabled" but BEFORE the first test ran - identical
-# in shape to the abseil-ODR SEGV above, but a different cause. obj_parsing
-# above stays minimal for the same reason; a path-string fuzzer has no business
-# constructing the renderer. Compiling the two scene_config TUs straight into
-# the executable keeps the unit under test and nothing else.
+# Never link VulkanEngineCore: renderer static initializers SEGV in a bare fuzztest main before any test.
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
 target_sources(
   scene_config_fuzz_test
@@ -146,28 +99,14 @@ target_sources(
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx
          ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
-# SceneConfig builds its candidate paths from RELATIVE_RESOURCE_PATH; the engine
-# feeds it the same value via kataglyphis_apply_runtime_compile_definitions.
-# GLM_FORCE_* keep the module's clip conventions identical to the engine build.
+# Same values kataglyphis_apply_runtime_compile_definitions gives the engine, so paths and clip conventions match.
 target_compile_definitions(
   scene_config_fuzz_test
   PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE
           GLM_FORCE_RADIANS
           RELATIVE_RESOURCE_PATH="/../Resources/")
 
-# Real engine surface: the file reader every shader load goes through
-# (ShaderHelper -> File::readCharSequence -> VkShaderModule, unvalidated).
-#
-# Compiles the file-reader module straight in and links NOTHING else - the
-# same minimal-target rule obj_parsing, gltf_parsing and scene_config follow
-# above, and for the same reason. It used to link VulkanEngineCore, and on
-# 2026-08-05, the first Linux run that ever reached the fuzz step after
-# c48ca5a2 added it to that lane's list, it died exactly the way
-# scene_config_fuzz_test's comment above describes: "SEGV on unknown address
-# 0x000000000000" after "Sanitizer coverage enabled" and before the first
-# test ran. Nothing in this target needs the renderer - FileReader.ixx is
-# self-contained (std::filesystem/ifstream, all functions inline, no engine
-# import), so the whole engine came along for four free functions.
+# Every shader load reads through this module; it is compiled straight in, with no renderer linked.
 kataglyphis_add_fuzz_test(shader_file_reader_fuzz_test shader_file_reader_fuzz_test.cpp)
 target_sources(
   shader_file_reader_fuzz_test
@@ -180,26 +119,7 @@ target_sources(
          FILES
          ${CMAKE_SOURCE_DIR}/Src/shared/util/FileReader.ixx)
 
-# Real engine surface: texture decoding (stb_image). Every material texture and
-# every skybox face goes through it, and its reported byte count sizes a
-# staging buffer that is then memcpy'd into.
-#
-# Like every other target here it links no renderer. It used to link
-# VulkanEngineCore plus the ImGui test sources, because the decode lived in
-# Texture.cpp and Texture.ixx imports device/buffer/image; on 2026-08-05, the
-# first run that ever executed this target, it died at startup on the Linux
-# ASan lane with "SEGV on unknown address 0x000000000000" - a symbolized stack
-# put it in fuzztest's OWN static initializer (init_fuzztest.cc:54) registering
-# an abseil command-line flag, inside the flag registry's hash map, before a
-# single test ran. Adding the engine's translation units to the link reorders
-# the static initializers those abseil flags depend on.
-#
-# So the decode moved to kataglyphis.vulkan.texture_decode, which needs neither
-# a device nor a logger; Texture::loadTextureData forwards to it and keeps its
-# spdlog line. The fuzz target compiles that module and links only stb, the
-# same shape as gltf_parsing_fuzz_test with cgltf. STB_IMAGE_IMPLEMENTATION
-# lives in the fuzz source (the engine keeps its own in VulkanRenderer.cpp; the
-# two never meet in one link).
+# The decoded byte count sizes a memcpy'd staging buffer; STB_IMAGE_IMPLEMENTATION lives in the fuzz source.
 kataglyphis_add_fuzz_test(texture_loading_fuzz_test texture_loading_fuzz_test.cpp)
 target_sources(
   texture_loading_fuzz_test

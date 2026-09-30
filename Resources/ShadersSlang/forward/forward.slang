@@ -1,23 +1,12 @@
 import brdf;
 import sky_model;
 
-// Forward PBR pass (Rust/WebGPU side). forward.wgsl is generated from
-// this file and checked into the Rust crate by wgslMap. Emits WGSL.
-// Uses the shared BRDF math (import brdf), eliminating the duplicated BRDF
-// functions that were in forward.wgsl. ACES tonemapping happens later, as
-// its own pass, in tonemap/tonemap.slang.
-//
-// This is a comprehensive port: skinning, instancing, IBL, tiled punctual
-// lighting, cascaded shadows, normal mapping, KHR_texture_transform,
-// alpha-mask, and unlit materials.
+// Rust/WebGPU forward PBR pass: the checked-in forward.wgsl is generated from this file.
 
-// Must match CASCADE_COUNT in forward.rs — there are exactly this many
-// light_space* matrices below, so the cascade count is not variable.
+// Must match CASCADE_COUNT in forward.rs (one light_space* matrix each).
 static const int CASCADE_COUNT = 3;
 
-// Must match render::tile_grid::TILE_SIZE in forward.rs — the CPU bins
-// lights into a TILE_SIZE x TILE_SIZE screen-space grid, and punctual_lighting
-// below must divide fragCoord by the same constant to land in the right tile.
+// Must match render::tile_grid::TILE_SIZE, the CPU's light-binning tile size.
 static const uint TILE_SIZE = 16;
 
 struct FrameUniforms
@@ -52,8 +41,7 @@ struct PrimUniforms
     float4 material_flags;    // x: unlit, y: uv mask bits
 };
 
-// Applies a KHR_texture_transform's two affine rows (see PrimUniforms'
-// *_uv_row0/_uv_row1 pairs) to a UV. Identity rows leave uv unchanged.
+// Applies a KHR_texture_transform's two affine rows to a UV.
 float2 apply_uv_transform(float4 row0, float4 row1, float2 uv)
 {
     return float2(
@@ -61,15 +49,7 @@ float2 apply_uv_transform(float4 row0, float4 row1, float2 uv)
         row1.x * uv.x + row1.y * uv.y + row1.z);
 }
 
-// Per-slot UV accessors: each owns exactly one slot's uv-set mask bit
-// (material_flags.y) and its own KHR_texture_transform row pair, so no call
-// site ever hand-pairs one slot's row0 with another slot's row1. Mirrors
-// common/base_color.slang's normal_uv()/metallic_roughness_uv()/emissive_uv()
-// shape on the C++ side. The base-colour slot is split into
-// base_color_uv_select() (mask bit) and base_color_uv_rows() (row pair)
-// because vs_shadow_masked applies the mask in the vertex stage while
-// fs_shadow_masked applies the rows in the fragment stage; the other four
-// slots are only ever consumed in one stage, so they stay unsplit.
+// Per-slot UV accessors, so no call site pairs one slot's rows with another's; base colour is split across stages.
 
 // Base-colour slot's uv-set selection (mask bit 1).
 float2 base_color_uv_select(float2 uv0, float2 uv1)
@@ -110,9 +90,7 @@ float2 emissive_uv(float2 uv0, float2 uv1)
     return apply_uv_transform(prim.emissive_uv_row0, prim.emissive_uv_row1, uv);
 }
 
-// Occlusion slot's uv-set selection (mask bit 16) and KHR_texture_transform.
-// Has no C++ twin in common/base_color.slang — the C++ engine has no
-// occlusion slot.
+// Occlusion slot's uv-set selection (mask bit 16) and KHR_texture_transform; the C++ engine has no such slot.
 float2 occlusion_uv(float2 uv0, float2 uv1)
 {
     float2 uv = (uint(prim.material_flags.y) & 16u) != 0u ? uv1 : uv0;
@@ -151,9 +129,7 @@ struct IblParams
 [vk::binding(0, 4)] StructuredBuffer<uint2> tileLightGrid;
 [vk::binding(1, 4)] StructuredBuffer<uint> tileLightIndices;
 
-// Shares set 1 binding 0 with iblParams above: this shader's forward
-// pipeline and the shadow pass use different bind-group layouts, so the
-// slot is never live in both at once.
+// Shares set 1 binding 0 with iblParams: the forward and shadow pipelines use different bind-group layouts.
 [vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
 
 struct VsIn
@@ -284,8 +260,7 @@ float4x4 light_space_for(int cascade)
     return frame.light_space;
 }
 
-// Returns visibility: 1 = fully lit, 0 = fully occluded — the inverse of
-// common/cascaded_shadow.slang's calc_cascaded_shadow.
+// Visibility (1 = lit), the inverse of cascaded_shadow.slang's calc_cascaded_shadow.
 float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
 {
     int selected = 0;
@@ -293,11 +268,7 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     if (viewDepth > frame.cascade_splits.y) selected = 2;
     if (selected > CASCADE_COUNT - 1) selected = CASCADE_COUNT - 1;
 
-    // A fragment closer than roughly half the near split can fall outside
-    // the selected cascade's box (cascade 0 hugs the camera focus point,
-    // not the camera itself - see render/cascades.rs's module doc). Retry
-    // progressively coarser cascades before giving up, so the shader only
-    // reports "fully lit" once every remaining cascade has also missed.
+    // Cascade 0 hugs the focus point, not the camera: a near fragment retries coarser cascades before counting as lit.
     float3 proj = float3(0.0, 0.0, 0.0);
     float2 uv = float2(0.0, 0.0);
     int cascade = selected;
@@ -321,15 +292,7 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     shadowMap.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float texel = 1.0 / float(shadowWidth);
     float sum = 0.0;
-    // The comparison sampler is ClampToEdge (matching the C++ path's
-    // CascadedShadowMap.cpp), so a tap that wanders past the map's border
-    // re-samples the border texel's depth instead of falling off the map -
-    // it does NOT read as unshadowed. ClampToBorder + an opaque-white border
-    // would do that instead, but is unavailable here: wgpu's
-    // ADDRESS_MODE_CLAMP_TO_BORDER feature does not exist on the web target.
-    // This in-shader bounds check is the portable equivalent: an
-    // out-of-map tap counts as lit, matching the whole-fragment rejection
-    // above (`inBounds`).
+    // Out-of-map taps count as lit here: the web target has no ClampToBorder, and ClampToEdge would shadow them.
     for (int y = -1; y <= 1; y++)
     {
         for (int x = -1; x <= 1; x++)
@@ -344,9 +307,7 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     return sum / 9.0;
 }
 
-// Thin wrapper over common/sky_model.slang: this pass's light direction and
-// intensity come from frame.light_dir_ambient / frame.light_color_intensity,
-// which differs from sky/sky.slang's own SkyUniforms - see sky_model.slang.
+// Local wrapper: this pass's light comes from FrameUniforms, not sky.slang's SkyUniforms.
 float3 sky_radiance(float3 dir, bool withSun)
 {
     float3 color = sky_gradient(dir);
@@ -385,10 +346,7 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
         uint2 gridEntry = tileLightGrid[tileIndex];
         count = int(gridEntry.x);
         tileOffset = gridEntry.y;
-        // `count <= 0` is the CPU binner finding no light for this tile.
-        // `tile_grid.rs`'s `tile_rect_for_light` is not yet a fully
-        // conservative bound in every case (see its doc comment), so this
-        // stays the safety net rather than "iterate nothing".
+        // An empty tile falls back to all lights: tile_rect_for_light is not yet fully conservative.
         if (count > 0) tileCount = count;
     }
 
@@ -455,19 +413,13 @@ float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
     float3 emissive = prim.emissive_factor.rgb * emissiveSample.rgb;
 
     float3 nGeom = normalize(In.worldNormal);
-    // Back faces reach this shader only where culling was disabled, and
-    // culling is disabled only for doubleSided materials (see forward.rs's
-    // pipeline_double_sided, cull None) - !isFrontFace is therefore the
-    // doubleSided test. Flip before t/b are derived below so the bitangent
-    // handedness (cross(nGeom, t) * w) comes out right; do not also flip b,
-    // it follows automatically.
+    // Only doubleSided materials disable culling; flip before deriving t and b so the handedness follows.
     if (!isFrontFace) nGeom = -nGeom;
     float3 t = normalize(In.worldTangent.xyz - nGeom * dot(nGeom, In.worldTangent.xyz));
     float3 b = cross(nGeom, t) * In.worldTangent.w;
     float3 nTs = normalSample.xyz * 2.0 - 1.0;
     nTs = float3(nTs.xy * prim.material_factors.w, nTs.z);
-    // Row-multiply: mul(v, M), not mul(M, v) - see common/normal_map.slang's
-    // apply_normal_map(), this is its wgsl-target inline twin.
+    // Row-multiply mul(v, M), as in common/normal_map.slang's apply_normal_map().
     float3 n = normalize(mul(nTs, float3x3(t, b, nGeom)));
 
     float3 l = normalize(frame.light_dir_ambient.xyz);
@@ -483,11 +435,7 @@ float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
 
     float3 punctual = punctual_lighting(In.worldPosition, n, v, albedo.rgb, metallic, roughness, f0, In.svPosition);
 
-    // IBL ambient. Both the prefiltered-environment path and the analytic
-    // sky/ground fallback are evaluated unconditionally and picked between
-    // with a ternary (not a branch) - the cube samples use explicit LODs, so
-    // this is legal, and it keeps the no-environment path bit-identical to
-    // what the golden images were taken against.
+    // Both IBL paths are evaluated and picked by ternary, keeping the no-environment path bit-identical to the goldens.
     float3 reflected = reflect(-v, n);
     float nDotV = max(dot(n, v), 1e-4);
     float3 kSIbl = fresnel_schlick(nDotV, f0);

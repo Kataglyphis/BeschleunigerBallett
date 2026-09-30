@@ -4,25 +4,9 @@ import material_fetch;
 import material_rules;
 import material_textures;
 
-// Shared glTF MASK alpha test for ray queries: raytrace.rahit.slang's
-// any-hit shader and path_tracing.slang's ray-query candidate loop (which
-// has no any-hit stage of its own) both alpha-test a candidate/committed
-// triangle against this predicate, mirroring shadow_map.slang's rasterizer
-// alpha test and material_rules.slang's alpha_masked_out() product rule
-// (baseColorFactor.a * baseColorTexture.a * COLOR_0.a), which this module
-// now calls directly rather than mirroring.
-//
-// Imports its textures/textureSamplers bindings from material_textures.slang
-// rather than declaring its own copy (material_fetch.slang declares only
-// objectDescription, not textures, so that module still cannot supply them),
-// and fetches its ObjMaterial via material_fetch.slang's fetch_material()
-// rather than re-deriving it from the raw material buffer addresses inline.
-// Both raytrace.rahit.slang and path_tracing.slang import material_fetch
-// and alpha_test together without conflict.
+// glTF MASK alpha test shared by raytrace.rahit.slang and path_tracing.slang's ray-query loop (no any-hit stage).
 
-// True when a ray hit's triangle should be treated as transparent: a glTF
-// MASK material whose sampled alpha falls below its cutoff. Non-MASK
-// materials (alphaCutoff < 0) always return false.
+// True when the hit is a MASK material whose alpha falls below its cutoff; non-MASK (alphaCutoff < 0) never is.
 bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
 {
     ObjMaterial material = fetch_material(obj, primitiveID);
@@ -45,9 +29,7 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
         float2 texCoords = vertices->v[ind.x].texture_coords * barycentrics.x
                           + vertices->v[ind.y].texture_coords * barycentrics.y
                           + vertices->v[ind.z].texture_coords * barycentrics.z;
-        // Explicit LOD: ray queries have no fragment derivatives, so an
-        // implicit-LOD .Sample() fails SPIR-V validation (same rule as
-        // raytrace.rchit.slang's closesthit sample).
+        // Explicit LOD: ray queries have no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);

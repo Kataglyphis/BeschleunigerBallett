@@ -1,53 +1,6 @@
 name: Submodule pins
 
-# WHY THIS IS ITS OWN WORKFLOW (2026-09-15)
-#
-# The pin check used to live in windows-x64.yml, whose build job is opt-in per
-# commit ([build-win]). It already carried no `if:` of its own, so it did run on
-# every push - but it sat under a workflow named for a 2-3h Windows container
-# build, and it inherited that file's `paths-ignore: ['**.md', 'docs/**']`.
-#
-# That last part is the bug this move fixes. A gitlink is not a Markdown file,
-# but a commit CAN move one while touching nothing else the filter lets
-# through - a docs page and a submodule bump in the same commit is the ordinary
-# shape of "vendored docs came along with the pin" - and that push got no pin
-# check. The invariant is cheap (CPU-only, container-free, minutes), so it runs
-# on every push to main/develop and every PR against them, unfiltered. No
-# `paths:` filter either, for the same reason: an invariant a path filter can
-# silence is not a gate.
-#
-# ONE `uses:` LINE since 2026-09-15. The job became reusable upstream
-# (ANTfrastructure .github/workflows/submodule-pins.yml, workflow_call), where
-# its 40-line Pester rationale lives once instead of in three near-identical
-# consumer copies. It checks out with `submodules: true` at the default depth -
-# which is what makes the reachability check exercise its shallow-clone
-# escalation - and then runs ANTfrastructure's own repo-agnostic suite,
-# shared/windows/tests/Submodule.Pins.Tests.ps1. That suite asserts, for EVERY
-# configured submodule (this repo has 15), that it is checked out, sits at its
-# recorded gitlink, and is pinned to a commit reachable from its remote; a pin
-# on no remote branch cannot be restored by a fresh clone, which turns local
-# drift into a build that only works on the machine that made it. Nothing here
-# names a submodule, so one added later is covered the day it lands.
-#
-# It must be actions/checkout doing the submodule work, not a hand-rolled
-# `git submodule update --init`. .gitmodules pins git@github.com: (SSH) URLs for
-# ANTfrastructure and OxidANT, and a hosted runner has no SSH key - the bare git
-# command dies with "Permission denied (publickey)". checkout installs the
-# `url.<https>.insteadOf git@github.com:` rewrite plus token auth, so the SSH
-# pins resolve over HTTPS. The hub's job does exactly that.
-#
-# WHAT STAYS LOCAL: the `on:` filters and the concurrency group above, and the
-# Pester version below. The suite path defaults upstream to exactly the vendored
-# copy this repo has, so it is not repeated; the runner default is already
-# windows-2025 (pinned, never the moving `windows-latest` alias, because Pester
-# 3.4.0 is a Windows PowerShell-era module). The VERSION is passed explicitly
-# even though 3.4.0 is also the hub's default: that pin is this consumer saying
-# which dialect it was verified against - 5.x loses the per-failure diagnostics
-# and 6.x rejects -Quiet - so a hub-side default change cannot silently blind
-# this lane.
-#
-# @develop, like every other ANTfrastructure reference here: upstream is pushed
-# before the consumer change that needs it.
+# No paths filter: a commit can move a gitlink while touching only docs.
 
 on:
   push:
@@ -68,4 +21,5 @@ jobs:
     name: submodule pins sit at their recorded, restorable commits
     uses: Kataglyphis/ANTfrastructure/.github/workflows/submodule-pins.yml@develop
     with:
+      # Explicit although it is the hub default: 5.x loses per-failure diagnostics and 6.x rejects -Quiet.
       pester-version: '3.4.0'

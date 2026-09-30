@@ -1,15 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/windows/Compare-PerfBaseline.ps1's pass/fail contract -
-# the one script under scripts/ with a pass/fail contract and no test, on a
-# machine where nothing else can catch a regression in it. Invokes the real
-# script as a child process against small fixture baseline/candidate JSON
-# files in a temp directory (never the checked-in
-# Test/perf/baselines/win-9070xt-32core.json, which will change over time),
-# the same pattern Invoke-SyncValidation.Tests.ps1 uses for its script.
-#
-# NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
-# assertion syntax (`Should Be 0`, never Pester 5's `Should -Be 0`).
+# Runs the real script against temp fixtures, never the checked-in baseline. Pester 3.4.0: `Should Be`, not `Should -Be`.
 
 Describe 'Compare-PerfBaseline' {
 

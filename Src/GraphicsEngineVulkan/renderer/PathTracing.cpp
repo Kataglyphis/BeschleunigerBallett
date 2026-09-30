@@ -24,8 +24,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.shader_helper;
 
-// Good source:
-// https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
+// See https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
 
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
@@ -54,25 +53,11 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   uint32_t samples_per_pixel,
   uint32_t max_bounces)
 {
-    // This stage is recorded into the frame's graphics command buffer and
-    // consumed by a dispatch on that same queue, so there is no queue family
-    // ownership transfer to express here: a real transfer needs a paired
-    // release on the source queue and acquire on the destination queue,
-    // recorded into two separate command buffers submitted to two separate
-    // queues, not both halves back-to-back in one command buffer.
-    //
-    // eUndefined: the PT compute shader writes every pixel of vulkanImage, so
-    // its previous contents (whether the raster pass ran this frame or was
-    // skipped because PT owns the frame) are discarded, not read. eUndefined
-    // is the only oldLayout valid in both cases.
+    // Same queue, so no ownership transfer; eUndefined because the kernel overwrites every pixel.
     const vk::ImageMemoryBarrier presentToPathTracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
       vulkanImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
 
-    // Source stages name whoever actually produced vulkanImage's prior
-    // contents: eColorAttachmentOutput covers the raster/skybox pass writing
-    // it this frame, eFragmentShader covers the previous frame's post-pass
-    // read of it (the image is single, not per-frame-in-flight, mirroring the
-    // cross-frame argument VulkanRenderer.cpp makes for cloudOutputTexture).
+    // This frame's raster write and, since the image is not per-frame, the previous frame's post-pass read.
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput
         | vk::PipelineStageFlagBits::eFragmentShader,
       vk::PipelineStageFlagBits::eComputeShader,
@@ -81,11 +66,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
       {},
       { presentToPathTracingImageBarrier });
 
-    // The accumulation history is read-modify-written by every dispatch, and
-    // the previous frame's dispatch may still be in flight: make its writes
-    // visible before this frame reads them. A pipeline barrier orders against
-    // ALL prior commands on the queue, so this also covers the cross-command-
-    // buffer frame-to-frame hazard.
+    // The previous frame's dispatch may still be writing the history; a pipeline barrier orders across command buffers.
     const vk::ImageMemoryBarrier accumulationBarrier = Kataglyphis::buildImageMemoryBarrier(
       accumulationImage.getImage(),
       vk::ImageLayout::eGeneral,
@@ -103,14 +84,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
-    // Furnace debug mode via environment (KATAGLYPHIS_PT_FURNACE=<radiance>):
-    // clearColor carries the uniform environment radiance in rgb and the
-    // mode flag in w. The kernel then forces albedo to 1 and replaces the
-    // gradient sky with the uniform value - the classic white-furnace test:
-    // an unbiased estimator must converge every pixel to EXACTLY the
-    // environment radiance, for any geometry. Read per record (NOT a static:
-    // several tests share one process, and a frozen first read would pin the
-    // mode for all of them); one getenv per frame is noise.
+    // White-furnace mode; read per record, not cached, because several tests share one process.
     const char *furnace_value = std::getenv("KATAGLYPHIS_PT_FURNACE");
     if (furnace_value != nullptr && *furnace_value != '\0') {
         const float furnace_radiance = std::strtof(furnace_value, nullptr);
@@ -137,8 +111,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
-    // Same queue, same command buffer as the barrier above: no ownership
-    // transfer to express (see the comment on presentToPathTracingImageBarrier).
     const vk::ImageMemoryBarrier pathTracingToPresentImageBarrier = Kataglyphis::buildImageMemoryBarrier(
       vulkanImage.getImage(),
       vk::ImageLayout::eGeneral,
@@ -146,9 +118,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
       vk::AccessFlagBits::eShaderWrite,
       vk::AccessFlagBits::eShaderRead);
 
-    // Destination stage names the actual consumer: PostStage's fragment
-    // shader samples this image (post.slang's fs_main), matching
-    // Raytracing.cpp's raytracingToPostImageBarrier on the same renderImage.
+    // The consumer is post.slang's fragment shader.
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
       vk::PipelineStageFlagBits::eFragmentShader,
       vk::DependencyFlags{},
@@ -159,9 +129,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path). Also covers the case where
-    // init() was never called (no hardware raytracing support).
+    // Idempotent, and a no-op when init() never ran (no hardware ray tracing).
     if (!device) { return; }
 
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), pipeline, pipeline_layout);
@@ -181,8 +149,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
 
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md).
+    // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/path_tracing/";
 
     std::string const pathTracing_spv = "path_tracing.path_tracing_main.spv";

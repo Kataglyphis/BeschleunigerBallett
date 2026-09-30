@@ -1,9 +1,4 @@
-// Shared pixel-metric oracles used across goldenRenderSuite.cpp.
-//
-// These are pure CPU functions over captured RGBA8 frames - no Vulkan
-// dependency - so they are unit-testable on their own (see
-// goldenMetricsSuite.cpp) instead of only ever being exercised indirectly
-// through a GPU golden test.
+// CPU-only pixel metrics for the goldens, so goldenMetricsSuite.cpp can test them without a GPU.
 #pragma once
 
 #include <cstddef>
@@ -22,16 +17,13 @@ struct Crop
     uint32_t y1;
 };
 
-// Excludes the ImGui overlay, which occupies the left ~72% of the frame plus
-// a thin top/bottom margin. This is the crop every lit-vs-unlit / before-vs-
-// after golden uses.
+// Excludes the ImGui overlay (the left ~72% plus thin top and bottom margins).
 inline Crop panel_free_crop(uint32_t w, uint32_t h)
 {
     return Crop{(w * 18U) / 25U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U};
 }
 
-// Narrower crop isolating the right-hand wall a second added model puts in
-// frame, used by the texture-detail golden.
+// Isolates the right-hand wall a second model puts in frame, for the texture-detail golden.
 inline Crop card_crop(uint32_t w, uint32_t h)
 {
     return Crop{(w * 37U) / 50U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U};
@@ -45,10 +37,7 @@ inline double luminance_of(const std::vector<uint8_t> &rgba, size_t pixel)
            + 0.0722 * static_cast<double>(rgba[base + 2U]);
 }
 
-// Mean Rec. 709 luminance of pixels within `crop`, on a 0..255 scale - the
-// GUI-free counterpart of a whole-frame mean, for goldens that must compare
-// brightness without the ImGui overlay drowning the signal (see
-// panel_free_crop above).
+// Mean Rec. 709 luminance within `crop` (0..255), so goldens compare brightness without the overlay.
 inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
 {
     double sum = 0.0;
@@ -62,8 +51,7 @@ inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t 
     return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
 
-// Fraction of pixels within `crop` whose colour moves by more than 5 levels
-// (on any channel) between captures `a` and `b`.
+// Fraction of `crop` whose colour moves more than 5 levels on any channel between `a` and `b`.
 inline double swung_fraction(
   const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h, Crop crop)
 {
@@ -84,12 +72,7 @@ inline double swung_fraction(
     return total > 0U ? static_cast<double>(swung) / static_cast<double>(total) : 0.0;
 }
 
-// Fraction of pixels within `crop` whose right-hand neighbour differs in
-// luminance by more than 6 levels - a texture-detail proxy that separates a
-// real (sampled) texture or fine pattern from a flat fallback colour. The
-// neighbour read stays inside `crop`: a crop of width 0 or 1 has no
-// right-hand-neighbour pair to compare and returns 0.0, without callers
-// having to shrink `x1` themselves first.
+// Texture-detail proxy: fraction of `crop` whose right neighbour, also in `crop`, differs by more than 6 luma levels.
 inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
 {
     if (crop.x1 == 0U || crop.x1 <= crop.x0 + 1U) { return 0.0; }

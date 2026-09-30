@@ -1,16 +1,7 @@
 import aces;
 import fullscreen;
 
-// Fullscreen tonemap pass (Rust/WebGPU side). tonemap.wgsl is generated
-// from this file and checked into the Rust crate by wgslMap; the
-// shared ACES + sRGB-encode math comes from aces.slang (imported), and the
-// fullscreen-triangle vertex from fullscreen.slang. Bindings match the
-// Rust renderer's bind group 0 layout (see forward.rs TonemapPass).
-//
-// This is the first Slang entry point: it proves `import aces` compiles to
-// WGSL with correct binding translation. The C++ side has its own
-// post.slang (tonemap + clouds) because the two renderers composite
-// differently — see docs/shader-sharing.md.
+// Rust/WebGPU tonemap: tonemap.wgsl is generated from this file; bindings match forward.rs's TonemapPass.
 
 [vk::binding(0, 0)] Texture2D<float4> hdrTex;
 [vk::binding(1, 0)] SamplerState hdrSampler;
@@ -19,20 +10,15 @@ import fullscreen;
 
 struct TonemapUniforms
 {
-    // x: bloom strength, y: SSAO strength, z: unused (exposure comes from
-    // exposureState, not a CPU uniform - bloom is pre-exposed the same way),
-    // w: 1.0 when this shader must gamma-encode its own output (non-sRGB web
-    // canvas).
+    // x: bloom strength, y: SSAO strength, z: unused, w: 1.0 to encode sRGB here (web canvas).
     float4 params;
 };
 [vk::binding(3, 0)] ConstantBuffer<TonemapUniforms> tonemapUniforms;
 
-// [adapted EV, target EV], written by cs_reduce_exposure. Read here rather
-// than passed through params.z so there is ONE source of truth.
+// [adapted EV, target EV] from cs_reduce_exposure, the one exposure source (bloom reads it too).
 [vk::binding(5, 0)] StructuredBuffer<float> exposureState;
 
-// The vertex output type matches FullscreenVsOut from fullscreen.slang;
-// declared here so the fragment stage can name it without importing.
+// Same layout as fullscreen.slang's FullscreenVsOut.
 struct VsOut
 {
     float4 svPosition : SV_Position;
@@ -42,9 +28,6 @@ struct VsOut
 [shader("vertex")]
 VsOut vs_main(uint vid : SV_VertexID)
 {
-    // Shared fullscreen-triangle vertex (no vertex buffer). The import
-    // removes the duplicated x/y/uv math that was copy-pasted in every
-    // fullscreen pass on both renderers.
     FullscreenVsOut o = fullscreen_vs(vid);
     VsOut r;
     r.svPosition = o.svPosition;
@@ -62,9 +45,7 @@ float4 fs_main(VsOut In) : SV_Target
     float exposure = exp2(exposureState[0]);
     float3 mapped = aces_tonemap(hdr * ao * exposure + bloom * tonemapUniforms.params.x);
 
-    // An sRGB target encodes in hardware and gets linear values. WebGPU
-    // canvases expose no sRGB surface format, so on web the encode happens
-    // here (see docs/webgpu-srgb-audit.md).
+    // WebGPU canvases have no sRGB surface format, so the web encodes here (docs/webgpu-srgb-audit.md).
     if (tonemapUniforms.params.w > 0.5)
         return float4(linear_to_srgb(mapped), 1.0);
     return float4(mapped, 1.0);

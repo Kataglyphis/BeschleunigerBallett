@@ -55,10 +55,7 @@ bool ObjLoader::parseCpu(const std::string &modelFile)
     tinyobj::ObjReaderConfig const reader_config;
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(modelFile, reader_config)) {
-        // Must not kill the process: the GUI model picker can hand this
-        // arbitrary files. loadVertices already returned gracefully here, but
-        // loadTexturesAndMaterials called exit(EXIT_FAILURE) and ran first,
-        // so a malformed asset took the application down regardless.
+        // Fail softly: the GUI model picker can hand this arbitrary files.
         if (!reader.Error().empty()) { spdlog::error("TinyObjReader: {}", reader.Error()); }
         return false;
     }
@@ -83,9 +80,7 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
     const auto ms = [](auto from, auto to) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
     };
-    // Split at the boundary that matters: everything before parse_done is
-    // device-free and can move to a worker; everything after must stay on the
-    // thread that owns the device.
+    // Split where the device work starts: the parse can move to a worker, the upload cannot.
     spdlog::info(
       "Model load: CPU parse {} ms (threadable), GPU textures+upload {} ms (must stay on this thread), "
       "total {} ms ({} verts, {} indices)",
@@ -100,8 +95,7 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
 
 auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 {
-    // GPU half. Must run on the thread that owns the device; parseCpu can run
-    // anywhere.
+    // Must run on the device thread; parseCpu can run anywhere.
     if (!uploadPreconditionsMet(device, vertices.size(), "ObjLoader")) { return nullptr; }
 
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
@@ -110,8 +104,6 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
-        // If material had no texture, set '0' to indicate no texture, texture 0
-        // will be reserved for a default texture
         if (!textureNames[i].empty()) {
             Texture texture;
             const bool created =
@@ -122,11 +114,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 
     ensureAtLeastOneTexture(*new_model, device, command_pool);
 
-    // One Mesh per OBJ shape (see MeshRange). Each mesh shares the full materials
-    // array - its materialIndex still holds the original indices - matching the
-    // glTF split; a per-mesh material subset is a later optimisation. A
-    // single-shape OBJ (or the empty-range fallback) builds exactly one mesh, so
-    // existing single-object models are behaviour-identical.
+    // One mesh per OBJ shape; each shares the full materials array, since materialIndex keeps the original indices.
     addMeshesForRanges(
       *new_model, device, command_pool, vertices, indices, materialIndex, this->materials, meshRanges);
     return new_model;
@@ -134,16 +122,11 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 
 std::string Kataglyphis::resolveObjTexturePath(const std::string &baseDir, const std::string &mapKd)
 {
-    // docs/model-loading.md: normalise `\` to `/` first - a Windows-authored
-    // .mtl (`textures\wood.png`) must still resolve on platforms where `\`
-    // is just another filename character, matching the Rust side's
-    // parse_mtl (obj_to_gltf.rs).
+    // See docs/model-loading.md § `map_Kd` texture path resolution.
     std::string normalized_map_kd = mapKd;
     std::replace(normalized_map_kd.begin(), normalized_map_kd.end(), '\\', '/');
 
-    // An empty baseDir (a bare filename with no directory component) stays
-    // relative rather than growing a leading "/" that resolves against the
-    // filesystem root.
+    // An empty baseDir must not become a leading "/" that resolves against the filesystem root.
     const std::string base = baseDir.empty() ? "." : baseDir;
 
     const std::string beside_mtl = base + "/" + normalized_map_kd;
@@ -157,10 +140,7 @@ std::string Kataglyphis::resolveObjTexturePath(const std::string &baseDir, const
         return under_textures;
     }
 
-    // Neither candidate exists. Keep today's behaviour - record a path and
-    // let uploadParsed substitute the default texture - but warn loudly: a
-    // wrong path degrading silently to white is the failure mode this whole
-    // resolution rule is about.
+    // Warn loudly: otherwise a wrong path silently renders the default white texture.
     spdlog::warn(
       "texture '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
       "render with the default texture",
@@ -178,25 +158,16 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
     int texture_id = 0;
     const std::string base_dir = Kataglyphis::Shared::getBaseDir(modelFile);
 
-    // Materials whose texture resolves to the same on-disk path AND colour
-    // space share one textures slot: keyed on (resolved path, srgb), so a
-    // .mtl that names one file as both map_Kd (sRGB) and map_Bump (linear)
-    // still gets two slots - one per format, matching GltfLoader's
-    // (image, sampler, srgb) key.
+    // Keyed on (resolved path, srgb): one file used as both sRGB and linear needs two slots.
     std::map<std::pair<std::string, bool>, int> pathSlot;
 
-    // Resolves texname (already known non-empty by the caller) against
-    // base_dir and returns its slot, reusing an existing (path, srgb) slot
-    // when one already matches. Always appends to textures/textureSrgb so
-    // uploadParsed's dense counter keeps walking them 1:1 with materials.
+    // Always appends to textures/textureSrgb: uploadParsed walks them 1:1 with materials.
     const auto resolveSlot = [&](const std::string &texname, bool srgb) -> int {
         const std::string resolved = resolveObjTexturePath(base_dir, texname);
         const auto key = std::make_pair(resolved, srgb);
         const auto existing = pathSlot.find(key);
         if (existing != pathSlot.end()) {
-            // uploadParsed's dense counter walks textures 1:1 with materials;
-            // an empty entry here keeps that mapping intact while skipping
-            // the (already-uploaded) duplicate texture.
+            // An empty entry keeps the 1:1 walk while skipping the duplicate upload.
             textures.emplace_back("");
             textureSrgb.push_back(srgb ? 1 : 0);
             return existing->second;
@@ -216,33 +187,19 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         material.dissolve = mp->dissolve;
         material.shininess = mp->shininess;
         material.metallic = mp->metallic;
-        // tinyobjloader defaults roughness to 0.0 and exposes no "was this
-        // authored" flag, so `Pr 0.0` (a perfect mirror) is indistinguishable
-        // from an absent Pr directive - treat it as absent and leave
-        // ObjMaterial's -1.0 sentinel in place so material_roughness() keeps
-        // deriving roughness from shininess.
+        // tinyobjloader reports an absent Pr as 0.0, so 0.0 keeps the -1 sentinel (roughness from shininess).
         if (mp->roughness > 0.0F) { material.roughness = mp->roughness; }
 
         if (!mp->diffuse_texname.empty()) {
             material.textureID = resolveSlot(mp->diffuse_texname, true);
         } else {
-            // No diffuse texture: -1 routes the shaders to material.diffuse.
-            // This was 0, which sampled texture slot 0 instead - so a
-            // texture-less .mtl (the bundled dinosaurs) rendered its Kd
-            // colours as flat WHITE for as long as the engine existed.
+            // -1, not 0: slot 0 would sample a texture instead of material.diffuse.
             material.textureID = -1;
             textures.emplace_back("");
             textureSrgb.push_back(1);
         }
 
-        // norm is a tangent-space normal map by definition; map_Bump is
-        // conventionally a height map that most exporters (Blender included)
-        // nonetheless use for normal maps, so it is only the fallback.
-        // -bm belongs to the directive it was written on: tinyobjloader keeps
-        // one texture_option_t per directive (normal_texopt vs bump_texopt),
-        // so the scale must come from whichever directive's map won the
-        // preference below, not unconditionally from bump_texopt (twin logic:
-        // obj_to_gltf.rs's bump_scale_option).
+        // norm wins over map_Bump, and -bm comes from whichever directive won (twin: obj_to_gltf.rs).
         if (!mp->normal_texname.empty()) {
             material.normalTextureID = resolveSlot(mp->normal_texname, false);
             material.normalScale = mp->normal_texopt.bump_multiplier;
@@ -254,48 +211,29 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             material.normalTextureID = resolveSlot(mp->bump_texname, false);
             material.normalScale = mp->bump_texopt.bump_multiplier;
         } else {
-            // Unlike the diffuse slot, no directive at all means no push: a
-            // model without a normal map (still the common case) keeps
-            // textures/textureSrgb exactly as long as materials, matching
-            // pre-normal-mapping behaviour and existing size expectations.
-            // normalScale is left at ObjMaterial's 1.0 default since there is
-            // no normal texture to scale.
+            // No push without a directive, unlike the diffuse slot, so textures stays as long as materials.
             material.normalTextureID = -1;
         }
 
-        // map_Ke is authored colour (like map_Kd), so it goes through
-        // eR8G8B8A8Srgb - srgb=true, unlike the normal slot's linear decode.
+        // map_Ke is authored colour, so sRGB.
         if (!mp->emissive_texname.empty()) {
             material.emissiveTextureID = resolveSlot(mp->emissive_texname, true);
         } else {
-            // Same "no directive, no push" rule as the normal slot: keeps
-            // textures/textureSrgb exactly as long as materials for every
-            // model that ships no map_Ke - every model in Resources/Models/
-            // today.
             material.emissiveTextureID = -1;
         }
 
-        // map_d is a per-texel opacity mask, not authored colour, so it goes
-        // through the linear decode like the normal slot (srgb=false). OBJ
-        // has no alphaMode, and this engine has no sorted transparent pass
-        // (see GltfLoader.cpp's alphaCutoff comment), so a map_d material is
-        // treated as glTF MASK at the conventional 0.5 cutoff rather than as
-        // blended.
+        // map_d is a linear opacity mask, treated as glTF MASK at 0.5: there is no sorted transparent pass.
         if (!mp->alpha_texname.empty()) {
             material.alphaTextureID = resolveSlot(mp->alpha_texname, false);
             material.alphaCutoff = 0.5F;
         } else {
-            // Same "no directive, no push" rule as the normal/emissive slots:
-            // keeps textures/textureSrgb exactly as long as materials for
-            // every model that ships no map_d - every model in
-            // Resources/Models/ today.
             material.alphaTextureID = -1;
         }
 
         materials.push_back(material);
     }
 
-    // for the case no .mtl file is given place some random standard material ...
+    // No .mtl: one default material.
     if (tol_materials.empty()) { materials.emplace_back(); }
 }
 
@@ -304,19 +242,12 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
     const auto &attrib = reader.GetAttrib();
     const auto &shapes = reader.GetShapes();
 
-    // indices ends up exactly this long. vertices is left to the per-shape
-    // reserve below: reserving face-vertex count for it would hold ~39 MB for
-    // a mesh that needs ~7 MB, since sharing is the normal case.
+    // Only indices is reserved in full; vertices are mostly shared, so a face-vertex reserve would overshoot.
     size_t total_face_vertices = 0;
     for (const auto &shape : shapes) { total_face_vertices += shape.mesh.indices.size(); }
     indices.reserve(total_face_vertices);
 
-    // Loop over shapes. Each shape (an OBJ `o`/`g` group) becomes its own Mesh
-    // via the MeshRange recorded below, so the vertex-dedup map is per-shape:
-    // that keeps every shape's vertices in a contiguous block uploadParsed can
-    // slice, at the cost of duplicating any vertex shared across shapes (rare
-    // between separate objects, and pixel-identical either way). The map is still
-    // reserved to the shape's face-vertex upper bound to avoid rehash churn.
+    // Dedup per shape, so each shape's vertices stay one contiguous block uploadParsed can slice.
     for (const auto &shape : shapes) {
         std::unordered_map<Vertex, uint32_t> vertices_map{};
         vertices_map.reserve(shape.mesh.indices.size());
@@ -334,13 +265,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
             auto const fv = static_cast<size_t>(shape.mesh.num_face_vertices[f]);
 
-            // Malformed files can carry negative or out-of-range indices
-            // (fuzz-found hazard): validate every vertex of the face before
-            // emitting any of it. materialIndex is one entry per emitted
-            // triangle and indices must stay a multiple of 3, so dropping a
-            // single corner would desynchronise the shaders'
-            // materialIDs.i[prim] lookup as well as overrunning the array -
-            // a malformed corner drops the whole face instead.
+            // A bad index drops the whole face: dropping one corner would desync indices from materialIndex.
             bool face_valid = true;
             for (size_t v = 0; v < fv; v++) {
                 tinyobj::index_t const idx = shape.mesh.indices[index_offset + v];
@@ -363,8 +288,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                     glm::vec3 const pos = { vx, vy, vz };
 
                     glm::vec3 normals(0.0F);
-                    // Check if `normal_index` is zero or positive. negative = no normal
-                    // data
+                    // A negative normal_index means no normal data.
                     if (idx.normal_index >= 0
                         && (3 * static_cast<size_t>(idx.normal_index)) + 2 < attrib.normals.size()) {
                         tinyobj::real_t const nx = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 0];
@@ -373,12 +297,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                         normals = glm::vec3(nx, ny, nz);
                     }
 
-                    // White when the OBJ carries no per-vertex colour: the fragment
-                    // shader multiplies this in (glTF COLOR_0 semantics, shared path),
-                    // so the absent case must be the identity (1,1,1), not the old -1
-                    // sentinel that would have darkened/inverted the surface. OBJ has
-                    // no per-vertex alpha channel, so alpha is always 1.0 - the shared
-                    // MASK alpha test's third factor is a glTF COLOR_0-only concept.
+                    // Shaders multiply this in like COLOR_0, so the absent case must be white.
                     glm::vec4 color(1.F);
                     if ((3 * vertex_index) + 2 < attrib.colors.size()) {
                         tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
@@ -388,8 +307,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                     }
 
                     glm::vec2 tex_coords(0.0F);
-                    // Check if `texcoord_index` is zero or positive. negative = no texcoord
-                    // data
+                    // A negative texcoord_index means no texcoord data.
                     if (idx.texcoord_index >= 0
                         && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
                         tinyobj::real_t const tx =
@@ -402,24 +320,14 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 
                     Vertex const vert{ pos, normals, color, tex_coords };
 
-                    // ONE hash lookup per vertex. This was three - contains(),
-                    // then operator[] to insert, then operator[] again to read -
-                    // and at ~900k face vertices that is 1.8 million redundant
-                    // hashes and probes.
+                    // One hash lookup per vertex.
                     const auto [entry, inserted] =
                       vertices_map.try_emplace(vert, static_cast<uint32_t>(vertices.size()));
                     if (inserted) { vertices.push_back(vert); }
                     indices.push_back(entry->second);
                 }
 
-                // Per-face material. tinyobj reports -1 for a face without a
-                // material (any OBJ shipping no mtllib); the plain cast sent
-                // 0xFFFFFFFF to the GPU, and every material fetch in the shaders
-                // (materials.m[materialIDs.i[prim]]) became an OUT-OF-BOUNDS
-                // buffer-device-address read. Route those faces to slot 0:
-                // loadTexturesAndMaterials appends a default material when the
-                // file ships none, and when it ships some, the first one is a
-                // strictly better fallback than reading unmapped memory.
+                // tinyobj reports -1 without a material; cast, that reads out of bounds on the GPU, so use slot 0.
                 const int face_material = shape.mesh.material_ids[f];
                 materialIndex.push_back(face_material >= 0 ? static_cast<uint32_t>(face_material) : 0U);
             }
@@ -427,9 +335,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
             index_offset += fv;
         }
 
-        // Record this shape's contiguous slice so uploadParsed can build it as
-        // its own Mesh. Skip a shape that emitted no geometry (every face fell to
-        // the malformed-index guard) so uploadParsed never builds an empty mesh.
+        // A shape whose every face was dropped gets no range, so no empty mesh is built.
         if (vertices.size() > shape_vertex_base) {
             meshRanges.push_back(MeshRange{ shape_vertex_base,
                                                        vertices.size() - shape_vertex_base,
@@ -440,18 +346,9 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         }
     }
 
-    // Fill any corner left at a zero normal - kataglyphis.vulkan.vertex's
-    // fillMissingFlatNormals. Covers both the no-`vn`-at-all file (every
-    // corner is zero, so this behaves exactly like computeFlatNormals) and
-    // the mixed file where only some faces carry `vn` (only the zero corners
-    // are touched). Vertex dedup (`vertices_map.try_emplace` above) keys on
-    // the whole Vertex including the normal, so a corner shared between
-    // faces with different geometric normals resolves to whichever triangle
-    // is visited last - the same flat approximation computeFlatNormals
-    // already makes, not a new limitation.
+    // Fills only zero normals, so files with partial `vn` keep theirs.
     vertex::fillMissingFlatNormals(vertices, indices);
 
-    // OBJ has no tangent concept - always generate. Needs the final normals
-    // above, so this must run after fillMissingFlatNormals.
+    // OBJ has no tangents; this needs the final normals, so it runs last.
     vertex::computeTangents(vertices, indices);
 }

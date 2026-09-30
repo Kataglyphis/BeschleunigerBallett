@@ -40,11 +40,7 @@ TEST(CameraUnit, DefaultStateLooksDownNegativeZ)
 {
     Camera camera;
 
-    // The default POSITION and PITCH are scene-framing choices (Camera.cpp
-    // frames the debug scene so its shadows are visible at startup) and were
-    // retuned when that scene changed. Asserting them as literals made this
-    // test fail for a deliberate, correct change, so it now asserts the
-    // orientation contract that must hold regardless of framing.
+    // Default position and pitch are framing choices, so only the orientation contract is asserted.
     const glm::vec3 front = camera.get_camera_direction();
     const glm::vec3 right = camera.get_right_axis();
     const glm::vec3 up = camera.get_up_axis();
@@ -111,9 +107,7 @@ TEST(CameraUnit, KeyControlMovesAlongFront)
     Camera camera;
     std::array<bool, GLFW_KEY_LAST + 1> keys{};
 
-    // Relative to the camera's OWN start and front, so retuning the default
-    // framing cannot break this - what matters is that W moves exactly
-    // movement_speed * dt along front, and S undoes it.
+    // Relative to the camera's own start and front, so retuning the default framing cannot break this.
     const glm::vec3 start = camera.get_camera_position();
     const glm::vec3 front = camera.get_camera_direction();
     constexpr float kStep = 10.0F * 0.5F;// movement_speed * dt
@@ -193,9 +187,7 @@ TEST(SceneConfigUnit, AvailableModelListingsAreConsistent)
     ASSERT_FALSE(paths.empty()) << "Model scan found no loadable files under Resources/Models";
 
     for (const std::string &path : paths) {
-        // The loadable set: OBJ plus glTF (the scan was == ".obj" until
-        // 2026-07-22, which made the bundled .glb unpickable; see
-        // ModelPickerUnit.GltfModelsAppearInTheAvailableList).
+        // The loadable set is OBJ plus glTF.
         auto lower = path;
         std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
             return static_cast<char>(std::tolower(c));
@@ -248,9 +240,7 @@ TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
 
 TEST(SceneConfigUnit, DefaultModelRelativePathIsAmongTheModelsGetModelFileCanResolve)
 {
-    // getModelFile() and defaultModelRelativePath() must stay coupled - if
-    // they drift, the GUI's default selection can point at a path
-    // getModelFile() would never actually load.
+    // If these drift, the GUI's default selection points at a path getModelFile() never loads.
     const std::string_view relative_path = sceneConfig::defaultModelRelativePath();
     EXPECT_FALSE(relative_path.empty());
     EXPECT_TRUE(std::filesystem::exists(sceneConfig::resolveModelPath(std::string(relative_path))))
@@ -264,10 +254,7 @@ TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBac
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/Dinosaurs/dinosaurs.obj"), 0);
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/VikingRoom/viking_room.obj"), 1);
 
-    // Regression: a list that does NOT contain the preferred path must still
-    // fall back to 0, not -1 - -1 is what left the Position/Rotation
-    // DragFloat3 controls permanently dead (handleModelTransformChange's
-    // `selected_model_index >= 0` gate never opened).
+    // Without the preferred path, fall back to 0: -1 leaves the model transform controls dead.
     const std::vector<std::string> models_without_preferred{"Models/VikingRoom/viking_room.obj"};
     const int fallback_index =
       sceneConfig::defaultSelectedModelIndex(models_without_preferred, "Models/Dinosaurs/dinosaurs.obj");
@@ -276,8 +263,7 @@ TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBac
     const std::vector<std::string> empty_models;
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(empty_models, "Models/Dinosaurs/dinosaurs.obj"), -1);
 
-    // Windows-separator spelling must still match the forward-slashed
-    // preferred path via generic_string() normalisation.
+    // Backslashed Windows spelling must still match the forward-slashed preferred path.
     const std::vector<std::string> models_with_backslash{"Models\\Dinosaurs\\dinosaurs.obj"};
     EXPECT_EQ(
       sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
@@ -322,10 +308,7 @@ TEST(SceneConfigUnit, ScanningTheRepoResourcesFindsTheDefaultDebugModel)
 
 TEST(CameraSceneConfigUnit, ModelMatrixIsIdentityInEveryConfiguration)
 {
-    // getModelMatrix() used to branch on #if NDEBUG, but both branches scaled
-    // by (1,1,1) - i.e. neither Debug nor Release could ever produce a
-    // different answer. This asserts the identity directly so that fact can't
-    // regress silently in either build configuration.
+    // Identity in every build configuration, asserted directly so neither can regress silently.
     const glm::mat4 model = sceneConfig::getModelMatrix();
     const glm::mat4 identity(1.0F);
 

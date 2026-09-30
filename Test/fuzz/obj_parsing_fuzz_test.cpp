@@ -1,18 +1,6 @@
-// Fuzzes the OBJ parsing path the engine depends on: tinyobj parsing of
-// arbitrary input plus the exact index-walking pattern used by
-// ObjLoader::loadVertices (Src/GraphicsEngineVulkan/scene/ObjLoader.cpp).
-// Keep the walk in sync with the engine - this harness exists to prove
-// malformed model files cannot crash or OOB-read the loader.
+// The index walk mirrors ObjLoader::loadVertices and must be kept in sync with it.
 
-// These two abseil headers MUST come before fuzztest.h. FuzzTest at main
-// friend-declares absl::random_internal::{DistributionCaller, MockHelpers}
-// in fuzzing_bit_gen.h without including them, and abseil LTS 20260526 no
-// longer provides them transitively through bit_gen_ref.h. The fuzztest_*
-// library targets get the same fix as a force-include flag
-// (third_party/CMakeLists.txt); OUR targets cannot, because a force-include
-// flag flows into the synthesized C++20 module BMI compiles of imported
-// engine modules, which have no abseil include path. An ordinary include in
-// the source is invisible to module synthesis.
+// Must precede fuzztest.h, which friend-declares them unincluded; a force-include would break module BMI synthesis.
 #include "absl/random/internal/distribution_caller.h"// IWYU pragma: keep
 #include "absl/random/internal/mock_helpers.h"// IWYU pragma: keep
 
@@ -23,8 +11,7 @@
 
 #include "fuzztest/fuzztest.h"
 
-// tinyobjloader is header-only; this standalone target must carry the
-// implementation itself (the engine's copy lives in ObjLoader.cpp).
+// This target links no engine, so it carries its own copy of the header-only implementation.
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
@@ -42,10 +29,7 @@ void ParsingArbitraryObjNeverCrashes(const std::string &obj_text, const std::str
 
     const auto &attrib = reader.GetAttrib();
 
-    // Mirror of ObjLoader::loadVertices' validate-then-emit face rule: a face
-    // with any out-of-range vertex index is dropped whole (not just the bad
-    // corner), so `indices` stays a multiple of 3 for the flat-normal walk
-    // below - exactly the invariant the engine relies on.
+    // A face with any bad index is dropped whole, so `indices` stays a multiple of 3.
     std::vector<float> positions;// flattened x,y,z per emitted vertex
     std::vector<unsigned int> indices;
 
@@ -98,10 +82,7 @@ void ParsingArbitraryObjNeverCrashes(const std::string &obj_text, const std::str
         }
     }
 
-    // Mirror of ObjLoader::loadVertices' flat-normal pass: bounded
-    // (`i + 2 < indices.size()`) and zero-area-guarded, the same hardening
-    // the engine now applies so a degenerate triangle cannot normalize a
-    // zero vector into NaN.
+    // Zero-area-guarded like the engine, so a degenerate triangle cannot normalize to NaN.
     for (size_t i = 0; i + 2 < indices.size(); i += 3) {
         const auto vertexPosition = [&](size_t elem) -> std::array<float, 3> {
             const size_t base = static_cast<size_t>(indices[elem]) * 3;

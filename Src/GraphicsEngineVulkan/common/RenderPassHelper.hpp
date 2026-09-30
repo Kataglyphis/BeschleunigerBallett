@@ -6,28 +6,7 @@
 
 namespace Kataglyphis {
 
-// Every render pass in this engine declared its attachments the same way, by
-// hand, in five files: Rasterizer, DeferredRasterizer, PostStage, SkyBox and
-// CascadedShadowMap each spelled out the same eight or nine field
-// assignments. Three of those fields are the same in EVERY pass and are the
-// ones a copy-paste silently drops:
-//
-//   samples         = e1        - nothing here is multisampled
-//   stencilLoadOp   = eDontCare - no pass reads or writes a stencil aspect,
-//   stencilStoreOp  = eDontCare   even when the chosen depth format has one
-//                                 (chooseDepthFormat may return eD32SfloatS8Uint)
-//
-// so they are baked in here rather than repeated. The five fields the passes
-// genuinely disagree on stay parameters, with the majority variant as the
-// default: clear on load, store the result, and start from eUndefined (i.e.
-// discard whatever the previous frame left). PostStage is the one pass that
-// overrides all three - it LOADS an already-rendered colour attachment and
-// hands it to the presentation engine.
-//
-// A pass that needs a multisampled or stencil-carrying attachment must build
-// the vk::AttachmentDescription inline and say why, rather than growing this
-// helper new parameters - the same rule ViewportHelper.hpp states, for the
-// same reason.
+// Single-sample, stencil don't-care; a multisampled or stencil-using attachment builds its own and says why.
 constexpr vk::AttachmentDescription buildAttachmentDescription(vk::Format format,
   vk::ImageLayout final_layout,
   vk::AttachmentLoadOp load_op = vk::AttachmentLoadOp::eClear,
@@ -46,26 +25,7 @@ constexpr vk::AttachmentDescription buildAttachmentDescription(vk::Format format
     return description;
 }
 
-// Every render pass begin in this engine spelled out the same five field
-// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
-// and CascadedShadowMap - two of the five hard-coded clearValueCount as a
-// literal rather than deriving it from the clear-value array actually
-// passed.
-//
-// renderArea.offset is always {0, 0} and the extent is always the target's
-// full extent - every call site follows the beginRenderPass with
-// setFullExtentViewportAndScissor on that same extent. clearValueCount is
-// deliberately DERIVED from clear_values.size() rather than taken as a
-// parameter, so it can never drift from the array actually passed.
-//
-// A pass that needs a partial render area must build the
-// vk::RenderPassBeginInfo inline and say why, rather than growing this
-// helper new parameters - the same rule FramebufferHelper.hpp and
-// ViewportHelper.hpp state, for the same reason.
-//
-// Built via the fully-explicit vk::RenderPassBeginInfo constructor rather
-// than value-init-then-assign, for the same constexpr reason
-// FramebufferHelper.hpp documents.
+// Always the full extent; a pass needing a partial render area builds its own and says why.
 constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render_pass,
   vk::Framebuffer framebuffer,
   vk::Extent2D extent,
@@ -75,52 +35,7 @@ constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render
         static_cast<uint32_t>(clear_values.size()), clear_values.data() };
 }
 
-// Every render pass in this engine spelled out the same six field
-// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
-// and CascadedShadowMap - SkyBox hard-coded attachmentCount = 2 next to a
-// two-element std::array instead of deriving it, exactly as it did for
-// FramebufferHelper.hpp's attachmentCount.
-//
-// attachmentCount, subpassCount and dependencyCount are all deliberately
-// DERIVED from their span's .size() rather than taken as parameters, so none
-// of the three can drift from the array actually passed in.
-//
-// Lifetime note: the returned vk::RenderPassCreateInfo borrows all three
-// spans' .data() pointers - they must outlive the createRenderPass call that
-// consumes it.
-//
-// flags and pNext are deliberately left at their defaults so a pass that
-// needs either - CascadedShadowMap chains a
-// vk::RenderPassMultiviewCreateInfo through pNext - assigns it on the
-// returned value rather than this helper growing a parameter, the same rule
-// RenderPassHelper.hpp's other two helpers and FramebufferHelper.hpp state.
-//
-// Built via the fully-explicit vk::RenderPassCreateInfo constructor rather
-// than value-init-then-assign, for the same constexpr reason
-// FramebufferHelper.hpp documents.
-// Every render pass in this engine spelled out the same three or four field
-// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
-// and CascadedShadowMap - three of the five hard-coded colorAttachmentCount
-// as a literal (usually 1) next to a single-element reference instead of
-// deriving it, the same drift buildRenderPassCreateInfo's attachmentCount
-// fixed for the attachment array.
-//
-// colorAttachmentCount and inputAttachmentCount are both deliberately
-// DERIVED from their span's .size() rather than taken as parameters.
-// pipelineBindPoint is always eGraphics: a compute or ray-tracing subpass
-// does not go through a vk::RenderPass at all, so none of the five passes
-// this replaced ever set anything else.
-//
-// pResolveAttachments, preserveAttachmentCount and flags are deliberately
-// left at their defaults - nothing in this engine resolves a multisampled
-// attachment or preserves one across subpasses. A pass that needs either
-// must build the vk::SubpassDescription inline and say why, rather than
-// growing this helper new parameters - the same rule this file's other two
-// helpers and ViewportHelper.hpp state.
-//
-// Lifetime note: the returned vk::SubpassDescription borrows both spans'
-// .data() pointers and depth_attachment - they must all outlive the
-// createRenderPass call that consumes it (via buildRenderPassCreateInfo).
+// Borrows both spans and depth_attachment: they must outlive the createRenderPass call.
 constexpr vk::SubpassDescription buildSubpassDescription(
   std::span<const vk::AttachmentReference> color_attachments,
   const vk::AttachmentReference *depth_attachment,
@@ -136,6 +51,7 @@ constexpr vk::SubpassDescription buildSubpassDescription(
     return subpass;
 }
 
+// Borrows all three spans; pNext is left for the caller (CascadedShadowMap chains multiview).
 constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
   std::span<const vk::AttachmentDescription> attachments,
   std::span<const vk::SubpassDescription> subpasses,
@@ -146,26 +62,7 @@ constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
         static_cast<uint32_t>(dependencies.size()), dependencies.data() };
 }
 
-// Rasterizer, DeferredRasterizer and PostStage each spelled out this same
-// external dependency by hand for their single-subpass depth buffer: it is
-// written by one pass and cleared by the next, and the buffer is shared
-// across frames in flight, so the previous frame's write must be made
-// available before this frame's clear or draw touches it
-// (SYNC-HAZARD-WRITE-AFTER-WRITE otherwise - see Rasterizer.cpp's history,
-// which is where this was first found and fixed). dstSubpass is always 0:
-// none of the three passes this covers has more than one subpass.
-//
-// dependencyFlags is deliberately empty - eByRegion only makes sense for a
-// dependency local to the current frame's tile memory; a cross-frame
-// dependency like this one is not by-region.
-//
-// SkyBox and CascadedShadowMap keep their own inline dependency rather than
-// this helper: SkyBox's dstAccessMask carries a second, different member
-// (eColorAttachmentRead), and CascadedShadowMap's srcStageMask/srcAccessMask
-// cover a sampled shadow map (eFragmentShader/eShaderRead) - a genuinely
-// different edge, not a copy-paste. See
-// BuildIntegrity.NoRasterStageHandRollsItsExternalSubpassDependency in
-// buildIntegritySuite.cpp for the check that keeps it that way.
+// The depth buffer is shared across frames in flight, so the last write must land before this clear; not by-region.
 constexpr vk::SubpassDependency buildExternalColorDepthDependency()
 {
     vk::SubpassDependency dependency{};
@@ -184,12 +81,7 @@ constexpr vk::SubpassDependency buildExternalColorDepthDependency()
     return dependency;
 }
 
-// PostStage's colour-only twin of buildExternalColorDepthDependency: once
-// PostStage stopped owning a depth attachment (it never read the one it
-// cleared - see the removal that added this helper), its external dependency
-// no longer has a depth half to cover, and simply narrows to ordering this
-// frame's colour load/write against the previous colour write into the same
-// swapchain image (the SkyBox pass, which renders into it first).
+// PostStage's colour-only twin: orders its load against SkyBox's earlier write to the same swapchain image.
 constexpr vk::SubpassDependency buildExternalColorDependency()
 {
     vk::SubpassDependency dependency{};
@@ -203,16 +95,7 @@ constexpr vk::SubpassDependency buildExternalColorDependency()
     return dependency;
 }
 
-// Destroys a render pass and nulls its handle - the same idempotence rule
-// FramebufferHelper.hpp's destroyFramebuffer/destroyFramebuffers and
-// PipelineLayoutHelper.hpp's destroyPipelineAndLayout follow: a device-less
-// call (already torn down, or never had a device) is a no-op rather than a
-// crash, so an explicit cleanUp followed by the destructor's safety net stays
-// safe. Rasterizer, DeferredRasterizer, PostStage, SkyBox and
-// CascadedShadowMap each hand-rolled this. The handle is taken by reference
-// for the same reason destroyPipelineAndLayout takes its handles by
-// reference; passing by value would destroy without nulling and leave the
-// caller holding a dangling handle.
+// Idempotent: a null device is a no-op and the handle is nulled through the reference.
 inline void destroyRenderPass(vk::Device device, vk::RenderPass &render_pass)
 {
     if (!device) { return; }

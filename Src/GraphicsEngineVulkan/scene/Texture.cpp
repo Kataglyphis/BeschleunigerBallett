@@ -121,13 +121,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
 {
     if (width == 0 || height == 0 || rgba == nullptr) { return false; }
 
-    // sRGB, not UNORM: PNG/JPG pixel data is sRGB-encoded, and sampling it
-    // through a UNORM view fed gamma-space values into lighting math that
-    // assumes linear - then post's gamma encode applied on top, washing out
-    // every textured surface. The sRGB view makes the hardware decode to
-    // linear at sample time. Normal maps are the inverse: their texels are
-    // already linear tangent-space offsets, so sRGB-decoding them tilts every
-    // unpacked normal - those go through as UNORM instead (srgb = false).
+    // Color texels are sRGB-encoded and must decode to linear at sample time; normal maps are already linear, so UNORM.
     const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
@@ -151,9 +145,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
     // Host-visible buffers are persistently mapped by VMA.
     memcpy(stagingBuffer.getMappedData(), rgba, static_cast<size_t>(size));
 
-    // Destroy the previous view before createImage() replaces the image it
-    // looks at - VUID-vkDestroyImage-image-01000 requires every view created
-    // from an image to be destroyed before the image itself is.
+    // VUID-vkDestroyImage-image-01000: the old view must go before createImage() replaces its image.
     vulkanImageView.cleanUp();
 
     createImage(device,
@@ -165,8 +157,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    // One command buffer for transition -> copy -> (mipmaps | final transition)
-    // instead of three separately fence-waited submits.
+    // One submit for transition, copy and mips instead of three fence-waited ones.
     vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
         device->getLogicalDevice(), commandPool);
@@ -256,15 +247,10 @@ void Kataglyphis::Texture::createImageView(const std::shared_ptr<VulkanDevice> &
 
 void Kataglyphis::Texture::createTextureSampler(const std::shared_ptr<VulkanDevice> &in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
 {
-    // Must run before `this->device` is overwritten: releaseSampler() destroys
-    // the old sampler with the device that created it, not the incoming one.
+    // Before the device swap: the old sampler must be destroyed with the device that created it.
     releaseSampler();
     this->device = in_device;
-    // maxLod now tracks the mip count createImage() was actually given (was
-    // always 0.0F before mip_levels was recorded). For the current single-mip
-    // callers (Clouds, SkyBox, CascadedShadowMap) this moves maxLod from 0.0F
-    // to 1.0F, which is still correct: Vulkan clamps LOD to the image view's
-    // level count either way, so do not "fix" this back to 0.0F.
+    // maxLod = mip_levels is right for single-mip images too: Vulkan clamps LOD to the view's level count.
     vk::SamplerCreateInfo samplerInfo = buildSamplerCreateInfo(filter,
       addressMode,
       static_cast<float>(mip_levels),
@@ -304,11 +290,7 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
   int *height,
   vk::DeviceSize *image_size) -> unsigned char *
 {
-    // The decode itself, and the size contract callers size staging buffers
-    // from, live in kataglyphis.vulkan.texture_decode - a module that needs
-    // neither a device nor this class, so texture_loading_fuzz_test can reach
-    // it without linking the renderer (see TextureDecode.ixx for what that
-    // link cost). All this adds is the engine's error line.
+    // Decoding lives in texture_decode so texture_loading_fuzz_test reaches it without linking the renderer.
     static_assert(std::is_same_v<vk::DeviceSize, std::uint64_t>,
       "loadTextureData forwards image_size straight through to decodeImageRGBA8");
 
@@ -334,10 +316,7 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer, vk:
     int32_t tmp_height = height;
 
     for (uint32_t i = 1; i < mip_levels; i++) {
-        // Transfer->Transfer edge, already exactly right - left as a
-        // hand-written barrier rather than routed through the
-        // layout->stage helper so it does not get "consolidated" into the
-        // wider eAllCommands the helper answers for other layouts.
+        // Hand-written on purpose: the layout helper would widen this transfer-to-transfer edge to eAllCommands.
         barrier.subresourceRange.baseMipLevel = i - 1;
         barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
         barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
@@ -374,12 +353,7 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer, vk:
           blit,
           vk::Filter::eLinear);
 
-        // Model textures are sampled from the raster fragment stage (forward,
-        // deferred, shadow), eRayTracingShaderKHR (raytrace.rchit.slang) and
-        // eComputeShader (path_tracing.slang), so the destination stage must
-        // be the shared eShaderReadOnlyOptimal answer (eAllCommands), not the
-        // raster-only fragment stage that leaves the other two readers
-        // unsynchronized.
+        // Raster, ray-tracing and compute shaders all sample these mips, so a raster-only stage would leave two unsynchronized.
         barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.oldLayout);

@@ -1,9 +1,4 @@
-// Coverage for AsyncModelParse - the engine's only threaded class, sitting in
-// the GUI-driven model-load path on the one platform (Windows) with no
-// ThreadSanitizer. No Vulkan device anywhere: both loaders' parseCpu are
-// documented device-free (GltfLoader::parseCpu), which is exactly why
-// gltfParseSuite and objParseSuite already work headless - this suite mirrors
-// that pattern for the threaded wrapper around them.
+// The engine's only threaded class, on the one platform without ThreadSanitizer; device-free like the parse suites.
 
 #include <gtest/gtest.h>
 
@@ -28,9 +23,7 @@ std::string test_model()
 
 std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb"); }
 
-// Polls isFinished() the way a frame loop would, rather than joining
-// immediately - the point of these tests is that the caller drives this by
-// polling, not by blocking.
+// Polls like a frame loop instead of joining: callers drive this by polling, not blocking.
 void spinUntilFinished(Kataglyphis::AsyncModelParse &parse)
 {
     for (int spin = 0; spin < 10000 && !parse.isFinished(); ++spin) {
@@ -71,9 +64,7 @@ TEST(AsyncModelParseUnit, ParsesOffThreadAndHandsBackTheResult)
 
 TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
 {
-    // A .glb must dispatch to GltfLoader on the worker, not ObjLoader. Same
-    // off-thread contract as the OBJ case; parsedGltf() tells the caller which
-    // result to take.
+    // parsedGltf() tells the caller which of the two results to take.
     if (!std::filesystem::exists(test_gltf())) { GTEST_SKIP() << "test glb not present"; }
 
     Kataglyphis::GltfLoader reference;
@@ -101,8 +92,7 @@ TEST(AsyncModelParseUnit, AFailedParseReportsFailureRatherThanEmptyGeometry)
 
     EXPECT_TRUE(parse.isFinished()) << "the worker must always publish, even on failure";
     EXPECT_FALSE(parse.wasSuccessful());
-    // A caller must be able to tell "failed" from "loaded an empty model",
-    // or a bad path silently replaces the scene with nothing.
+    // Failed must differ from "loaded nothing", or a bad path silently empties the scene.
     EXPECT_EQ(parse.takeResult(), nullptr);
     EXPECT_EQ(parse.takeGltfResult(), nullptr);
 }
@@ -111,9 +101,7 @@ TEST(AsyncModelParseUnit, StartingASecondParseSupersedesTheFirst)
 {
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
-    // The GUI can pick a third model while the second is still loading.
-    // Newest-wins is the documented behaviour; what must NOT happen is the
-    // two workers writing into the same loader.
+    // Newest wins when the GUI picks again mid-load; two workers must never write into one loader.
     Kataglyphis::AsyncModelParse parse;
     parse.start(test_model());
     parse.start(test_model());
@@ -128,12 +116,7 @@ TEST(AsyncModelParseUnit, StartingASecondParseSupersedesTheFirst)
 
 TEST(AsyncModelParseUnit, TakingAResultLeavesIsFinishedTrue)
 {
-    // Pin the current behaviour, do not change it: neither take method resets
-    // finished/succeeded, so isFinished() keeps answering true after the
-    // result was handed over. Scene::pollModelLoad survives
-    // that only because it also gates on its own modelLoadPending flag - a
-    // future change to reset these atomics has to look at pollModelLoad
-    // deliberately.
+    // Pinned: taking a result leaves isFinished() true, which Scene::pollModelLoad survives only via its own flag.
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
     Kataglyphis::AsyncModelParse parse;
@@ -151,9 +134,7 @@ TEST(AsyncModelParseUnit, DestructionJoinsRatherThanDetaches)
 {
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
-    // A detached worker writing into a destroyed loader is a use-after-free
-    // that surfaces as corrupted geometry, not a crash. Under ASan - which
-    // this suite builds with - that would be caught here.
+    // A detached worker writing into a destroyed loader is a silent use-after-free; ASan catches it here.
     {
         Kataglyphis::AsyncModelParse parse;
         parse.start(test_model());

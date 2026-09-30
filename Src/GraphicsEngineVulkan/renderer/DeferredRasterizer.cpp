@@ -84,17 +84,12 @@ void DeferredRasterizer::createTextures()
 
     // Use specific formats for GBuffer
     createAttachment(offscreenTextures, FINAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
-    // No position attachment: the lighting pass reconstructs world position
-    // from the DEPTH input attachment + the inverse view/projection - a full
-    // rgba16f render target of bandwidth per frame for data the depth buffer
-    // already encodes.
+    // No position attachment: the lighting pass reconstructs position from depth, saving an rgba16f target.
     createAttachment(gBufferNormals, GBUFFER_NORMAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferAlbedos, GBUFFER_ALBEDO_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferMaterials, GBUFFER_MATERIAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
 
-    // Depth buffer. No transition is recorded here: createRenderPass declares
-    // initialLayout = eUndefined for every attachment this function creates,
-    // so the render pass itself performs the first transition.
+    // No transition here: the render pass performs the first one from eUndefined.
     depthBufferImage = std::make_unique<Texture>();
     // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
     depth_format = createDepthAttachment(
@@ -111,8 +106,7 @@ void DeferredRasterizer::createPushConstantRange()
 
 void DeferredRasterizer::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path).
+    // Idempotent: the destructor calls it again after an explicit cleanUp.
     if (!device) { return; }
 
     auto logicalDevice = device->getLogicalDevice();
@@ -148,9 +142,7 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextu
     depthBufferImage.reset();
 }
 
-// Rebuilds framebuffers but deliberately does not destroy the previous ones -
-// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
-// this, while the swapchain images they reference still exist.
+// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
 {
     releaseFrameTextures();
@@ -161,25 +153,7 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameReso
 
 void DeferredRasterizer::createRenderPass()
 {
-    // Attachments
-    // 0: Final Color (Offscreen)
-    // 1: Normal
-    // 2: Albedo
-    // 3: Material
-    // 4: Depth
-    // No position attachment - see createTextures()'s "No position attachment" comment above its
-    // gBufferNormals createAttachment call, earlier in this file.
-
-    // FINAL_FORMAT matches the forward offscreen (see Rasterizer.ixx's
-    // OFFSCREEN_FORMAT and the static_assert next to these constants).
-    // depth_format was already resolved by createTextures(), which init()
-    // always runs first - reuse it rather than querying again, so the
-    // attachment and the image it is paired with cannot diverge.
-
-    // All five use the engine-wide attachment defaults (clear on load, store,
-    // start from eUndefined) - see common/RenderPassHelper.hpp. The local
-    // createAttachmentDesc lambda this replaces was one of five hand-written
-    // copies of the same field list.
+    // Reuses createTextures()'s depth_format so the attachment and its image cannot diverge.
     std::array<vk::AttachmentDescription, 5> attachments = {
         buildAttachmentDescription(FINAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
         buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
@@ -216,11 +190,7 @@ void DeferredRasterizer::createRenderPass()
     // Dependencies
     std::array<vk::SubpassDependency, 3> dependencies;
 
-    // External -> Geometry Subpass: shares common/RenderPassHelper.hpp's
-    // buildExternalColorDepthDependency with Rasterizer and PostStage,
-    // rather than the eBottomOfPipe/eMemoryRead catch-all this replaces - the
-    // depth attachment here is the same "written by one pass, cleared by the
-    // next" single-buffer shape those two cover.
+    // External -> Geometry Subpass
     dependencies[0] = buildExternalColorDepthDependency();
 
     // Geometry Subpass -> Lighting Subpass
@@ -253,8 +223,7 @@ void DeferredRasterizer::createRenderPass()
 
 void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md).
+    // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
     ShaderStagePair geomStages{ device, slang_spv_dir + "deferred.geometry_vs_main.spv",
@@ -281,8 +250,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
       geometryPipelineBuilder.setShaderStages({ geomStages.stages().begin(), geomStages.stages().end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setColorAttachmentCount(3)
-        // Per-draw cull mode so doubleSided glTF meshes disable back-face culling
-        // in the G-buffer pass too (set in the record loop below).
+        // Dynamic, so doubleSided glTF meshes skip back-face culling here too.
         .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
 
@@ -299,9 +267,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     PipelineBuilder lightingPipelineBuilder;
     lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
-                         // Vertex-less fullscreen triangle (SV_VertexID in deferred.slang's
-                         // lighting_vs_main): no vertex buffer is ever bound, so declare an
-                         // empty vertex input.
+                         // Fullscreen triangle from SV_VertexID: no vertex buffer.
                          .setVertexInput({}, {})
                          .setCullMode(vk::CullModeFlagBits::eNone)
                          .setDepthTest(false)
@@ -353,14 +319,11 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
-    // Bind global descriptor set (set 0). It is identical for every mesh: bind
-    // once, not per draw (matches Rasterizer::recordCommands).
+    // Set 0 is identical for every mesh: bind once, not per draw.
     commandBuffer.bindDescriptorSets(
       vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
 
-    // objectIndex is the flat mesh index into the per-mesh object-description
-    // buffer; see Rasterizer::recordCommands. Advances for every mesh (culled
-    // included); no-op vs the old per-model push while a Model holds one mesh.
+    // objectIndex advances for every mesh, culled ones included, to stay the flat object-description index.
     const MeshDrawStats draw_stats = recordSceneMeshDraws(
       commandBuffer, geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, scene, cameraFrustum, pushConstant);
     meshesDrawn = draw_stats.drawn;
@@ -371,8 +334,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightingPipeline);
     
-    // Bind lighting pass specific descriptor set (set 1) alongside global (set 0) if needed
-    // Assuming descriptorSets[0] is global, descriptorSets[1] is GBuffer inputs
+    // descriptorSets[1] holds the G-buffer inputs (set 1).
     if (descriptorSets.size() > 1) {
         commandBuffer.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, lightingPipelineLayout, 1, 1, &descriptorSets[1], 0, nullptr);

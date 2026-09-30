@@ -1,14 +1,4 @@
-// Shared procedural noise: 3D simplex noise (snoise) + fractal Brownian
-// motion (fbm). Based on the Ashima Arts / Stefan Gustavson implementation
-// (MIT License, https://github.com/ashima/webgl-noise). Pure math, no
-// bindings — usable by both renderers' compute/raster passes.
-//
-// Porting note: Slang/HLSL uses `float3`/`float4` (not `vec3`/`vec4`) and
-// `float4(x,y,z,w)` constructors. The `step`, `floor`, `mod`, `mix`,
-// `dot`, `abs`, `min`, `max`, `clamp`, `pow`, `exp2` functions are all
-// Slang built-ins. `lessThan` has no direct Slang equivalent — the original
-// used `floor(b)*2+1` instead (which is what the GLSL code already does
-// in the commented-out `lessThan` path).
+// Simplex noise + fBm after Ashima Arts / Stefan Gustavson (MIT License, https://github.com/ashima/webgl-noise).
 
 float3 mod289(float3 x)
 {

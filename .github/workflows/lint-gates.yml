@@ -1,48 +1,16 @@
 name: Lint gates
 
-# WHY THIS IS ITS OWN WORKFLOW (2026-09-15)
-#
-# These jobs used to be tenants of the build lanes: `lint` sat inside
-# reusable-linux.yml and `powershell-lint` inside windows-x64.yml. Nothing about
-# them belongs to a build, and being tenants cost them on both sides:
-#
-#   - reusable-linux.yml is `workflow_call`-only, so `lint` ran once per CALLER.
-#     A push carrying [build-arm] ran the identical
-#     shellcheck/actionlint/gitleaks sweep twice, on an x86 runner and again on
-#     an ARM one, grading a tree that does not vary by runner architecture.
-#   - Both callers declare `paths-ignore: ['**.md', 'docs/**']`, correctly - a
-#     backlog edit is not a reason to spend a 2-3h engine build. But the lint
-#     gates are exactly the gates a docs-only commit still needs: gitleaks scans
-#     the tracked tree, and a leaked credential does not care that the commit
-#     only touched Markdown. A docs-only push got NO secret scan at all.
-#   - `powershell-lint` was reachable only through windows-x64.yml, whose build
-#     job is opt-in per commit. It already carried no `if:` so it did run on
-#     every push - but it ran under a workflow named for a Windows container
-#     build, and windows-x64.yml's own paths-ignore silenced it on docs-only
-#     commits too.
-#
-# So: no paths-ignore here, on purpose, and no runner input. This runs once per
-# push to main/develop and once per PR against them, whatever the commit
-# touched. Everything below is CPU-only and container-free; the whole workflow
-# finishes in minutes and pulls no image.
-#
-# An invariant that only runs when somebody remembers to type a marker is not a
-# gate - the same reasoning that pulled the submodule-pin check out of the
-# opt-in Windows job (now .github/workflows/submodule-pins.yml).
+# No paths-ignore on purpose: a docs-only commit still needs the secret scan. See AGENTS.md § Lint gates.
 
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
-  # Lets the gates be re-run against a branch tip without inventing a commit -
-  # useful after a fix lands upstream in ANTfrastructure, since the gate scripts
-  # and their pinned binaries are resolved there rather than here.
+  # Re-runs the gates after an upstream ANTfrastructure fix without a new commit here.
   workflow_dispatch:
 
-# A superseded lint verdict is noise: the tip's answer is the only one that
-# matters and these jobs are cheap to restart. main is exempt for the same
-# reason as the build lanes - its runs are what a release is cut from.
+# main is exempt from cancellation: its runs are what a release is cut from.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -51,64 +19,7 @@ permissions:
   contents: read
 
 jobs:
-  # ONE `uses:` LINE, because ANTfrastructure ships the lane itself now. What
-  # the ~35 lines here did - check out at fetch-depth 1 with submodules, install
-  # uv, run the aggregator against an EXPLICIT consumer root - is exactly what
-  # the hub job does, and it additionally pins actions/checkout by SHA where the
-  # copy pinned a tag. The hub runs the aggregator DIRECTLY out of
-  # third_party/ANTfrastructure with "${GITHUB_WORKSPACE}" rather than through
-  # scripts/linux/run-lint-gates.sh, because the wrappers sit at different paths
-  # across the family; same script, same root, same verdict. That wrapper stays
-  # as the dev-box command, and it is still the point of having one:
-  #
-  #   bash ./scripts/linux/run-lint-gates.sh [--ratchets]
-  #
-  # submodules: 'recursive', which is the hub's documented default. This file
-  # shipped on 2026-09-15 overriding it to 'true', arguing that depth 1 was
-  # enough because every scope drops third_party/. That is true of the SCOPES
-  # and false of the CHECKOUT, and run 35015672838 is the proof:
-  #
-  #   docs/source/_static/css/custom.css is a tracked SYMLINK into
-  #   third_party/ANTfrastructure/third_party/DocumANTation - a submodule of a
-  #   submodule. At depth 1 DocumANTation is never cloned, so the link dangles.
-  #   gate_scope.tracked() tests os.path.exists(), which FOLLOWS the link, so a
-  #   dangling symlink reads as a tracked path missing from disk and the gate
-  #   refuses to grade what it takes for a partial tree. doc-links and
-  #   code-size - the two gates scoped `*` - aborted on that ScopeError while
-  #   the other seven ratchets passed.
-  #
-  # A dev box does not see this: there the nested DocumANTation checkout is
-  # present, the link resolves, and `run-lint-gates.sh --ratchets` is green.
-  # The runner and the container disagreed about the CHECKOUT, not the code.
-  #
-  # Recursing changes no verdict - the scopes still drop third_party/, so the
-  # recursed trees add no findings - it only lets the '*' gates be computed at
-  # all. It also restores the reason the hub makes 'recursive' the default: the
-  # secret scan reads the working tree, and a half-checked-out submodule
-  # changes what it sees from run to run.
-  #
-  # ratchets: true since 2026-09-15. That adds doc-links plus the eight --root
-  # measurement gates over this tree, with the freeze files committed at the
-  # repo root (comment-size.allow, dead-functions.allow,
-  # trailing-conditional.allow, shellcheck-warnings.allow). doc-links has no
-  # freeze file by design, so its findings were FIXED rather than frozen.
-  #
-  # TWO MEASUREMENTS THIS REPO OWNS, kept here because the code that used to
-  # state them lives upstream now:
-  #   - both scopes come from `git ls-files`, NOT a glob. The two globs this
-  #     replaced (`scripts/linux/*.sh scripts/linux/lib/*.sh`) do not recurse
-  #     and named only the directories somebody remembered: measured 2026-09-07
-  #     they expanded to 19 of the 21 tracked first-party scripts.
-  #   - third_party/ is dropped because the vendored trees are linted in their
-  #     own repositories at their own ratchet. Handing the whole workspace to
-  #     gitleaks measured 82 findings, every one a generic-api-key false
-  #     positive in vendored code, and ZERO in a file this repository owns.
-  #     third_party/CMakeLists.txt is still scanned: the aggregator keeps the
-  #     tracked plain FILES inside an excluded directory precisely because they
-  #     are the consumer's own.
-  #
-  # @develop, like every other ANTfrastructure reference here: upstream is pushed
-  # before the consumer change that needs it.
+  # 'recursive': at depth 1 the docs/source/_static/css/custom.css symlink dangles and the '*' gates refuse the tree.
   lint:
     name: shell + workflow + secret + config gates
     uses: Kataglyphis/ANTfrastructure/.github/workflows/lint-gates.yml@develop
@@ -116,74 +27,30 @@ jobs:
       submodules: 'recursive'
       ratchets: true
 
-  # PowerShell lint: ANTfrastructure's Invoke-Lint.ps1 pointed at THIS repo's
-  # PowerShell tree. Two passes - a mandatory parse + AST-trap gate, and
-  # PSScriptAnalyzer.
-  #
-  # THIS ONE IS DELIBERATELY NOT COLLAPSED, and the reason is a measurement.
-  # The hub does publish an equivalent - python-ci-windows.yml with
-  # `lint-powershell: true`, `build-python-package: false`, `lint-path: scripts`
-  # - and it is this job step for step except that it passes -FailOnAnalyzer
-  # unconditionally, which upstream states is not an input. Run against this
-  # tree on 2026-09-15 that gate reports:
-  #
-  #   PARSE: all 23 files parse clean
-  #   AST TRAPS: none
-  #   PSSA: 0 error(s), 1 warning(s)
-  #     Build-Windows.ps1:21  $WebDavPassword should not use String type but
-  #     either SecureString or PSCredential  (PSAvoidUsingPlainTextForPassword)
-  #
-  # So adopting it today makes this lane red over ONE finding whose fix changes
-  # the build driver's public parameter contract and how windows-x64.yml forwards
-  # the WebDAV credentials - a change that wants its own commit and its own
-  # verification, not a ride inside a workflow collapse. Fix that parameter,
-  # then delete this job and pass `lint-powershell: true` instead.
-  #
-  # Runs on Windows rather than being folded into the `lint` job above on
-  # purpose: the script is Windows-native (it resolves its own helper module with
-  # a backslash path and excludes `\archive\` by a backslash regex), and
-  # PSScriptAnalyzer is preinstalled on the hosted Windows image.
+  # Not the hub's python-ci-windows lane: that one forces -FailOnAnalyzer and $WebDavPassword is still a String.
   powershell-lint:
     name: PowerShell lint (ANTfrastructure gate)
     runs-on: windows-2025
-    # Install-Module is the step that can hang; the ceiling exists so it fails
-    # in minutes instead of running to the six-hour account default.
+    # Install-Module can hang; fail in minutes, not at the six-hour default.
     timeout-minutes: 20
     permissions:
       contents: read
-    # windows-x64.yml set this file-wide; carried here because every step below is
-    # PowerShell and `pwsh` is not the default shell on a Linux-first workflow.
     defaults:
       run:
         shell: pwsh
     steps:
-      # Top-level only: the only submodule these steps read is ANTfrastructure,
-      # which carries both the gate script and its ruleset.
+      # Top-level only: ANTfrastructure carries both the gate script and its ruleset.
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
           submodules: true
           fetch-depth: 1
 
-      # Pinned, like the hub pins it for its own lane, so a runner-image module
-      # refresh cannot silently change what this gate reports.
+      # Pinned so a runner-image module refresh cannot change what this gate reports.
       - name: Install PSScriptAnalyzer
         run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
 
-      # -Path is the parameter ANTfrastructure added for exactly this case: a
-      # consumer points the gate at ITS tree, while the PSScriptAnalyzer settings
-      # file stays resolved against the SCRIPT's own location - so the hub's
-      # PSScriptAnalyzerSettings.psd1 is consumed BY REFERENCE and no ruleset is
-      # copied into this repo. `scripts` is walked recursively, so scripts\,
-      # scripts\windows\, scripts\windows\tests\ and scripts\agentic-loop\ are all
-      # covered; the dead archive\ tree at the repo root is deliberately outside
-      # the scope.
-      #
-      # -FailOnAnalyzer is deliberately NOT passed, and this step deliberately
-      # carries no continue-on-error - those are not the same thing. The step
-      # FAILS the job on any parse error or AST-trap violation, which are hard
-      # code defects. What is advisory is only the PSScriptAnalyzer pass, and the
-      # single finding it has is quoted above this job.
+      # Parse and AST-trap errors fail the job; without -FailOnAnalyzer only PSScriptAnalyzer is advisory.
       - name: Lint PowerShell (parse gate + PSScriptAnalyzer)
         run: >-
           pwsh -NoProfile -File third_party/ANTfrastructure/windows/scripts/Invoke-Lint.ps1

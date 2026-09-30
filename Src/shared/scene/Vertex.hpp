@@ -12,10 +12,7 @@ struct Vertex
     glm::vec3 normal;
     glm::vec4 color;
     glm::vec2 texture_coords;
-    // xyz = tangent direction, w = handedness (+-1) for reconstructing the
-    // bitangent as cross(normal, tangent) * w (glTF convention). Trailing so
-    // the first four members' offsets - and every std::array<..., 4>
-    // vertex-input-attribute call site - stay unchanged.
+    // xyz = tangent, w = handedness: bitangent = cross(normal, tangent) * w (glTF). Last, so earlier offsets hold.
     glm::vec4 tangent;
 
     Vertex() = default;
@@ -43,11 +40,7 @@ template<> struct hash<Vertex>
 {
     size_t operator()(Vertex const &vertex) const
     {
-        // XOR with 1- and 2-bit shifts barely mixes: two vertices differing
-        // only in normal land in nearby buckets, and clustered buckets turn
-        // hash lookups into linear scans. This is the usual 64-bit combine
-        // (boost's, with a 64-bit constant), which spreads each component
-        // across the whole word before combining.
+        // Boost-style 64-bit combine: XOR with small shifts clusters buckets and turns lookups into linear scans.
         auto combine = [](size_t seed, size_t value) {
             return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6U) + (seed >> 2U));
         };
@@ -55,9 +48,7 @@ template<> struct hash<Vertex>
         size_t seed = hash<glm::vec3>()(vertex.position);
         seed = combine(seed, hash<glm::vec3>()(vertex.normal));
         seed = combine(seed, hash<glm::vec2>()(vertex.texture_coords));
-        // color participates in operator==, so it must participate here too -
-        // omitting it is legal but makes every colour variant of a position
-        // collide.
+        // color is part of operator==, so hash it too, or colour variants of one position collide.
         seed = combine(seed, hash<glm::vec4>()(vertex.color));
         // Same reasoning as color: tangent participates in operator==.
         seed = combine(seed, hash<glm::vec4>()(vertex.tangent));

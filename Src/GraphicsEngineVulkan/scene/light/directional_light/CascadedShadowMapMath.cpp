@@ -13,23 +13,12 @@ module;
 
 module kataglyphis.vulkan.cascaded_shadow_map;
 
-// Split into its own implementation unit (of the SAME module as
-// CascadedShadowMap.cpp) deliberately: these are the pure-math free functions
-// that computeCascadeData()'s doc comment already promises are callable
-// "without a CascadedShadowMap" - i.e. without a Vulkan device. Static linking
-// is per-TU, so as long as this stays a separate .obj from the class methods
-// (which pull in Scene/Device/Texture), a consumer that only calls
-// computeCascadeData()/clampCascadeCount() never links Scene - and therefore
-// never collides with a TU that separately bundles TINYOBJLOADER_IMPLEMENTATION
-// (see Test/perf/perfSuite.cpp). Keeping this in the CascadedShadowMap.cpp TU
-// pulled the whole class - and Scene, and ObjLoader.cpp's tinyobj
-// implementation - into the perf benchmark link.
+// Own TU of the same module, so pure-math callers (perfSuite) never link Scene and its duplicate tinyobj implementation.
 
 namespace Kataglyphis {
 
 namespace {
-// Free so computeCascadeData() can be called without a CascadedShadowMap (and
-// therefore without a Vulkan device) in tests.
+// Free so computeCascadeData() runs in tests without a Vulkan device.
 std::array<glm::vec4, 8> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
 {
     const auto inv = glm::inverse(proj * view);
@@ -39,9 +28,7 @@ std::array<glm::vec4, 8> frustumCornersWorldSpace(const glm::mat4 &proj, const g
     for (unsigned int x = 0; x < 2; ++x) {
         for (unsigned int y = 0; y < 2; ++y) {
             for (unsigned int z = 0; z < 2; ++z) {
-                // X/Y span the NDC cube [-1, 1], but depth does NOT: the engine
-                // is built with GLM_FORCE_DEPTH_ZERO_TO_ONE (Vulkan convention),
-                // so NDC z runs 0..1.
+                // NDC z runs 0..1, not -1..1: the engine builds with GLM_FORCE_DEPTH_ZERO_TO_ONE.
                 const glm::vec4 pt =
                   inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
                 frustumCorners[index] = pt / pt.w;
@@ -62,28 +49,20 @@ uint32_t clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t de
 
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex)
 {
-    // Deliberately trivial, and deliberately a named function: this used to be
-    // written inline as `glm::mat4(1.0f)`, so the shadow pass rendered casters
-    // at the wrong scale and nothing was ever occluded. A unit test now pins
-    // that the caller's matrix is what goes to the GPU.
+    // Trivial but named, so a unit test pins that the caller's model matrix, not identity, reaches the GPU.
     return ShadowPushConstants{ modelMatrix, cascadeIndex };
 }
 
 ShadowSetBinding shadowSetBinding(bool hasSharedSet)
 {
-    // With the shared set: both sets are bound starting at set 0. Without it:
-    // the shared set is skipped entirely and light matrices are bound at set 1
-    // alone - firstSet = 1 makes vkCmdBindDescriptorSets place it at the
-    // pipeline layout's set index 1, not 0.
+    // Without the shared set, firstSet = 1 keeps the light matrices at the layout's set 1, not 0.
     if (hasSharedSet) { return ShadowSetBinding{ 0, 2 }; }
     return ShadowSetBinding{ 1, 1 };
 }
 
 std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeFitParams &params)
 {
-    // Allocating convenience wrapper. It exists so callers that are NOT on the
-    // frame path (tests, the benchmark) keep a value-returning signature; the
-    // maths lives once, in computeCascadeDataInto.
+    // Allocating wrapper for callers off the frame path; the maths lives in computeCascadeDataInto.
     std::vector<CascadeData> cascadeData(numCascades);
     computeCascadeDataInto(cascadeData, numCascades, params);
     return cascadeData;
@@ -92,8 +71,7 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeF
 void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, const CascadeFitParams &params)
 {
     if (numCascades == 0U) { return; }
-    // Refuse rather than clamp: a caller that under-sized its buffer would
-    // otherwise get a silently truncated cascade set.
+    // Refuse rather than clamp: an under-sized buffer would get a silently truncated cascade set.
     if (out.size() < numCascades) { return; }
 
     const glm::mat4 &cameraView = params.cameraView;
@@ -106,47 +84,18 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
     const float splitLambda = params.splitLambda;
     const uint32_t shadowMapResolution = params.shadowMapResolution;
 
-    // Shadows are fitted to shadowDistance, NOT to the camera far plane. The
-    // two are unrelated: the debug scene ends at ~36 units of view depth while
-    // the camera sees 150, so fitting cascades to the far plane spent two
-    // thirds of the shadow map on empty space. Measured box widths for that
-    // framing, 2048x2048 map:
-    //   far plane 150, uniform : 3.80 cm/texel over the scene
-    //   distance 60, lambda 0.5: 3.04 cm/texel, and 1.79 for a near subject
-    // 0 or negative means "no clamp" - fall back to the far plane.
+    // Fit to shadowDistance, not the far plane, which wastes texels on empty space; 0 or less means the far plane.
     const float shadowFar =
       (shadowDistance > 0.0F) ? std::min(shadowDistance, farPlane) : farPlane;
     const float shadowNear = std::min(nearPlane, shadowFar * 0.5F);
     const float lambda = std::clamp(splitLambda, 0.0F, 1.0F);
 
-    // Split i as a pure function of i rather than a heap vector of them: this
-    // runs every frame, each split is used by exactly one cascade iteration
-    // (as [i] and [i+1]), and the two endpoints are exact by definition.
+    // Split as a function of i: no per-frame heap vector, and both endpoints stay exact.
     const auto cascadeSplit = [&](uint32_t i) -> float {
         if (i == 0U) { return shadowNear; }
-        // The last split must land exactly on shadowFar; the blend below is
-        // only accurate to float rounding, and a short final cascade leaves a
-        // band of geometry that samples nothing and renders unshadowed.
+        // Exact, not blended: a float-short last cascade leaves a band that renders unshadowed.
         if (i >= numCascades) { return shadowFar; }
-        // Practical split scheme (Zhang et al.): blend a logarithmic
-        // distribution, which matches how perspective projection compresses
-        // depth, with a uniform one, which keeps the near cascades from
-        // collapsing onto the first metre.
-        //
-        // lambda is NOT "higher is better", and it defaults to 0 (pure
-        // uniform) for a measured reason. Worst cm/texel over the debug
-        // scene's subject, which sits at view depth 16-36, shadow distance 60:
-        //   lambda 0.00  ->  3.04    lambda 0.25  ->  4.56
-        //   lambda 0.15  ->  4.56    lambda 0.50  ->  4.56
-        // That is a cliff, not a curve: at lambda 0 the second split lands at
-        // 40.0, just past the subject, so it fits in the tighter cascades. Any
-        // lambda above 0 pulls that split back to ~35 and spills the subject
-        // into the 60-unit last cascade. Tuning lambda against one camera
-        // angle is overfitting; the durable win is shadowFar above.
-        //
-        // It still earns its keep for a camera close to its subject
-        // (a 2-12 unit subject: 1.52 cm/texel at lambda 0, 1.01 at 0.35),
-        // which is why the knob exists rather than being deleted.
+        // Practical split scheme (Zhang et al.); lambda defaults to 0 because higher values only pay off for close subjects.
         const float p = static_cast<float>(i) / static_cast<float>(numCascades);
         const float logSplit = shadowNear * std::pow(shadowFar / shadowNear, p);
         const float uniformSplit = shadowNear + ((shadowFar - shadowNear) * p);
@@ -164,10 +113,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
         for (const auto &v : frustumCornerWorldSpace) { center += glm::vec3(v); }
         center /= frustumCornerWorldSpace.size();
 
-        // Radius of the cascade's frustum, used to place the light camera far
-        // enough back that the whole cascade sits IN FRONT of it. The eye used
-        // to be center - lightDir (one unit away), which put part of the
-        // cascade behind the light's near plane.
+        // The radius puts the light eye far enough back that the whole cascade sits in front of it.
         float radius = 0.0F;
         for (const auto &v : frustumCornerWorldSpace) {
             radius = std::max(radius, glm::length(glm::vec3(v) - center));
@@ -178,37 +124,10 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
           (std::abs(light_direction.y) > 0.99F) ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
 
         if (shadowMapResolution > 0) {
-            // STABILIZED path. Three ingredients, each necessary:
-            //
-            // 1. A WORLD-FIXED light basis (pure rotation about the origin).
-            //    The legacy lookAt is anchored at the slice center, so camera
-            //    translation is absorbed into the view matrix in continuous
-            //    amounts and no snap applied afterwards can help.
-            // 2. A box sized from `radius` - a function of the slice geometry
-            //    only (fov/aspect/splits), so its texel footprint never
-            //    changes as the camera moves or turns.
-            // 3. The box CENTER snapped to whole texels in that fixed basis,
-            //    so the box only ever moves in texel increments and a static
-            //    shadow edge always lands on the same texels.
-            //
-            // The box is padded by one texel because the snap can shift the
-            // center by up to a texel in each axis - without the pad, slice
-            // corners could fall just outside. The pad is derived from the
-            // PADDED extent, not the raw radius: texel_world must be the size
-            // of a texel of the box that is actually projected
-            // (2*half_extent/resolution), not of the unpadded radius, or the
-            // grid the center snaps to and the grid the box projects disagree
-            // and a "whole texel" snap drifts by a fraction of a texel every
-            // step. Solving half_extent = radius + 2*half_extent/resolution
-            // gives half_extent = radius * resolution / (resolution - 2).
-            // Depth still fits the corners; near may come out NEGATIVE here
-            // (the basis is anchored at the origin, not behind the scene) -
-            // glm::ortho is a plain box and accepts that; the legacy 0.01
-            // clamp assumed an eye placed behind everything.
+            // Stable edges need all three: a world-fixed basis, a radius-sized box, a texel-snapped center; near may go negative.
             glm::mat4 const light_basis = glm::lookAt(-light_direction, glm::vec3(0.0F), up_axis);
 
-            // resolution <= 2 has no consistent solution (the pad would
-            // swallow the whole box); fall back to the unsnapped tight fit.
+            // One-texel pad measured on the padded box, or snap and projection grids drift; unsolvable for resolution <= 2.
             float half_extent = radius;
             float texel_world = 0.0F;
             if (shadowMapResolution > 2) {
@@ -266,12 +185,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
             maxZ = std::max(maxZ, v_light_view.z);
         }
 
-        // Light view space is right-handed and looks down -Z, so corner z
-        // values are NEGATIVE. glm::ortho takes positive near/far DISTANCES:
-        // near = -maxZ (closest corner), far = -minZ (farthest). Passing the
-        // raw negative values mapped nearly every fragment outside [0,1]
-        // depth - measured: only ~5% of visible fragments landed inside the
-        // shadow map, which is why the sampled shadow term was noise.
+        // Light view looks down -Z, so corner z is negative while glm::ortho takes positive near/far distances.
         constexpr float zPadding = 10.0F;// keep casters just outside the box
         float near_distance = std::max(0.01F, -maxZ - zPadding);
         float far_distance = (-minZ) + zPadding;
@@ -281,8 +195,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
           glm::ortho(minX, maxX, minY, maxY, near_distance, far_distance);
 
         out[i].viewProjMatrix = light_projection * light_view_matrix;
-        // The split depth is the far plane of this cascade frustum, but measured in view space depth
-        // A simple way is to pass the positive distance
+        // Split depth is this cascade's far plane as a positive view-space distance.
         out[i].splitDepth = splitFar;
     }
 }

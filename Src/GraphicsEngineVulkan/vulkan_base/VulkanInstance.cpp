@@ -25,8 +25,6 @@ Kataglyphis::VulkanInstance::VulkanInstance()
         spdlog::error("Validation layers requested, but not available!");
     }
 
-    // info about app
-    // most data doesn't affect program; is for developer convenience
     vk::ApplicationInfo app_info{};
     app_info.pApplicationName = "\\__/ Epic Graphics from hell \\__/";// custom name of app
     app_info.applicationVersion = VK_MAKE_VERSION(Kataglyphis::RendererConfig::projectVersionMajor,
@@ -129,9 +127,5 @@ void Kataglyphis::VulkanInstance::cleanUp()
     instance = nullptr;
 }
 
-// Not `~VulkanInstance() { cleanUp(); }`: VulkanRenderer::cleanUp() owns the
-// teardown order between the logical device and the instance, and a
-// destructor call here would let the instance's lifetime move independently
-// of that order. cleanUp() is idempotent (above), so calling it explicitly
-// stays safe.
+// No cleanUp() here: VulkanRenderer::cleanUp() owns the device-versus-instance teardown order.
 Kataglyphis::VulkanInstance::~VulkanInstance() = default;

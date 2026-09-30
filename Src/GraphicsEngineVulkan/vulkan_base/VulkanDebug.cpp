@@ -62,11 +62,7 @@ VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
     }
 #endif
 
-    // The return value of this callback controls whether the Vulkan call that
-    // caused the validation message will be aborted or not We return VK_FALSE as
-    // we DON'T want Vulkan calls that cause a validation message to abort If you
-    // instead want to have calls abort, pass in VK_TRUE and the function will
-    // return VK_ERROR_VALIDATION_FAILED_EXT
+    // VK_FALSE: a validation message must not abort the Vulkan call that caused it.
     return VK_FALSE;
 }
 
@@ -91,8 +87,7 @@ void freeDebugCallback(vk::Instance instance)
 
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
 {
-    // VK_EXT_debug_utils is only enabled together with the validation layers;
-    // the dynamic dispatcher leaves the pointer null otherwise.
+    // debug_utils is enabled only with the validation layers; otherwise the dispatcher pointer is null.
     if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT == nullptr) { return; }
 
     vk::DebugUtilsLabelEXT label{};

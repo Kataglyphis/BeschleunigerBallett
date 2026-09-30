@@ -1,9 +1,4 @@
-// Direct unit coverage for kataglyphis.vulkan.mesh_range::sliceMeshRange - the
-// helper both loaders call in uploadParsed to cut one sub-mesh out of the flat
-// vertex/index/material arrays. It is otherwise only exercised indirectly
-// (through GPU rendering of multi-mesh models), so these tests pin the two
-// things that are easy to get wrong when slicing: the per-index re-basing by
-// vertexBase, and the half-open range bounds.
+// Otherwise only reached through GPU rendering; the traps are vertexBase re-basing and half-open bounds.
 
 #include <gtest/gtest.h>
 
@@ -30,8 +25,7 @@ TEST(MeshRangeSlice, RebasesIndicesAndSlicesArraysForASubMesh)
     std::vector<Vertex> vertices;
     for (int i = 0; i < 6; ++i) { vertices.push_back(vertexAtX(static_cast<float>(i))); }
 
-    // A global index buffer holding three triangles; the last two reference the
-    // second sub-mesh's vertices (3,4,5).
+    // The last two triangles reference the second sub-mesh's vertices.
     const std::vector<unsigned int> indices = { 0, 1, 2, 3, 4, 5, 3, 5, 4 };
     // One material id per triangle.
     const std::vector<unsigned int> materialIndex = { 0, 1, 1 };
@@ -57,9 +51,7 @@ TEST(MeshRangeSlice, RebasesIndicesAndSlicesArraysForASubMesh)
 
 TEST(MeshRangeSlice, SingleRangeSpanningEverythingReproducesTheInputs)
 {
-    // The single-mesh case: one range covering everything with vertexBase 0. The
-    // re-basing subtracts 0, so the sliced arrays must equal the originals -
-    // behaviour-identical to not splitting at all.
+    // vertexBase 0 must behave exactly like not splitting at all.
     std::vector<Vertex> vertices;
     for (int i = 0; i < 3; ++i) { vertices.push_back(vertexAtX(static_cast<float>(i))); }
     const std::vector<unsigned int> indices = { 0, 1, 2 };
@@ -75,10 +67,7 @@ TEST(MeshRangeSlice, SingleRangeSpanningEverythingReproducesTheInputs)
 
 TEST(MeshRangeSlice, OutOfRangeRangeYieldsAnEmptySliceInsteadOfReadingPastTheArrays)
 {
-    // Three vertices, three indices, one material id - a well-formed
-    // single-triangle input. Each sub-test below breaks exactly one of the
-    // three range checks; sliceMeshRange must refuse to read past the arrays
-    // and return an empty MeshSlice instead of crashing/UB.
+    // Each case breaks one range check; the slice must come back empty, never read past the arrays.
     std::vector<Vertex> vertices;
     for (int i = 0; i < 3; ++i) { vertices.push_back(vertexAtX(static_cast<float>(i))); }
     const std::vector<unsigned int> indices = { 0, 1, 2 };

@@ -5,10 +5,7 @@
 
 namespace Kataglyphis {
 
-// Returns true iff every face matches the first face's dimensions and none
-// are degenerate. The cubemap upload copies `layerSize` bytes out of every
-// face, so a face larger than the first reads off the end of an earlier
-// allocation and a smaller one writes overlapping layers.
+// True iff all faces match the first's size and none is degenerate: the upload copies one layerSize per face.
 constexpr bool cubemapFacesConsistent(std::span<const int, 6> widths, std::span<const int, 6> heights)
 {
     for (size_t i = 0; i < 6; ++i) {
@@ -18,9 +15,7 @@ constexpr bool cubemapFacesConsistent(std::span<const int, 6> widths, std::span<
     return true;
 }
 
-// The fallback face SkyBox uploads when a real face fails to load or the six
-// faces disagree in size: one opaque-black RGBA8 texel. Shared with the test
-// suite so the shipped byte pattern cannot drift from what is asserted here.
+// SkyBox's fallback face, shared with the tests so the shipped bytes cannot drift from what they assert.
 inline constexpr unsigned char kFallbackCubemapFacePixel[4] = { 0, 0, 0, 255 };
 
 }// namespace Kataglyphis

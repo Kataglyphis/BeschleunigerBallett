@@ -1,8 +1,4 @@
-// Deterministic counterpart to Test/fuzz/shader_file_reader_fuzz_test.cpp and
-// texture_loading_fuzz_test.cpp. Fuzzing proves "no crash on arbitrary
-// bytes"; it does not pin what a function returns for a specific known-bad
-// input, and it does not run on the Windows CPU lane. These tests pin the
-// exact contract callers rely on.
+// Deterministic twin of the reader fuzz tests: fuzzing pins no return values and skips the Windows CPU lane.
 
 #include <cstdint>
 #include <filesystem>
@@ -31,10 +27,7 @@ std::filesystem::path uniqueTempPath(const std::string &name)
     return std::filesystem::temp_directory_path() / name;
 }
 
-// Swaps the process working directory for the lifetime of the guard and puts
-// it back on destruction - resolveResourceRelativePath reads
-// std::filesystem::current_path() internally, and the working directory is
-// process-global state shared with every other test in this binary.
+// The working directory is process-global and resolveResourceRelativePath reads it, so always restore it.
 class ScopedWorkingDirectory
 {
   public:
@@ -69,13 +62,7 @@ TEST(FileReaderUnit, FileExistsFalseForMissingPath)
 
 TEST(FileReaderUnit, FileExistsFalseNotCrashForUnstattablePath)
 {
-    // A single path component longer than the filesystem's name limit (255
-    // on both NTFS and ext4) makes the OS query itself fail
-    // (ENAMETOOLONG / ERROR_FILENAME_EXCED_RANGE) rather than cleanly report
-    // "not found". The throwing std::filesystem::exists() overload reports
-    // that as an exception; with exceptions disabled project-wide that would
-    // be a terminate. fileExists must use the error_code overload and simply
-    // report false.
+    // An overlong name makes the OS query fail; with exceptions disabled the throwing exists() would terminate.
     const std::string overlong_component(300, 'a');
     const std::string unstattable = (std::filesystem::temp_directory_path() / overlong_component).string();
 
@@ -102,16 +89,7 @@ TEST(FileReaderUnit, ReadTextFileEmptyForDirectoryPath)
     std::filesystem::remove(dir, ec);
 }
 
-// The DOS device names Windows resolves in every directory. Pure string
-// logic, so it is asserted on every platform even though only the Windows
-// readers act on it.
-//
-// This is the regression test for a CI run that had to be KILLED:
-// shader_file_reader_fuzz_test's "con" seed (commented "reserved device name
-// on Windows" in that file) reached readTextFile, which opened the console
-// and blocked for 1 h 8 min inside the Windows container on 2026-08-05,
-// stalling the whole lane. The fuzz suite's contract is "must not crash or
-// hang" - this is the hang.
+// Opening a DOS device name such as "con" on Windows attaches the console and blocks the reader forever.
 TEST(FileReaderUnit, WindowsDeviceNamesAreRecognisedInEveryForm)
 {
     for (const char *device : { "con", "CON", "Con.TXT", "shaders/con", "shaders\\con.spv", "con . ", "nul", "prn",
@@ -119,20 +97,14 @@ TEST(FileReaderUnit, WindowsDeviceNamesAreRecognisedInEveryForm)
         EXPECT_TRUE(isWindowsReservedDeviceName(device)) << device << " is a Windows device name";
     }
 
-    // Names that merely start with, contain or extend a device name are
-    // ordinary files: Windows only resolves the stem, and only exactly.
+    // Windows resolves only an exact stem, so names that merely contain a device name are ordinary files.
     for (const char *ordinary : { "console", "connect.spv", "acon", "my.con", "com", "com10", "lpt", "",
            "Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv" }) {
         EXPECT_FALSE(isWindowsReservedDeviceName(ordinary)) << ordinary << " is an ordinary filename";
     }
 }
 
-// The behavioural half of the test above, and the POSIX twin of the same bug:
-// a character device opens cleanly and then never finishes being read
-// (/dev/zero would fill memory with NULs forever). Both readers must refuse
-// anything that is not a regular file. Guarded because /dev/zero is a POSIX
-// path; the Windows side of this is unreachable from a test that would have
-// to open the console to prove it.
+// A character device opens cleanly and never finishes reading; the Windows twin would need the console to prove.
 #ifndef _WIN32
 TEST(FileReaderUnit, ReadersRefuseCharacterDevicesInsteadOfBlocking)
 {
@@ -207,10 +179,7 @@ TEST(FileReaderUnit, ReadTextFileAppendsTrailingNewlineWhenSourceHasNone)
 
 TEST(FileReaderUnit, ReadTextFilePreservesEmbeddedNulByte)
 {
-    // Mirrors the fuzz round-trip property (ReadingAFileReturnsItsBytesExactly
-    // in shader_file_reader_fuzz_test.cpp), pinned as a deterministic case:
-    // std::getline reads up to '\n', not up to a NUL, so an embedded NUL must
-    // survive inside the returned std::string rather than truncating it.
+    // std::getline stops at '\n', not NUL, so an embedded NUL must survive rather than truncate.
     const auto path = uniqueTempPath("kat_filereader_embedded_nul.bin");
     const std::vector<char> contents = { 'A', '\0', 'B', '\n' };
     {
@@ -246,8 +215,7 @@ TEST(FileReaderUnit, GetBaseDirNoSeparatorReturnsEmpty)
     EXPECT_TRUE(getBaseDir("c.txt").empty());
 }
 
-// Texture::loadTextureData is static and touches no device, so it stays
-// CPU-only here rather than in an integration/golden suite.
+// Texture::loadTextureData is static and device-free, so it is tested here rather than in a GPU suite.
 TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)
 {
     const auto path = uniqueTempPath("kat_texture_not_an_image.bin");
@@ -257,9 +225,7 @@ TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)
         out.write(reinterpret_cast<const char *>(garbage.data()), static_cast<std::streamsize>(garbage.size()));
     }
 
-    // Sentinels, not zero-initialized - a caller that trusted the old
-    // contract (image_size computed from whatever width/height happened to
-    // hold) would size a staging buffer from garbage.
+    // Sentinels, so a failed decode that leaves outputs untouched would size a staging buffer from garbage.
     int width = -1;
     int height = -1;
     vk::DeviceSize image_size = 4;
@@ -274,11 +240,7 @@ TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)
     std::filesystem::remove(path, ec);
 }
 
-// resolveResourceRelativePath consolidates what used to be four independent
-// "walk up looking for Resources/" copies (SceneConfig::resolveModelPath,
-// SceneConfig::findResourcesBasePath, the ImGui font resolver and the
-// skybox loader). These cases pin the walk itself against a scratch tree,
-// independent of the real repo layout.
+// A scratch tree pins the Resources/ walk independent of the real repo layout.
 TEST(ResourcePathsUnit, ResolvesAtDepthZero)
 {
     const auto root = uniqueTempPath("kat_respath_depth0");
@@ -318,9 +280,7 @@ TEST(ResourcePathsUnit, MissesPastTheDepthCap)
     const auto root = uniqueTempPath("kat_respath_toodeep");
     std::error_code ec;
     std::filesystem::remove_all(root, ec);
-    // kResourceSearchDepth == 8 tests cwd plus 7 parents; put the leaf 8
-    // levels below root so "Resources/Models" (at root) is one hop past
-    // what the walk ever reaches.
+    // kResourceSearchDepth 8 is cwd plus 7 parents, so a leaf 8 levels down is one hop out of reach.
     auto leaf = root;
     for (int i = 0; i < 8; ++i) { leaf /= "d" + std::to_string(i); }
     std::filesystem::create_directories(leaf, ec);

@@ -13,15 +13,12 @@ TEST(HelloTestCompile, BasicAssertions)
 TEST(HelloTestCompile, blob)
 {
 
-    // VulkanBuffer vulkanBuffer;
-
     int c = 0;
 
     // Test that counter 0 returns 0
     EXPECT_EQ(0, c);
 
-    // EXPECT_EQ() evaluates its arguments exactly once, so they
-    // can have side effects.
+    // EXPECT_EQ() evaluates its arguments exactly once, so they can have side effects.
 
     EXPECT_EQ(0, c++);
     EXPECT_EQ(1, c++);

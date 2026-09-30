@@ -56,9 +56,7 @@ auto Kataglyphis::validateSpirvBlob(std::span<const char> code) -> bool
 auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath)
   -> vk::ShaderModule
 {
-    // No missing-file log here (File used to add one): the very next check
-    // already logs critical with a better message and aborts, so nothing is
-    // lost.
+    // No missing-file log: the check below logs critical with a better message and aborts.
     const std::vector<char> code = Kataglyphis::Shared::readBinaryFile(spvPath);
 
     if (!validateSpirvBlob(code)) {

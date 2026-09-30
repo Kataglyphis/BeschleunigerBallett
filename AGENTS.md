@@ -85,6 +85,7 @@ orientation and link — upstream's own instruction to consumers,
 | --- | --- |
 | Which repo a piece of knowledge belongs in — the *"would this still be true in a different project?"* split, with worked examples | [`INDEX.md` § Where does a piece of knowledge belong?](third_party/ANTfrastructure/docs/INDEX.md#where-does-a-piece-of-knowledge-belong) |
 | The full topic → owning-document index for the whole family | [`INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md) |
+| Code comments: one line, only the why; API docs short; gated | [the hub rule, Comments](third_party/ANTfrastructure/AGENTS.md#comments-one-line-only-the-why) |
 | Wiring another project to any of this: the loop, both container flows, launchers, CI actions | [`adopting-in-a-new-project.md`](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md) |
 | The one file a consumer must own itself, and why (`Resolve-BuildModule.ps1`) | [adopting § 1](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#1-the-one-file-that-cannot-live-here) |
 | Agentic loop: architecture, engines, config keys, prompt composition | [adopting § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop), [`windows-agentic-loop.md`](third_party/ANTfrastructure/docs/windows-agentic-loop.md) |
@@ -634,6 +635,28 @@ what each one is for.
 **There is no Windows ThreadSanitizer.** Use the Linux
 `linux-debug-tsan-clang` preset, which CI runs, for race detection — see
 "Sanitizer semantics" above.
+
+**`buildIntegritySuite` reads raw source, comments included.** It matches
+`[shader(`, `BENCHMARK(` and `kataglyphis_add_fuzz_test(` by substring, counts
+calls, and looks a few lines around `return;`, `.value` and filesystem calls. A
+comment that quotes such text can pass or fail a gate by itself, so grep the suite
+for a file's name before rewording a comment in it.
+
+**Fuzz targets** (`Test/fuzz/`):
+- **ASan.** On Linux the whole project builds with ASan (`linux-debug-asan-clang`). Abseil's
+  `raw_hash_set` layout follows ASan, so ASan on the targets alone is an ODR violation that
+  crashes at startup.
+- **No `VulkanEngineCore`.** Never link it into a target: the renderer's static initializers
+  crash a bare fuzztest main.
+- **Out of ctest discovery.** Discovery executes the binaries, and they crash without
+  project-wide ASan.
+- **Header order.** The two abseil random headers come before `fuzztest.h`. A force-include
+  breaks the module compile step.
+
+**The two bootstrap copies are body-mode assets.** Below their header,
+`scripts/linux/lib/antfrastructure.sh` and `scripts/windows/Resolve-BuildModule.ps1`
+must equal the hub templates byte for byte (`sync-shared-config.sh --check`). Re-copy
+them from the templates after an upstream change; never edit them here.
 
 ## What CI runs, and what it does not
 

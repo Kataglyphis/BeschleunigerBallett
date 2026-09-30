@@ -25,8 +25,7 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats
       scene,
       [&](const glm::mat4 &model_matrix) {
           pushConstant.model = model_matrix;
-          // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
-          // Only the rows survive the push constant (see PushConstantRasterizer.hpp).
+          // Precomputed here: Slang has no inverse() for SPIR-V.
           const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(model_matrix));
           for (int row = 0; row < 3; ++row) {
               pushConstant.invModelRows[row] = glm::vec4(
@@ -34,9 +33,7 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats
           }
       },
       [&](const AABB &worldBounds) {
-          // Skip meshes provably outside the view. isVisible() is
-          // conservative and treats unknown bounds as visible, so this can
-          // only ever drop geometry the camera cannot see.
+          // isVisible() treats unknown bounds as visible, so only provably hidden meshes are skipped.
           return cameraFrustum.has_value() && !isVisible(*cameraFrustum, worldBounds);
       },
       [&](const glm::mat4 & /*model_matrix*/, uint32_t object_index, Mesh *mesh) {
@@ -44,9 +41,7 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats
           commandBuffer.pushConstants(
             pipelineLayout, pushConstantStages, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
-          // glTF material.doubleSided: render both faces for this mesh, else
-          // back-face cull. The pipeline declares eCullMode dynamic, so this
-          // must be set for every draw (default eBack for OBJ / single-sided).
+          // Cull mode is dynamic, so every draw sets it: none for glTF doubleSided, else back.
           commandBuffer.setCullMode(mesh != nullptr && mesh->isDoubleSided() ? vk::CullModeFlagBits::eNone
                                                                               : vk::CullModeFlagBits::eBack);
       });

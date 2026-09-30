@@ -159,9 +159,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
     vk::Device const logical = device->getLogicalDevice();
     auto const count = static_cast<uint32_t>(blas.size());
 
-    // 1. Ask the driver how small each BLAS can get. Legal only after the
-    // build completed (endAndSubmitCommandBuffer is synchronous) and only for
-    // AS built with eAllowCompaction.
+    // 1. Query compacted sizes; legal only after the (synchronous) build, for eAllowCompaction structures.
     vk::QueryPoolCreateInfo query_pool_create_info{};
     query_pool_create_info.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
     query_pool_create_info.queryCount = count;
@@ -260,9 +258,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
         return;
     }
 
-    // 3. The copies are complete (synchronous submit), so the originals can
-    // go and the compacted set takes their place. TLAS is built after this
-    // returns and reads the NEW device addresses.
+    // 3. The submit was synchronous, so the originals can go; the TLAS is built later from the new addresses.
     for (uint32_t i = 0; i < count; ++i) {
         logical.destroyAccelerationStructureKHR(blas[i].vulkanAS);
         blas[i].vulkanBuffer.cleanUp();
@@ -296,13 +292,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     std::vector<vk::AccelerationStructureInstanceKHR> tlas_instances;
     tlas_instances.reserve(scene->getModelCount());
 
-    // instanceCustomIndex is the FLAT index of this model's first mesh; the
-    // closest-hit / ray-query kernels read it via InstanceID() and add
-    // GeometryIndex() (the mesh within the model's BLAS) to reach the
-    // per-mesh object description. == model_index only while every Model
-    // holds exactly one mesh - not true today: Models/Dinosaurs/dinosaurs.obj
-    // has three `o` shapes and ObjLoader makes one Mesh per shape. Computed by
-    // meshBaseOffsets, the mirror image of assignTextureOffsets.
+    // instanceCustomIndex is the flat index of the model's first mesh, not model_index; shaders add GeometryIndex().
     const std::vector<uint32_t> mesh_base_offsets = Kataglyphis::meshBaseOffsets(scene->getMeshCountPerModel());
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
         glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
@@ -446,10 +436,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
     if (!build_submitted) {
-        // createTLAS returns void and createASForScene does not gate on it, so this
-        // log is the only signal: tlas.vulkanAS was already created above
-        // (ASSERT_VULKAN'd) but buildAccelerationStructuresKHR never ran, so the
-        // next ray/path-traced frame reads that handle over unbuilt AS data.
+        // The only signal: the TLAS handle exists but was never built, and the next traced frame reads it.
         spdlog::error("ASManager::createTLAS: failed to submit TLAS build commands; the top-level "
                       "acceleration structure handle exists but was never built.");
     }
@@ -459,10 +446,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
 
 void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
-    // Nothing was ever built. This is the normal path when the model is still
-    // parsing at shutdown, or when the device has no ray-tracing support:
-    // createASForScene is what supplies the device, so without it every handle
-    // below is null and vulkanDevice is a null dereference.
+    // Normal when nothing was built (model still parsing, or no ray tracing): only createASForScene sets the device.
     if (!vulkanDevice) { return; }
 
     // Release the reusable staging buffer while the VMA allocator is alive.
@@ -522,9 +506,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
   vk::DeviceSize &current_size)
 {
     build_as_structure.build_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-    // eAllowCompaction: required for the post-build compaction pass. It does
-    // not slow the trace; it only permits querying the compacted size and
-    // copying with eCompact.
+    // eAllowCompaction enables compactBLAS without slowing the trace.
     build_as_structure.build_info.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
       | vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
     build_as_structure.build_info.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
@@ -586,11 +568,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(cons
 
     acceleration_structure_geometry.geometryType = vk::GeometryTypeKHR::eTriangles;
     acceleration_structure_geometry.geometry = acceleration_structure_geometry_data;
-    // eOpaque unless the mesh carries a MASK material: eOpaque makes the
-    // implementation skip any-hit shader invocation entirely, which would
-    // make raytrace.rahit.slang's MASK alpha test dead code. Geometry with no
-    // MASK material has no alpha test to run, so it takes the fast eOpaque
-    // path; only MASK geometry pays for any-hit invocation.
+    // eOpaque unless a MASK material needs raytrace.rahit.slang's any-hit alpha test.
     acceleration_structure_geometry.flags = Kataglyphis::blasGeometryFlags(mesh->hasMaskedMaterial());
 
     acceleration_structure_build_range_info.primitiveCount = limits.primitiveCount;

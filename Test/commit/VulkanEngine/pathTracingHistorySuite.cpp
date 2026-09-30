@@ -1,11 +1,3 @@
-// Direct unit coverage for renderer/PathTracingHistory.hpp's
-// PathTracingHistoryKey - the value that decides whether the path tracer's
-// temporal accumulation history is still valid. Extracted as part of making
-// the light part of that key: a light change used to keep blending frames
-// lit by the old light into the running mean until the camera happened to
-// move (see the BACKLOG entry and VulkanRenderer.cpp's
-// recordRaytracingOrPathTracing).
-
 #include <gtest/gtest.h>
 
 #include <glm/glm.hpp>
@@ -49,9 +41,7 @@ TEST(PathTracingHistoryUnit, ALightDirectionChangeInvalidatesTheHistory)
     EXPECT_TRUE(a != b);
 }
 
-// The .w channel of lightColorAndRadiance carries the light's radiance
-// (see DirectionalLightData::color in SceneUBO.hpp) - it is easy to drop
-// when only comparing rgb, so it gets its own test.
+// Radiance rides in .w, which an rgb-only comparison would drop.
 TEST(PathTracingHistoryUnit, ARadianceChangeInvalidatesTheHistory)
 {
     const PathTracingHistoryKey a = make_key();
@@ -70,10 +60,7 @@ TEST(PathTracingHistoryUnit, ACameraMoveStillInvalidatesTheHistory)
     EXPECT_TRUE(a != b);
 }
 
-// FOV (and any other projection input - near/far/aspect) changes the primary
-// rays path_tracing.slang builds from globalUBO.inv_projection; without this,
-// a FOV slider change would silently blend samples from two different fields
-// of view into the same running mean.
+// Primary rays come from inv_projection, so a FOV change would blend two fields of view.
 TEST(PathTracingHistoryUnit, ProjectionChangeInvalidatesTheHistory)
 {
     const PathTracingHistoryKey a = make_key();

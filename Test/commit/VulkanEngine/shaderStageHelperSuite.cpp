@@ -1,8 +1,3 @@
-// Direct unit coverage for common/ShaderStageHelper.hpp's three builders -
-// the trio that replaced Raytracing's six hand-written
-// vk::PipelineShaderStageCreateInfo/vk::RayTracingShaderGroupCreateInfoKHR
-// field assignments and ShaderHelper.cpp's two.
-
 #include <gtest/gtest.h>
 
 #include <array>

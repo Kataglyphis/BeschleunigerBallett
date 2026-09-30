@@ -42,9 +42,7 @@ auto readGpuSelectionFromEnvironment() -> std::string
 #endif
 }
 
-// On-disk location of the persisted VkPipelineCache blob, relative to the
-// working directory (the engine already resolves Resources/ and logs/ the
-// same way).
+// Relative to the working directory, like Resources/ and logs/.
 auto pipelineCacheFilePath() -> std::filesystem::path
 { return std::filesystem::path("pipeline_cache") / "kataglyphis_pipeline.cache"; }
 
@@ -93,11 +91,9 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRend
 void Kataglyphis::VulkanDevice::cleanUp()
 {
     if (!logical_device) { return; }
-    // Persist the pipeline cache to disk and destroy it before the logical
-    // device it was created from goes away.
+    // The pipeline cache must be saved while the device that created it still exists.
     save_and_destroy_pipeline_cache();
-    // The allocator must outlive every buffer/image allocation but has to be
-    // destroyed before the logical device it was created from.
+    // The allocator outlives every allocation but must go before the logical device.
     allocator.cleanUp();
     logical_device.destroy();
     logical_device = nullptr;
@@ -134,8 +130,7 @@ void Kataglyphis::VulkanDevice::create_pipeline_cache()
 
     auto cache_result = logical_device.createPipelineCache(pipeline_cache_create_info);
     if (cache_result.result != vk::Result::eSuccess && !initial_data.empty()) {
-        // Stale/corrupt on-disk data (e.g. after a driver update) must never
-        // be fatal; retry once with an empty cache.
+        // Stale on-disk data (say, after a driver update) must never be fatal: retry once empty.
         spdlog::warn("Creating the pipeline cache from '{}' failed (result {}); retrying with an empty cache.",
           cache_file.string(),
           static_cast<int>(cache_result.result));
@@ -195,11 +190,7 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
     pipeline_cache = nullptr;
 }
 
-// Not `~VulkanDevice() { cleanUp(); }`: VulkanRenderer::cleanUp() owns the
-// teardown order between the logical device and the instance, and a
-// destructor call here would let the device's lifetime move independently
-// of that order. cleanUp() is idempotent (above), so calling it explicitly
-// stays safe.
+// No cleanUp() here: VulkanRenderer::cleanUp() owns the device-versus-instance teardown order.
 Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices
@@ -276,9 +267,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // get the queue family indices for the chosen physical device
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = getQueueFamilies();
 
-    // Cache the timestamp support of the graphics queue family. 0 valid bits
-    // means vkCmdWriteTimestamp is not usable on that queue at all; the
-    // renderer's GPU-timing feature keys off this value.
+    // Zero timestamp bits means no vkCmdWriteTimestamp on this queue; GPU timing keys off it.
     {
         std::vector<vk::QueueFamilyProperties> const queue_family_props = physical_device.getQueueFamilyProperties();
         if (indices.graphics_family >= 0 && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
@@ -297,8 +286,6 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     std::vector<float> queue_priorities(queue_family_indices.size(), 1.0F);
     queue_create_infos.reserve(queue_family_indices.size());
 
-    // Queue the logical device needs to create and info to do so (only 1 for now,
-    // will add more later!)
     std::size_t priority_index = 0;
     for (int const queue_family_index : queue_family_indices) {
         vk::DeviceQueueCreateInfo queue_create_info{};
@@ -336,11 +323,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     vk::PhysicalDeviceVulkan13Features features13{};
     features13.shaderDemoteToHelperInvocation = available_features13.shaderDemoteToHelperInvocation;
-    // Linked to &acceleration_structure_features only inside the
-    // deviceSupportsHardwareAcceleratedRRT block below - on a device without
-    // the ray-tracing extensions this chain must not carry
-    // VkPhysicalDeviceAccelerationStructureFeaturesKHR/RayTracingPipelineFeaturesKHR
-    // for extensions that are not in ppEnabledExtensionNames.
+    // Chains the ray-tracing structs only in the hardware-RT block: they must not ride along for unenabled extensions.
     features13.pNext = nullptr;
 
     vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeature{};
@@ -373,33 +356,21 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     vk::PhysicalDeviceVulkan11Features features11{};
     features11.pNext = &features12;
     features11.multiview = available_features11.multiview;
-    // shaderDrawParameters: required by SPIR-V Capability DrawParameters,
-    // emitted by Slang for SV_PrimitiveID in fragment shaders (material fetch).
+    // Slang emits the DrawParameters capability for SV_PrimitiveID in fragment shaders.
     features11.shaderDrawParameters = available_features11.shaderDrawParameters;
 
     vk::PhysicalDeviceFeatures2 features2{};
-    // Link the Vulkan11/12/13 (+ ray tracing) feature chain built above into
-    // the struct that actually reaches vkCreateDevice via device_create_info.pNext
-    // below. Losing this link (it was `nullptr` from 2026-02-18 to 2026-07-31)
-    // silently disables every feature configured on features11/12/13 and the
-    // ray-tracing structs - multiview, bufferDeviceAddress, scalarBlockLayout,
-    // shaderDrawParameters, accelerationStructure, rayTracingPipeline, rayQuery -
-    // while the availability checks above still log them as supported.
+    // This link carries every features11/12/13 and ray-tracing bit to vkCreateDevice; without it they vanish silently.
     features2.pNext = &features11;
     features2.features.samplerAnisotropy = available_features2.features.samplerAnisotropy;
     features2.features.shaderInt64 = available_features2.features.shaderInt64;
     features2.features.geometryShader = available_features2.features.geometryShader;
     features2.features.fragmentStoresAndAtomics = available_features2.features.fragmentStoresAndAtomics;
     features2.features.logicOp = available_features2.features.logicOp;
-    // Depth clamp: the shadow pass uses it to PANCAKE casters that sit between
-    // the light and the cascade's near plane onto depth 0 instead of clipping
-    // them away. Core 1.0 feature, universally supported on desktop; guarded
-    // anyway so a device without it keeps the (clipping) old behaviour.
+    // The shadow pass pancakes casters with depth clamp; a device without it clips them instead.
     features2.features.depthClamp = available_features2.features.depthClamp;
     features2.features.robustBufferAccess = VK_FALSE;
 
-    // -- PREPARE FOR HAVING MORE EXTENSION BECAUSE WE NEED RAYTRACING
-    // CAPABILITIES
     std::vector<const char *> extensions(device_extensions);
 
     // Query available extensions for the physical device
@@ -472,11 +443,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     }
 
     if (deviceSupportsHardwareAcceleratedRRT) {
-        // Buffers whose device address is consumed directly (SBTs, AS scratch)
-        // must be aligned to shaderGroupBaseAlignment respectively
-        // minAccelerationStructureScratchOffsetAlignment. The former dedicated
-        // allocations satisfied this implicitly (offset 0); with VMA
-        // suballocation the alignment has to be requested explicitly.
+        // VMA suballocates, so SBT and AS-scratch address alignment must be requested explicitly.
         vk::PhysicalDeviceAccelerationStructurePropertiesKHR acceleration_structure_properties{};
         vk::PhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_pipeline_properties{};
         ray_tracing_pipeline_properties.pNext = &acceleration_structure_properties;
@@ -510,12 +477,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; related shader capabilities may be unavailable.");
     }
 
-    // Compute shader derivatives: Slang emits ComputeDerivativeGroupQuadsKHR
-    // for compute shaders (clouds, noise). The extension exposes two
-    // independent bits and a device may support only the linear one -
-    // requesting the quads bit unconditionally made vkCreateDevice fail with
-    // VK_ERROR_FEATURE_NOT_PRESENT on such a device, so the engine did not
-    // start. Only request the bit once the availability query has proven it.
+    // Slang emits derivative-group quads for compute shaders; request them only once proven, as linear-only devices refuse.
     vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};
     const bool computeDerivativeExtensionPresent =
       supportsExtension(availableExtensions, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
@@ -558,16 +520,10 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(logical_device);
 
-    //  Queues are created at the same time as the device...
-    // So we want handle to queues
-    // From given logical device of given queue family, of given queue index (0
-    // since only one queue), place reference in given vk::Queue
     graphics_queue = logical_device.getQueue(static_cast<uint32_t>(indices.graphics_family), 0);
     presentation_queue = logical_device.getQueue(static_cast<uint32_t>(indices.presentation_family), 0);
 
-    // Central VMA allocator for all buffer/image memory. Only request the
-    // buffer-device-address capability when the feature was actually enabled
-    // on the logical device above.
+    // Ask VMA for buffer device addresses only when the logical device enabled the feature.
     allocator =
       Allocator(logical_device, physical_device, instance->getVulkanInstance(), deviceSupportsBufferDeviceAddress);
 }
@@ -579,13 +535,8 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
 
     std::vector<vk::QueueFamilyProperties> queue_family_list = selectedPhysicalDevice.getQueueFamilyProperties();
 
-    // Go through each queue family and check if it has at least 1 of required
-    // types we need to keep track th eindex by our own
     uint32_t index = 0;
     for (const auto &queue_family : queue_family_list) {
-        // first check if queue family has at least 1 queue in that family
-        // Queue can be multiple types defined through bitfield. Need to bitwise AND
-        // with vk::QueueFlagBits to check if has required  type
         if (queue_family.queueCount > 0 && (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)) {
             indices.graphics_family = static_cast<int>(index);// if queue family valid, than get index
         }
@@ -594,14 +545,10 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
             indices.compute_family = static_cast<int>(index);
         }
 
-        // check if queue family suppports presentation. A failed query must
-        // not silently read as "no presentation support", which would fail
-        // device selection with a misleading message.
+        // A failed query must not read as "no presentation support", which misreports device selection.
         auto presentation_support_result = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface);
         ASSERT_VULKAN(presentation_support_result.result, "Failed to query surface presentation support!");
         vk::Bool32 presentation_support = presentation_support_result.value;
-        // check if queue is presentation type (can be both graphics and
-        // presentation)
         if (queue_family.queueCount > 0 && presentation_support) {
             indices.presentation_family = static_cast<int>(index);
         }
@@ -620,11 +567,7 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
 {
     Kataglyphis::VulkanRendererInternals::SwapChainDetails swapchain_details{};
 
-    // get the surface capabilities for the given surface on the given
-    // physical device. Not recoverable: the caller sizes the swapchain
-    // directly from this, and a default-constructed SurfaceCapabilitiesKHR
-    // (zero extents, zero image counts) would silently build a zero-sized
-    // swapchain instead of failing loudly.
+    // Fatal: default-constructed capabilities would silently build a zero-sized swapchain.
     auto surface_capabilities_result = device.getSurfaceCapabilitiesKHR(*surface);
     ASSERT_VULKAN(surface_capabilities_result.result, "Failed to query surface capabilities!");
     swapchain_details.surface_capabilities = surface_capabilities_result.value;
@@ -665,11 +608,7 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
         swap_chain_valid = !swap_chain_details.presentation_mode.empty() && !swap_chain_details.formats.empty();
     }
 
-    // samplerAnisotropy is deliberately not required here: it is a quality
-    // knob with a working fallback (resolveMaxAnisotropy() clamps to 1.0F
-    // when unsupported), not a hard requirement. Vetoing devices without it
-    // rejected every software Vulkan implementation (e.g. lavapipe), which is
-    // exactly the class of device that could host the golden suites headless.
+    // samplerAnisotropy is not required: it has a fallback, and requiring it rejects software Vulkan such as lavapipe.
     return indices.is_valid() && extensions_supported && swap_chain_valid;
 }
 

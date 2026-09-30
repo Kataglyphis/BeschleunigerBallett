@@ -1,16 +1,4 @@
-// Shared color math: ACES filmic tonemap + exact sRGB encode.
-//
-// Single source of truth for both renderers:
-//   - C++/Vulkan consumes the SPIR-V emit (imported directly, no GLSL
-//     intermediary).
-//   - Rust/WebGPU consumes the WGSL emit.
-//
-// ACES is the Narkowicz 2015 approximation (matches the Rust renderer's
-// existing `aces()` in tonemap.wgsl). linear_to_srgb is the exact IEC
-// 61966-2-1 transfer function (NOT pow(x, 1/2.2)) — see
-// docs/webgpu-srgb-audit.md: the approximation is visibly wrong in the
-// darks. Both post/post.slang and tonemap/tonemap.slang import this module;
-// post.slang's fs_main calls aces_tonemap.
+// Color math shared by both renderers (SPIR-V for C++/Vulkan, WGSL for Rust/WebGPU).
 
 // ACES filmic tonemap (Narkowicz 2015).
 float3 aces_tonemap(float3 x)
@@ -23,10 +11,7 @@ float3 aces_tonemap(float3 x)
     return clamp((x * (a * x + b)) / (x * (c * x + d) + e), float3(0.0), float3(1.0));
 }
 
-// Exact IEC 61966-2-1 sRGB transfer function (linear -> sRGB encoded).
-// Matches what an sRGB render target's hardware encode does, so a shader
-// that must encode itself (e.g. a non-sRGB web canvas) gets the same curve
-// the hardware would apply.
+// Exact IEC 61966-2-1 sRGB encode, not pow(x, 1/2.2), which is visibly wrong in the darks (docs/webgpu-srgb-audit.md).
 float3 linear_to_srgb(float3 c)
 {
     float3 low = c * 12.92;

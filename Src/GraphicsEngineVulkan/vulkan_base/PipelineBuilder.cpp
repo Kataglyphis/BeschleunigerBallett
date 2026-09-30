@@ -103,8 +103,7 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
     state.viewport_state_create_info.scissorCount = 1;
     state.viewport_state_create_info.pScissors = nullptr;
 
-    // Viewport/scissor are always dynamic; cull mode is opt-in (setDynamicCullMode)
-    // so only the pass that needs per-draw culling pays the per-draw vkCmdSetCullMode.
+    // Dynamic cull mode is opt-in, so only the pass that needs per-draw culling pays for vkCmdSetCullMode.
     state.dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
     if (dynamic_cull_mode) { state.dynamic_states.push_back(vk::DynamicState::eCullMode); }
     state.dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(state.dynamic_states.size());

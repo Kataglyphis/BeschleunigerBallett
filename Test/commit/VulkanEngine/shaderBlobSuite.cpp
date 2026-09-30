@@ -1,9 +1,4 @@
-// Direct unit coverage for kataglyphis.vulkan.shader_helper::validateSpirvBlob
-// - the pure, CPU-testable check that loadSpirvShaderModule runs before
-// handing bytes to vkCreateShaderModule. A missing or truncated .spv used to
-// go straight through as an empty vector (codeSize = 0), which is a
-// validation error at best in debug and undefined driver behaviour in
-// release. This pins the structural check without touching Vulkan.
+// A truncated or empty .spv reaching vkCreateShaderModule is undefined driver behaviour in release.
 
 #include <gtest/gtest.h>
 
@@ -36,8 +31,7 @@ TEST(ShaderBlobUnit, EmptyBlobIsRejected)
 
 TEST(ShaderBlobUnit, SizeNotAMultipleOfFourIsRejected)
 {
-    // Six bytes: not a multiple of 4, even though the first four are the
-    // correct magic number.
+    // Correct magic, but six bytes is not a multiple of 4.
     std::vector<char> blob = spirvMagicBytes();
     blob.push_back(0);
     blob.push_back(0);
@@ -56,8 +50,7 @@ TEST(ShaderBlobUnit, BlobWithCorrectMagicIsAccepted)
     EXPECT_TRUE(validateSpirvBlob(blob));
 }
 
-// A real compiled shader, read exactly as buildIntegritySuite.cpp does (tests
-// run with the repo root as the working directory).
+// Tests run with the repo root as the working directory.
 TEST(ShaderBlobUnit, RealCompiledShaderIsAccepted)
 {
     const std::filesystem::path spv = "Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.vs_main.spv";
@@ -75,14 +68,7 @@ TEST(ShaderBlobUnit, RealCompiledShaderIsAccepted)
     EXPECT_TRUE(validateSpirvBlob(bytes));
 }
 
-// ShaderStagePair owns two vk::ShaderModule handles released in its
-// destructor - copying would let two instances both destroy the same
-// modules (double-destroy), and moving would leave the create-infos in the
-// moved-from instance pointing at handles the moved-to instance now owns.
-// Every call site constructs it as a function-local, so deleting both
-// outright (rather than making it move-only) costs nothing there and rules
-// out that whole class of bug. Needs no device to check, so it runs in
-// Windows CI.
+// A copy would double-destroy the modules and a move would leave create-infos on handles it no longer owns.
 TEST(ShaderBlobUnit, ShaderStagePairIsNeitherCopyableNorMovable)
 {
     static_assert(!std::is_copy_constructible_v<ShaderStagePair>, "ShaderStagePair must not be copy-constructible");

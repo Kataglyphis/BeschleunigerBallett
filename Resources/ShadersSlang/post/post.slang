@@ -1,15 +1,7 @@
 import aces;
 import fullscreen;
 
-// C++/Vulkan fullscreen post pass: tonemap + optional cloud compositing.
-// Sole source for this shader; uses the shared ACES math (imported) and the
-// exact sRGB encode instead of pow(x, 1/2.2). Push constants carry the
-// feature toggles — see
-// Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPost.hpp.
-// The fullscreen-triangle vertex comes from fullscreen.slang (imported).
-//
-// Emits SPIR-V only (the C++ renderer loads .spv). The Rust renderer has its
-// own tonemap.slang (different compositing: bloom + SSAO + exposure).
+// C++/Vulkan post pass (tonemap + clouds); the Rust renderer composites in tonemap.slang instead.
 
 // Combined image+sampler (Vulkan combined image sampler descriptor).
 [vk::binding(0, 0)] Sampler2D noisyTxt;
@@ -55,10 +47,6 @@ float4 fs_main(VsOut In) : SV_Target
     // ACES filmic tonemap (shared with Rust WebGPU renderer via aces.slang).
     float3 tonemapped = aces_tonemap(color);
 
-    // The swapchain is UNORM, not sRGB (SwapchainChoices.hpp's
-    // chooseBestSurfaceFormat prefers eR8G8B8A8Unorm/eB8G8R8A8Unorm with an
-    // eSrgbNonlinear color space), so there is no hardware encode on
-    // present - the shader must do it itself, exactly like tonemap.slang's
-    // non-sRGB-canvas path does on the web renderer.
+    // The swapchain is UNORM (SwapchainChoices.hpp), so the shader must encode sRGB itself.
     return float4(linear_to_srgb(tonemapped), alpha);
 }

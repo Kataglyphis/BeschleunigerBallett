@@ -4,9 +4,7 @@ import material_rules;
 import base_color;
 import material_textures;
 
-// Cascaded shadow map shaders. Sole source for this shader. Emits SPIR-V
-// only. Single-pass layered cascade rendering: SV_ViewID IS the cascade
-// index.
+// Single-pass layered cascades: SV_ViewID is the cascade index.
 
 [vk::binding(1, 1)] ConstantBuffer<float4x4[MAX_CASCADES]> lightSpaceMatrices;
 
@@ -45,13 +43,10 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     ObjectDescription obj = fetch_object_description(pc.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    // MASK materials alpha-test; OPAQUE/BLEND (alphaCutoff < 0) cast unchanged.
-    // The outer guard skips the branch entirely for the common non-MASK case.
+    // Only MASK materials alpha-test; OPAQUE/BLEND (alphaCutoff < 0) cast unchanged.
     if (material.alphaCutoff >= 0.0)
     {
-        // map_d's alpha is independent of which base-colour branch is taken
-        // below, so it is sampled once up front and folded into both sides
-        // of the textureID branch's alpha_masked_out() call.
+        // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
         float alphaTexSample = 1.0;
         if (material.alphaTextureID >= 0)
         {

@@ -17,9 +17,7 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
   vk::Bool32 compareEnable,
   vk::CompareOp compareOp) -> vk::SamplerCreateInfo
 {
-    // addressModeU == addressModeV == addressMode here, so the desc overload's
-    // addressModeW = desc.addressModeU is byte-identical to this overload's
-    // former addressModeW = addressMode.
+    // The desc overload sets addressModeW = addressModeU, which is addressMode here.
     return buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = addressMode,
                                      .addressModeV = addressMode,
                                      .magFilter = filter,
@@ -70,8 +68,7 @@ auto Kataglyphis::usesNearestFiltering(const GltfSamplerDesc &desc) -> bool
 auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key)
   -> std::optional<std::size_t>
 {
-    // find_if, not find: MSVC STL 14.51 under clang-cl static_asserts on find over a struct with a defaulted ==
-    // whose size is not 1/2/4/8 bytes (SamplerKey is 24) - microsoft/STL#6294.
+    // find_if, not find: works around microsoft/STL#6294 (find static_asserts on a 24-byte struct with defaulted ==).
     const auto it =
       std::ranges::find_if(createdSamplers, [&key](const SamplerKey &candidate) { return candidate == key; });
     if (it == createdSamplers.end()) { return std::nullopt; }

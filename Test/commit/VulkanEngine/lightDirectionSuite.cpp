@@ -1,9 +1,4 @@
-// Direct unit coverage for common/LightDirection.hpp's
-// normalizedLightDirection - the single copy of the zero-vector guard
-// previously duplicated inline in CascadedShadowMapMath.cpp. GUI.cpp's
-// "Light Direction" SliderFloat3 lets all three components be dragged to 0,
-// which would otherwise normalize to NaN and poison every shader that reads
-// sceneUBO.dirLight.direction.
+// The GUI slider can drag the light direction to zero, which would normalize to NaN in every shader.
 
 #include <gtest/gtest.h>
 

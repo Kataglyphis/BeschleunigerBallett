@@ -1,22 +1,4 @@
-// Direct unit coverage for common/RenderPassHelper.hpp's
-// buildAttachmentDescription - the helper that replaced eight hand-written
-// vk::AttachmentDescription literals across Rasterizer, DeferredRasterizer,
-// PostStage, SkyBox and CascadedShadowMap.
-//
-// vk::AttachmentDescription is a plain struct, so every one of those call
-// sites can be re-created here and pinned field-by-field with no device. Two
-// things this guards:
-//
-//   1. The three constants the helper bakes in (samples e1, both stencil ops
-//      eDontCare) really do reach every attachment. A copy-paste that drops
-//      stencilStoreOp is exactly the kind of defect no pixel oracle sees -
-//      chooseDepthFormat may return eD32SfloatS8Uint, and a stencil aspect
-//      left at eStore silently keeps a writeback alive.
-//   2. The five per-pass fields still carry each site's ORIGINAL values, so
-//      the extraction cannot have quietly changed a load op or an initial
-//      layout. PostStage is the sole site that overrides all three defaults;
-//      Rasterizer's depth is the sole site with eDontCare on a depth store
-//      out of an eUndefined initial layout.
+// No pixel oracle sees a stencil aspect left at eStore, so every call site is pinned field by field.
 
 #include <gtest/gtest.h>
 
@@ -37,9 +19,7 @@ static_assert(
 
 namespace {
 
-// Fields identical in EVERY render pass of the engine. Asserted once per call
-// site below rather than once overall: the point is that no individual site
-// can drift away from them.
+// Asserted per call site so no single site can drift from the engine-wide fields.
 void expectEngineWideAttachmentInvariants(const vk::AttachmentDescription &description)
 {
     EXPECT_EQ(description.samples, vk::SampleCountFlagBits::e1);
@@ -63,8 +43,7 @@ TEST(RenderPassHelperUnit, DefaultsAreClearStoreFromUndefined)
 
 TEST(RenderPassHelperUnit, MatchesForwardRasterizerColorAttachment)
 {
-    // Rasterizer::createRenderPass, OFFSCREEN_FORMAT colour target, sampled by
-    // the post stage afterwards.
+    // Rasterizer's colour target, sampled by the post stage afterwards.
     const vk::AttachmentDescription description =
       buildAttachmentDescription(vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal);
 
@@ -78,10 +57,7 @@ TEST(RenderPassHelperUnit, MatchesForwardRasterizerColorAttachment)
 
 TEST(RenderPassHelperUnit, MatchesForwardRasterizerDepthAttachmentWithDiscardedStore)
 {
-    // Rasterizer::createRenderPass depth: nothing reads it after the pass, so
-    // the writeback is explicitly discarded. The ONLY difference from the
-    // colour attachment above is storeOp - a regression that dropped the
-    // override would still render correctly and cost bandwidth silently.
+    // Nothing reads Rasterizer's depth afterwards; losing the eDontCare store would cost bandwidth silently.
     const vk::AttachmentDescription description = buildAttachmentDescription(vk::Format::eD32Sfloat,
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
       vk::AttachmentLoadOp::eClear,
@@ -96,8 +72,6 @@ TEST(RenderPassHelperUnit, MatchesForwardRasterizerDepthAttachmentWithDiscardedS
 
 TEST(RenderPassHelperUnit, MatchesDeferredGBufferAttachments)
 {
-    // DeferredRasterizer::createRenderPass builds all five attachments from
-    // the defaults; only the format and the final layout differ between them.
     const std::array<vk::AttachmentDescription, 5> attachments = {
         buildAttachmentDescription(vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal),
         buildAttachmentDescription(vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal),
@@ -119,9 +93,7 @@ TEST(RenderPassHelperUnit, MatchesDeferredGBufferAttachments)
 
 TEST(RenderPassHelperUnit, MatchesSkyBoxColorAttachmentLeftForThePostStageToLoad)
 {
-    // SkyBox::createRenderPass writes the swapchain image first and leaves it
-    // in eColorAttachmentOptimal - PostStage's colour attachment then LOADs it
-    // out of exactly that layout (see the pairing asserted below).
+    // PostStage loads the swapchain image out of exactly the layout SkyBox leaves it in.
     const vk::AttachmentDescription sky_box = buildAttachmentDescription(
       vk::Format::eB8G8R8A8Unorm, vk::ImageLayout::eColorAttachmentOptimal);
 
@@ -155,8 +127,6 @@ TEST(RenderPassHelperUnit, MatchesPostStageColorAttachmentOverridingEveryDefault
 
 TEST(RenderPassHelperUnit, MatchesPostStageDepthAttachmentThatNeverLeavesItsLayout)
 {
-    // PostStage's depth attachment is created by an earlier pass and stays in
-    // eDepthStencilAttachmentOptimal on both sides.
     const vk::AttachmentDescription description = buildAttachmentDescription(vk::Format::eD32SfloatS8Uint,
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
       vk::AttachmentLoadOp::eClear,
@@ -165,15 +135,13 @@ TEST(RenderPassHelperUnit, MatchesPostStageDepthAttachmentThatNeverLeavesItsLayo
 
     EXPECT_EQ(description.initialLayout, description.finalLayout);
     EXPECT_EQ(description.storeOp, vk::AttachmentStoreOp::eDontCare);
-    // A stencil-carrying depth format must still declare eDontCare for both
-    // stencil ops - the engine has no stencil pass.
+    // The engine has no stencil pass, so even a stencil format declares eDontCare.
     expectEngineWideAttachmentInvariants(description);
 }
 
 TEST(RenderPassHelperUnit, MatchesCascadedShadowMapDepthAttachmentThatIsSampledLater)
 {
-    // CascadedShadowMap::createRenderPass: the only depth attachment in the
-    // engine that is STORED, because the lighting shader samples it.
+    // The only stored depth attachment, because the lighting shader samples it.
     const vk::AttachmentDescription description =
       buildAttachmentDescription(vk::Format::eD32Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal);
 
@@ -186,10 +154,7 @@ TEST(RenderPassHelperUnit, MatchesCascadedShadowMapDepthAttachmentThatIsSampledL
 
 TEST(RenderPassHelper, ExternalDependencyCoversDepthWrites)
 {
-    // Rasterizer, DeferredRasterizer and PostStage each share a single depth
-    // image across frames in flight: the dependency must cover the fragment
-    // test stages and the depth write access, or the next frame's clear
-    // races the previous frame's storeOp write (SYNC-HAZARD-WRITE-AFTER-WRITE).
+    // One depth image spans frames in flight, so without this the next clear races the last store.
     const vk::SubpassDependency dependency = buildExternalColorDepthDependency();
 
     EXPECT_EQ(dependency.srcSubpass, VK_SUBPASS_EXTERNAL);
@@ -204,8 +169,7 @@ TEST(RenderPassHelper, ExternalDependencyCoversDepthWrites)
 
 TEST(RenderPassHelperUnit, DestroyRenderPassOnANullDeviceIsANoOp)
 {
-    // A non-null-looking handle: with no device, destroyRenderPass must
-    // return before ever touching it, so it must come back unchanged.
+    // Without a device, destroyRenderPass must not touch even a non-null-looking handle.
     vk::RenderPass render_pass(reinterpret_cast<VkRenderPass>(0x1));
     destroyRenderPass(vk::Device{}, render_pass);
     EXPECT_EQ(render_pass, vk::RenderPass(reinterpret_cast<VkRenderPass>(0x1)));

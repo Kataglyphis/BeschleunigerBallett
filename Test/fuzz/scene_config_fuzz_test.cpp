@@ -1,18 +1,6 @@
-// Fuzzes SceneConfig's path handling. resolveModelPath takes caller-supplied
-// strings and builds filesystem paths from them, walking up to 8 parent
-// directories; getAvailableModelPaths scans the model directory. Both are
-// reachable from GUI model selection, so malformed or hostile input must not
-// crash, hang, or escape the resource tree.
+// GUI model selection reaches these, so hostile paths must not crash, hang or escape the resource tree.
 
-// These two abseil headers MUST come before fuzztest.h. FuzzTest at main
-// friend-declares absl::random_internal::{DistributionCaller, MockHelpers}
-// in fuzzing_bit_gen.h without including them, and abseil LTS 20260526 no
-// longer provides them transitively through bit_gen_ref.h. The fuzztest_*
-// library targets get the same fix as a force-include flag
-// (third_party/CMakeLists.txt); OUR targets cannot, because a force-include
-// flag flows into the synthesized C++20 module BMI compiles of imported
-// engine modules, which have no abseil include path. An ordinary include in
-// the source is invisible to module synthesis.
+// Must precede fuzztest.h, which friend-declares them unincluded; a force-include would break module BMI synthesis.
 #include "absl/random/internal/distribution_caller.h"// IWYU pragma: keep
 #include "absl/random/internal/mock_helpers.h"// IWYU pragma: keep
 
@@ -33,8 +21,7 @@ void ResolvingArbitraryPathsNeverCrashes(const std::string &relative_path)
 
     const std::string resolved = sceneConfig::resolveModelPath(relative_path);
 
-    // The contract is "returns something usable as a path", not "the file
-    // exists" - a miss legitimately returns the direct candidate.
+    // A miss legitimately returns the direct candidate, so only usability is checked.
     (void)resolved.empty();
 
     std::error_code ignored;
@@ -49,8 +36,7 @@ FUZZ_TEST(SceneConfigFuzz, ResolvingArbitraryPathsNeverCrashes)
     std::string("Models/\xff\xfe/weird.obj"),
     std::string("C:\\absolute\\path.obj") });
 
-// The model listing must stay consistent no matter how often it is called
-// (it is invoked from GUI rendering, i.e. every frame the panel is open).
+// GUI rendering lists models every frame the panel is open.
 void ListingModelsIsStable(int repetitions)
 {
     const int bounded = (repetitions % 4) + 1;

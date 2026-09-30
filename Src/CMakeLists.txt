@@ -34,8 +34,7 @@ function(_myproject_configure_native_rust_crate rust_target)
     set(RUST_CXX "c++")
   endif()
 
-  # No --gcc-toolchain: cc-rs runs this clang++ natively (its --target is the
-  # host triple), so the image's <triple>-clang++.cfg selects its GCC.
+  # No --gcc-toolchain: cc-rs targets the host triple, so the image's <triple>-clang++.cfg selects its GCC.
   set(RUST_CXXFLAGS "-fexceptions")
   if(DEFINED ENV{CXXFLAGS})
     set(RUST_CXXFLAGS "$ENV{CXXFLAGS} ${RUST_CXXFLAGS}")
@@ -76,11 +75,7 @@ if(RUST_FEATURES)
 endif()
 
 add_subdirectory(GraphicsEngineVulkan)
-# The Kompute playground is a standalone compute-API demo, not part of the
-# engine: kompute's own headers throw, so it CANNOT link the project's
-# no-exceptions options (/EHs-, -fno-exceptions) - it deliberately builds
-# with its own flags. Default OFF so ordinary builds ship no
-# exceptions-enabled binary and skip the kompute dependency entirely.
+# Off by default: kompute's headers throw, so the playground cannot use the no-exceptions options.
 if(KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND)
   add_subdirectory(KomputePlayground)
 endif()

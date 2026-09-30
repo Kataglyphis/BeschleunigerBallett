@@ -2,12 +2,7 @@
 
 #include <cstdint>
 
-// Dispatch-grid constants shared between PathTracing.cpp and
-// buildIntegritySuite.cpp's BuildIntegrity.PathTracingDispatchMatchesTheShaderWorkgroupSize
-// gate, which pins these against the [numthreads(...)] attribute in
-// path_tracing.slang. Plain header (not the PathTracing module interface)
-// because buildIntegritySuite.cpp includes plain headers, not modules - see
-// CloudDispatch.hpp for the same shape.
+// A plain header, not a module, so buildIntegritySuite.cpp can pin these to path_tracing.slang's [numthreads].
 namespace Kataglyphis {
 
 inline constexpr uint32_t kPathTracingWorkgroupSizeX = 8;

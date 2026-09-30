@@ -1,49 +1,20 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-Runs the GPU golden/integration test suites with Vulkan synchronization
-validation enabled and fails if the log contains a SYNC-HAZARD.
-
+Runs the GPU suites with Vulkan synchronization validation and fails on any SYNC-HAZARD.
 .DESCRIPTION
-Turns the manual "hand-write a vk_layer_settings.txt, point VK_LAYER_PATH at
-the SDK, run the suite, eyeball the log for SYNC-HAZARD" procedure described
-in BACKLOG.md ("Recurring validation runs" -> "Synchronization validation")
-into one command. That procedure found 10 real WRITE-AFTER-WRITE hazards in
-July 2026; in practice nobody re-runs a manual procedure, so this exists to
-make it something a "before touching render passes/barriers/frames-in-flight"
-habit can actually be.
-
-Thin wrapper: the generic driver (staging vk_layer_settings.txt next to the
-executable and removing it again, VK_LAYER_PATH save/restore, running the
-target, scanning the log, reporting hazard counts) lives upstream in
-third_party/ANTfrastructure/windows/scripts/modules/WindowsVulkanValidation.Common.psm1
-and is reusable by any Vulkan project. Only this project's executable, gtest
-filter, SDK path and log location are supplied here.
-
-Deliberately NOT wired into CI: the GoldenRender/Integration suites need a
-GPU and skip everywhere except a host with one (see docs/gpu-golden-testing.md),
-so a CI gate here would be vacuous. Run it locally instead, the same way
-scripts/windows/Compare-PerfBaseline.ps1 is a local-only tool.
-
+Wraps ANTfrastructure's WindowsVulkanValidation.Common. Local only: the GPU suites
+skip on CI runners, so a CI gate would be vacuous.
 .PARAMETER ExecutablePath
-Path to the built commitTestSuite.exe. Defaults to the repo root, falling
-back to build-clangcl-debug\ (where the container build script leaves it).
-
+commitTestSuite.exe; defaults to the repo root, then build-clangcl-debug\.
 .PARAMETER GtestFilter
-Passed through as --gtest_filter. Defaults to the two GPU suites.
-
+Passed as --gtest_filter; defaults to the two GPU suites.
 .PARAMETER VulkanSdkBin
-Directory containing the Khronos validation layer. Defaults to the SDK
-version documented in AGENTS.md.
-
+Directory holding the Khronos validation layer.
 .PARAMETER LogDir
-Where the tee'd run log is written, one timestamped file per run.
-
+Where each run's timestamped log is written.
 .PARAMETER LogFixturePath
-Test-only escape hatch: skip running the executable entirely and just
-evaluate an existing log file for SYNC-HAZARD lines, then exit accordingly.
-Exists so the exit-code contract (non-zero iff a hazard is present) can be
-Pester-tested without a GPU - see scripts/windows/tests/Invoke-SyncValidation.Tests.ps1.
+Test-only: evaluate this log instead of running the suite, so Pester needs no GPU.
 #>
 
 param(
@@ -59,8 +30,7 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsVulkanValidation.Common')
 
-# Test-only path: evaluate a canned log instead of running the GPU suite, so
-# the pass/fail contract is verifiable on a machine (or in CI) with no GPU.
+# Test-only: keeps the pass/fail contract verifiable without a GPU.
 if ($LogFixturePath) {
     if (Test-VulkanValidationLog -LogPath $LogFixturePath) { exit 0 }
     exit 1
@@ -96,9 +66,7 @@ if (-not (Test-Path $LogDir)) {
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logPath = Join-Path $LogDir "$timestamp.log"
 
-# Resources/ (shaders, models, textures) is loaded via CWD-relative paths -
-# must run from the repo root regardless of where the exe lives
-# (docs/gpu-golden-testing.md).
+# Resources/ loads CWD-relative, so run from the repo root; see docs/gpu-golden-testing.md.
 Invoke-VulkanValidationRun -ExecutablePath $ExecutablePath `
     -Arguments @("--gtest_filter=$GtestFilter") `
     -WorkingDirectory $repoRoot `

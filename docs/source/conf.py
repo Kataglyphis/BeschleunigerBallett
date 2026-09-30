@@ -1,28 +1,11 @@
-# Configuration file for the Sphinx documentation builder.
-#
-# For the full list of built-in configuration values, see the documentation:
-# https://www.sphinx-doc.org/en/master/usage/configuration.html
+# Sphinx configuration: https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 from pathlib import Path
 
-# Project-local stylesheet, loaded AFTER the shared brand one so its rules win.
-#
-# css/custom.css is a SYMLINK to DocumANTation's generated brand stylesheet
-# (see docs/source/_static/css/beschleunigerballett.css for the full story); it
-# is generated from style/brand.json and must not be forked. Anything specific
-# to this project goes in the file below instead, which is why every branch
-# under here appends it - drop it from one branch and that branch silently
-# renders without the project rules.
+# Project rules load after the generated brand CSS (css/custom.css, never fork it); every branch must append this.
 PROJECT_CSS_FILE = "css/beschleunigerballett.css"
 
-# Import the shared Sphinx baseline from ANTfrastructure's vendored DocumANTation.
-#
-# The shared docs tooling lives in DocumANTation, which ANTfrastructure declares as
-# a submodule at third_party/DocumANTation (see third_party/ANTfrastructure/
-# .gitmodules) — not under external/, which holds only an untracked leftover of
-# the pre-move layout. Get the path wrong and .exists() is silently False: the
-# else-branch fallback below configures these docs instead, and the shared
-# extension list and theme options are never applied.
+# A wrong path here is silent: .exists() is False and the fallback below replaces the shared baseline.
 ANTFRASTRUCTURE_CONF = (
     Path(__file__).parent.parent.parent
     / "third_party/ANTfrastructure/third_party/DocumANTation"
@@ -36,7 +19,6 @@ if ANTFRASTRUCTURE_CONF.exists():
         conf_base = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(conf_base)
 
-        # Inherit shared extensions and theme settings
         extensions = conf_base.SPHINX_EXTENSIONS.copy()
         html_theme = conf_base.HTML_THEME
         html_theme_options = conf_base.HTML_THEME_OPTIONS.copy()
@@ -90,21 +72,19 @@ def _find_doxygen_xml_dir() -> Path | None:
     return None
 
 
-# -- Project information -----------------------------------------------------
-# https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
+# Project information
 
 project = "BeschleunigerBallett"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
 release = (REPO_ROOT / "VERSION.txt").read_text(encoding="utf-8").strip()
 
-# -- Project-specific overrides ------------------------------------------------
-# Update repository URL for this project
+# Project-specific overrides
 html_theme_options["repository_url"] = (
     "https://github.com/Kataglyphis/BeschleunigerBallett"
 )
 
-# -- Add project-specific extensions -------------------------------------------
+# Project-specific extensions
 extensions.extend(
     [
         "sphinx.ext.graphviz",
@@ -112,13 +92,10 @@ extensions.extend(
     ]
 )
 
-# -- Extra static payloads ------------------------------------------------------
-# Copied verbatim into the site root: the WebGPU/glTF WASM demo (built from
-# third_party/OxidANT/crates/webgpu_renderer; see that crate's
-# docs/webgpu-gltf-rust-plan.md for the rebuild commands).
+# The WebGPU demo; rebuild per third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-gltf-rust-plan.md
 html_extra_path = ["_webgpu_demo"]
 
-# -- MyST extension configuration -----------------------------------------------
+# MyST
 myst_enable_extensions = [
     "dollarmath",
     "amsmath",
@@ -126,7 +103,7 @@ myst_enable_extensions = [
     "deflist",
 ]
 
-# -- Breathe / Exhale configuration (optional C++ API docs) --------------------
+# Breathe / Exhale (optional C++ API docs)
 doxygen_xml_dir = _find_doxygen_xml_dir()
 if doxygen_xml_dir is not None:
     extensions.extend(["breathe", "exhale"])
@@ -142,11 +119,7 @@ if doxygen_xml_dir is not None:
         "exhaleExecutesDoxygen": False,
     }
 else:
-    # Exhale normally writes this page during the build. Without Doxygen XML,
-    # exhale never runs, so README.md / index.rst link to a page that does not
-    # exist and the html/linkcheck builds warn on it. Mirror graphviz_files.rst:
-    # write a placeholder so the "optional, hand-written pages always build"
-    # contract (documentation_workflow.md) holds for this page too.
+    # Without Doxygen XML Exhale never writes this page, and the links to it would warn.
     api_stub_dir = DOCS_SOURCE_DIR / "api"
     api_stub_dir.mkdir(exist_ok=True)
     (api_stub_dir / "library_root.rst").write_text(
@@ -161,38 +134,16 @@ else:
         encoding="utf-8",
     )
 
-# -- General configuration ---------------------------------------------------
+# General configuration
 templates_path = ["_templates"]
-# The html builder auto-excludes html_static_path from document discovery,
-# but other builders (linkcheck, latex, ...) do not - so a stray .md file
-# under _static (e.g. VULKAN.md) is read as an orphan page there and warns.
-# Exclude it explicitly so every builder agrees with the html builder.
+# Only the html builder auto-excludes html_static_path; linkcheck and latex would read stray .md files there.
 exclude_patterns = ["_static/**"]
 
-# -- linkcheck configuration ---------------------------------------------------
-# `make linkcheck` gates broken pages/anchors/refs on OUR site (see
-# documentation_workflow.md). External links flake (rate limits, transient
-# outages, sites requiring a browser) and are not what this gate is for, so
-# every external URL is excluded; only internal docs links/anchors are checked.
+# Linkcheck gates internal links only; external URLs flake (rate limits, outages).
 linkcheck_ignore = [r"^https?://"]
 
-# -- Graphviz output format ---------------------------------------------------
+# Graphviz
 graphviz_output_format = "svg"
 
-# -- Warnings that are generated-docs artifacts, not documentation defects ----
-# The docs build runs under `-W --keep-going` (ANTfrastructure's docs-build.sh), so
-# every warning is fatal. That is the right default for the pages we write by
-# hand; it is wrong for two things Exhale/Breathe do to the GENERATED API tree,
-# which no edit on our side can influence:
-#
-#   duplicate_declaration.cpp - Exhale emits a nested type on its OWN page and
-#     again inside its parent's page, so the C++ domain sees the declaration
-#     twice. GpuTimingSubsystem::GpuPassAverage alone produced 8 of these. The
-#     alternative would be to un-nest engine types to please a documentation
-#     generator, which is the wrong way round.
-#
-# Everything else stays fatal. Notably NOT suppressed: toctree omissions, MyST
-# xref failures, and doxygen*-directive resolution failures - each of those is
-# a real documentation bug and each one was FIXED rather than silenced when the
-# docs build was repaired on 2026-08-06 (53 warnings -> 0).
+# The build runs with -W; Exhale documents nested types twice (own page and parent's), which no source edit avoids.
 suppress_warnings = ["duplicate_declaration.cpp"]

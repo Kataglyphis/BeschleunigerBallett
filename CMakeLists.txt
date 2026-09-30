@@ -16,9 +16,6 @@ add_compile_definitions(PROJECT_VERSION="${PROJECT_VERSION_STR}")
 
 set(AUTHOR "Jonas Heinle")
 
-# Set WINDOWS_CI to OFF by default
-# WINDOWS CI is only able to verify successful compiling ... Windows ... lel
-# i will stay on linux ...
 set(WINDOWS_CI
     OFF
     CACHE BOOL "Enable Windows CI build options")
@@ -29,15 +26,7 @@ set(MYPROJECT_CMAKE_DEBUG_LOG
     OFF
     CACHE BOOL "Enable additional verbose CMake configure logging")
 
-# No --gcc-toolchain is injected here any more. A bare clang/clang++ in the
-# family image selects the image's GCC (${GCC_PREFIX}, /opt/gcc-16.2.0 today)
-# on its own, through the <native-triple>-clang{,++}.cfg files beside the
-# compiler (ANTfrastructure CON16, in :latest since 2026-09-29), and the image's
-# LD_LIBRARY_PATH carries that GCC's runtime. The block that used to discover the
-# prefix and append --gcc-toolchain/-L/-rpath to every clang configure existed
-# only because clang picked the distro GCC; it was retired under the hub's
-# CON37. A --target cross build loads no .cfg and never got the flag either.
-
+# No --gcc-toolchain: the image's <triple>-clang++.cfg already selects its GCC for a bare clang.
 enable_language(CXX C)
 
 if(RUST_FEATURES)
@@ -50,15 +39,7 @@ else()
   message(STATUS "Your are going to use a non MSVC compiler on windows. Therefore no rust integration possible.")
 endif()
 
-# Reusable CMake modules live upstream in the ANTfrastructure submodule so other
-# projects consume the same ones (see AGENTS.md "Reusable Work Belongs in
-# ANTfrastructure"); this repo's own cmake/ keeps only what encodes THIS project's
-# choices. Both go on CMAKE_MODULE_PATH so every module is included by NAME -
-# `include(Sanitizers)`, not `include(cmake/Sanitizers.cmake)` - which is what
-# lets a module live in either directory without its callers caring.
-#
-# Local first: a project that needs to override an upstream module can drop a
-# same-named file in cmake/ and win, without editing ANTfrastructure.
+# Local cmake/ comes first, so a same-named module there overrides ANTfrastructure's.
 set(KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ANTfrastructure/cmake")
 if(NOT EXISTS "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}/Sanitizers.cmake")
   message(

@@ -1,12 +1,4 @@
-// CPU-only tests for the shared frontend input/timing helpers.
-//
-// These functions route ALL keyboard/mouse input into the camera and scale it
-// by the frame delta, and they had zero coverage - which is how the first
-// frame's delta_time could be the entire startup wall clock (last_time starts
-// at 0) and nothing noticed until a key held during load teleported the
-// camera. Everything here is device-free by design; the one code path that
-// genuinely needs a live GLFWwindow (ESC-to-close) is deliberately NOT
-// exercised - a null window would hit a real GLFW call.
+// ESC-to-close is not covered: it needs a live GLFWwindow, and a null one would hit a real GLFW call.
 
 #include <gtest/gtest.h>
 
@@ -34,9 +26,7 @@ using Kataglyphis::Frontend::window_key_count;
 
 TEST(FrameInputUnit, FirstFrameStartupSpikeIsClamped)
 {
-    // last_time starts at 0, so the first raw delta is the whole startup wall
-    // clock. 7 seconds of construction must NOT become 7 seconds of camera
-    // motion in one frame.
+    // last_time starts at 0, so the first raw delta is the whole startup wall clock.
     EXPECT_FLOAT_EQ(clamp_frame_delta(7.3F), 0.1F);
 }
 
@@ -72,9 +62,7 @@ TEST(WindowInputUnit, OutOfRangeKeysAreIgnoredNotWritten)
 {
     bool keys[window_key_count];
     reset_window_keys(keys);
-    // GLFW_KEY_UNKNOWN is -1; media keys can exceed the array. Neither may
-    // write out of bounds (this suite runs under ASan in CI, which enforces
-    // exactly that).
+    // GLFW_KEY_UNKNOWN is -1 and media keys can exceed the array; ASan in CI catches either write.
     handle_key_callback(nullptr, keys, GLFW_KEY_UNKNOWN, GLFW_PRESS);
     handle_key_callback(nullptr, keys, window_key_count + 5, GLFW_PRESS);
     for (int i = 0; i < window_key_count; ++i) {
@@ -90,16 +78,13 @@ TEST(WindowInputUnit, FirstMouseMoveDoesNotJumpTheCamera)
     float y_change = 0.0F;
     bool first_moved = true;
 
-    // The first event after (re)capture must produce ZERO delta - otherwise
-    // the camera snaps by the full distance between the stale last position
-    // and wherever the cursor happens to be.
+    // A non-zero first delta would snap the camera from the stale position to the cursor.
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 640.0, 360.0);
     EXPECT_FLOAT_EQ(x_change, 0.0F);
     EXPECT_FLOAT_EQ(y_change, 0.0F);
     EXPECT_FALSE(first_moved);
 
-    // Subsequent moves: screen-space right is +x; y is INVERTED (screen y
-    // grows downward, camera pitch grows upward).
+    // y is inverted: screen y grows downward, camera pitch upward.
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 650.0, 350.0);
     EXPECT_FLOAT_EQ(x_change, 10.0F);
     EXPECT_FLOAT_EQ(y_change, 10.0F);
@@ -107,9 +92,7 @@ TEST(WindowInputUnit, FirstMouseMoveDoesNotJumpTheCamera)
 
 TEST(WindowInputUnit, MultipleEventsInOneFrameAccumulate)
 {
-    // A 1000 Hz mouse polled at 60 FPS delivers several move events per
-    // frame; each must add to x_change/y_change rather than overwrite it, or
-    // all but the last event of the frame is silently dropped.
+    // Several move events arrive per frame; overwriting instead of adding drops all but the last.
     float last_x = 0.0F;
     float last_y = 0.0F;
     float x_change = 0.0F;
@@ -127,8 +110,7 @@ TEST(WindowInputUnit, MultipleEventsInOneFrameAccumulate)
     EXPECT_FLOAT_EQ(consume_axis_delta(x_change), 40.0F);
     EXPECT_FLOAT_EQ(consume_axis_delta(y_change), 20.0F);
 
-    // A consume between two events is the frame boundary: it must reset the
-    // accumulator, not let motion leak into the next frame's total.
+    // A consume is the frame boundary, so motion must not leak into the next frame's total.
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 690.0, 335.0);
     EXPECT_FLOAT_EQ(consume_axis_delta(x_change), 10.0F);
     EXPECT_FLOAT_EQ(consume_axis_delta(y_change), 5.0F);
@@ -138,10 +120,7 @@ TEST(WindowInputUnit, MultipleEventsInOneFrameAccumulate)
 
 TEST(WindowInputUnit, LookModeEntryReSeedsTheMouseOrigin)
 {
-    // A default-constructed WindowInputState must re-seed on its first
-    // event, matching a freshly (re)entered look mode - otherwise the first
-    // right-drag of every run snaps the camera by the cursor's absolute
-    // screen position.
+    // Without a re-seed, the first right-drag of every run snaps by the cursor's absolute position.
     Kataglyphis::Frontend::WindowInputState state;
     state.look_mode_active = true;
 
@@ -160,9 +139,7 @@ TEST(WindowInputUnit, LookModeEntryReSeedsTheMouseOrigin)
 
 TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)
 {
-    // A right-drag interrupted by alt-tab must not leave last_x/last_y stale -
-    // otherwise the first move after refocus snaps the camera by the
-    // distance crossed while the window was unfocused.
+    // Stale last_x/last_y after alt-tab would snap the camera by the distance crossed while unfocused.
     bool keys[window_key_count];
     reset_window_keys(keys);
     handle_key_callback(nullptr, keys, GLFW_KEY_W, GLFW_PRESS);
@@ -184,18 +161,12 @@ TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)
     }
     EXPECT_FALSE(look_mode_active) << "focus loss must end look mode, not just reset keys";
 
-    // With look mode ended, motion while unfocused must not move the camera -
-    // the cursor-pos callback is installed unconditionally now, so events
-    // keep arriving even though the drag is over.
+    // The cursor-pos callback is always installed, so events keep arriving after the drag ends.
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, look_mode_active, 900.0, 50.0);
     EXPECT_FLOAT_EQ(x_change, 0.0F);
     EXPECT_FLOAT_EQ(y_change, 0.0F);
 
-    // Re-entering look mode (as a right-press would) re-seeds against the
-    // cursor's current position - the first move produces zero delta even
-    // though the cursor is far from where the drag left off - and the
-    // second move produces a normal delta, pinning a re-seed rather than a
-    // permanently dead axis.
+    // Re-entry re-seeds (zero first delta), and the second move proves the axis is not permanently dead.
     look_mode_active = true;
     first_moved = true;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, look_mode_active, 900.0, 50.0);
@@ -209,10 +180,7 @@ TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)
 
 TEST(WindowInputUnit, CursorMotionOutsideLookModeProducesNoCameraDelta)
 {
-    // The cursor-pos callback is installed unconditionally (ImGui backend
-    // requirement), so it keeps firing outside look mode too. Without the
-    // look_mode_active gate, every ordinary mouse move - not just drags -
-    // would steer the camera.
+    // The ImGui backend needs the cursor-pos callback always installed, so only look_mode_active stops steering.
     float last_x = 0.0F;
     float last_y = 0.0F;
     float x_change = 0.0F;
@@ -229,10 +197,7 @@ TEST(WindowInputUnit, CursorMotionOutsideLookModeProducesNoCameraDelta)
 
 TEST(WindowInputUnit, LookModeResumesWithoutSnappingAfterIdleMotion)
 {
-    // Idle motion (look mode off) must keep re-seeding last_x/last_y, so that
-    // entering look mode later only reports the delta since the drag
-    // actually started - not the whole idle trajectory the cursor travelled
-    // while look mode was off.
+    // Idle motion must keep re-seeding, or entering look mode reports the whole idle trajectory.
     float last_x = 0.0F;
     float last_y = 0.0F;
     float x_change = 0.0F;
@@ -268,18 +233,14 @@ TEST(WindowInputUnit, CursorCrossingAnImGuiPanelDoesNotJumpTheCamera)
     ImGui::GetIO().WantCaptureMouse = false;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 100.0, 100.0);
 
-    // x_change/y_change accumulate, so reset before each call under test -
-    // otherwise a passing assertion could just mean an earlier call happened
-    // to add zero, not that THIS call swallowed its input.
+    // The deltas accumulate, so reset them or a pass could come from an earlier call.
     x_change = 0.0F;
     y_change = 0.0F;
     ImGui::GetIO().WantCaptureMouse = true;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 400.0, 100.0);
     EXPECT_FLOAT_EQ(x_change, 0.0F) << "mouse input leaked past the ImGui capture gate";
 
-    // Leaving the panel: the first event after capture ends must re-seed
-    // against the cursor's current position, not difference against the
-    // stale pre-panel position (which would produce 310, not 10).
+    // After capture ends, re-seed rather than difference against the stale pre-panel position.
     x_change = 0.0F;
     ImGui::GetIO().WantCaptureMouse = false;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, true, 410.0, 100.0);
@@ -293,15 +254,13 @@ TEST(WindowInputUnit, ConsumeAxisDeltaReturnsAndResets)
     float axis = 12.5F;
     EXPECT_FLOAT_EQ(consume_axis_delta(axis), 12.5F);
     EXPECT_FLOAT_EQ(axis, 0.0F);
-    // Second consume without new motion must be zero - the bug this guards is
-    // a camera that keeps rotating forever after one mouse move.
+    // Otherwise the camera keeps rotating forever after one mouse move.
     EXPECT_FLOAT_EQ(consume_axis_delta(axis), 0.0F);
 }
 
 TEST(WindowInputUnit, ImGuiCaptureGateSwallowsInput)
 {
-    // The gate exists so typing in an ImGui text field does not also steer the
-    // camera. It consults the CURRENT ImGui context, so build a real one.
+    // The gate reads the current ImGui context, so build a real one.
     ImGuiContext *ctx = ImGui::CreateContext();
     ASSERT_NE(ctx, nullptr);
     ImGui::GetIO().WantCaptureKeyboard = true;
@@ -332,8 +291,7 @@ TEST(WindowInputUnit, ImGuiCaptureGateSwallowsInput)
 
 TEST(WindowInputUnit, ReleaseIsHonouredWhileImGuiHasCapture)
 {
-    // A key held when an ImGui widget takes focus must still be releasable -
-    // otherwise the camera keeps moving forever once focus returns.
+    // A swallowed release would keep the camera moving forever once focus returns.
     ImGuiContext *ctx = ImGui::CreateContext();
     ASSERT_NE(ctx, nullptr);
     ImGui::GetIO().WantCaptureKeyboard = false;
@@ -366,9 +324,7 @@ TEST(WindowInputUnit, PressIsStillSwallowedWhileImGuiHasCapture)
 
 TEST(WindowInputUnit, CursorCaptureDecisionIgnoresImGuiState)
 {
-    // Covers should_capture_cursor only - the decision to (re)install the
-    // cursor callback is a pure function of button/action, independent of
-    // ImGui. should_release_cursor is covered separately below.
+    // Capture is a pure function of button/action, independent of ImGui.
     EXPECT_TRUE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS));
     EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE));
     EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS));
@@ -388,10 +344,7 @@ TEST(WindowInputUnit, CursorInputModeFollowsLookMode)
     EXPECT_EQ(cursor_input_mode_for(true), GLFW_CURSOR_DISABLED);
     EXPECT_EQ(cursor_input_mode_for(false), GLFW_CURSOR_NORMAL);
 
-    // Drive the state machine through a full press -> release cycle and
-    // confirm the cursor mode implied by look_mode_active ends back at
-    // GLFW_CURSOR_NORMAL, matching Window::mouse_button_callback's
-    // transition-only glfwSetInputMode call.
+    // Window::mouse_button_callback sets the input mode only on transitions, so a cycle must end at NORMAL.
     bool mouse_first_moved = false;
     bool look_mode_active = false;
 

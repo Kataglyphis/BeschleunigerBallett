@@ -17,14 +17,7 @@ param (
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-# PATH/tool resolution and the CTest metadata rewrite are generic and live in
-# ANTfrastructure (WindowsScripts.Shared / WindowsCMake.Common) - they were copied
-# here, which meant a fix had to be made twice. Update-CTestMetadataPaths in
-# particular is about C:/workspace, the container image's own WORKDIR, so it
-# belongs with the image rather than with any one consumer.
-# Resolve-AppExecutablePath comes from the upstream WindowsAppRunner.Common
-# module (the twin of app-runner.sh); this script keeps its own flow because it
-# orchestrates tests and fuzz executables before the launch.
+# Own flow rather than Invoke-AppRun: tests and fuzz executables run before the launch.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsScripts.Shared', 'WindowsBuild.Common', 'WindowsCMake.Common',
                      'WindowsAppRunner.Common', 'WindowsTesting.Common')
@@ -33,12 +26,7 @@ $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
 $FuzzDir = $DebugDir
 
-# Get-PreferredToolPath -Required, not Resolve-PreferredTool: the latter was
-# deleted upstream on 2026-08-21 as "zero callers anywhere" — that audit grepped
-# ANTfrastructure only, and these three lines have been calling a function that
-# does not exist ever since. -Required keeps the throw-on-missing behaviour, so
-# a host without cmake fails HERE naming the tool instead of several lines later
-# on a $null path (which under Set-StrictMode reads as an unrelated defect).
+# -Required throws naming the missing tool here, not later on a $null path.
 $cmakeExePath = Get-PreferredToolPath -Required -CommandName 'cmake.exe' -CandidatePaths @(
     'C:\Program Files\CMake\bin\cmake.exe'
 )
@@ -131,9 +119,7 @@ try {
     $env:VK_LAYER_PATH = ''
     $env:VK_INSTANCE_LAYERS = ''
 
-    # App-run ASAN options differ from the test-run defaults on purpose:
-    # report_globals=0 + windows_hook_rtl_allocators=false silence GUI/driver
-    # global-init and RTL-allocator noise the test binaries do not have.
+    # Unlike the test runs: silences GUI/driver global-init and RTL-allocator noise.
     Invoke-WithAsanOptions -Options 'log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false' -Script {
         if ($ExeArgs) {
             & $ExePath $ExeArgs

@@ -41,14 +41,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
   : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
     device(device)
 {
-    // Object-space bounds for frustum culling, computed here because this is
-    // the only point where the vertex positions are on the CPU - they go
-    // straight into a device-local buffer below and are not readable
-    // afterwards without a staging copy.
-    //
-    // Deliberately left invalid (min > max) for an empty mesh: isVisible()
-    // treats unknown bounds as visible, so an empty mesh renders (drawing
-    // nothing) rather than an all-zero box culling at the origin.
+    // Computed here, the last point the positions are on the CPU; an empty mesh keeps invalid bounds (visible).
     if (!vertices.empty()) {
         glm::vec3 minimum = vertices.front().get_position();
         glm::vec3 maximum = minimum;
@@ -67,9 +60,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
     createMaterialIDBuffer(transfer_command_pool, materialIndex);
     createMaterialBuffer(transfer_command_pool, materials);
 
-    // All uploads for this mesh are done; release the shared staging buffer
-    // now (it was reused across the four uploads above) so each mesh does not
-    // retain vertex-buffer-sized host memory for its whole lifetime.
+    // Release the shared staging buffer now, not at mesh destruction.
     vulkanBufferManager.cleanUp();
 
     if (device->supportsBufferDeviceAddress()) {
@@ -119,8 +110,7 @@ void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
 void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<unsigned int> &materialIndex)
 {
-    // The material-ID buffer is read as a storage buffer (and via device
-    // address) in the shaders, never bound as an index buffer.
+    // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(
           transfer_command_pool, materialIdsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materialIndex)) {
         spdlog::error("Mesh::createMaterialIDBuffer: upload failed; material-ID buffer left unwritten.");
@@ -130,8 +120,7 @@ void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
 void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<ObjMaterial> &materials)
 {
-    // The materials buffer is read as a storage buffer (and via device
-    // address) in the shaders, never bound as an index buffer.
+    // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(
           transfer_command_pool, materialsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materials)) {
         spdlog::error("Mesh::createMaterialBuffer: upload failed; materials buffer left unwritten.");

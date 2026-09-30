@@ -1,9 +1,6 @@
 import fullscreen;
 
-// IBL precompute (Rust/WebGPU side). ibl.wgsl is generated from this
-// file and checked into the Rust crate by wgslMap. Emits WGSL.
-// Split-sum: equirectangular HDR -> cubemap, cosine-convolved irradiance,
-// GGX-prefiltered specular, and the environment BRDF lookup table.
+// Rust/WebGPU split-sum IBL precompute: the checked-in ibl.wgsl is generated from this file.
 
 static const float PI = 3.14159265359;
 static const uint IRRADIANCE_PHI_STEPS = 128u;
@@ -55,11 +52,7 @@ float2 equirect_uv(float3 dir)
     return float2(longitude / (2.0 * PI) + 0.5, 0.5 - latitude / PI);
 }
 
-// Bilinear fetch from the equirect source via textureLoad rather than a
-// sampler: longitude wraps and latitude clamps, which is what an equirect map
-// means geometrically, and the source is bound non-filterable (see the
-// `filterable: false` binding in ibl.rs) since FLOAT32_FILTERABLE is not a
-// feature the context requests.
+// Manual bilinear Load: the source is bound non-filterable (no FLOAT32_FILTERABLE), and longitude must wrap.
 float3 sample_equirect(float3 dir)
 {
     uint dimsX, dimsY;
@@ -90,9 +83,7 @@ float4 fs_equirect_to_cube(FullscreenVsOut In) : SV_Target
     return float4(sample_equirect(dir), 1.0);
 }
 
-// One mip of the environment cube from the one above it. A target texel at
-// mip m sits on the corner shared by its four parents, so one bilinear tap
-// *is* their box average.
+// A texel sits on the corner of its four parents, so one bilinear tap is their box average.
 [shader("fragment")]
 float4 fs_downsample_cube(FullscreenVsOut In) : SV_Target
 {
@@ -145,13 +136,7 @@ float3 importance_sample_ggx(float2 xi, float3 normal, float roughness)
 {
     float a = roughness * roughness;
     float phi = 2.0 * PI * xi.x;
-    // Both clamps are load-bearing, not defensive noise. As roughness -> 0,
-    // a*a underflows against 1.0 and the ratio becomes (1 - xi.y) / (1 - xi.y),
-    // which rounds to just above 1 for about half the sample sequence; the
-    // unclamped sqrt(1 - cos^2) is then sqrt(-epsilon) = NaN, and the sample
-    // is silently dropped. Measured before the clamp: the mirror row of the
-    // BRDF LUT summed to 0.563 instead of 1.0 - a 44% energy loss that looks
-    // exactly like a plausible-but-dark material.
+    // Both clamps matter: near roughness 0 the ratio rounds above 1 and sqrt(-epsilon) NaNs drop samples.
     float cosTheta = sqrt(clamp((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y), 0.0, 1.0));
     float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
     float3 halfLocal = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
@@ -170,10 +155,7 @@ float distribution_ggx(float nDotH, float roughness)
     return a2 / max(PI * denom * denom, 1e-6);
 }
 
-// Prefiltered specular radiance for one roughness (one mip of the cube). N =
-// V = R is the standard split-sum simplification: it drops the stretched
-// grazing highlight, the price of storing the result in a cubemap indexed
-// only by reflection vector.
+// Prefiltered specular for one roughness mip, under the split-sum N = V = R simplification.
 [shader("fragment")]
 float4 fs_prefilter(FullscreenVsOut In) : SV_Target
 {
@@ -182,9 +164,7 @@ float4 fs_prefilter(FullscreenVsOut In) : SV_Target
     uint sampleCount = uint(params.face_roughness_samples_mip.z);
     float resolution = params.source_resolution.x;
 
-    // Mip 0 is the environment itself. Importance sampling at roughness 0
-    // degenerates to sampleCount identical taps, so this is not an
-    // optimisation but the exact answer, cheaper.
+    // At roughness 0 importance sampling degenerates to identical taps; this is the exact answer.
     if (roughness <= 0.0)
     {
         return srcCube.SampleLevel(srcSampler, normal, 0.0);
@@ -200,12 +180,7 @@ float4 fs_prefilter(FullscreenVsOut In) : SV_Target
         float nDotL = dot(normal, sampleDir);
         if (nDotL > 0.0)
         {
-            // Sample the environment at a mip whose texel solid angle matches
-            // the sample's, per Krivanek/Colbert. Without this a high-contrast
-            // environment (a sun disc, a bright window) aliases into a spray
-            // of fireflies that no amount of samples removes. V = N here, so
-            // H.V is H.N and the usual D * NdotH / (4 * HdotV) collapses to
-            // D / 4.
+            // Krivanek/Colbert mip selection prevents fireflies; with V = N the pdf collapses to D / 4.
             float nDotH = max(dot(normal, halfVector), 0.0);
             float pdf = distribution_ggx(nDotH, roughness) * 0.25 + 1e-4;
             float texelSolidAngle = 4.0 * PI / (6.0 * resolution * resolution);
@@ -242,8 +217,7 @@ float4 fs_brdf_lut(FullscreenVsOut In) : SV_Target
             float vDotH = max(dot(v, halfVector), 0.0);
             float g = geometry_smith_ibl(max(nDotV, 1e-4), nDotL, roughness);
             float gVis = (g * vDotH) / max(nDotH * max(nDotV, 1e-4), 1e-6);
-            // Fresnel factored into (1 - fc) * F0 + fc, so the integral
-            // splits into a scale on F0 and an F0-independent bias.
+            // Fresnel as (1 - fc) * F0 + fc splits the integral into an F0 scale and a bias.
             float fc = pow(1.0 - vDotH, 5.0);
             result += float2((1.0 - fc) * gVis, fc * gVis);
         }

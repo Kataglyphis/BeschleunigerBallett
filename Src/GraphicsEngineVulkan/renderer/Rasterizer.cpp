@@ -104,8 +104,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path).
+    // Idempotent: the destructor calls it again after an explicit cleanUp.
     if (!device) { return; }
 
     destroyFramebuffers();
@@ -136,9 +135,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
     depthBufferImage.reset();
 }
 
-// Rebuilds framebuffers but deliberately does not destroy the previous ones -
-// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
-// this, while the swapchain images they reference still exist.
+// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
 {
     releaseFrameTextures();
@@ -153,10 +150,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     const vk::AttachmentDescription color_attachment =
       buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-    // Depth is never read after the pass, so its writeback is eDontCare.
-    // depth_format was already resolved by createTextures(), which init()
-    // always runs first - reuse it rather than querying again, so the
-    // attachment and the image it is paired with cannot diverge.
+    // Store eDontCare: depth is never read after the pass. Reuses createTextures()'s depth_format.
     const vk::AttachmentDescription depth_attachment =
       buildAttachmentDescription(depth_format,
         vk::ImageLayout::eDepthStencilAttachmentOptimal,
@@ -174,14 +168,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
 
-    // Depth is cleared via loadOp after an initial layout transition; the
-    // dependency must cover EARLY/LATE_FRAGMENT_TESTS + depth writes or the
-    // clear races the transition (SYNC-HAZARD-WRITE-AFTER-WRITE). See
-    // common/RenderPassHelper.hpp's buildExternalColorDepthDependency for the
-    // full rationale - shared with DeferredRasterizer and PostStage. Note
-    // this adds eColorAttachmentWrite to srcAccessMask on top of the
-    // previous hand-rolled version, a widening rather than a behaviour
-    // change: the colour attachment is also shared across frames in flight.
+    // Without the fragment-test stages the depth clear races the layout transition (SYNC-HAZARD-WRITE-AFTER-WRITE).
     const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDepthDependency() };
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
@@ -252,8 +239,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 
     depth_format = createDepthAttachment(*depthBufferImage, device, swap_chain_extent, {}, depth_aspect_flags);
 
-    // This overload allocates, submits and fence-waits its own command buffer -
-    // there is no outer command buffer batching this transition.
+    // This overload submits and waits on its own command buffer.
     VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();
     vulkanImage.transitionImageLayout(device->getLogicalDevice(),
       device->getGraphicsQueue(),
@@ -267,8 +253,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md) — a relative path works from there.
+    // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
     ShaderStagePair stages{ device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv" };
@@ -293,8 +278,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
       pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
         .setAlphaBlending(true)
-        // Per-draw cull mode: doubleSided glTF meshes disable back-face culling
-        // (set in the record loop). Every draw sets it explicitly below.
+        // Dynamic, so doubleSided glTF meshes can skip back-face culling per draw.
         .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
 }

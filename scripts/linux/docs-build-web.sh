@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
-# docs-build-web.sh - project wrapper around ANTfrastructure's generic Sphinx docs
-# builder. Everything reusable (venv bootstrap, _static staging, the diagram
-# generator step and the `make html` / `make linkcheck` pair with warnings as
-# errors) lives in ANTfrastructure's linux/scripts/lib/docs-build.sh; only this
-# project's paths and its WebGPU wasm demo live here.
+# docs-build-web.sh - this project's paths and WebGPU demo over ANTfrastructure's lib/docs-build.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literals these calls
-# replace could not honour - and fails naming the probed path AND the fix.
-#
-# ensure_wasm32_target lives in ANTfrastructure: making the wasm32 target usable
-# without assuming rustup is not this project's problem, it is a property of
-# the images.
+# Not third_party literals: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/rust-toolchain.sh
 
 antfrastructure_source linux/scripts/lib/docs-build.sh
@@ -24,21 +13,13 @@ antfrastructure_source linux/scripts/lib/docs-build.sh
 # Directory the C++ build wrote its Doxygen/Graphviz SVGs to.
 DOCS_OUT="${1:-${DOCS_OUT:-build/build/html}}"
 
-# Paths are relative to the repo root because CI invokes this from there; the
-# library resolves them against DOCS_BUILD_PROJECT_ROOT (cwd by default).
+# Repo-root relative: the library resolves them against DOCS_BUILD_PROJECT_ROOT (cwd by default).
 DOCS_BUILD_SVG_SOURCE_DIR="${DOCS_OUT}"
 DOCS_BUILD_GENERATOR_SCRIPT="graphviz_generator.py"
 DOCS_BUILD_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
 DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirements.sh"
 
-# Rebuild the Rust WebGPU renderer to wasm32 + wasm-bindgen and refresh the
-# committed demo under docs/source/_webgpu_demo, so the deployed docs always
-# show the CURRENT renderer rather than a hand-built snapshot that goes stale.
-# Best-effort: a wasm build failure must NOT red the docs deploy - the committed
-# snapshot then remains the fallback. The container already ships the wasm32
-# target (ANTfrastructure install-rust.sh); only wasm-bindgen-cli is fetched here,
-# pinned to the EXACT version the crate's Cargo.lock locks (CLI and crate must
-# match or wasm-bindgen refuses to run).
+# Best-effort refresh of the committed demo; wasm-bindgen-cli must match Cargo.lock exactly or it refuses to run.
 build_webgpu_wasm_demo() {
     local rpt="third_party/OxidANT"
     local demo="docs/source/_webgpu_demo/webgpu-demo"

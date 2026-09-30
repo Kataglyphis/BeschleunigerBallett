@@ -1,16 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/windows/Compare-RendererTimings.ps1's expected-pass
-# derivation and gate logic - the script previously hard-coded a Rust pass
-# named 'Post' that TimedPass has never had (a guaranteed FAIL every run)
-# while silently never checking three real passes (Bloom, Histogram,
-# ExposureReduce). Invokes the real script as a child process, the same
-# pattern Compare-PerfBaseline.Tests.ps1 uses, plus small fixture source
-# files for Get-ExpectedPassNames so the parser is tested against known input
-# rather than the live (and evolving) engine sources.
-#
-# NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
-# assertion syntax (`Should Be 0`, never Pester 5's `Should -Be 0`).
+# Fixture sources, not the live engine ones, so the parser sees known input. Pester 3.4.0: `Should Be`, not `Should -Be`.
 
 Describe 'Compare-RendererTimings' {
 
@@ -30,8 +20,7 @@ inline constexpr const char *GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] =
 };
 '@ | Set-Content -Path $script:cppFixturePath
 
-    # std::array form (post GPU_TIMED_PASS_COUNT-table-derivation refactor) -
-    # the parser must accept both spellings.
+    # The parser must accept the std::array spelling too.
     $script:cppArrayFixturePath = Join-Path $script:tmpDir 'GUIRendererSharedVarsArray.ixx'
     @'
 inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({

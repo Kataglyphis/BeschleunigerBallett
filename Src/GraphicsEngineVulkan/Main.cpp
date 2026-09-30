@@ -24,8 +24,7 @@ import kataglyphis.vulkan.app;
 #include <iostream>
 #include <string>
 
-// abseil owns argument parsing, `--help` and unknown-argument rejection;
-// do not add a hand-rolled parser alongside it.
+// abseil owns argument parsing, `--help` and unknown-argument rejection; add no parser of your own.
 ABSL_FLAG(std::string,
           gpu,
           "",
@@ -116,8 +115,7 @@ auto main(int argc, char **argv) -> int
     }
 #endif
 
-    // Exceptions are disabled project-wide (/EHs-, VULKAN_HPP_NO_EXCEPTIONS);
-    // unrecoverable Vulkan failures fail fast via ASSERT_VULKAN's abort().
+    // No try/catch: exceptions are disabled project-wide and ASSERT_VULKAN aborts on fatal failures.
     const int result = Kataglyphis::App::run();
     spdlog::shutdown();
     return result;

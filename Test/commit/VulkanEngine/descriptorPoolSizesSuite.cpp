@@ -1,9 +1,4 @@
-// Pins deriveDescriptorPoolSizes' contract: one pool-size entry per distinct
-// descriptor type, accumulated as descriptorCount * set_count across every
-// binding that shares the type. Also pins the regression this extraction was
-// about - the shared render descriptor set's storage-buffer slot used to be
-// hard-overridden to a byte count (sizeof(ObjectDescription) * MAX_OBJECTS)
-// instead of the one descriptor per set it actually needs.
+// Pool sizes count descriptors (descriptorCount * set_count per type), never bytes.
 
 #include <gtest/gtest.h>
 
@@ -108,11 +103,7 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
     EXPECT_NE(storage_buffer_entry->descriptorCount, 1600U);
 }
 
-// The shared render set's TEXTURES_BINDING/SAMPLER_BINDING declare
-// MAX_TEXTURE_COUNT (128) descriptors (VulkanRenderer::createSharedRenderDescriptorResources); a
-// single-descriptor writer that silently wrote element 0 would under-write
-// the other 127. This predicate is what beginWrite/writeImageArray now check
-// before issuing the vkUpdateDescriptorSets call.
+// Array bindings declare MAX_TEXTURE_COUNT descriptors; a single-descriptor write would leave the rest unwritten.
 TEST(DescriptorPoolSizesUnit, WriteCountMustMatchTheDeclaredBinding)
 {
     const vk::DescriptorSetLayoutBinding single_descriptor_binding =
@@ -147,9 +138,7 @@ TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)
     const std::vector<vk::DescriptorSetLayoutBinding> no_bindings;
     EXPECT_EQ(firstDuplicateBinding(no_bindings), std::nullopt);
 
-    // Two bindings that share a descriptor type but not a binding number are
-    // exactly what deriveDescriptorPoolSizes deliberately merges - the two
-    // functions must not be confused.
+    // Same type, different binding: deriveDescriptorPoolSizes merges these, this predicate must not.
     const std::vector<vk::DescriptorSetLayoutBinding> same_type_different_binding = {
         makeBinding(0, vk::DescriptorType::eUniformBuffer, 1), makeBinding(1, vk::DescriptorType::eUniformBuffer, 1)
     };

@@ -1,17 +1,13 @@
-// Host-side mirror of the global UBO. Its layout is pinned against the
-// Slang redeclaration by BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv.
+// Host mirror of the global UBO; BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv pins its layout.
 #pragma once
 #include "common/HostDeviceGlmAliases.hpp"
 namespace Kataglyphis::VulkanRendererInternals {
 
-// this will also be an input to our shaders !!
-// which render stage doesn't need view,projection ?
 struct GlobalUBO
 {
     mat4 projection;
     mat4 view;
-    // Precomputed on the CPU once per frame: the clouds compute shader
-    // needs these per pixel, where inverse() is ruinously expensive.
+    // Precomputed per frame: inverse() per pixel in the clouds shader would be ruinous.
     mat4 inv_projection;
     mat4 inv_view;
 };

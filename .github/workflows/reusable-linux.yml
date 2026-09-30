@@ -22,10 +22,7 @@ on:
 permissions:
   contents: read
 
-# Every build step here pipes through `tee`, and the runner's default shell
-# has no pipefail - so for months, failed configures and builds reported
-# SUCCESS and only steps without tee (the fuzzer run) ever surfaced failure.
-# An explicit `shell: bash` runs with `-eo pipefail`, which unmasks them.
+# Explicit `shell: bash` adds pipefail; the default shell lets a failure piped through `tee` pass.
 defaults:
   run:
     shell: bash
@@ -34,83 +31,16 @@ env:
   BUILD_TYPE: Debug
   GCC_PROFILE_PRESET: linux-profile-GNU
   CLANG_PROFILE_PRESET: linux-profile-clang
-  # Vulkan SDK version is NOT set here: the container already exports
-  # VULKAN_VERSION (ANTfrastructure linux/Dockerfile.base), and
-  # cmake-configure-build.sh only overrides it when --vulkan-version is
-  # passed - so repeating it here was redundant.
-  # folder/name configuration -- change here to affect the whole workflow
+  # No VULKAN_VERSION here: the image exports it.
   BUILD_DIR: build
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-  # NO CONTAINER IMAGE IS NAMED IN THIS FILE, and that is the point.
-  #
-  # The tag used to sit here as `CONTAINER_IMAGE: "...:latest-cross"`, referenced
-  # by 34 call sites below. One literal per repo is not drift-free, it is
-  # drift-per-repo: a fleet-wide tag bump had to find and edit this line in every
-  # consumer, and a consumer that was missed kept building against a tag nobody
-  # was rebuilding any more.
-  #
-  # The value now comes from ANTfrastructure's linux/scripts/01-core/versions.env
-  # (IMAGE_REGISTRY_PREFIX + CI_IMAGE_LINUX_TAG), which the four container
-  # composite actions carry as the DEFAULT of their `image` input - so every step
-  # below OMITS `image:` entirely and inherits it. ANTfrastructure's
-  # linux/scripts/verify_ci_image_refs.py, which the actionlint gate in
-  # .github/workflows/lint-gates.yml runs against THIS tree, fails on any
-  # non-canonical kataglyphis_beschleuniger tag under .github/, so a
-  # re-introduced literal cannot pass quietly. That gate is no longer a job in
-  # this file: it grades a tree that does not vary by runner, so it ran twice
-  # whenever the ARM caller joined in, and both callers' paths-ignore silenced it
-  # on docs-only pushes.
-  #
-  # Do NOT "make it explicit" by passing an `image:` expression back in: GitHub
-  # applies an action default only when the key is ABSENT, so an expression that
-  # resolves empty yields an EMPTY image reference rather than the default - a
-  # failure that surfaces as a confusing `docker run` error far from its cause.
-  #
-  # The one step that cannot omit an input, because it calls no action - the ASan
-  # fuzz-seed loop, which needs a loop rather than the single command line the
-  # action takes - reads the same versions.env through
-  # scripts/linux/ci-image-ref.sh. That script's header carries the
-  # ":latest-cross, not :latest" rationale this comment used to.
+  # Never pass `image:` to the container actions: an expression that resolves empty overrides their default.
 
-# WHY THIS IS FANNED OUT (2026-08-06)
-#
-# This was ONE job running everything in sequence: 2h13m for a complete run, of
-# which ~94 minutes was five full engine builds one after another. They were
-# sequential for a MECHANICAL reason, not a logical one - every step
-# reconfigured the same `build` directory in turn (clang debug -> coverage ->
-# profiling -> gcc -> gcc profiling), so no two could overlap. Giving each its
-# own job gives each its own workspace and the contention disappears; the lane
-# now costs about as long as its slowest single build.
-#
-# Compiler caching, measured again 2026-09-29 (it was rejected on 2026-08-06
-# after sccache hit 57% on a byte-identical tree): on today's image, sccache
-# 0.18.0 caches the clang build completely, module interface units and their
-# BMIs included - 738/738 hits on a clean tree, 340 s -> 60 s locally - and an
-# interface edit misses exactly its importers. The clang jobs therefore keep an
-# sccache per preset across runs (ANTfrastructure's compiler-cache actions).
-# The gcc jobs do not: neither ccache nor sccache caches -fmodules-ts TUs.
-#
-# The jobs are deliberately INDEPENDENT - no `needs:` - because each has to
-# build what it tests anyway (build-coverage-llvm.sh runs compileTestSuite,
-# run-static-analysis-format.sh needs compile_commands.json), and shipping a
-# multi-GB build tree between jobs as an artifact costs more than rebuilding it
-# in parallel.
-#
-# What is NOT dropped, and why: TSan and the gcc lane each cost ~25 minutes and
-# each caught a real defect on 2026-08-06 - a struct-padding comparison bug that
-# the plain and ASan runs both passed, and a GCC 16.1.0 ICE no clang lane can
-# see. Demoting them to nightly is the obvious way to make this number smaller
-# and it would have cost both findings.
-#
-# The four-step host prologue every job now repeats lives in ANTfrastructure's
-# prepare-linux-ci-host action, so a change to the pull retry or the checkout
-# flags happens once rather than eleven times.
+# No `needs:` on purpose: each job builds what it tests, cheaper than shipping a build tree between jobs.
 jobs:
-  # ---------------------------------------------------------------------------
-  # clang: the plain Debug build and the unit/integration suite.
-  # ---------------------------------------------------------------------------
+  # clang: Debug build and the unit/integration suite
   clang-tests:
     name: clang debug + tests
     runs-on: ${{ inputs.runner }}
@@ -125,8 +55,7 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
-      # The one writer of the debug cache; coverage and static-analysis build the
-      # same preset and only restore it.
+      # The one writer of the debug cache; coverage and static-analysis only restore it.
       - name: Restore compiler cache
         id: cc
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
@@ -151,14 +80,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
 
-      # The one lane that runs the GPU suites (Integration, GoldenRender), on
-      # x64 only: the image's llvmpipe is a CPU Vulkan device with ray tracing,
-      # and --virtual-display gives GLFW an X server. They cost ~20 min of
-      # llvmpipe on 32 cores, so the sanitizer and gcc lanes keep excluding them.
-      # Five GoldenRender tests miss their thresholds on llvmpipe, the GUI input
-      # sweep outlasts ctest's 1500 s timeout on a 4-vCPU runner, and arm64's
-      # Vulkan loader has no X11/Wayland surface extension, so it cannot create
-      # a window surface at all (BACKLOG.md "GPU suites on llvmpipe").
+      # The only lane running the GPU suites (x64 llvmpipe); exclusions: BACKLOG.md "GPU suites on llvmpipe".
       - name: Run Unit/Integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -169,11 +91,7 @@ jobs:
             --ctest-exclude "${{ runner.arch == 'X64' && '^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.(ShadowsMoveWhenTheLightRotates|EmissiveMaterialBrightensTheFrame|MaskCardDiscardsCutoutTexelsInRaytracing|PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing|GuiInputSweepNeverCrashesOrLosesTheDevice)$' || '^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder' }}"
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # AddressSanitizer + UBSan, and the fuzz seed corpora - which need THIS build:
-  # the fuzz targets require project-wide ASan or abseil's container layout
-  # mismatches and they SEGV at startup (Test/fuzz/CMakeLists.txt).
-  # ---------------------------------------------------------------------------
+  # AddressSanitizer + UBSan and the fuzz seeds, which SEGV without project-wide ASan (Test/fuzz/CMakeLists.txt)
   asan:
     name: AddressSanitizer + fuzz seeds
     runs-on: ${{ inputs.runner }}
@@ -188,8 +106,7 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
-      # x64 only: the 10 GB cache quota holds one generation of the x64 presets
-      # plus arm64's debug cache, not every preset on both arches.
+      # x64 only: the 10 GB cache quota cannot hold every preset on both arches.
       - name: Restore compiler cache
         id: cc
         if: runner.arch == 'X64'
@@ -199,8 +116,6 @@ jobs:
           mounts: 'sccache:/var/cache/sccache'
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
-      # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
-      # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -217,42 +132,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-asan
 
-      # Every target declared in Test/fuzz/CMakeLists.txt runs here.
-      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi gates this list against
-      # those declarations by parsing the loop line below - keep the target list
-      # on ONE line, and never spell that anchor text in a comment, or the
-      # parser matches the comment instead and reports zero targets.
-      #
-      # Each target runs INSIDE the image it was built in, like every other
-      # test step in this lane. It used to run them straight on the runner
-      # host - the only step here that did - which is a different libstdc++
-      # (the image builds against /opt/gcc-16.1.0, absent on the host), no
-      # llvm-symbolizer (every ASan report came back "invalid path to external
-      # symbolizer", unsymbolized frame addresses only), and none of the
-      # runtime the engine-linked targets expect. Same docker run shape as the
-      # run-in-linux-container action; it is spelled out here because the
-      # action takes one command line and this needs a loop that keeps going
-      # after a failure.
-      #
-      # THE ONE STEP IN THIS FILE THAT STILL NAMES AN IMAGE, and it does not
-      # name a TAG: scripts/linux/ci-image-ref.sh reads the same ANTfrastructure
-      # versions.env that supplies the `image` default every other step here
-      # inherits, so this loop and those steps cannot end up on different
-      # images. It fails loudly on a missing key rather than returning an empty
-      # string, because an empty reference makes `docker run` treat the next
-      # argument as the image name and the error then lands nowhere near its
-      # cause.
-      #
-      # Collecting failures instead of aborting on the first is the point of
-      # the loop: with `set -e` semantics the first bad target hid the verdict
-      # on every target after it, so each round trip revealed exactly one
-      # broken fuzzer out of seven.
-      #
-      # A hanging fuzz target must fail the step, not sit until the 6-hour job
-      # cap: on 2026-08-05 the Windows twin of this step spent 68 minutes
-      # inside one seed ("con", the Windows console device, which readTextFile
-      # opened and then read forever) and had to be killed by hand. Seven
-      # targets need well under a minute in total here.
+      # EveryRegisteredFuzzTargetRunsInCi parses the loop line: keep it one line, never quote it in a comment.
       - name: Run fuzzer tests
         timeout-minutes: 15
         run: |
@@ -293,9 +173,7 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
           log-file: output-asan.log
 
-  # ---------------------------------------------------------------------------
-  # ThreadSanitizer.
-  # ---------------------------------------------------------------------------
+  # ThreadSanitizer
   tsan:
     name: ThreadSanitizer
     runs-on: ${{ inputs.runner }}
@@ -319,9 +197,6 @@ jobs:
           mounts: 'sccache:/var/cache/sccache'
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
-      # ThreadSanitizer: the presets existed but nothing ever ran them, so
-      # data races could only be found by hand. Non-GPU tests only - the GPU
-      # suites run once, in clang-tests (see there).
       - name: Configure/build with ThreadSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -338,11 +213,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-tsan
 
-      # TSan maps its shadow memory at fixed ranges that the runner kernel's ASLR
-      # entropy (vm.mmap_rnd_bits=32) collides with, and inside the container it
-      # cannot re-exec without ASLR: "FATAL: ThreadSanitizer: encountered an
-      # incompatible memory layout but was unable to re-exec" (runs 36020443791
-      # x64 and 36020443030 arm64). The container shares the host kernel.
+      # TSan's fixed shadow ranges collide with 32 bits of ASLR entropy, and it cannot re-exec inside the container.
       - name: Lower ASLR entropy for ThreadSanitizer
         run: sudo sysctl -w vm.mmap_rnd_bits=28
 
@@ -358,11 +229,7 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
           log-file: output-tsan.log
 
-  # ---------------------------------------------------------------------------
-  # Coverage. Builds its own tree: build-coverage-llvm.sh runs
-  # ${BUILD_DIR}/compileTestSuite and reads the .profraw it leaves behind, so it
-  # cannot start from an empty workspace.
-  # ---------------------------------------------------------------------------
+  # Coverage: builds its own tree, since build-coverage-llvm.sh runs compileTestSuite
   coverage:
     name: coverage + codecov
     runs-on: ${{ inputs.runner }}
@@ -412,9 +279,7 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
-  # ---------------------------------------------------------------------------
-  # Static analysis. Both analyses stay continue-on-error, as in the single job.
-  # ---------------------------------------------------------------------------
+  # Static analysis (advisory: continue-on-error)
   static-analysis:
     name: clang static analysis
     runs-on: ${{ inputs.runner }}
@@ -434,10 +299,7 @@ jobs:
           mounts: 'sccache:/var/cache/sccache'
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
-      # run-static-analysis-format.sh refuses to start without
-      # ${BUILD_DIR}/compile_commands.json ("Run CMake configure first"), which
-      # in the old single job happened to exist only because an earlier step had
-      # already built into the same directory.
+      # run-static-analysis-format.sh needs ${BUILD_DIR}/compile_commands.json.
       - name: Configure/build for analysis
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -448,9 +310,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # `clang++ --analyze` runs DIRECTLY here - no CMake, no preset. It needs
-      # no --gcc-toolchain: the image's <triple>-clang++.cfg selects its GCC for
-      # a bare clang++ (ANTfrastructure CON16; the injection went under CON37).
+      # No --gcc-toolchain needed: the image's <triple>-clang++.cfg selects its GCC for a bare clang++.
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -471,9 +331,7 @@ jobs:
             --preset "linux-debug-clang"
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # clang profiling build + the perf suite.
-  # ---------------------------------------------------------------------------
+  # clang profiling build + perf suite
   profiling:
     name: clang profiling + benchmarks
     runs-on: ${{ inputs.runner }}
@@ -520,13 +378,7 @@ jobs:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # The Rust bridge and the wasm demo are both compiled from this crate
-  # elsewhere in this lane, but neither runs its ~150 tests - this is the only
-  # place in this repo that does. GPU-touching tests self-skip without an
-  # adapter (see scripts/linux/run-cargo-tests.sh). ARM does not pay for a
-  # second run of the same crate's CPU-only tests.
-  # ---------------------------------------------------------------------------
+  # Rust renderer tests: the only place the crate's tests run; x64 only
   rust:
     name: Rust renderer tests
     if: ${{ inputs.runner == 'ubuntu-26.04' }}
@@ -544,14 +396,7 @@ jobs:
           script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # Docs + wasm demo + deploy.
-  #
-  # It builds ONLY the doc_doxygen target: Sphinx/Breathe consume the Doxygen
-  # XML the C++ build emits, but ANTfrastructure's cmake/Doxygen.cmake declares doc_doxygen as a
-  # custom target with no compiled dependencies, so that XML costs a configure
-  # plus a doxygen run rather than a ~20-minute engine build.
-  # ---------------------------------------------------------------------------
+  # Docs + wasm demo + deploy; doc_doxygen has no compiled dependencies, so no engine build
   docs:
     name: docs + wasm demo
     if: ${{ inputs.runner == 'ubuntu-26.04' }}
@@ -579,11 +424,7 @@ jobs:
           script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: Enforce wasm demo size budget
-        # Deliberately fatal, unlike the best-effort rebuild in "Build web
-        # page" above: a wasm bloat regression must block the deploy step
-        # below, not surface as a slow page load after it is already live.
-        # (It skips itself, loudly, when the image cannot build wasm at all -
-        # see scripts/linux/wasm-size-budget.sh.)
+        # Fatal on purpose: a wasm bloat regression must block the deploy below.
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/wasm-size-budget.sh
@@ -592,10 +433,7 @@ jobs:
         uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@develop
         # A manual dispatch (any branch) never deploys.
         if: github.event_name != 'workflow_dispatch'
-        # A flaky FTP upload of the docs must not red the whole build+test lane:
-        # the code already compiled and passed both the clang/ASan and gcc test
-        # runs before this deploy step. Mirrors the RPT fix (continue-on-error on
-        # its FTP deploy) - the docs push is best-effort, not a gate.
+        # A flaky docs FTP upload must not fail the build+test lane.
         continue-on-error: true
         with:
           server: ${{ secrets.SERVER }}
@@ -603,10 +441,7 @@ jobs:
           password: ${{ secrets.PW }}
           local-dir: "./docs/build/html/"
 
-  # ---------------------------------------------------------------------------
-  # gcc: build, tests and coverage. Caught a GCC 16.1.0 ICE on 2026-08-06 that
-  # neither clang lane can see, which is why it runs on every push.
-  # ---------------------------------------------------------------------------
+  # gcc: build, tests, coverage; no compiler cache, since neither ccache nor sccache caches -fmodules-ts TUs
   gcc:
     name: gcc + tests + coverage
     runs-on: ${{ inputs.runner }}
@@ -637,29 +472,16 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
           log-file: output.log
 
-      # There is deliberately NO fuzz step here. Test/fuzz/CMakeLists.txt builds
-      # its targets under clang only, so this job has nothing to run - and the
-      # step that used to stand here said so by echoing a sentence and exiting
-      # 0. A step named "Run fuzzer tests (gcc)" that runs no fuzzer is a green
-      # tick over nothing; the absence is the honest form. Coverage of the
-      # targets themselves is the asan job's, and
-      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi is what proves none of
-      # them silently stops running.
+      # No fuzz step: Test/fuzz/CMakeLists.txt builds its targets under clang only.
 
-      # gcovr walks the build tree for the .gcda files the ctest run above left
-      # behind, so it has to stay in the same job as those tests.
+      # gcovr reads the .gcda files the ctest run above left, so it stays in this job.
       - name: Build Code Coverage (gcc)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # gcc profiling + benchmarks. Split out of the gcc job because it wipes and
-  # reconfigures the same build directory (--clean-build-dir true): inside one
-  # job it could only ever run after the tests, and that made gcc the longest
-  # pole in the fan-out.
-  # ---------------------------------------------------------------------------
+  # gcc profiling + benchmarks: its own job because it wipes the build directory
   gcc-profiling:
     name: gcc profiling + benchmarks
     runs-on: ${{ inputs.runner }}
@@ -680,34 +502,18 @@ jobs:
             --clean-build-dir true
           log-file: output.log
 
-      # IN THE CONTAINER, exactly like its clang twin in the profiling job -
-      # which calls this same script the same way. This step used to be a bare
-      # `run:` on the ubuntu-26.04 host while the binary it executes had just
-      # been built INSIDE the image by the step above, so the host's libstdc++
-      # was asked to run a binary linked against the image's /opt/gcc-16.x one.
-      # It is the identical mismatch this workflow already documents for the
-      # ASan fuzz targets, and the identical shape of the "cannot find
-      # crtbeginS.o" incident the static-analysis job records: it works only
-      # while the host happens to satisfy the link, and the next image GCC bump
-      # breaks it.
-      #
-      # run-perf-suite.sh execs ${BUILD_DIR}/perfTestSuite directly after an
-      # `[[ -f ]]` guard, so a non-zero exit from the suite is the step's exit
-      # code here just as it was before.
+      # In the container: the binary links the image's /opt/gcc libstdc++, which the host lacks.
       - name: Run performance benchmarks (gcc)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-  # ---------------------------------------------------------------------------
-  # Release build + packages.
-  # ---------------------------------------------------------------------------
+  # Release build + packages
   release:
     name: release + package
     runs-on: ${{ inputs.runner }}
-    # No compiler cache: of the six presets it saved the least per GB (21.3 -> 15.0 min for
-    # 1.2 GB, 2026-09-29), and the repository's 10 GB cache quota holds five of them.
+    # No compiler cache: it saved the least per GB, and the 10 GB quota holds only five presets.
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop

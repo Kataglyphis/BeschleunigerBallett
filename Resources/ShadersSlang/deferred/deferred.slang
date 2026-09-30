@@ -8,9 +8,7 @@ import push_constants;
 import raster_geometry;
 import material_textures;
 
-// Deferred geometry pass + lighting pass. Sole source for this shader.
-// Emits SPIR-V only. Writes G-buffer (normal, albedo, material) for the
-// deferred lighting pass.
+// Deferred geometry pass (writes the G-buffer) and lighting pass.
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
@@ -40,10 +38,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    // map_d's alpha is independent of which base-colour branch is taken
-    // below, so it is sampled once up front and folded into both sides of
-    // the textureID branch's alpha_masked_out() call (the glTF alpha product
-    // rule: baseColorFactor.a * baseColorTexture.a * COLOR_0.a * map_d).
+    // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
@@ -67,49 +62,18 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     texColor.rgb *= In.fragmentColor.rgb;
 
     GBufferOut g;
-    // Back faces reach this shader only where culling was disabled, and
-    // culling is disabled only for doubleSided materials (see
-    // MeshDrawRecorder.cpp's dynamic eCullMode) - !isFrontFace is therefore
-    // the doubleSided test. The flip must happen before this G-buffer write,
-    // not in the lighting pass, since the lighting pass has no SV_IsFrontFace.
+    // Only doubleSided materials disable culling; flip here, since the lighting pass has no SV_IsFrontFace.
     float3 N = normalize(In.shadingNormal);
     if (!isFrontFace) N = -N;
     N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
     float metallic = metallicRoughness.x;
     float roughness = metallicRoughness.y;
-    // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
-    // and lighting_fs_main only ever read normal.xyz) - the free float
-    // channel for metallic, so it does not need its own G-buffer attachment.
+    // Metallic rides in the normal's unused .w channel instead of its own attachment.
     g.outNormal = float4(N, metallic);
-    // GBUFFER_ALBEDO_FORMAT is eR8G8B8A8Srgb: base colour is linear by
-    // construction (glTF caps baseColorFactor/COLOR_0 to [0,1], texColor is
-    // decoded from an sRGB source texture), so the hardware re-encodes on
-    // write and decodes on SubpassLoad below - the stored value is
-    // unchanged in linear terms, only its 256 steps are redistributed
-    // toward the range the eye is most sensitive to.
-    //
-    // .a carries KHR_materials_unlit instead of alpha (texColor.a is always
-    // 1.0 by the time it reaches here - BLEND is not implemented and MASK
-    // fragments below the cutoff already discarded above), because the
-    // lighting pass runs in a separate subpass and cannot see ObjMaterial at
-    // all - the G-buffer is its only channel for the flag. Vulkan applies the
-    // sRGB transfer function to RGB only, so alpha round-trips linearly
-    // through the store and SubpassLoad below, making 0.0/1.0 exact. Grepped
-    // Src/ for other readers of the albedo attachment: FrameCapture and the
-    // golden suites both only read colour attachments by index for pixel
-    // comparison and do not interpret alpha, so repurposing it here is safe.
+    // .a carries KHR_materials_unlit, not alpha: sRGB encodes RGB only, so 0.0/1.0 round-trip exactly.
     g.outAlbedo = float4(texColor.rgb, material.unlit != 0 ? 1.0 : 0.0);
-    // Emissive is surface-emitted radiance: the base-colour*emissiveTexture
-    // multiply happens here, in the geometry pass, since the lighting pass
-    // only has the already-packed G-buffer value to work with (no material
-    // or texCoords).
-    //
-    // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
-    // eR16G16B16A16Sfloat, so emissive above 1.0 from
-    // KHR_materials_emissive_strength survives the G-buffer round-trip
-    // instead of clamping to [0,1], and roughness is no longer quantized
-    // to 256 steps.
+    // r = roughness, gba = emissive; the float16 format keeps emissive strength above 1.0.
     g.outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords));
     return g;
 }
@@ -155,9 +119,7 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
     float4 albedo = inAlbedo.SubpassLoad();
     float4 material = inMaterial.SubpassLoad();
 
-    // KHR_materials_unlit, carried through geometry_fs_main's outAlbedo.a
-    // (see its write site for why alpha is the free channel): skip lighting,
-    // shadowing and emissive alike and return the base colour as-is.
+    // KHR_materials_unlit (outAlbedo.a): skip lighting, shadowing and emissive alike.
     if (albedo.a > 0.5) return float4(albedo.rgb, 1.0);
 
     float3 N = normalize(normal.xyz);
@@ -176,8 +138,7 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
     color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
 
-    // Emissive is surface-emitted radiance, not reflected light - it is
-    // unshadowed and unattenuated, so it is added after shadowing, not before.
+    // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;
 
     return float4(color, 1.0);

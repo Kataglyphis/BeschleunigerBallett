@@ -1,13 +1,4 @@
-// Shared PBR BRDF math: the Epic Games / Unreal 4 microfacet model.
-//
-// Single source of truth for both renderers. This is the same model the Rust
-// renderer's forward.wgsl already uses (distribution_ggx / geometry_smith /
-// fresnel_schlick / brdf_direct). The C++ engine imports this module
-// directly (forward.slang, rasterizer.slang, deferred.slang,
-// raytracing/raytrace.rchit.slang), so both renderers shade identically.
-//
-// Epsilon guards (max(..., 1e-6)) come from the Rust side: the C++ GLSL
-// version had none, which produced NaN/inf on grazing angles.
+// Epic/UE4 microfacet BRDF shared by both renderers; the 1e-6 guards prevent NaN/inf at grazing angles.
 
 static const float PI = 3.14159265358979323846;
 
@@ -18,7 +9,6 @@ float3 lambert_diffuse(float3 albedo)
 }
 
 // GGX (Trowbridge-Reitz) normal distribution function.
-// n_dot_h: dot(N, H), roughness: surface roughness [0,1].
 float distribution_ggx(float n_dot_h, float roughness)
 {
     float a = roughness * roughness;
@@ -28,7 +18,6 @@ float distribution_ggx(float n_dot_h, float roughness)
 }
 
 // Smith geometry function (Epic Games approximation with k = (r+1)^2/8).
-// n_dot_v: dot(N, V), n_dot_l: dot(N, L), roughness: surface roughness [0,1].
 float geometry_smith(float n_dot_v, float n_dot_l, float roughness)
 {
     float r = roughness + 1.0;
@@ -44,17 +33,7 @@ float3 fresnel_schlick(float cos_theta, float3 f0)
     return f0 + (float3(1.0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }
 
-// Full direct-lighting BRDF: specular (Cook-Torrance) + diffuse (Lambert,
-// modulated by (1-F) and (1-metallic)).
-//
-//   n: surface normal (normalized)
-//   v: view direction (normalized, from surface to camera)
-//   l: light direction (normalized, from surface to light)
-//   albedo: base color
-//   metallic: [0,1]
-//   roughness: [0,1]
-//   f0: reflectance at normal incidence (mix(0.04, albedo, metallic))
-//   radiance: light color * intensity
+// Cook-Torrance specular + Lambert diffuse scaled by (1-F)(1-metallic); v and l point away from the surface.
 float3 brdf_direct(
     float3 n,
     float3 v,

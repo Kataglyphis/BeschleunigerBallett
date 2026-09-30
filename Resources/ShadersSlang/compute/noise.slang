@@ -1,17 +1,4 @@
-// 3D noise volume generation compute kernel.
-// Sole source for this shader. Emits SPIR-V only.
-//
-// Fills all four channels of noiseVolume; clouds.slang's sample_density is
-// the sole consumer and weights every channel (.r/.g/.b into baseDensity,
-// .a as the cirrus band) - see BuildIntegrity.
-// CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads,
-// which pins that contract.
-//
-// Does not `import noise;` from common/noise.slang: slangc resolves module
-// names from the file's basename, and this file is also named noise.slang,
-// so that import resolves to itself ("recursive module import"). Sharing
-// would need a rename on one side, which is out of scope here - so this
-// keeps its own local hash/value-noise implementation instead.
+// Cannot `import noise;`: slangc resolves modules by basename, so it would import itself.
 
 [vk::binding(0, 0)] RWTexture3D<float4> noiseVolume;
 
@@ -23,8 +10,7 @@ float3 hash33(float3 p3)
     return frac((p3.xxy + p3.yxx) * p3.zyx);
 }
 
-// Procedural Worley Noise. minDist is seeded at 1.0 and only ever min-ed
-// down, so the result always lands in [0, 1].
+// Worley noise in [0, 1]: minDist starts at 1.0 and only decreases.
 float worley(float3 p, float numCells)
 {
     p *= numCells;
@@ -69,8 +55,7 @@ float valueNoise(float3 x)
                      lerp(hash13(i + float3(0, 1, 1)), hash13(i + float3(1, 1, 1)), f.x), f.y), f.z);
 }
 
-// Sums to < 1 for a geometric a = 0.5, 0.25, ... over a [0, 1]-valued
-// valueNoise, so the result is already in [0, 1] without remapping.
+// Already in [0, 1]: the geometric weights 0.5, 0.25, ... sum below 1.
 float fbm_value(float3 x, int octaves)
 {
     float v = 0.0;
@@ -84,9 +69,7 @@ float fbm_value(float3 x, int octaves)
     return v;
 }
 
-// The volume spans this many texels per axis, covering world-space [0, 1)
-// once. Must equal CloudDispatch.hpp's kNoiseVolumeExtent - pinned by
-// BuildIntegrity.CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads.
+// Must equal CloudDispatch.hpp's kNoiseVolumeExtent (pinned by BuildIntegrity).
 static const float NOISE_VOLUME_EXTENT = 128.0;
 
 [shader("compute")]

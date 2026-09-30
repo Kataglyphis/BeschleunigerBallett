@@ -1,5 +1,4 @@
-// Ray tracing-specific types: the RT-specific payload and push constant
-// types not covered by scene_types.slang.
+// Ray-tracing-only types, kept out of scene_types.slang so raster shaders never import them.
 
 // Ray payload carried between rgen -> rchit/rmiss.
 struct HitPayload

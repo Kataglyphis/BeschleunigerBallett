@@ -1,21 +1,4 @@
-# This project's build POLICY: which options exist, what they default to, and
-# how the reusable modules are composed.
-#
-# The reusable mechanisms this file used to carry inline were upstreamed to
-# ANTfrastructure and are included by name off CMAKE_MODULE_PATH (see the top of
-# the root CMakeLists.txt):
-#
-#   SanitizerSupport      myproject_supports_sanitizers, myproject_default_debug_sanitizers
-#   CompilerBuildFlags    myproject_apply_compiler_build_flags + the flag-strip helpers,
-#                         including the clang-cl -fms-compatibility-version pin, which
-#                         now lives next to the image whose VC Tools version it names
-#   ProjectOptionsCommon  the core option list and the per-target dispatch that
-#                         AccelerANTgine's ProjectOptions.cmake had drifted into a
-#                         near-copy of (hoisted 2026-09-09)
-#
-# What stays here is what another project would NOT want copied: exceptions
-# always off, C++23, C++ modules mandatory (a hard FATAL_ERROR, not a fallback),
-# cppcheck and IWYU on by default, and this project's build-type gating.
+# This project's build policy only; the reusable mechanisms are ANTfrastructure modules on CMAKE_MODULE_PATH.
 
 include(CMakeDependentOption)
 include(CheckCXXCompilerFlag)
@@ -24,10 +7,7 @@ include(SanitizerSupport)
 include(CompilerBuildFlags)
 include(ProjectOptionsCommon)
 
-# include() above already fails hard when the module is not on CMAKE_MODULE_PATH.
-# This catches the other, quieter failure: a STALE same-named file in this repo's
-# own cmake/ directory, which is first on CMAKE_MODULE_PATH and would therefore
-# win - loading fine and then leaving every macro below undefined.
+# A stale same-named file in cmake/ wins on CMAKE_MODULE_PATH and loads without these macros.
 if(NOT COMMAND myproject_define_core_options
    OR NOT DEFINED MYPROJECT_PROJECT_OPTIONS_COMMON_VERSION
    OR MYPROJECT_PROJECT_OPTIONS_COMMON_VERSION LESS 1)
@@ -37,8 +17,6 @@ endif()
 
 function(myproject_enable_local_hardening target)
   include(Hardening)
-  # Current project behavior always keeps the UBSan minimal runtime disabled,
-  # even though older logic computed a value first.
   set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
   myproject_enable_hardening(${target} OFF ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
 endfunction()
@@ -48,15 +26,6 @@ macro(myproject_setup_options)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
   option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)
   option(myproject_ENABLE_GLOBAL_HARDENING "Enable global hardening" OFF)
-  # Exceptions are always disabled for consistent behavior across all builds
-  # This avoids /EHs vs /EHs- conflicts and reduces binary size
-  # turn off for avoiding potential conflicts with dependencies
-  # cmake_dependent_option(
-  #   myproject_ENABLE_GLOBAL_HARDENING
-  #   "Attempt to push hardening options to built dependencies"
-  #   OFF
-  #   myproject_ENABLE_HARDENING
-  #   OFF)
 
   myproject_supports_sanitizers()
   myproject_default_debug_sanitizers()
@@ -89,8 +58,7 @@ macro(myproject_global_options)
   set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    # Enable C++20 modules for clang-cl by default (requires Clang >= 17)
-    # Set MYPROJECT_CLANG_CL_MODULE_SCAN_READY=OFF to disable if issues arise
+    # MYPROJECT_CLANG_CL_MODULE_SCAN_READY=OFF is the escape hatch from clang-cl module scanning.
     if(DEFINED MYPROJECT_CLANG_CL_MODULE_SCAN_READY AND NOT MYPROJECT_CLANG_CL_MODULE_SCAN_READY)
       set(myproject_CXX_SCAN_FOR_MODULES OFF)
       message(STATUS "C++ module scanning explicitly disabled for clang-cl.")
@@ -108,8 +76,7 @@ macro(myproject_global_options)
 
   myproject_cpp_modules_supported()
 
-  # Policy, not mechanism: this project has no header-based fallback, so an
-  # unsupported toolchain is a hard stop rather than a degraded build.
+  # There is no header-based fallback, so an unsupported toolchain is a hard stop.
   if(NOT myproject_CPP_MODULES_SUPPORTED)
     message(FATAL_ERROR "This project is configured for C++ modules only. "
                         "Use a module-capable toolchain (Clang >= 17, GCC >= 14, or MSVC >= 19.34 with CMake >= 3.28).")
@@ -157,11 +124,7 @@ macro(myproject_local_options)
     message(WARNING "Disabling exceptions is not supported for this compiler.")
   endif()
 
-  # The call is unconditional on purpose - the build-type gate lives one level
-  # down, not here. Every branch of myproject_enable_sanitizers (ANTfrastructure
-  # cmake/Sanitizers.cmake) wraps its flags in $<$<CONFIG:Debug>:...>, so Profile
-  # and Release come out unsanitized whichever compiler is selected. Do not add a
-  # CMAKE_BUILD_TYPE test around this line; it would only duplicate that guard.
+  # Unconditional: Sanitizers.cmake gates each flag on $<CONFIG:Debug>; see AGENTS.md § Sanitizer semantics.
   myproject_apply_sanitizers(myproject_options)
 
   myproject_apply_unity_pch_cache(myproject_options)

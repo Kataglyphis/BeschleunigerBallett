@@ -109,11 +109,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
 
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
-    // The startup cascade count and shadow resolution now come from the same
-    // path as every later shadow-setting change (reinitShadowMapForCurrentSettings
-    // reads both off gui->getGuiSceneSharedVars()), so the GUI default is the
-    // single source of truth instead of a hard-coded MAX_CASCADES. cleanUp()
-    // is a safe no-op here: dirShadowMap has no device yet.
+    // Same path as later shadow-setting changes, so the GUI default is the one source of truth.
     reinitShadowMapForCurrentSettings();
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
@@ -138,14 +134,10 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     skyBox.createFramebuffers(swapchainImageViews(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
-    // Start the parse and carry on initialising. Everything that depends on
-    // scene CONTENTS - acceleration structures, the object description buffer,
-    // the descriptor sets that reference them - moves into
-    // finishModelLoad(), which runs on the frame the model arrives.
+    // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
     scene->beginModelLoadAsync();
 
-    // Descriptors still need valid contents before the first frame, or the
-    // renderer samples never-written bindings while the model loads.
+    // Descriptors need valid contents before the first frame, while the model still loads.
     create_object_description_buffer();
     updateAllDescriptorSets();
 
@@ -163,11 +155,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
     float const aspect_ratio = aspectRatioOf(extent.width, extent.height);
 
-    // GUISceneSharedVars is also written programmatically (tests, config
-    // load), so the clamp lives here rather than trusting the slider range
-    // alone. The camera stays the single source of truth: both the
-    // projection below and dirShadowMap.updateCascades() keep reading
-    // get_fov() rather than the GUI value directly.
+    // Clamped here: tests and config loads write the GUI vars too. Readers use get_fov(), not the GUI value.
     camera_data->set_fov(std::clamp(guiSceneSharedVars.camera_fov, 20.0F, 110.0F));
 
     globalUBO.view = camera_data->calculate_viewmatrix();
@@ -241,13 +229,10 @@ void Kataglyphis::VulkanRenderer::finishModelLoad() { refreshAfterSceneChange(tr
 
 void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLevel)
 {
-    // Rebuild everything that reads scene contents. Skipping any of these
-    // leaves the model present but invisible, or sampled/traced through
-    // descriptors and acceleration structures that still point at stale data.
+    // Skipping any step leaves the model invisible or traced through stale descriptors.
     rebuildObjectDescriptions();
 
-    // Must run BEFORE updateAllDescriptorSets, which binds the (possibly new)
-    // TLAS handle and resets the PT accumulation history a rebuild invalidates.
+    // Before updateAllDescriptorSets, which binds the new TLAS and resets the path-tracing history.
     if (device->supportsHardwareAcceleratedRRT()) {
         if (rebuildBottomLevel) {
             asManager.createASForScene(device, graphics_command_pool, scene);
@@ -261,8 +246,7 @@ void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLeve
 
 void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars)
 {
-    // Poll the background parse before anything else this frame: the rest of
-    // the frame should see the model on the same frame it becomes available.
+    // Polled first, so the rest of the frame sees a model on the frame it arrives.
     if (scene->pollModelLoad(device, graphics_command_pool)) { finishModelLoad(); }
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
@@ -288,15 +272,7 @@ void Kataglyphis::VulkanRenderer::handleShaderHotReloadRequest(
 void Kataglyphis::VulkanRenderer::handleRasterizationModeChange(
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
 {
-    // Rebind the mode-dependent input descriptors when the rasterization mode
-    // changes. record_commands branches on the mode per frame, but the post
-    // pass's input image was written once at init - so "Deferred" recorded
-    // into an offscreen texture nobody sampled and the screen kept showing
-    // the (stale) forward image. Found because the deferred parity golden
-    // measured IDENTICAL frames even with the deferred lighting shader forced
-    // to output pure red. waitIdle is the same trade the shadow-resolution
-    // change below already makes: mode switches are rare, driver-visible UI
-    // events, and the alternative is per-image rebind bookkeeping.
+    // The post pass's input image depends on the mode; waitIdle is fine for a rare UI event.
     if (guiRendererSharedVars.rasterizationMode != lastBoundRasterizationMode) {
         (void)device->getLogicalDevice().waitIdle();
         updateAllDescriptorSets();
@@ -312,13 +288,7 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
 
     const uint32_t shadow_res = shadowResolutionForIndex(guiSceneSharedVars.shadow_map_res_index);
 
-    // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
-    // has MAX_CASCADES cascade matrices and the shader samples that many, so
-    // a GUI value above it (the slider allows up to 8) renders extra cascades
-    // that are never sampled. Also clamp to the device's queried
-    // maxMultiviewViewCount so the shadow multiview render pass never uses a
-    // viewMask whose top bit exceeds it (a validation error) - previously this
-    // relied on MAX_CASCADES happening to be small enough for every device.
+    // Clamp to the SceneUBO's MAX_CASCADES and to maxMultiviewViewCount, which bounds the shadow pass's viewMask.
     const auto device_view_limit = device->getMaxMultiviewViewCount();
     const auto cascade_count = clampCascadeCount(
       static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
@@ -328,15 +298,9 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
           device_view_limit, cascade_count);
     }
     dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
-    // cleanUp() destroyed the pipeline, descriptor resources and the light
-    // matrices buffer; recreate them (same sequence as at startup).
     dirShadowMap.createGraphicsPipeline();
 
-    // createGraphicsPipeline() just seeded every image from cascadeData, but
-    // cascadeData is still whatever it held before this re-init (stale, or
-    // default-constructed at startup) - updateUniforms() has not run yet for
-    // the new settings. Ask update_uniform_buffers() to re-seed every image
-    // once cascadeData is fresh, instead of only the next acquired one.
+    // The pipeline was seeded from stale cascadeData; re-seed every image once updateUniforms() has run.
     lightMatricesNeedFullReseed = true;
 }
 
@@ -365,17 +329,11 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
           std::span<const float, 3>(guiSceneSharedVars.model_position),
           std::span<const float, 3>(guiSceneSharedVars.model_rotation));
 
-        // selected_model_index is a *file-list* index into
-        // sceneConfig::getAvailableModelPaths() (assigned in GUI::render's
-        // Model Selection combo), not a scene model index - the transform
-        // always targets scene model 0, which is what reloadModel leaves
-        // behind.
+        // selected_model_index indexes the file list, not the scene; reloadModel leaves the model at scene index 0.
         if (guiSceneSharedVars.selected_model_index >= 0) {
             scene->update_model_matrix(modelMatrix, 0);
 
-            // Re-upload object descriptions and refresh the traced world so it
-            // follows the raster world. BLAS geometry is untouched - only the
-            // instance transform moved - so the TLAS-only rebuild is enough.
+            // Only the instance transform moved, so a TLAS-only rebuild suffices.
             (void)device->getLogicalDevice().waitIdle();
             refreshAfterSceneChange(false);
         }
@@ -397,11 +355,7 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
 
             scene->reloadModel(device, graphics_command_pool, selected_path);
 
-            // The reload swaps in entirely new geometry, so this needs the
-            // same full refresh as addModel (BLAS+TLAS rebuild and every
-            // descriptor set, not just the shared-texture one) - otherwise
-            // RT/PT keep the destroyed TLAS bound and the GBuffer/post/
-            // raytracing descriptors stay pointed at the old scene.
+            // New geometry: full BLAS+TLAS rebuild, or RT/PT keep the destroyed TLAS bound.
             refreshAfterSceneChange(true);
         }
     }
@@ -409,11 +363,7 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
 
 void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { std::ignore = device->getLogicalDevice().waitIdle(); }
 
-// Reloads every stage that owns a shaderHotReload implementation:
-// rasterizer, deferredRasterizer, postStage, skyBox, dirShadowMap, clouds and
-// (when supported) raytracingStage/pathTracing - i.e. all eight subsystems
-// that load SPIR-V, per
-// BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload.
+// Must reach every SPIR-V-loading stage (BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload).
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
@@ -457,14 +407,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         end_imgui_frame_if_needed();
     };
 
-    // Used by every RECOVERABLE post-acquire early return (the app keeps
-    // running and will hand imageAvailableSemaphore() straight back to the
-    // next vkAcquireNextImageKHR call). recreateSwapChain() waits idle first,
-    // so the acquire's signal operation has already completed by the time it
-    // reaches createSynchronization() - the semaphore is signaled but has no
-    // pending wait, which makes destroying and recreating it legal. That is
-    // the only way to retire a semaphore this frame never waited on without
-    // submitting a dummy batch.
+    // Recoverable post-acquire returns: recreateSwapChain() retires the signaled, never-waited acquire semaphore.
     const auto abort_frame_after_acquire = [&](const char *message) -> void {
         spdlog::error(message);
         end_imgui_frame_if_needed();
@@ -477,11 +420,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    // Only consult (and clear) the resize flag once the frameSync guard has
-    // already passed - checkChangedFramebufferSize() clears the flag as soon
-    // as it observes it, so calling it while the guard would still block the
-    // recreate swallows the resize: the flag is gone but recreateSwapChain()
-    // never ran.
+    // Checked last: checkChangedFramebufferSize() clears the flag, so a blocked recreate would lose the resize.
     if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty() && checkChangedFramebufferSize()) {
         recreateSwapChain();
     }
@@ -520,9 +459,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    // eSuboptimalKHR still delivered a usable image and signaled the acquire
-    // semaphore, so this frame must be rendered and presented; presentKHR's
-    // result handling below recreates the swapchain afterwards.
+    // eSuboptimalKHR still signaled the semaphore, so render and present; the present path recreates afterwards.
     if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         abort_frame_with_fatal_error("Failed to acquire next image!", result);
         return;
@@ -549,9 +486,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         }
     }
 
-    // The fence wait above guarantees the previous commands that used this
-    // swapchain image (and its query slice) completed, so the readback below
-    // never has to wait on the GPU.
+    // The fence wait above means this image's queries are complete, so the readback never stalls.
     gpuTiming.readTimings(*device, image_index, gui->getGuiRendererSharedVars());
 
     frameSync.imageInFlightFence(image_index) = frameSync.inFlightFence();
@@ -571,11 +506,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     }
 
     if (!update_uniform_buffers(image_index)) {
-        // The command buffer is already recording (begin() above succeeded);
-        // rendering this frame against uniforms that were never written is
-        // worse than dropping it, but create_command_buffers() (called from
-        // recreateSwapChain()) must not free a buffer still in the recording
-        // state.
+        // End recording first: recreateSwapChain() must not free a buffer still recording.
         std::ignore = command_buffers[image_index].end();
         abort_frame_after_acquire("Failed to update uniform buffers; dropping this frame.");
         return;
@@ -634,8 +565,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    // A capture recorded into this command buffer completes when this frame's
-    // in-flight fence signals; takeCapturedFrame() waits on exactly that.
+    // takeCapturedFrame() waits on this frame's in-flight fence.
     frameCapture.bindSubmitFence(frameSync.inFlightFence());
 
     vk::PresentInfoKHR present_info{};
@@ -678,12 +608,7 @@ void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
     cleanUpDescriptorResources();
     initDescriptorResources();
 
-    // dirShadowMap is sized per swapchain image (its light-matrices buffer
-    // vector and lightMatricesDescriptors set) and CascadedShadowMap::init
-    // caches sharedRenderDescriptors' layout, so it must be re-provisioned
-    // whenever this method runs - and only after initDescriptorResources()
-    // just replaced that layout, or it would cache the layout about to be
-    // destroyed.
+    // After initDescriptorResources(): the shadow map is per image and caches the shared layout just replaced.
     reinitShadowMapForCurrentSettings();
 
     if (device->supportsHardwareAcceleratedRRT()) {
@@ -703,16 +628,12 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     std::ignore = device->getLogicalDevice().waitIdle();
 
-    // createSynchronization() below destroys and recreates every fence, so a
-    // capture fence recorded against the old set must be dropped. The waitIdle
-    // above already guarantees a pending capture's copy has completed, so the
-    // staged pixels stay readable - only the (now dangling) fence goes away.
+    // createSynchronization() recreates every fence; after waitIdle the captured pixels stay readable.
     frameCapture.invalidateFence();
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    // Destroy framebuffers that reference swapchain image views
-    // before recreating the swapchain
+    // Before recreate(): these framebuffers reference the old swapchain image views.
     postStage.destroyFramebuffers();
     rasterizer.destroyFramebuffers();
     deferredRasterizer.destroyFramebuffers();
@@ -720,8 +641,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     vulkanSwapChain.recreate(device, surface);
 
-    // The query pool is sized per swapchain image; the waitIdle above makes
-    // destroying and recreating it safe here.
+    // The query pool is sized per swapchain image.
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), gui->getGuiRendererSharedVars());
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
@@ -732,22 +652,16 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     deferredRasterizer.recreateFrameResources();
     clouds.recreateFrameResources(graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
-    // The accumulation history is swapchain-extent-sized; recreate it (which
-    // also resets the frame counter - the old history is meaningless at the
-    // new resolution). updateAllDescriptorSets() below rewrites its binding.
+    // The accumulation history is extent-sized; recreating it also resets the frame counter.
     if (device->supportsHardwareAcceleratedRRT()) { createPathTracingAccumulationResources(); }
 
     skyBox.recreateFrameResources(swapchainImageViews(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
-    // If the image count changed, every per-swapchain-image resource must be
-    // re-provisioned, not just the descriptor pools: the UBO vectors size the
-    // shared descriptor pool and are indexed per image by the descriptor
-    // updates below, and the raytracing pool/sets are allocated per image.
+    // A new image count re-provisions every per-image resource, not just the descriptor pools.
     if (newImageCount != oldImageCount) {
         reprovisionPerImageResources();
-        // The freshly allocated shared sets lost the object-description
-        // binding, which updateAllDescriptorSets() does not rewrite.
+        // updateAllDescriptorSets() does not rewrite the object-description binding.
         updateObjectDescriptionDescriptorSets();
     }
 
@@ -768,22 +682,13 @@ bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     std::memcpy(sceneUBOMapped[image_index], &sceneUBO, sizeof(VulkanRendererInternals::SceneUBO));
 
     if (lightMatricesNeedFullReseed) {
-        // A shadow re-init (startup, a GUI resolution/cascade-count change, or
-        // a swapchain-image-count change) left every image's light-matrix
-        // buffer holding stale or default-constructed data - see
-        // reinitShadowMapForCurrentSettings(). This is the first point in the
-        // frame where cascadeData is guaranteed fresh (updateUniforms() runs
-        // before drawFrame() - see App.cpp), so catch every image up here
-        // rather than only the one drawFrame() acquired this frame.
+        // After a shadow re-init every image is stale; cascadeData is fresh here, as updateUniforms() already ran.
         for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
             dirShadowMap.uploadLightMatrices(i);
         }
         lightMatricesNeedFullReseed = false;
     } else {
-        // Same per-image-index buffering as the two UBOs above: the
-        // shadow-render matrices (this) and the shadow-sample matrices
-        // (sceneUBO, filled in updateUniforms) must land in the SAME image's
-        // buffers together.
+        // Must land in the same image's buffers as the sceneUBO sample matrices.
         dirShadowMap.uploadLightMatrices(image_index);
     }
     return true;
@@ -802,20 +707,14 @@ std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string 
 {
     if (!scene || !device) { return std::nullopt; }
 
-    // Uploads happen on the graphics queue; make sure nothing is mid-flight
-    // reading the descriptor sets this is about to rewrite.
+    // Nothing in flight may still read the descriptor sets rewritten below.
     std::ignore = device->getLogicalDevice().waitIdle();
 
     const std::optional<uint32_t> index =
       scene->loadAdditionalModel(device, graphics_command_pool, modelPath, modelMatrix);
     if (!index.has_value()) { return std::nullopt; }
 
-    // The added model is NEW geometry, so its BLAS must be built and the TLAS
-    // rebuilt to reference it - otherwise it loads and renders in the raster
-    // paths (which iterate the scene directly) but is INVISIBLE to RT/PT, which
-    // only see the acceleration structure. Unlike a transform change (TLAS-only),
-    // new geometry needs the BLAS too, so this is the full createASForScene
-    // (it clears the old BLAS/TLAS first, so a rebuild is safe).
+    // New geometry needs its BLAS too, or ray and path tracing never see it.
     refreshAfterSceneChange(true);
     return index;
 }
@@ -904,8 +803,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
     using FrontendShared::GpuTimedPass;
 
-    // -- per-pass GPU timing: reset this image's query slice (outside any
-    // render pass) and bracket every recorded pass with a timestamp pair.
+    // Per-pass GPU timing: the query slice must be reset outside any render pass.
     const bool record_gpu_timings = gpuTiming.isSupported() && gpuTiming.queryPool();
     const uint32_t gpu_timing_base = image_index * gpuTiming.queriesPerImage();
     uint32_t recorded_pass_mask = 0U;
@@ -932,16 +830,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
         write_pass_timestamp(GpuTimedPass::Clouds, true);
 
-        // Cross-frame WAR: cloudOutputTexture is a SINGLE image (not duplicated
-        // per frame-in-flight), so this frame's compute write must be ordered
-        // after the previous frame's post-pass fragment-shader read of it. A
-        // pipeline barrier orders against ALL previously submitted commands on
-        // this queue, not just the current command buffer, so recording it here
-        // closes the gap even though MAX_FRAME_DRAWS == 3 (common/Globals.hpp)
-        // means the fence this frame waits on (FrameSync::inFlightFence()) only
-        // guarantees the submission 3 frames prior has completed, not the
-        // immediately preceding one. A write-after-read needs only an execution
-        // dependency, which is why srcAccessMask is empty here too.
+        // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
         vk::ImageMemoryBarrier cloud_output_war_barrier{};
         cloud_output_war_barrier.oldLayout = vk::ImageLayout::eGeneral;
         cloud_output_war_barrier.newLayout = vk::ImageLayout::eGeneral;
@@ -964,16 +853,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
 
         clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
 
-        // Order this compute write before the post pass's fragment-shader read of
-        // cloudOutputTexture (bound at binding 1, eGeneral, in updatePostDescriptorSets).
-        // PostStage's only subpass dependency is eColorAttachmentOutput ->
-        // eColorAttachmentOutput (PostStage.cpp) and cannot order a compute-shader
-        // write, unlike the same-layout swapchain barrier removed below (that one
-        // WAS a colour-attachment write, so the render pass dependency covered it).
-        // Written by hand rather than via VulkanImage::transitionImageLayout's
-        // eGeneral->eGeneral overload: that helper derives both stages from the
-        // layout alone, giving eAllCommands -> eAllCommands (a full pipeline stall
-        // every frame) for what only needs one compute-to-fragment edge.
+        // By hand: PostStage cannot order a compute write, and the layout helper would stall on eAllCommands.
         vk::ImageMemoryBarrier cloud_output_barrier{};
         cloud_output_barrier.oldLayout = vk::ImageLayout::eGeneral;
         cloud_output_barrier.newLayout = vk::ImageLayout::eGeneral;
@@ -994,25 +874,6 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
           nullptr,
           cloud_output_barrier);
 
-        // Cross-frame WAR closed: the eFragmentShader -> eComputeShader barrier
-        // recorded above, before recordComputeCommands, orders this frame's
-        // compute write against the PREVIOUS frame's post-pass fragment-shader
-        // read of the same single cloudOutputTexture. A pipeline barrier orders
-        // against all previously submitted commands on the queue, not just the
-        // current command buffer, so it closes the gap even though
-        // MAX_FRAME_DRAWS == 3 (common/Globals.hpp) means the fence this frame
-        // waits on (FrameSync::inFlightFence()) only guarantees the submission 3
-        // frames prior has completed, not the immediately preceding one.
-        // Measured 2026-08-01, with this barrier in place (RX 9070 XT,
-        // Invoke-SyncValidation.ps1, khronos_validation.validate_sync=true): no
-        // SYNC-HAZARD in the log across the new
-        // GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice (30+ frames,
-        // clouds enabled) nor in the frames the all-maximum case of
-        // GuiInputSweepNeverCrashesOrLosesTheDevice completes before hitting the
-        // unrelated pre-existing path-tracing VK_ERROR_DEVICE_LOST bug (see
-        // BACKLOG.md). The pre-fix state was not separately re-measured under
-        // sync validation, so treat this as closing a real spec gap rather than
-        // as a confirmed-observed-then-fixed hazard.
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
 
@@ -1035,13 +896,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
 
     write_pass_timestamp(GpuTimedPass::Main, true);
 
-    // One extraction per frame, shared by both raster paths. Built from the
-    // SAME matrices the vertex shaders use (globalUBO), so what is culled and
-    // what is drawn cannot disagree.
-    //
-    // Note this is deliberately computed AFTER the shadow pass above: shadow
-    // casters must not be culled by the camera frustum, because geometry
-    // beside or behind the camera still casts into view.
+    // From globalUBO, like the shaders; the shadow pass above must not use it, as off-screen geometry casts into view.
     const std::optional<FrustumPlanes> camera_frustum =
       guiRendererSharedVars.frustum_culling_enabled
         ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
@@ -1068,11 +923,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     }
     write_pass_timestamp(GpuTimedPass::Sky, false);
 
-    // NOTE: a same-layout swapchain barrier
-    // (eColorAttachmentOptimal -> eColorAttachmentOptimal) used to sit here;
-    // synchronization validation (khronos_validation.validate_sync) confirms
-    // the post render pass's external dependency already covers the ordering.
-
+    // No swapchain barrier here: the post render pass's external dependency orders it.
     write_pass_timestamp(GpuTimedPass::Post, true);
     {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "post", { 0.35F, 0.80F, 0.40F, 1.0F });
@@ -1081,9 +932,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     }
     write_pass_timestamp(GpuTimedPass::Post, false);
 
-    // The post render pass left the swapchain image in ePresentSrcKHR; capture
-    // copies from it here, still inside this frame's command buffer, and
-    // restores the layout before the present below.
+    // Capture copies from the ePresentSrcKHR image and restores that layout before the present.
     if (frameCapture.isArmed()) {
         frameCapture.record(device, commandBuffer, vulkanSwapChain, image_index, device_lost_detected);
     }
@@ -1110,13 +959,9 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
         deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
     }
 
-    // Publish whichever path actually recorded this frame. Reading both and
-    // summing would double-count the shared scene; reading the inactive one
-    // would report last frame's numbers from before the mode switch.
+    // Publish only the path that recorded: the inactive one still holds pre-switch numbers.
     const bool forward_active =
       guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
-    // The local binding above is const; the stats are renderer output, so
-    // take the mutable reference the same way the GPU-timing code does.
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
       gui->getGuiRendererSharedVars();
     mutable_gui_vars.visibility.meshes_drawn =
@@ -1130,9 +975,7 @@ bool Kataglyphis::VulkanRenderer::raytracingOwnsFrame(uint32_t image_index)
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
-    // The TLAS-null term covers the async model-load window: with RT/PT
-    // enabled before the scene arrives, RT/PT cannot dispatch yet, so the
-    // raster pass must still run.
+    // No TLAS yet during the async model load, so the raster pass must still run.
     return device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
            && asManager.getTLAS() && (guiRendererSharedVars.raytracing || guiRendererSharedVars.pathTracing);
 }
@@ -1142,10 +985,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
-    // The TLAS guard covers the async model-load window: with RT/PT enabled
-    // before the scene arrives, the record path used to dispatch against
-    // descriptor sets that were never written (TLAS, output, accumulation) -
-    // 20 validation errors in the pre-load frames of the accumulation golden.
+    // Before the model loads the ray-tracing descriptor sets are unwritten.
     if (!raytracingOwnsFrame(image_index)) { return; }
 
     const std::array<vk::DescriptorSet, 2> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
@@ -1160,13 +1000,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
 
-        // A camera, light or quality change invalidates the accumulated
-        // history; restart the running mean from this frame. The light is
-        // part of the key because path_tracing.slang's NEE block - the
-        // lightDir/lightColor/lightIntensity reads under its "Next-event
-        // estimation toward the directional light" comment - reads
-        // sceneUBO.dirLight, so a light change makes the running mean blend
-        // samples lit by two different lights.
+        // A camera, light or quality change restarts the running mean.
         const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history{
             .view = camera->calculate_viewmatrix(),
             .projection = globalUBO.projection,
@@ -1230,12 +1064,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
 
     std::ignore = device->getLogicalDevice().waitIdle();
 
-    // Inside the !device guard so the export runs exactly once even though
-    // cleanUp is reached twice (explicitly, then again from the destructor).
-    // The final in-flight frames' queries are never read back - readTimings
-    // only runs on the NEXT use of a swapchain image - so the average covers
-    // every frame except the last swapchain-image-count of them, which is fine
-    // for a mean over a whole run.
+    // Behind the !device guard so it runs once, though cleanUp is reached twice (explicitly, then the destructor).
     gpuTiming.writeJsonIfRequested();
 
     if (device->supportsHardwareAcceleratedRRT()) {
@@ -1254,8 +1083,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
 
     objectDescriptionBuffer.cleanUp();
     frameCapture.cleanUp();
-    // Release the buffer manager's reusable staging buffer while the VMA
-    // allocator (torn down in device->cleanUp() below) is still alive.
+    // Before device->cleanUp(), which tears down the VMA allocator.
     vulkanBufferManager.cleanUp();
 
     gpuTiming.destroy(*device);
@@ -1266,8 +1094,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     raytracingDescriptors.cleanUp();
 
     vulkanSwapChain.cleanUp();
-    // The device tears down its VMA allocator (after all buffers/images above,
-    // before the logical device).
+    // Last: the VMA allocator must outlive every buffer and image above.
     device->cleanUp();
     device.reset();
 
@@ -1343,8 +1170,7 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     Kataglyphis::VulkanRendererInternals::createColorAttachment(
       pathTracingAccumulation, device, extent, vk::Format::eR32G32B32A32Sfloat, vk::ImageUsageFlagBits::eStorage);
 
-    // Storage images live in eGeneral for their whole lifetime (same pattern
-    // as the clouds output texture).
+    // Storage images stay in eGeneral for their whole lifetime.
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
       device->getLogicalDevice(), graphics_command_pool);
     if (!commandBuffer) {
@@ -1377,10 +1203,7 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 {
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
-    // objectDescriptions holds one entry per MESH, flattened across models;
-    // every mesh of a model shares that model's offset into the flattened
-    // global texture array. The shaders add this to the model-LOCAL material
-    // textureIDs.
+    // Shaders add each model's texture offset to its model-local textureIDs.
     Kataglyphis::assignTextureOffsets(
       objectDescriptions, scene->getMeshCountPerModel(), scene->getTextureCountPerModel());
 
@@ -1430,12 +1253,7 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
         return;
     }
 
-    // This runs when the traced world changes (model load/reload rebuilt the
-    // AS, mode switch). Any accumulated history predates that world: without
-    // this reset, frames traced against the HALF-LOADED scene stay blended
-    // into the running mean until the camera happens to move (observed as the
-    // accumulation golden "converging" with per-frame sampling disabled - the
-    // mean was healing from startup frames, not averaging samples).
+    // The traced world changed, so history from the half-loaded scene must not stay in the mean.
     pathTracingAccumulatedFrames = 0;
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) { writeRaytracingDescriptorsForImage(i); }
@@ -1443,11 +1261,7 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 
 void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
 {
-    // The shared render descriptor set binds MAX_TEXTURE_COUNT sampled images
-    // and samplers in a single stage; a device below either per-stage limit
-    // cannot honour that fixed-size array. The array size is a compile-time
-    // shader constant, so this is a warning, not a runtime shrink - shrinking
-    // the host-side array would desynchronise host and device.
+    // Only a warning: MAX_TEXTURE_COUNT is a shader constant, so shrinking the host array would desync them.
     if (const uint32_t max_sampled_images = device->getMaxPerStageDescriptorSampledImages();
         max_sampled_images < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
         spdlog::critical(
@@ -1465,8 +1279,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
 
     const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
 
-    // eFragment: the deferred lighting pass reads inv_view/inv_projection to
-    // reconstruct world position from depth.
+    // eFragment: deferred lighting reconstructs position from depth with the inverse matrices.
     vk::ShaderStageFlags global_ubo_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags scene_ubo_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags object_description_stages =
@@ -1501,8 +1314,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
         return;
     }
 
-    // Initial per-image UBO writes (the remaining bindings are written by the
-    // dedicated update methods once their resources exist).
+    // Other bindings are written once their resources exist.
     updateUBODescriptorSets();
 }
 
@@ -1590,8 +1402,7 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         return;
     }
 
-    // Bind the CSM depth array first: it exists independently of scene
-    // textures, so it must not sit behind the model early-returns below.
+    // Before the model early-returns: the shadow map exists without scene textures.
     if (Kataglyphis::Texture *shadow_map_array = dirShadowMap.getShadowMapArray();
         shadow_map_array != nullptr && shadow_map_array->getSampler()) {
         for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
@@ -1607,13 +1418,7 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         return;
     }
 
-    // Flatten EVERY model's textures into the global array, in model order -
-    // the same order create_object_description_buffer assigns each model's
-    // texture_offset (see Kataglyphis::assignTextureOffsets, the other half
-    // of this invariant). Scene::getTextureCountPerModel() is the shared
-    // accessor that guarantees both halves agree; this function used to bind
-    // model 0's textures only, so any added model shaded with the FIRST
-    // model's images (its local textureIDs collided with model 0's slots).
+    // Model order must match assignTextureOffsets; both read Scene::getTextureCountPerModel().
     const Kataglyphis::FlattenedTexturePlan plan = Kataglyphis::planFlattenedTextureSlots(
       scene->getTextureCountPerModel(), static_cast<uint32_t>(MAX_TEXTURE_COUNT));
 
@@ -1653,9 +1458,7 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 
 void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 {
-    // 4 input attachments: normal, albedo, material, depth. World position
-    // is reconstructed from depth in the lighting pass. Order and values
-    // must match deferred.slang's GBUFFER_*_BINDING input attachments.
+    // Must match deferred.slang's GBUFFER_*_BINDING input attachments.
     static constexpr std::array<uint32_t, 4> kGBufferBindings = {
         GBUFFER_NORMAL_BINDING, GBUFFER_ALBEDO_BINDING, GBUFFER_MATERIAL_BINDING, GBUFFER_DEPTH_BINDING
     };

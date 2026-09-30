@@ -1,5 +1,4 @@
-// Host-side mirror of the post push-constant block. Its layout is pinned
-// against the Slang redeclaration by BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv.
+// Host mirror of the post push constants; BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv pins its layout.
 #pragma once
 #include "common/HostDeviceGlmAliases.hpp"
 namespace Kataglyphis::VulkanRendererInternals {

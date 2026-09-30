@@ -1,5 +1,4 @@
-// Pins the engine-wide full-extent viewport/scissor convention shared by
-// every raster pass: origin at (0, 0), unflipped y, depth range [0, 1].
+// Every raster pass shares this convention: origin (0, 0), unflipped y, depth [0, 1].
 
 #include <gtest/gtest.h>
 

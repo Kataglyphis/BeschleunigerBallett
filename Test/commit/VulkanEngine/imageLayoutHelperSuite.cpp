@@ -1,8 +1,4 @@
-// Pins accessFlagsForImageLayout/pipelineStageForLayout's contract: every
-// layout the engine actually transitions through must map to a specific
-// access mask and stage, and an unhandled layout must fall through to the
-// documented "no access, bottom of pipe" default rather than silently
-// stalling or racing.
+// An unhandled layout must fall through to "no access, bottom of pipe" rather than stall or race.
 
 #include <gtest/gtest.h>
 
@@ -51,8 +47,7 @@ TEST(ImageLayoutHelperUnit, ColorAttachmentOptimalIsColorAttachmentWrite)
 
 TEST(ImageLayoutHelperUnit, DepthStencilAttachmentOptimalWidensStageToAllCommands)
 {
-    // Deliberately eAllCommands rather than the narrower eEarlyFragmentTests -
-    // that is what lets this transition be recorded on a non-graphics queue.
+    // eAllCommands lets this transition be recorded on a non-graphics queue.
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal),
       vk::AccessFlagBits::eDepthStencilAttachmentWrite);
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eDepthStencilAttachmentOptimal),
@@ -61,8 +56,7 @@ TEST(ImageLayoutHelperUnit, DepthStencilAttachmentOptimalWidensStageToAllCommand
 
 TEST(ImageLayoutHelperUnit, ShaderReadOnlyOptimalWidensStageToAllCommands)
 {
-    // Deliberately eAllCommands rather than the narrower eFragmentShader - same
-    // reason as the depth/stencil case above.
+    // eAllCommands, as for depth/stencil above.
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
       vk::AccessFlagBits::eShaderRead);
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
@@ -84,9 +78,7 @@ TEST(ImageLayoutHelperUnit, UnhandledLayoutFallsThroughToEmptyAccessAndBottomOfP
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::ePresentSrcKHR), vk::PipelineStageFlagBits::eBottomOfPipe);
 }
 
-// The SkyBox regression: assert the helper reproduces exactly the first
-// barrier SkyBox::uploadCubeMapFaces used to write by hand before it was
-// switched to VulkanImage::transitionImageLayout.
+// The barrier SkyBox::uploadCubeMapFaces once wrote by hand.
 TEST(ImageLayoutHelperUnit, ReproducesSkyBoxFirstBarrier)
 {
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eUndefined), vk::AccessFlags{});
@@ -95,15 +87,7 @@ TEST(ImageLayoutHelperUnit, ReproducesSkyBoxFirstBarrier)
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
 }
 
-// Texture::generateMipMaps publishes every mip level to eShaderReadOnlyOptimal
-// and is read back by the raster fragment shaders, raytrace.rchit.slang's ray
-// queries and the path_tracing.slang compute kernel. eComputeShader and
-// eRayTracingShaderKHR are distinct bits from eAllCommands (0x00000800 and
-// 0x00200000 versus 0x00010000), so they cannot be pulled out of the mask
-// with a bitwise AND - eAllCommands is the sentinel the Vulkan spec defines
-// to mean "synchronize against every stage", which is what actually covers
-// those two readers as well as eFragmentShader. Pin that the helper still
-// answers this sentinel rather than the narrower eFragmentShader alone.
+// Compute and ray-tracing shaders also read the mips, and only eAllCommands covers them all.
 TEST(ImageLayoutHelperUnit, ShaderReadOnlyDestinationCoversComputeAndRayTracing)
 {
     const vk::PipelineStageFlags stage = Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal);

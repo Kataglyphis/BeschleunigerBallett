@@ -26,9 +26,7 @@ namespace Kataglyphis {
 
 namespace {
 
-/// Picks the loader by file extension: glTF documents (`.gltf`/`.glb`) go to
-/// GltfLoader, everything else to ObjLoader. Both produce a device-side Model
-/// the same way, so callers do not care which ran.
+/// `.gltf`/`.glb` go to GltfLoader, everything else to ObjLoader.
 std::shared_ptr<Model> loadModelByExtension(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const std::string &modelFile)
@@ -70,9 +68,7 @@ std::optional<uint32_t> Scene::loadAdditionalModel(const std::shared_ptr<VulkanD
   const std::string &modelPath,
   const glm::mat4 &modelMatrix)
 {
-    // Resolve like loadModel() does: callers pass a path relative to
-    // Resources/, and the working directory differs between the app and the
-    // test executables.
+    // Paths are relative to Resources/, and the app and tests run from different working directories.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
     spdlog::info("Loading additional model: {}", resolved);
     std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
@@ -104,10 +100,7 @@ bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::Comma
 
     modelLoadPending = false;
 
-    // The GPU half runs HERE, on the thread that owns the device. It is the
-    // ~15 ms the frame loop still pays; the 2800 ms parse already happened on
-    // the worker. Dispatch by which loader the worker used (glTF vs OBJ); both
-    // now expose adoptParsed + uploadParsed, so the two arms are symmetric.
+    // Only the GPU upload runs here, on the device thread; the worker already parsed.
     std::shared_ptr<Model> new_model;
     if (pendingModelParse.parsedGltf()) {
         std::unique_ptr<GltfLoader> parsed = pendingModelParse.takeGltfResult();
@@ -141,15 +134,13 @@ bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::Comma
 
 std::optional<uint32_t> Scene::add_model(const std::shared_ptr<Model> &model)
 {
-    // Loaders return nullptr for malformed assets; dereferencing it here
-    // turned a bad file from the GUI picker into a crash.
+    // Loaders return nullptr for malformed assets.
     if (!model) {
         spdlog::error("add_model called with a null model - a load failed upstream; scene unchanged.");
         return std::nullopt;
     }
     model_list.push_back(model);
-    // One object description per MESH, flattened across models: objectIndex (the
-    // per-draw push constant) indexes this list.
+    // One object description per mesh, flattened across models; objectIndex indexes this list.
     for (uint32_t k = 0; k < model->getMeshCount(); ++k) {
         object_descriptions.push_back(model->getMesh(k)->getObjectDescription());
     }
@@ -188,14 +179,9 @@ void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::Command
     model_list.clear();
     object_descriptions.clear();
 
-    // Resolve like loadAdditionalModel() does: callers pass a path relative
-    // to Resources/, and the working directory differs between the app and
-    // the test executables.
+    // Paths are relative to Resources/, and the app and tests run from different working directories.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
 
-    // By extension, like every other load path - reloadModel constructed
-    // ObjLoader directly, so picking a .glb from the GUI fed glTF bytes to
-    // the OBJ parser.
     std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
     const std::optional<uint32_t> model_index = add_model(new_model);
     if (!model_index) {

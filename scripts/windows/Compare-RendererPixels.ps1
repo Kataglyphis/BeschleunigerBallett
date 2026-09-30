@@ -1,34 +1,5 @@
 #requires -Version 7.0
-# Compare-RendererPixels.ps1
-#
-# Side-by-side pixel comparison between the C++ Vulkan engine and the Rust
-# WebGPU renderer.
-#
-# Both render the same scene (Dinosaurs) at the same resolution (1200x768).
-# Because the pipelines are structurally different (C++: Clouds/Sky,
-# Rust: Ssao/Bloom/Histogram) and the color spaces differ (C++ linear vs
-# Rust sRGB), this script uses STRUCTURAL metrics rather than pixel-exact
-# comparison — mean luminance, luminance stddev, histogram spread — that
-# survive driver, GPU and rendering differences.
-#
-# Usage:
-#   pwsh -ExecutionPolicy Bypass -File .\scripts\Compare-RendererPixels.ps1
-#
-# CI mode (-ValidationOnly): checks that expected PNG frames exist and have
-# structural integrity (luminance variety, lit fraction). Useful on GPU-less
-# runners where headless rendering is unavailable.
-#
-# Exit codes:
-#   0 - every frame that was captured/found passed its structural checks.
-#   1 - a real assertion failure (a frame was captured/found but failed a
-#       structural or cross-renderer check).
-#   2 - nothing was checked at all (no frame was captured and none was found
-#       on disk) - distinct from 1 so a caller can tell "broken" from
-#       "regressed".
-#
-# Prerequisites:
-#   - clangcl-debug built with Build-Windows-Container.ps1
-#   - Rust toolchain (for cargo build of WebGPU examples)
+# Compare-RendererPixels.ps1 - structural, not pixel-exact: the pipelines and color spaces differ. Exit 2 = nothing checked.
 
 [CmdletBinding()]
 param(
@@ -51,9 +22,7 @@ Write-Host "Resolution: ${Width}x${Height}" -ForegroundColor Cyan
 Write-Host "Output dir: $OutDir" -ForegroundColor Cyan
 Write-Host ''
 
-# ---------------------------------------------------------------------------
-# Helper: compute luminance metrics from a PNG file on disk
-# ---------------------------------------------------------------------------
+# Luminance metrics of a PNG on disk
 function Get-FrameMetrics {
     param([string]$Path)
 
@@ -67,8 +36,7 @@ function Get-FrameMetrics {
         $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
         $data = $img.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
         try {
-            # Read Stride while the bits are still locked - after UnlockBits/
-            # Dispose it only works by accident of the detached managed object.
+            # Read Stride while locked; after UnlockBits it only works by accident.
             $stride = [Math]::Abs($data.Stride)
             $byteCount = $stride * $h
             $bytes = [byte[]]::new($byteCount)
@@ -126,17 +94,13 @@ function Get-FrameMetrics {
     }
 }
 
-# ---------------------------------------------------------------------------
-# Resolve target paths (may be overridden by validation-mode discovery below)
-# ---------------------------------------------------------------------------
+# Target paths (validation mode may override them)
 $cppPng = Join-Path $OutDir 'cpp-vulkan.png'
 $rustPng = Join-Path $OutDir 'rust-webgpu.png'
 $cppMetrics = $null
 $rustMetrics = $null
 
-# ---------------------------------------------------------------------------
-# Phase 0: Validation-only mode (CI, no GPU)
-# ---------------------------------------------------------------------------
+# Phase 0: validation-only mode (CI, no GPU)
 if ($ValidationOnly) {
     Write-Host '== Validation-only mode (CI) ==' -ForegroundColor Cyan
     Write-Host 'Skipping GPU-dependent capture. Checking for pre-existing frames...' -ForegroundColor Yellow
@@ -156,9 +120,7 @@ if ($ValidationOnly) {
     }
 }
 
-# ---------------------------------------------------------------------------
 # Phase 1: C++/Vulkan frame capture
-# ---------------------------------------------------------------------------
 if (-not $SkipCpp -and -not $ValidationOnly) {
     Write-Host '== C++/Vulkan (golden harness, RendersNonBlankFrame) ==' -ForegroundColor Cyan
 
@@ -167,9 +129,7 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
         Write-Host 'WARNING: commitTestSuite.exe not found. Build clangcl-debug first.' -ForegroundColor Yellow
         Write-Host 'Skipping C++ capture.' -ForegroundColor Yellow
     } else {
-        # Run a minimal harness that captures a frame and writes it to PNG.
-        # The DISABLED_DumpsFrameToPng test does exactly this when env var
-        # KATAGLYPHIS_FRAME_DUMP is set.
+        # DISABLED_DumpsFrameToPng writes the frame only when KATAGLYPHIS_FRAME_DUMP is set.
         $env:KATAGLYPHIS_FRAME_DUMP = Join-Path $OutDir 'cpp-vulkan'
         try {
             & $suite --gtest_filter=GoldenRender.DISABLED_DumpsFrameToPng --gtest_also_run_disabled_tests 2>&1 | Out-Null
@@ -180,8 +140,7 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
             $env:KATAGLYPHIS_FRAME_DUMP = ''
         }
 
-        # The test writes files like cpp-vulkan-shadows-on.png, etc.
-        # Pick the first non-delta, non-noise render output.
+        # Skip the delta/noise outputs the test writes beside the render.
         $captured = Get-ChildItem (Join-Path $OutDir 'cpp-vulkan*.png') |
             Where-Object { $_.Name -notmatch 'delta|noise|golden-order|singletap' } |
             Sort-Object LastWriteTime -Descending |
@@ -197,9 +156,7 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
     Write-Host '== C++/Vulkan (skipped) ==' -ForegroundColor Yellow
 }
 
-# ---------------------------------------------------------------------------
 # Phase 2: Rust/WebGPU frame capture
-# ---------------------------------------------------------------------------
 if (-not $SkipRust -and -not $ValidationOnly) {
     Write-Host '== Rust/WebGPU (headless_render, same scene, 1200x768) ==' -ForegroundColor Cyan
 
@@ -228,9 +185,7 @@ if (-not $SkipRust -and -not $ValidationOnly) {
     Write-Host '== Rust/WebGPU (skipped) ==' -ForegroundColor Yellow
 }
 
-# ---------------------------------------------------------------------------
-# Phase 3: Load PNGs and compute metrics
-# ---------------------------------------------------------------------------
+# Phase 3: metrics
 Write-Host ''
 Write-Host '=== Metrics ===' -ForegroundColor Cyan
 
@@ -254,9 +209,7 @@ if ($metricsTable.Count -gt 0) {
     $metricsTable | Format-Table -Property Renderer, @{n='Mean Lum';e={'{0:N2}' -f $_.Mean}}, @{n='StdDev';e={'{0:N2}' -f $_.StdDev}}, Buckets, @{n='Lit%';e={'{0:N1}%' -f ($_.LitFraction * 100)}} -AutoSize | Out-Host
 }
 
-# ---------------------------------------------------------------------------
-# Stop reporting success on an empty run.
-# ---------------------------------------------------------------------------
+# Never report success on an empty run.
 if (-not $cppMetrics -and -not $rustMetrics) {
     Write-Host ''
     Write-Host 'No frames were captured or found - nothing was checked.' -ForegroundColor Red
@@ -264,9 +217,7 @@ if (-not $cppMetrics -and -not $rustMetrics) {
     exit 2
 }
 
-# ---------------------------------------------------------------------------
-# Phase 4: Structural assertions
-# ---------------------------------------------------------------------------
+# Phase 4: structural assertions
 Write-Host ''
 Write-Host '=== Assertions ===' -ForegroundColor Cyan
 
@@ -324,12 +275,7 @@ if ($cppMetrics -and $rustMetrics) {
     Write-Host "Mean luminance diff: $($meanDiff.ToString('N2')) (C++: $($cppMetrics.mean.ToString('N2')), Rust: $($rustMetrics.mean.ToString('N2')))"
     Write-Host "StdDev diff:         $($stddevDiff.ToString('N2'))"
 
-    # Generous tolerance: the pipelines are structurally different (C++:
-    # Clouds/Sky, Rust: Ssao/Bloom/Histogram) and the color spaces differ
-    # (C++ linear, Rust sRGB - sRGB-encoded is ~1.48x brighter due to gamma 2.2).
-    # A passing value means both renderers produce a recognisable image of
-    # similar relative brightness — it does NOT mean they shade identically.
-    # Using ratio: Rust/C++ mean should be between 0.5 and 4.0 (generous).
+    # Generous: pipelines differ and Rust is sRGB (~1.48x brighter); a pass only rules out degenerate frames.
     $ratio = if ($cppMetrics.mean -gt 0.0) { $rustMetrics.mean / $cppMetrics.mean } else { 10.0 }
     Write-Host "Mean luminance ratio (Rust/C++): $($ratio.ToString('N2'))"
     if ($ratio -lt 0.5 -or $ratio -gt 4.0) {

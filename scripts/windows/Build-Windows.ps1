@@ -3,8 +3,7 @@ param(
 
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,
-  # Rewrite sources with clang-format/cmake-format instead of only reporting
-  # drift. Off by default: see the formatting block below for why.
+  # Rewrite instead of only reporting drift; off by default, a repo-wide sweep collides with work in flight.
   [switch]$ApplyFormat,
   [switch]$SkipTidy,
   [switch]$SkipTests,
@@ -21,27 +20,17 @@ param(
   [string]$WebDavPassword,
   [string]$RemoteBasePath,
   [string]$LocalAssetsFolder,
-  # amd64 (alias x64) or arm64. Empty: the image's WINDOWS_TARGET_ARCH, else amd64,
-  # resolved by the hub's Get-WindowsTargetArch, which throws on anything else.
-  # arm64 is the cross build of windows-arm64-cross.yml: clangcl-release only,
-  # packaged to dist\windows-arm64 (third_party/ANTfrastructure/docs/windows-cross-builds.md).
+  # amd64 (x64) or arm64, empty takes the image's; see third_party/ANTfrastructure/docs/windows-cross-builds.md
   [string]$TargetArch = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-# Config helpers moved to WindowsConfig.Common.psm1
-
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 
-# Modules come from the ANTfrastructure submodule when available (preferred, so
-# reusable scripts live upstream); modules its refactor removed are vendored
-# in scripts/windows/modules. See Resolve-BuildModule.ps1.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 
-# WindowsBuild.Common contains the logging primitives (formerly a separate
-# WindowsLogging.Common module — now folded in upstream).
 Import-BuildModule @(
   'WindowsScripts.Shared',
   'WindowsBuild.Common',
@@ -58,8 +47,7 @@ Import-BuildModule @(
   'WindowsTesting.Common',
   'WindowsTargetArch.Common'
 )
-# The cross lanes' configure arguments, package arch and DLL closure. A hub pin older than
-# the cross lanes lacks the module and says which commit it needs.
+# A hub pin older than the cross lanes lacks this module, so fail naming the commit it needs.
 try { Import-BuildModule @('WindowsCrossBundle.Common') } catch {
   throw "This build needs ANTfrastructure's WindowsCrossBundle.Common (hub commit of 2026-09-25, third_party/ANTfrastructure/docs/windows-cross-builds.md); move third_party/ANTfrastructure to it or later. ($($_.Exception.Message))"
 }
@@ -133,9 +121,7 @@ $presetClangRelease = $buildConfigurationSpecs['clangcl-release']['Preset']
 
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
-# A cross build is clangcl-release only: Debug links an ASan runtime the bundle has no
-# aarch64 copy of and runs FuzzTest's grammar generator during the build, Profile runs
-# benchmarks, and the MSVC presets pin x64. Its tree sits beside the host's.
+# Cross is clangcl-release only: Debug needs an aarch64 ASan runtime, Profile runs benchmarks, MSVC pins x64.
 if ($isCross) {
   $notCross = @($selectedConfigurations | Where-Object { $_ -ne 'clangcl-release' })
   if ($notCross.Count -gt 0) {
@@ -146,9 +132,7 @@ if ($isCross) {
 # The product both Windows lanes upload: dist\windows-<x64|arm64>, named as a package names its arch.
 $distArch = Join-Path $workspacePath "dist\windows-$packageArch"
 
-# If SkipBuild is requested, clear any selected build configurations so
-# configuration-specific configure/build steps are not executed. This keeps
-# non-build steps such as formatting running.
+# Clearing the selection skips configure/build while non-build steps such as formatting still run.
 if ($SkipBuild) {
   $selectedConfigurations.Clear()
 }
@@ -201,12 +185,9 @@ Stop-Process -Name "GraphicsEngine", "WerFault" -Force -ErrorAction SilentlyCont
 
 try {
   Open-BuildLog -Context $context
-  # If WebDAV parameters are supplied via environment variables, attempt an
-  # early download of .pfx files before other build steps. This is optional
-  # and will not fail the orchestration if it errors.
+  # The early .pfx download is optional: a failure must not fail the orchestration.
   try {
-    # Prefer explicit script parameters passed on the command-line, fall back to
-    # environment variables for CI compatibility.
+    # Script parameters first, then the env vars CI sets.
     $webdavHost = if (-not [string]::IsNullOrWhiteSpace($WebDavHostname)) { $WebDavHostname } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_HOSTNAME)) { $env:WEBDAV_HOSTNAME } else { $env:WEB_DAV_HOSTNAME }
     $webdavUser = if (-not [string]::IsNullOrWhiteSpace($WebDavUsername)) { $WebDavUsername } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_USERNAME)) { $env:WEBDAV_USERNAME } else { $env:WEB_DAV_USERNAME }
     $webdavPass = if (-not [string]::IsNullOrWhiteSpace($WebDavPassword)) { $WebDavPassword } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_PASSWORD)) { $env:WEBDAV_PASSWORD } else { $env:WEB_DAV_PASSWORD }
@@ -240,40 +221,7 @@ try {
     } -RequiredTools @('cmake', 'ninja') -FailOnMissingRequiredTools
   } | Out-Null
 
-  # Formatting REPORTS by default and only rewrites with -ApplyFormat.
-  #
-  # Until 2026-07-20 Get-ProjectCppFiles had an inverted _deps filter and
-  # returned zero project files, so this step formatted nothing at all. Fixing
-  # that armed a 77-file rewrite for anyone running the default build - a
-  # sweep that collides with everything in flight and wants a deliberate
-  # moment plus a .git-blame-ignore-revs entry. So the default is now the
-  # non-destructive check, and applying the sweep is an explicit act.
-  #
-  # THE CMAKE-FORMAT VENV IS THE HUB'S PINNED ONE, not this repo's docs stack.
-  # -RequirementsPath is new in 604294e2 and closes a real gap: without it
-  # Initialize-UvVenvPython installs <workspace>/requirements.txt - sphinx,
-  # sphinx-book-theme, myst-parser, breathe, exhale, sphinx_design, pre-commit,
-  # junit2html - to obtain one formatter, and takes `cmake-format` UNPINNED, so
-  # a floating release could move a verdict with no commit to blame. The hub's
-  # linux/scripts/cmake-format.requirements.txt is the pinned pair
-  # (cmake-format==0.6.13 + pyyaml==6.0.3) that run-static-analysis-format.sh
-  # now installs by the library's own default, so both lanes format with the
-  # SAME cmake-format.
-  #
-  # The other two new parameters are deliberately NOT passed, each measured
-  # 2026-09-15 rather than assumed:
-  #   -ExcludePattern  would add nothing here. The 18 tracked CMake files this
-  #                    repo owns all sit under CMakeLists.txt, Src/, Test/ and
-  #                    cmake/; the module's built-in build*/, third_party/,
-  #                    _deps/ and vcpkg_installed/ filters already cover this
-  #                    repo's whole CODE_QUALITY_CMAKE_EXCLUDE_PATHS list, and
-  #                    .venv is filtered in the only branch where it can bite.
-  #   -Check           would turn this -Critical step into a gate that fails on
-  #                    unformatted input. Measured against the pinned formatter,
-  #                    17 of those 18 files are not cmake-format clean, so it
-  #                    would make the DEFAULT build red and arm exactly the
-  #                    unrequested sweep the paragraph above defers. Adopting a
-  #                    parameter is not the moment to change a policy.
+  # Report-only unless -ApplyFormat; hub-pinned cmake-format keeps both lanes equal; -Check would red the default build.
   if (-not $SkipFormat) {
     $cmakeFormatRequirements = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\cmake-format.requirements.txt'
     if ($ApplyFormat) {
@@ -367,8 +315,7 @@ try {
   if (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease$(if ($isCross) { " (cross, $TargetArch)" })" -Critical -Script {
       if ($SkipBuild) {
-        # When -SkipBuild is requested, skip configure/build but still run
-        # the packaging step (assumes a previous Release build exists).
+        # Packaging still runs and assumes a previous Release build.
         Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
         Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Release'
@@ -376,8 +323,7 @@ try {
           -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
       }
 
-      # Always attempt packaging when clangcl-release is selected; packaging
-      # should not be skipped by -SkipBuild.
+      # Packaging runs even with -SkipBuild.
       $packageArgs = @(
         '--build', $buildPathClangRelease,
         '--target', 'package',
@@ -394,12 +340,7 @@ try {
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
     } | Out-Null
 
-    # Each lane's product: the install tree the installers pack, plus every DLL its binaries
-    # import from the image, so it runs on a clean machine of either arch (Copy-PeImportClosure
-    # over the hub's Get-ProductDllSearchPath, as OxidANT and AccelerANTgine do; owner decision
-    # 2026-09-25: x64 exactly like arm64). vulkan-1.dll is the device's GPU driver's, never
-    # shipped. The MSI and ZIP travel beside it, on x64 NSIS's installer too; its stub is x86
-    # by design, which the arm64 lane's arch gate would refuse.
+    # The install tree plus its imported DLL closure runs on a clean machine; vulkan-1.dll is the GPU driver's, never shipped.
     Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {
       $bundle = Join-Path $distArch 'bundle'
       if (Test-Path $bundle) { Remove-BuildRoot -Context $context -Path $bundle | Out-Null }
@@ -412,7 +353,7 @@ try {
       New-Item -ItemType Directory -Force -Path $packages | Out-Null
       $installers = @(Get-ChildItem -LiteralPath $buildPathClangRelease -File | Where-Object { $_.Extension -in '.msi', '.zip' })
       if (-not $isCross) {
-        # NSIS names its installer like the MSI; the build root's other .exe files are tests.
+        # x64 only (NSIS's stub is x86); it names its installer like the MSI, the other .exe files are tests.
         $installers += @($installers | ForEach-Object { Join-Path $buildPathClangRelease "$($_.BaseName).exe" } |
             Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Get-Item)
       }
@@ -421,28 +362,7 @@ try {
     } | Out-Null
   }
 
-  # MSIX packaging.
-  #
-  # STAGING IS THIS SCRIPT'S; EVERYTHING AFTER IT IS THE HUB'S. What goes into
-  # the package is the one part that genuinely differs between the three
-  # consumers that had each written this out, and here it is a `cmake --install`
-  # of the clangcl-release tree. Invoke-MsixPackage (WindowsMsix.Common, reached
-  # through Import-BuildModule above) owns the rest - the four logo assets, the
-  # manifest expansion, the pack, and the assertion that a package actually
-  # appeared. See third_party/ANTfrastructure/docs/windows-builds.md.
-  #
-  # Two things the hand-rolled block this replaces did not do:
-  #   * assert the OUTPUT. makeappx has been seen to report success and produce
-  #     no file; the step then went green and the artifact upload found nothing.
-  #   * write Wide310x150Logo.png. The hub writes all four names an AppxManifest
-  #     references by convention; this manifest names three, and the fourth
-  #     costs nothing and stops being a surprise the day the manifest grows.
-  #
-  # -Sign -SigningRoot $workspacePath: the hub signs with the first *.pfx at the
-  # repository root (gitignored) and MSIX_PFX_PASSWORD, then verifies; with no
-  # .pfx it warns and the package stays unsigned. This script called
-  # Invoke-MsixSign itself until the hub's -Sign stopped searching the staging
-  # directory's parent (hub, 2026-09-25).
+  # MSIX: staging is this script's; the hub's Invoke-MsixPackage packs, asserts the output and signs with the root *.pfx.
   if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations)) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
@@ -453,19 +373,7 @@ try {
       $msixName = Get-OrDefault $env:MSIX_PACKAGE_NAME (Get-ConfigValue -Config $config -Path 'Msix.PackageNameDefault')
       $msixPublisher = Get-OrDefault $env:MSIX_PUBLISHER (Get-ConfigValue -Config $config -Path 'Msix.Publisher')
 
-      # VERSION.txt is the ONLY source of the package version - there is no
-      # config fallback and no MSIX_VERSION override any more. The old
-      # Test-Path/else pair fell back to a `Version` key in
-      # Build-Windows.config.psd1 that had been frozen at 1.5.0.0 since it was
-      # written, so a missing or misspelled VERSION.txt did not fail the build:
-      # it shipped an installer stamped with a version the repo left behind.
-      #
-      # The PRESENCE check stays here and stays fatal; only the PARSE is the
-      # hub's. Get-PackageVersion falls back to 0.0.1.0 when it finds no version
-      # file, which is right for a repo that has none and wrong for this one -
-      # missing must surface before the artifact is published. What it buys is
-      # the padding: `.Trim() + '.0'` assumed exactly three components, and
-      # makeappx rejects a three-component version outright.
+      # Fatal here: without VERSION.txt the hub's Get-PackageVersion silently falls back to 0.0.1.0.
       $versionFile = Join-Path $workspacePath 'VERSION.txt'
       if (-not (Test-Path $versionFile)) {
         throw "VERSION.txt not found at $versionFile - it is the source of the MSIX package version."
@@ -479,8 +387,7 @@ try {
         Remove-BuildRoot -Context $context -Path $msixStaging | Out-Null
       }
 
-      # The package stages the portable bundle, whose bin\ already carries the DLL closure a
-      # clean machine lacks, on both arches.
+      # The bundle's bin\ already carries the DLL closure a clean machine lacks.
       Copy-Item -Path (Join-Path $distArch 'bundle') -Destination $msixStaging -Recurse
 
       $manifestTemplateRel = Get-ConfigValue -Config $config -Path 'Msix.ManifestTemplate'
@@ -489,9 +396,7 @@ try {
         throw "MSIX manifest template not found: $manifestTemplatePath"
       }
 
-      # The staging assertion stays in front of the hub call: what `cmake
-      # --install` did or did not lay down is a caller question, and the hub
-      # would otherwise pack a manifest that names an executable nobody put there.
+      # Assert staging first, or the hub packs a manifest naming a missing executable.
       $exeRelPath = "bin/$msixName.exe"
       if (-not (Test-Path (Join-Path $msixStaging $exeRelPath))) {
         throw "Expected executable not found in MSIX staging: $exeRelPath"

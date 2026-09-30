@@ -4,9 +4,7 @@
 
 namespace Kataglyphis {
 
-// Access mask a layout transition's src/dst side needs for the given layout.
-// Shared by every image-layout transition in the engine so there is exactly
-// one place that answers "what access does this layout imply".
+// Access mask implied by a layout, for either side of a transition.
 constexpr vk::AccessFlags accessFlagsForImageLayout(vk::ImageLayout layout)
 {
     switch (layout) {
@@ -31,11 +29,7 @@ constexpr vk::AccessFlags accessFlagsForImageLayout(vk::ImageLayout layout)
     }
 }
 
-// Pipeline stage a layout transition's src/dst side needs for the given
-// layout. eDepthStencilAttachmentOptimal and eShaderReadOnlyOptimal
-// deliberately return eAllCommands rather than the narrower
-// eEarlyFragmentTests/eFragmentShader: that is what lets a transition be
-// recorded on a queue other than the graphics queue.
+// eAllCommands rather than fragment stages lets a transition be recorded on a non-graphics queue.
 constexpr vk::PipelineStageFlags pipelineStageForLayout(vk::ImageLayout oldImageLayout)
 {
     switch (oldImageLayout) {
@@ -46,12 +40,8 @@ constexpr vk::PipelineStageFlags pipelineStageForLayout(vk::ImageLayout oldImage
         return vk::PipelineStageFlagBits::eColorAttachmentOutput;
     case vk::ImageLayout::eDepthStencilAttachmentOptimal:
         return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
-                                                       // other than graphic return
-                                                       // vk::PipelineStageFlagBits::eEarlyFragmentTests;
     case vk::ImageLayout::eShaderReadOnlyOptimal:
         return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
-                                                       // other than graphic return
-                                                       // vk::PipelineStageFlagBits::eFragmentShader;
     case vk::ImageLayout::ePreinitialized:
         return vk::PipelineStageFlagBits::eHost;
     case vk::ImageLayout::eUndefined:

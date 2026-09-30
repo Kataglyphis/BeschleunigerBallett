@@ -38,17 +38,13 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
     if (!commandBuffer) {
-        // A half-initialized clouds subsystem has no defined rendering behaviour
-        // (the post pipeline's binding 1 is not optional), so this is a creation
-        // failure like any other ASSERT_VULKAN site, not a null that callers must check.
+        // Fatal rather than a null texture: the post pipeline's binding 1 is not optional.
         ASSERT_VULKAN(VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to begin a command buffer for a storage texture!");
     }
     texture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
     if (!transition_submitted) {
-        // Same reasoning as the !commandBuffer branch above: a half-initialized
-        // clouds subsystem has no defined rendering behaviour, and the descriptor
-        // written later declares eGeneral for an image still in eUndefined.
+        // Fatal too: the descriptor written later declares eGeneral for an image still in eUndefined.
         ASSERT_VULKAN(VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to submit the layout transition for a storage texture!");
     }
 
@@ -82,8 +78,7 @@ void Clouds::createDescriptorSets()
 
 void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md).
+    // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
 
     // cloud specific set AND sharedRenderDescriptorSet
     std::array<vk::DescriptorSetLayout, 2> cloudLayouts = { cloudDescriptors.getLayout(), sharedLayout };
@@ -102,9 +97,7 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 
 void Clouds::dispatchNoiseGeneration(vk::CommandPool commandPool)
 {
-    // Dispatch to fill the 3D texture. The noise volume is created,
-    // transitioned, written and sampled entirely on the graphics family, so
-    // the eExclusive image never needs a queue-family ownership transfer.
+    // Graphics family only, so the eExclusive noise volume never needs a queue-family ownership transfer.
     if (!device->graphicsFamilySupportsCompute()) {
         spdlog::warn("Graphics queue family does not support compute; skipping noise generation dispatch "
                      "(cloud noise volume will render as uniform haze).");
@@ -137,8 +130,7 @@ void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 {
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), cloudComputePipeline, cloudPipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), noiseComputePipeline, noisePipelineLayout);
-    // Descriptor sets and both textures are untouched; the noise volume is
-    // content, not a pipeline, so dispatchNoiseGeneration() does not re-run.
+    // The noise volume is content, not pipeline state, so it is not regenerated.
     createComputePipelines(sharedLayout);
 }
 
@@ -178,8 +170,7 @@ void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width,
 
 void Clouds::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path).
+    // Idempotent: the destructor calls it again as a safety net.
     if (!device) { return; }
 
     cloudDescriptors.cleanUp();

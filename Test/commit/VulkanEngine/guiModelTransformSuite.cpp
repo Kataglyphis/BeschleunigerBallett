@@ -1,13 +1,3 @@
-// Direct unit coverage for common/GuiModelTransform.hpp's
-// makeGuiModelTransform - the pure function extracted from
-// VulkanRenderer::handleModelTransformChange.
-//
-// ZeroInputIsIdentity is the regression test for the bug this extraction
-// fixed: the old inline code hard-coded a glm::scale(..., 60,60,60) that
-// SceneConfig::getModelMatrix documents as removed (it put the camera inside
-// the geometry and blew out cascade resolution), but the GUI transform
-// handler kept applying it on every Position/Rotation drag.
-
 #include <gtest/gtest.h>
 
 #include <array>

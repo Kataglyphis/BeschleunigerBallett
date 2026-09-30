@@ -1,14 +1,4 @@
-// Benchmarks for engine code that runs on the CPU every frame or on every
-// asset load. Deliberately GPU-free: this suite must run in CI containers
-// without an adapter, so nothing here touches Vulkan.
-//
-// Run (RelWithDebInfo only - debug timings are noise):
-//   Build-Windows.ps1 -Configurations 'clangcl-profile'
-//   build-clangcl-profile\perfTestSuite.exe
-//   ... --benchmark_out=perf.json --benchmark_out_format=json  (for diffing)
-//
-// GPU-side per-pass timings are a separate mechanism: timestamp queries
-// collected at runtime and shown in the GUI "GPU timings" panel.
+// GPU-free so it runs in adapter-less CI containers; only optimized (clangcl-profile) timings mean anything.
 
 #include <benchmark/benchmark.h>
 
@@ -25,12 +15,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// Both parsers are compiled straight into this TU (their own implementation
-// macros), exactly as the engine does in ObjLoader.cpp / cgltf_impl.cpp - NOT
-// pulled from VulkanEngineCore. That is deliberate: driving the engine loaders
-// would pull Device/Model/Texture (and their Vulkan-touching global ctors) into
-// this headless benchmark binary. The benchmarks below want the parse cost, not
-// the renderer, so they call the libraries directly like the OBJ path always has.
+// Parsers compiled in directly: the engine loaders would drag Vulkan-touching global ctors into this binary.
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 
@@ -45,9 +30,7 @@ import kataglyphis.vulkan.vertex;
 
 namespace {
 
-// ---------------------------------------------------------------- camera --
-// Runs once per frame from the input handler; regressions show up as input
-// latency rather than GPU time.
+// Camera: runs once per frame from the input handler, so regressions show up as input latency.
 
 void BM_CameraKeyControl(benchmark::State &state)
 {
@@ -82,9 +65,7 @@ void BM_CameraViewMatrix(benchmark::State &state)
 }
 BENCHMARK(BM_CameraViewMatrix);
 
-// ------------------------------------------------------------ projection --
-// Rebuilt every frame. The cloud shader now consumes CPU-side inverses, so
-// that cost moved here on purpose - this benchmark is what guards it.
+// Projection: rebuilt every frame, and the cloud shader consumes these CPU-side inverses.
 
 void BM_ProjectionAndInverses(benchmark::State &state)
 {
@@ -99,14 +80,7 @@ void BM_ProjectionAndInverses(benchmark::State &state)
 }
 BENCHMARK(BM_ProjectionAndInverses);
 
-// ------------------------------------------------------- cascaded shadows --
-// computeCascadeData is per-frame CPU math (VulkanRenderer::updateCascades ->
-// CascadedShadowMap::updateCascades), not GPU work, and had zero perf
-// coverage despite 19 correctness tests; the 2026-07-31 texel-snapping /
-// clamping work touched exactly this function with no way to see a
-// regression. Arguments mirror cascadedShadowMapSuite.cpp's default_view() /
-// default_light(), and GUISceneSharedVars' default shadow_distance (60) and
-// shadow map resolution (2048) - the stabilized (texel-snapped) path.
+// Cascaded shadows: per-frame CPU math; arguments mirror cascadedShadowMapSuite.cpp and the GUI defaults.
 
 void BM_ComputeCascadeData(benchmark::State &state)
 {
@@ -136,11 +110,7 @@ void BM_ComputeCascadeData(benchmark::State &state)
 }
 BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3);
 
-// ------------------------------------------------------- frustum culling --
-// isVisible / isVisibleAsShadowCaster (Frustum.ixx) run per mesh per frame in
-// the forward, deferred and shadow record loops - since the multi-mesh split
-// (sponza = 373 meshes) they are a real per-frame CPU cost with zero perf
-// coverage until now. Camera constants mirror BM_ComputeCascadeData's.
+// Frustum culling: runs per mesh per frame in every record loop; camera constants mirror BM_ComputeCascadeData's.
 
 std::vector<Kataglyphis::AABB> makeRandomAABBs(std::size_t count)
 {
@@ -183,8 +153,7 @@ void BM_FrustumCull(benchmark::State &state)
 }
 BENCHMARK(BM_FrustumCull)->Arg(64)->Arg(512);
 
-// Identical to BM_FrustumCull except for the near-plane-dropping variant used
-// for shadow casters - the point is seeing whether the two diverge in cost.
+// The shadow-caster variant, to see whether the two diverge in cost.
 void BM_FrustumCullShadowCaster(benchmark::State &state)
 {
     const Kataglyphis::FrustumPlanes planes = representativeFrustumPlanes();
@@ -196,12 +165,9 @@ void BM_FrustumCullShadowCaster(benchmark::State &state)
 }
 BENCHMARK(BM_FrustumCullShadowCaster)->Arg(64)->Arg(512);
 
-// ----------------------------------------------------------- scene config --
+// Scene config
 
-// Paths are relative to Resources/ (see SceneConfig.cpp). The hit path
-// short-circuits on the first exists(); the miss path walks up to 8 parent
-// directories probing the filesystem, which is ~500x slower - worth knowing
-// before calling this per frame or per model in a loop.
+// A miss probes up to 8 parent directories, far slower than a hit; mind that in per-frame loops.
 void BM_ResolveModelPath_Hit(benchmark::State &state)
 {
     for (auto _ : state) { benchmark::DoNotOptimize(sceneConfig::resolveModelPath("Models/plane.obj")); }
@@ -220,10 +186,7 @@ void BM_AvailableModelPaths(benchmark::State &state)
 }
 BENCHMARK(BM_AvailableModelPaths);
 
-// -------------------------------------------------------------- obj load --
-// Mirrors ObjLoader::loadVertices: parse, then walk faces with the same
-// bounds-guarded accessor pattern. This dominates model load time and is
-// GPU-free, so it belongs here rather than in a GPU test.
+// OBJ load: mirrors ObjLoader::loadVertices' parse and guarded walk, which dominates model load time.
 
 std::string find_model(const char *name)
 {
@@ -277,17 +240,7 @@ BENCHMARK(BM_ObjParse_Plane)->Unit(benchmark::kMicrosecond);
 void BM_ObjParse_Suzanne(benchmark::State &state) { parse_and_walk(find_model("suzanne.obj"), state); }
 BENCHMARK(BM_ObjParse_Suzanne)->Unit(benchmark::kMillisecond);
 
-// ------------------------------------------------------------- gltf load --
-// The glTF analogue of the OBJ benchmark: parse the document, load its buffers,
-// then walk every primitive's POSITION accessor - the same parse-then-walk shape
-// as parse_and_walk, over cgltf (the library GltfLoader::parseCpu is built on)
-// rather than the engine loader, for the linkage reason noted at the includes.
-//
-// Two assets on purpose: the .glb carries its buffer inline as binary, the
-// .gltf as a base64 data-URI, so cgltf_load_buffers exercises a different decode
-// path for each. Both are small - these guard against a gross regression (a
-// per-call allocation storm, an accidental O(n^2)), not scale, exactly like
-// BM_ObjParse_Plane.
+// glTF load: .glb and base64 .gltf take different buffer decode paths; both guard gross regressions, not scale.
 
 void parse_and_walk_gltf(const std::string &path, benchmark::State &state)
 {
@@ -340,14 +293,7 @@ void BM_GltfParse_CubeTextured(benchmark::State &state)
 }
 BENCHMARK(BM_GltfParse_CubeTextured)->Unit(benchmark::kMicrosecond);
 
-// -------------------------------------------------------- tangent gen --
-// vertex::computeTangents runs once per glTF/OBJ primitive over the shared,
-// growing vertex array (GltfLoader::processPrimitive), each call scoped to
-// just that primitive's index range via firstIndex - the shape this
-// benchmark reproduces. Parameterised on primitive count so a regression
-// back to a vertices.size()-sized accumulator pair (quadratic total work
-// across a multi-primitive document) shows up here instead of needing a
-// real multi-primitive asset to notice.
+// Tangent gen: one call per primitive over a growing array, where whole-array accumulators turn quadratic.
 
 void BM_ComputeTangents(benchmark::State &state)
 {
@@ -357,13 +303,7 @@ void BM_ComputeTangents(benchmark::State &state)
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
     std::vector<std::size_t> firstIndices;
-    // GltfLoader::processPrimitive calls computeTangents right after
-    // appending only the current primitive's vertices/indices - earlier
-    // primitives are already in the array, later ones are not. Record the
-    // vertex/index count "so far" at each primitive's call time and slice
-    // to it below, rather than handing every call the full, fully-built
-    // arrays (which would make every call pay for every OTHER primitive's
-    // triangles too, masking the fix this benchmark is meant to guard).
+    // Slice to the counts at each call, as GltfLoader::processPrimitive sees them, or every call pays for all.
     std::vector<std::size_t> vertexCountSoFar;
     std::vector<std::size_t> indexCountSoFar;
     vertices.reserve(primitiveCount * 4);
@@ -403,14 +343,7 @@ void BM_ComputeTangents(benchmark::State &state)
 }
 BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);
 
-// ------------------------------------------------------- flat-normal pair --
-// vertex::computeFlatNormals / fillMissingFlatNormals run over the same
-// per-primitive indices[firstIndex..] shape as computeTangents (same loaders,
-// same call sites), but had zero perf coverage until now - computeTangents
-// only got its benchmark because its accumulator bug was quadratic in
-// primitive count and needed acceptance evidence after the fact. Reuses
-// BM_ComputeTangents's quad-strip fixture so all three are directly
-// comparable at the same argument values.
+// Flat normals: BM_ComputeTangents' per-primitive shape and fixture, so all three compare directly.
 
 void BM_ComputeFlatNormals(benchmark::State &state)
 {
@@ -459,10 +392,7 @@ void BM_ComputeFlatNormals(benchmark::State &state)
 }
 BENCHMARK(BM_ComputeFlatNormals)->Arg(1)->Arg(64)->Arg(512);
 
-// Same fixture as BM_ComputeFlatNormals, but every third vertex's normal is
-// zeroed before the loop so the function's "only fill near-zero corners"
-// branch is actually exercised - a fixture where every normal is already
-// valid would measure the early-out path instead.
+// Zeroed normals make it fill corners instead of measuring the early-out.
 void BM_FillMissingFlatNormals(benchmark::State &state)
 {
     const auto primitiveCount = static_cast<std::size_t>(state.range(0));
@@ -498,8 +428,6 @@ void BM_FillMissingFlatNormals(benchmark::State &state)
         vertexCountSoFar.push_back(vertices.size());
         indexCountSoFar.push_back(indices.size());
     }
-    // Zero every third vertex's normal so fillMissingFlatNormals actually has
-    // corners to fill instead of taking the near-zero-length early-out.
     for (std::size_t i = 0; i < vertices.size(); i += 3) { vertices[i].normal = glm::vec3(0.0F); }
 
     for (auto _ : state) {
@@ -513,15 +441,7 @@ void BM_FillMissingFlatNormals(benchmark::State &state)
 }
 BENCHMARK(BM_FillMissingFlatNormals)->Arg(1)->Arg(64)->Arg(512);
 
-// ------------------------------------------------------------ transformAABB --
-// Runs `models × meshes × 2 passes` times per frame (MeshDrawRecorder's
-// walkSceneMeshes calls it once per mesh for the camera pass and once per
-// mesh for the shadow pass; sponza is 373 meshes) with zero perf coverage
-// until now. A non-trivial model matrix (translate x rotate x non-uniform
-// scale) exercises the general eight-corner walk this function exists for -
-// a pure-translation matrix would let the compiler take shortcuts a mirrored/
-// non-uniformly-scaled model never gets in practice. Arguments match
-// BM_FrustumCull's so the cull and the transform can be read side by side.
+// transformAABB: runs per mesh in both the camera and shadow passes; a non-trivial matrix denies compiler shortcuts.
 
 void BM_TransformAABB(benchmark::State &state)
 {

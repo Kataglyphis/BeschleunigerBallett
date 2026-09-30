@@ -7,13 +7,10 @@
 
 namespace Kataglyphis {
 
-// best format is subjective, but I go with:
-//  Format:           vk::Format::eR8G8B8A8Unorm (backup-format:
-//  vk::Format::eB8G8R8A8Unorm) color_space:  vk::ColorSpaceKHR::eSrgbNonlinear
+// UNORM on purpose: the shaders that write the swapchain apply linear_to_srgb themselves.
 inline vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &formats)
 {
-    // an empty list has no formats[0] to fall back on - use the same default
-    // as the "no restrictions" case below instead of indexing past the end.
+    // An empty list has no formats[0] to fall back on, so use the unrestricted default.
     if (formats.empty()) { return { vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear }; }
 
     // the condition below means all formats are available (no restrictions)
@@ -29,9 +26,7 @@ inline vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::Surfac
         }
     }
 
-    // in case just return first one--- but really shouldn't be the case ....
-    // (this is exactly what makes an exotic, non-capturable surface format
-    // reachable at runtime - see FormatHelper.hpp's isCapturableSwapchainFormat)
+    // Last resort, and how a non-capturable format reaches runtime (see FormatHelper.hpp's isCapturableSwapchainFormat).
     return formats[0];
 }
 
@@ -46,9 +41,7 @@ inline vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::Prese
     return vk::PresentModeKHR::eFifo;
 }
 
-// Clamps a candidate extent into the surface's [min, max] image extent
-// bounds. The window-query / currentExtent short-circuit stays with the
-// caller since that part needs a live window, not just capability data.
+// The currentExtent short-circuit stays with the caller, which has the live window.
 inline vk::Extent2D clampSwapExtent(const vk::SurfaceCapabilitiesKHR &surface_capabilities,
   uint32_t width,
   uint32_t height)

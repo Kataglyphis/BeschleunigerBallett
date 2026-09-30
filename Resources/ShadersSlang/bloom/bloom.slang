@@ -1,16 +1,11 @@
 import fullscreen;
 
-// Bloom chain (Rust/WebGPU side). bloom.wgsl is generated from this
-// file and checked into the Rust crate by wgslMap. Emits WGSL.
-// Bright-pass extraction and separable 9-tap Gaussian blur, all fullscreen
-// triangles at half resolution on Rgba16Float targets.
+// Rust/WebGPU bloom: the checked-in bloom.wgsl is generated from this file.
 
 [vk::binding(0, 0)] Texture2D<float4> srcTex;
 [vk::binding(1, 0)] SamplerState srcSampler;
 
-// [adapted EV, target EV], written by cs_reduce_exposure and also read by
-// tonemap.slang. Read here rather than pre-exposing on the CPU so there is
-// ONE source of truth. The blur entry points do not read it.
+// [adapted EV, target EV] from cs_reduce_exposure, shared with tonemap.slang as the one exposure source.
 [vk::binding(2, 0)] StructuredBuffer<float> exposureState;
 
 static const float THRESHOLD = 1.0;

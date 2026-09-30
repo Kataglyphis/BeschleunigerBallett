@@ -21,8 +21,7 @@ Import-BuildModule @('WindowsAppRunner.Common')
 # Locate the built executable in the build directory created by the CMake preset
 $ReleaseDir = Join-Path $ProjectRoot "build-clangcl-release"
 
-# Start the application.
-# We use the project root as the working directory so it can discover `images/` and `Resources/`
+# The project root is the working directory so images/ and Resources/ resolve.
 Invoke-AppRun -BuildRoot $ReleaseDir `
     -ExecutableName $ExeName `
     -Configurations @('Release') `

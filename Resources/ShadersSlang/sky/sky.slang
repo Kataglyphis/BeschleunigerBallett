@@ -1,7 +1,4 @@
-// Procedural sky (Rust/WebGPU side). sky.wgsl is generated from this
-// file and checked into the Rust crate by wgslMap. Emits WGSL.
-// Horizon/zenith gradient + analytic sun disk derived from the directional light.
-// Gradient/sun-disk math lives in common/sky_model.slang (import sky_model).
+// Rust/WebGPU procedural sky: the checked-in sky.wgsl is generated from this file.
 
 import sky_model;
 

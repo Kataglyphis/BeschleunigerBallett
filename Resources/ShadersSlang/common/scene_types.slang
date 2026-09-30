@@ -1,9 +1,4 @@
-// Shared scene types: structs and binding constants used by BOTH the
-// rasterization and ray tracing shaders. This module has NO ray-tracing-
-// specific types (HitPayload, PushConstantRaytracing) — those live in
-// raytracing/rt_types.slang, which imports this module. This separation
-// prevents rasterization shaders from pulling in ray tracing capabilities
-// (which conflict with `discard` in fragment shaders).
+// No ray-tracing types here (see rt_types.slang): their capabilities conflict with `discard` in fragment shaders.
 
 static const int MAX_TEXTURE_COUNT = 128;
 
@@ -20,10 +15,7 @@ static const int TLAS_BINDING = 0;
 static const int OUT_IMAGE_BINDING = 1;
 static const int ACCUMULATION_IMAGE_BINDING = 2;
 
-// ----- GBUFFER INPUT ATTACHMENT SET (deferred.slang's lighting subpass input
-// attachments, descriptor set 1). Must equal the position of the matching
-// entry in DeferredRasterizer.cpp's lightingInputRefs, and are NOT the render
-// pass's own attachment indices (which are these plus one).
+// G-buffer input attachments (set 1): lightingInputRefs positions, not render pass indices (those are +1).
 static const int GBUFFER_NORMAL_BINDING = 0;
 static const int GBUFFER_ALBEDO_BINDING = 1;
 static const int GBUFFER_MATERIAL_BINDING = 2;
@@ -67,8 +59,7 @@ struct ObjMaterial
     int alphaTextureID;
 };
 
-// Per-mesh object description (matches ObjectDescription.hpp). The uint64_t
-// fields are Vulkan buffer device addresses, cast to T* in the shader.
+// Matches ObjectDescription.hpp; the uint64_t fields are buffer device addresses.
 struct ObjectDescription
 {
     uint64_t vertex_address;
@@ -78,18 +69,13 @@ struct ObjectDescription
     uint64_t texture_offset;
 };
 
-// Buffer-reference types: Slang T* maps to PhysicalStorageBuffer in SPIR-V
-// (GL_EXT_buffer_reference2). Cast from uint64_t device addresses.
+// Buffer-reference types: Slang T* maps to SPIR-V PhysicalStorageBuffer.
 struct Vertices { Vertex v[]; }
 struct Indices { int3 i[]; }
 struct MaterialIDs { int i[]; }
 struct Materials { ObjMaterial m[]; }
 
-// Flattened global-texture-array index for a material's textureID within its
-// model's slot range. Clamped rather than bounds-checked: a model whose
-// texture count pushes it past MAX_TEXTURE_COUNT silently samples a wrong
-// slot instead of going out of bounds (see VulkanRenderer.cpp's
-// "models past the cap will sample the wrong slots" warning).
+// Clamped: a model past MAX_TEXTURE_COUNT samples a wrong slot rather than out of bounds.
 int resolve_texture_slot(ObjectDescription obj, int textureID)
 {
     return clamp(int(obj.texture_offset) + textureID, 0, MAX_TEXTURE_COUNT - 1);

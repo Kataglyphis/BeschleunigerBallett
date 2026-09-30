@@ -1,13 +1,4 @@
-// Unit tests for the pixel-metric oracles shared across goldenRenderSuite.cpp
-// (GoldenMetrics.hpp). These are pure CPU functions over RGBA8 buffers - no
-// Vulkan, no engine, no GPU - so they run everywhere the CPU-only suites do.
-//
-// They exist because the metrics ARE the oracle every golden test trusts:
-// BACKLOG.md's "Caution learned the hard way" note records two confident
-// wrong calls that traced back to an untested pixel classifier. Pinning the
-// metrics themselves down here means a future change to them is caught by a
-// fast CPU test, not by a GPU golden failing (or silently passing) for the
-// wrong reason.
+// GoldenMetrics.hpp is the oracle every golden trusts, so it gets its own fast CPU tests.
 
 #include <gtest/gtest.h>
 
@@ -74,16 +65,13 @@ TEST(GoldenMetrics, DetailFractionIsZeroForFlatImage)
 TEST(GoldenMetrics, DetailFractionIsHighForCheckerboard)
 {
     const std::vector<uint8_t> frame = checkerboard_frame();
-    // Every column boundary within the crop is an edge, so the fraction is
-    // close to (but not exactly) 1.0.
+    // Every column boundary in the crop is an edge, so the fraction is near but not exactly 1.0.
     EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, full_frame_crop()), 0.4);
 }
 
 TEST(GoldenMetrics, DetailFractionOfAFullWidthCropStaysInBounds)
 {
-    // A crop whose x1 reaches the frame width used to read one pixel past
-    // the last column on the bottom-right corner; ASAN catches that heap
-    // overflow if detail_fraction regresses back to reading out of bounds.
+    // x1 at the frame width is where detail_fraction can read one pixel past the end; ASan catches it.
     const std::vector<uint8_t> frame = checkerboard_frame();
     EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, full_frame_crop()), 0.4);
 }
@@ -104,8 +92,7 @@ TEST(GoldenMetrics, MeanLuminanceInCropMatchesAFlatImage)
 
 TEST(GoldenMetrics, MeanLuminanceInCropIgnoresPixelsOutsideTheCrop)
 {
-    // Black frame with a single bright pixel outside a crop that excludes it:
-    // the crop must read 0, not be dragged up by the pixel it should not see.
+    // The one bright pixel sits outside the crop, which must read 0.
     std::vector<uint8_t> frame = flat_frame(0U);
     const size_t outside_pixel_base = 0U;// column 0, row 0
     frame[outside_pixel_base] = 255U;

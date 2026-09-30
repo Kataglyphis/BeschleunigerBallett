@@ -1,9 +1,6 @@
 import fullscreen;
 
-// Depth-only SSAO (Rust/WebGPU side). ssao.wgsl is generated from this
-// file and checked into the Rust crate by wgslMap. Emits WGSL.
-// View-space position reconstruction from the depth buffer, normals from
-// depth neighbors, fixed hemisphere kernel, plus a 3x3 box blur entry point.
+// Rust/WebGPU depth-only SSAO: the checked-in ssao.wgsl is generated from this file.
 
 struct SsaoUniforms
 {
@@ -64,13 +61,9 @@ float4 fs_ssao(FullscreenVsOut In) : SV_Target
     float2 dv = float2(0.0, 1.0 / float(h));
     float3 px = view_pos_at(In.uv + du, load_depth(In.uv + du));
     float3 py = view_pos_at(In.uv + dv, load_depth(In.uv + dv));
-    // +du is +X in view space; +dv is -Y because view_pos_at flips uv.y.
-    // View space is right-handed with visible geometry at z < 0, so the
-    // camera-facing normal is +Z, which cross(py - p, px - p) produces.
+    // view_pos_at flips uv.y, so this operand order yields the camera-facing +Z normal.
     float3 n = normalize(cross(py - p, px - p));
 
-    // up is switched on abs(n.y) > 0.98, a sign-independent test, so it
-    // needs no change for the flipped normal.
     float3 up = float3(0.0, 1.0, 0.0);
     if (abs(n.y) > 0.98) up = float3(1.0, 0.0, 0.0);
     float3 t = normalize(cross(up, n));

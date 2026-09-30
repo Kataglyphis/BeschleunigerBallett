@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
-# Copied verbatim from ANTfrastructure
-# `shared/linux/templates/antfrastructure.sh` — do not hand-edit; sync from
-# upstream instead. This is the one build-tooling file that cannot be sourced
-# out of the submodule, because it is what *finds* the submodule.
-#
-# Entry points: antfrastructure_path / antfrastructure_source / antfrastructure_exec.
-# See ANTfrastructure shared/linux/templates/README.md.
-# Load guard: sourcing twice is free and common (a driver and its wrapper both
-# want the helpers).
+# Copy of ANTfrastructure's shared/linux/templates/antfrastructure.sh; the sync gate holds the body, so never hand-edit.
 [ -n "${_KATAGLYPHIS_ANTFRASTRUCTURE_SH_LOADED:-}" ] && return 0
 _KATAGLYPHIS_ANTFRASTRUCTURE_SH_LOADED=1
 
@@ -16,45 +8,29 @@ _KATAGLYPHIS_ANTFRASTRUCTURE_SH_LOADED=1
 
 _antfrastructure_lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Both are overridable from the environment. That matters in the container,
-# where the workspace is bind-mounted at a different path than on the host.
+# Overridable because a container bind-mounts the workspace at a different path.
 KATAGLYPHIS_REPO_ROOT="${KATAGLYPHIS_REPO_ROOT:-$(cd "${_antfrastructure_lib_dir}/${KATAGLYPHIS_REPO_ROOT_RELATIVE}" && pwd)}"
 
-# Three places, in order, and the order is the point:
-#   1. $ANTFRASTRUCTURE_DIR, if the caller set it. A container bind-mounts the
-#      workspace somewhere else than the host, so an explicit answer always wins.
-#   2. the submodule, which is what six of the consumers have.
-#   3. a plain sibling clone at <repo>/antfrastructure-tools, which is what a
-#      consumer with NO submodule has. One repo hand-rolled that probe because
-#      this template could not express it; now it can, and there is no reason
-#      for a seventh bootstrap variant.
+# Order matters: an explicit ANTFRASTRUCTURE_DIR, then the submodule, then a sibling antfrastructure-tools clone.
 if [ -z "${ANTFRASTRUCTURE_DIR:-}" ]; then
     if [ -d "${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure" ]; then
         ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure"
     elif [ -d "${KATAGLYPHIS_REPO_ROOT}/antfrastructure-tools" ]; then
         ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/antfrastructure-tools"
     else
-        # Neither exists: keep the submodule path so the error text below points
-        # at the shape this repo declared, rather than at a directory nobody
-        # asked for.
+        # Neither exists: keep the submodule path so the error below names the declared shape.
         ANTFRASTRUCTURE_DIR="${KATAGLYPHIS_REPO_ROOT}/third_party/ANTfrastructure"
     fi
 fi
 export KATAGLYPHIS_REPO_ROOT ANTFRASTRUCTURE_DIR
 
-# Absolute path of a file inside the submodule, or a hard failure naming it.
-#
-# The error text names the probed path AND the fix on purpose: the failure is
-# almost always "submodule not checked out" or "the file moved upstream", and
-# both are invisible from bash's own message.
+# Absolute path of a file inside the submodule, or a failure naming the path and the fix bash's own error hides.
 antfrastructure_path() {
     local relative_path="${1:?relative path required}"
     local resolved="${ANTFRASTRUCTURE_DIR}/${relative_path}"
     if [ ! -e "$resolved" ]; then
         echo "Error: ANTfrastructure file not found: ${resolved}" >&2
-        # The hint has to match THIS repo's shape. `git submodule update` in a
-        # repo with no such submodule prints "No submodule mapping found" and
-        # sends the reader looking for a broken submodule that never existed.
+        # The hint must match this repo's shape: without the submodule, `git submodule update` misleads.
         if grep -q 'third_party/ANTfrastructure' "${KATAGLYPHIS_REPO_ROOT}/.gitmodules" 2>/dev/null; then
             echo "       If the whole directory is missing, the submodule is not checked out:" >&2
             echo "       git submodule update --init --recursive third_party/ANTfrastructure" >&2
@@ -72,9 +48,7 @@ antfrastructure_path() {
     printf '%s' "$resolved"
 }
 
-# Source a ANTfrastructure shell library, e.g.
-#   antfrastructure_source linux/scripts/01-core/logging.sh
-# Upstream libraries are load-guarded, so sourcing one twice is free.
+# antfrastructure_source <relative>: source a load-guarded upstream library, e.g. linux/scripts/01-core/logging.sh
 antfrastructure_source() {
     local resolved
     resolved="$(antfrastructure_path "${1:?relative path required}")" || return 1
@@ -82,22 +56,7 @@ antfrastructure_source() {
     source "$resolved"
 }
 
-# Replace this process with a ANTfrastructure driver, forwarding the caller's
-# arguments, e.g.
-#   antfrastructure_exec linux/scripts/02-toolchain/python/ci_tests.sh "$@"
-#
-# This is the wrapper pattern. Every consumer that delegates to an upstream
-# driver had hand-rolled the same guard-then-exec block; getting it wrong is
-# silent, because `exec` on a missing file under `set -e` reports only bash's
-# own error.
-#
-# WORKSPACE_ROOT is pinned here because upstream's detect_workspace derives it
-# from the *sourcing script's* location — which, for a delegated driver, resolves
-# inside third_party/ANTfrastructure instead of the consuming repo, so
-# every tool would run against the submodule tree. detect_workspace honours a
-# pre-set value and still overrides to /workspace in the container, so CI is
-# unaffected. This is the single most common thing to break when a wrapper is
-# "simplified".
+# antfrastructure_exec <relative> "$@": exec a driver with WORKSPACE_ROOT pinned; see shared/linux/templates/README.md § The three entry points
 antfrastructure_exec() {
     local relative_path="${1:?relative path required}"
     shift

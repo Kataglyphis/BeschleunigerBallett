@@ -3,19 +3,14 @@ name: Linux arm64 · build + test
 on:
   push:
     branches: [main, develop]
-    # Docs-only commits must not spend a 2-3h build, and - with the
-    # cancel-in-progress concurrency below - must not supersede an in-flight
-    # code run either. A backlog edit is not a reason to retest the engine.
+    # A docs-only commit must neither spend a build nor cancel an in-flight code run.
     paths-ignore:
       - '**.md'
       - 'docs/**'
   pull_request:
     branches: [main, develop]
 
-# Cancel superseded runs on develop and PRs so the tip's verdict arrives without
-# queueing behind stale runs - without this every push spawns a full parallel
-# 2-3h run and they serialise. main is exempt: its runs deploy/release and must
-# not be interrupted mid-flight.
+# main is exempt from cancellation: its runs deploy and release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -26,9 +21,7 @@ permissions:
 jobs:
   build-arm:
     uses: ./.github/workflows/reusable-linux.yml
-    # Same scope as the top-level block, stated on the job. No timeout-minutes:
-    # GitHub rejects it on a job that calls a reusable workflow; every
-    # runner-owning job lives in reusable-linux.yml.
+    # No timeout-minutes: GitHub rejects it on a job that calls a reusable workflow.
     permissions:
       contents: read
       # The reusable build's compiler-cache writers delete their key's older entries.

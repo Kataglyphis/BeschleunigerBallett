@@ -1,14 +1,4 @@
-// Direct unit coverage for common/ImageBarrierHelper.hpp's
-// buildImageMemoryBarrier - the helper that replaced seven hand-written
-// vk::ImageMemoryBarrier literals across Raytracing.cpp, PathTracing.cpp and
-// FrameCapture.ixx.
-//
-// vk::ImageMemoryBarrier is a plain struct, so every one of those call sites
-// can be re-created here and pinned field-by-field with no device. This
-// guards the class of defect no pixel oracle sees: a dropped queue-family
-// index or a wrong subresource-range field still renders correctly (the
-// validation layers may not even be running), and only corrupts
-// synchronisation under specific timing.
+// A wrong barrier field still renders correctly and only races under specific timing, so pin every field.
 
 #include <gtest/gtest.h>
 
@@ -18,11 +8,7 @@
 
 using Kataglyphis::buildImageMemoryBarrier;
 
-// Usable in a constant expression, matching RenderPassHelper.hpp's convention.
-// vk::Image's only constexpr constructor takes std::nullptr_t (its default
-// constructor is deliberately NOT constexpr - see vulkan_handles.hpp's "try
-// to workaround a compiler issue" comment), so nullptr stands in for a null
-// image handle here rather than vk::Image{}.
+// vk::Image{} is not constexpr in vulkan-hpp; only the nullptr_t constructor is.
 static_assert(buildImageMemoryBarrier(vk::Image(nullptr), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {},
                  vk::AccessFlagBits::eShaderWrite)
                   .newLayout
@@ -31,8 +17,7 @@ static_assert(buildImageMemoryBarrier(vk::Image(nullptr), vk::ImageLayout::eUnde
 
 namespace {
 
-// Fields every call site in this engine agrees on. Asserted once per test
-// rather than once overall, so no individual site can drift away from them.
+// Asserted per call site so no single site can drift from the engine-wide fields.
 void expectEngineWideBarrierInvariants(const vk::ImageMemoryBarrier &barrier)
 {
     EXPECT_EQ(barrier.srcQueueFamilyIndex, vk::QueueFamilyIgnored);
@@ -96,9 +81,7 @@ TEST(ImageBarrierHelperUnit, MatchesPathTracingPresentToPathTracingBarrier)
 
 TEST(ImageBarrierHelperUnit, MatchesPathTracingAccumulationBarrier)
 {
-    // PathTracing::recordCommands, accumulationBarrier - the sole call site
-    // whose oldLayout and newLayout are the same (a read-modify-write hazard,
-    // not a layout transition) and whose dstAccessMask ORs together two bits.
+    // Same old and new layout: a read-modify-write hazard, not a transition.
     const vk::ImageMemoryBarrier barrier = buildImageMemoryBarrier(vk::Image{},
       vk::ImageLayout::eGeneral,
       vk::ImageLayout::eGeneral,
@@ -145,10 +128,7 @@ TEST(ImageBarrierHelperUnit, MatchesFrameCaptureToTransferSrcBarrier)
 
 TEST(ImageBarrierHelperUnit, MatchesFrameCaptureBackToPresentBarrier)
 {
-    // FrameCapture::record, back_to_present - the sole call site whose
-    // dstAccessMask is deliberately empty (nothing reads through this
-    // barrier; the buffer-to-host visibility is a separate
-    // vk::BufferMemoryBarrier in the same pipelineBarrier call).
+    // Empty dstAccessMask on purpose: host visibility is a separate buffer barrier.
     const vk::ImageMemoryBarrier barrier = buildImageMemoryBarrier(vk::Image{},
       vk::ImageLayout::eTransferSrcOptimal,
       vk::ImageLayout::ePresentSrcKHR,

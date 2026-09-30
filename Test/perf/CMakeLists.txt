@@ -25,18 +25,7 @@ target_link_libraries(
           tinyobjloader
           cgltf)
 
-# Register with CTest so the benchmarks are at least RUN by `ctest`. Until now
-# they were built and then never executed by anything, so a benchmark that
-# crashed or failed to converge went unnoticed.
-#
-# This deliberately gates on "the benchmarks execute successfully", NOT on a
-# time budget. Wall-clock numbers here depend on the machine, its thermal
-# state and what else is running; a threshold would either be so loose it
-# catches nothing or so tight it fails randomly. Regression tracking belongs
-# in the JSON below, compared against a per-machine baseline - see BACKLOG.md.
-#
-# --benchmark_min_time keeps the ctest run short; the recorded baseline in
-# BACKLOG.md was taken without it.
+# Gates on the suite running, not on time: wall-clock thresholds are toothless or flaky, so the JSON is compared.
 add_test(
   NAME perf_suite_runs
   COMMAND
@@ -45,6 +34,5 @@ add_test(
     --benchmark_out_format=json
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
-# Benchmarks touching the GPU or large assets are slower than unit tests, and
-# this suite only exists in RelWithDebInfo.
+# Large-asset benchmarks run far longer than unit tests.
 set_tests_properties(perf_suite_runs PROPERTIES TIMEOUT 900 LABELS "perf")

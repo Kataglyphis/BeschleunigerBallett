@@ -63,8 +63,6 @@ void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_de
 
     this->device = in_device;
     this->owns_image = true;
-    // CREATE image
-    // image creation info
     vk::ImageCreateInfo image_create_info{};
     image_create_info.imageType = image_type;// type of image (1D, 2D, 3D)
     image_create_info.extent.width = width;// width if image extent
@@ -80,9 +78,7 @@ void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_de
     image_create_info.sharingMode = vk::SharingMode::eExclusive;// whether image can be shared between queues
     image_create_info.flags = create_flags;
 
-    // CREATE image and its backing memory in one step through VMA. The
-    // requested vk::MemoryPropertyFlags (typically eDeviceLocal) are enforced
-    // exactly via requiredFlags.
+    // requiredFlags enforces the requested memory properties exactly.
     VmaAllocationCreateInfo allocation_create_info{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(prop_flags);
@@ -116,8 +112,7 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
         return;
     }
 
-    // Record the barrier through the command-buffer overload so the access-mask /
-    // pipeline-stage / layout-case logic lives in exactly one place.
+    // Through the command-buffer overload, so the barrier logic lives in one place.
     transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask, array_layers);
 
     bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
@@ -164,8 +159,7 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_b
 void Kataglyphis::VulkanImage::setImage(vk::Image in_image)
 {
     this->image = in_image;
-    // Wrapped external images (e.g. swapchain images) are owned by their
-    // creator; destroying them here would be a double free.
+    // Wrapped images (swapchain images, say) belong to their creator; destroying them here would double free.
     this->owns_image = false;
 }
 

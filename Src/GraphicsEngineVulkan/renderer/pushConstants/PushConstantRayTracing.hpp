@@ -1,5 +1,4 @@
-// Host-side mirror of the ray-tracing push-constant block. Its layout is
-// pinned against the Slang redeclaration by BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv.
+// Host mirror of the ray-tracing push constants; SharedStructOffsetsMatchTheCompiledSpirv pins its layout.
 #pragma once
 #include "common/HostDeviceGlmAliases.hpp"
 namespace Kataglyphis::VulkanRendererInternals {

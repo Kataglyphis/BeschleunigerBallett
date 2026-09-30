@@ -1,9 +1,6 @@
 import scene_types;
 import rt_types;
 
-// Ray generation shader: camera ray setup + trace + image store.
-// Sole source for this shader. Emits SPIR-V only.
-
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
@@ -33,10 +30,7 @@ void rgen_main()
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
 
-    // Not RAY_FLAG_FORCE_OPAQUE: forcing opaque here would skip any-hit
-    // invocation for the primary ray on every geometry, making
-    // raytrace.rahit.slang's MASK alpha test dead code for the visible
-    // image (only the shadow ray's opacity mattered before it existed).
+    // Not RAY_FLAG_FORCE_OPAQUE: that would skip raytrace.rahit.slang's MASK alpha test for primary rays.
     TraceRay(TLAS,
         RAY_FLAG_NONE,
         0xFFu,      // cull mask

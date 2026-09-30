@@ -1,12 +1,7 @@
 import scene_types;
 import push_constants;
 
-// Shared vertex stage for the forward rasterizer (rasterizer.slang's
-// vs_main) and the deferred geometry pass (deferred.slang's
-// geometry_vs_main). The forward/deferred parity golden compares their
-// outputs pixel-for-pixel, so the two passes must produce identical world
-// position, normal and tangent by construction - by sharing one function -
-// rather than by keeping two hand-written copies in sync through review.
+// One vertex stage for forward and deferred: their parity golden compares the outputs pixel for pixel.
 
 struct RasterVsOut
 {
@@ -31,9 +26,7 @@ RasterVsOut raster_geometry_vs(
     o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc.model), float4(position, 1.0));
     o.worldPosition = mul(pc.model, float4(position, 1.0)).xyz;
     o.shadingNormal = transform_normal(pc, normal);
-    // Tangent is a surface direction, not a normal, so it transforms with the
-    // model matrix directly rather than the inverse-transpose transform_normal()
-    // uses (see push_constants.slang's transform_normal doc).
+    // A tangent is a surface direction, so it takes the model matrix, not the inverse-transpose.
     o.worldTangent = float4(normalize(mul(pc.model, float4(tangent.xyz, 0.0)).xyz), tangent.w);
     o.texCoords = texCoords;
     o.fragmentColor = color;

@@ -25,9 +25,7 @@ auto resolveModelPath(const std::string &relativeModelPath) -> std::string
         return resolved->string();
     }
 
-    // Nothing matched: fall back to the build-relative candidate so callers
-    // (ObjLoader/GltfLoader) still get a path back to log, rather than the
-    // bare relative string.
+    // Nothing matched: return the build-relative candidate so the loaders log a full path.
     std::error_code filesystem_error;
     const std::filesystem::path current_path = std::filesystem::current_path(filesystem_error);
     if (filesystem_error) { return relativeModelPath; }
@@ -60,11 +58,7 @@ namespace {
         sceneConfig::ModelScanResult result = sceneConfig::scanModelsUnder(findResourcesBasePath());
         if (!result.complete) return;
 
-        // s_models_scanned latches only once a walk has *completed* - a call
-        // made before the working directory finds Resources/Models, or one
-        // whose recursive_directory_iterator hit an error partway through,
-        // must be free to retry on the next call instead of reporting
-        // "No loadable models" for the rest of the process.
+        // Latch only after a completed walk, so an early or failed scan retries instead of reporting no models forever.
         s_models_scanned = true;
         s_cached_model_paths = std::move(result.paths);
         s_cached_model_display_names = std::move(result.displayNames);
@@ -105,23 +99,14 @@ auto defaultModelRelativePath() -> std::string_view
 #if NDEBUG
     return "Models/crytek-sponza/sponza_triag.obj";
 #else
-    // Dinosaurs is the default debug scene because it SHOWS the cascaded
-    // shadow maps: it carries its own 20x20 ground plane at y=0 with the
-    // figures standing up to y=3.64, so the shadows land on a visible floor
-    // instead of only self-shadowing a single object.
+    // Dinosaurs shows the cascaded shadows: it carries its own ground plane for them to land on.
     return "Models/Dinosaurs/dinosaurs.obj";
 #endif
 }
 
 auto getModelFile() -> std::string
 {
-    // Tests need a scene chosen for what it MEASURES, not for how it looks,
-    // and the two are not the same choice. The debug scene below is a
-    // dinosaur skeleton because it is pleasant to open the app on; its thin
-    // bones make a poor shadow caster, and measuring cascaded shadows against
-    // it reported 0.13% occlusion where the same renderer over a solid box
-    // reports 6.45%. Without this hook the golden shadow test can only ever
-    // assert a threshold low enough to be meaningless.
+    // Tests pick a scene for what it measures: the default skeleton's thin bones cast too little shadow to gate on.
     if (const char *override_path = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); override_path != nullptr) {
         if (*override_path != '\0') { return resolveModelPath(override_path); }
     }
@@ -129,11 +114,7 @@ auto getModelFile() -> std::string
     return resolveModelPath(std::string(defaultModelRelativePath()));
 }
 
-// Both configurations scale by (1,1,1), i.e. not at all. The function still
-// exists because of its history: the old 60x scale for the tiny viking_room
-// made the camera start INSIDE the geometry (all backfaces, culled -> black
-// viewport) and stretched the scene far beyond a cascade's useful resolution.
-// Dinosaurs (debug) and crytek-sponza (release) both need no scaling.
+// Identity: a large model scale puts the camera inside the geometry and stretches the scene past a cascade's resolution.
 auto getModelMatrix() -> glm::mat4
 {
     return glm::mat4(1.0F);
@@ -154,11 +135,7 @@ auto getAvailableModelDisplayNames() -> std::span<const std::string>
 auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath)
   -> int
 {
-    // generic_string() normalises the separator on both sides: scanAvailableModels()
-    // builds availablePaths from a relative-path computation that comes out
-    // backslashed on Windows, while preferredRelativePath is a forward-slashed
-    // literal - without this normalisation the exact match below would never fire
-    // on Windows even when the path is otherwise correct.
+    // generic_string() on both sides: scanned paths come out backslashed on Windows, the preferred literal does not.
     const std::string preferred = std::filesystem::path(preferredRelativePath).generic_string();
     for (size_t i = 0; i < availablePaths.size(); ++i) {
         if (std::filesystem::path(availablePaths[i]).generic_string() == preferred) {

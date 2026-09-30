@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
-# bump-version.sh - write a new project version into the repo-root VERSION.txt.
-#
-# Usage:   bash ./scripts/linux/bump-version.sh <new_version>
-# Example: bash ./scripts/linux/bump-version.sh 1.6.0
-#
-# VERSION.txt is the single source of the project version. Its readers are
-# CMakeLists.txt (project(... VERSION ...) and the PROJECT_VERSION compile
-# definition), docs/source/conf.py (the Sphinx release string) and
-# scripts/windows/Build-Windows.ps1 (the MSIX package version). None of them has
-# a copy of the number, so this script is the whole bump.
-#
-# It lives under scripts/linux/ with the other shell entry points rather than at
-# the repo root: the lint gates take their scope from `git ls-files`, and a
-# script that sits where nobody expects one is a script nobody reads.
+# bump-version.sh <new_version> - VERSION.txt is the only copy; CMake, Sphinx and the MSIX all read it.
 set -euo pipefail
 
 NEW_VERSION=${1:-}

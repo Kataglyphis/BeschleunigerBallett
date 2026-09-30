@@ -71,11 +71,7 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    // Submit with a fence and wait only for THIS submission instead of
-    // queue.waitIdle(): still fully synchronous for the caller (staging
-    // resources may be destroyed right after we return), but other work
-    // already queued (e.g. a frame in flight) is no longer serialized
-    // behind every upload/layout transition.
+    // A fence waits for this submission only, still synchronous, without serializing a frame in flight like waitIdle().
     vk::FenceCreateInfo fence_create_info{};
     vk::Fence fence{};
     vk::Result const fence_result = device.createFence(&fence_create_info, nullptr, &fence);
@@ -91,8 +87,7 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         spdlog::default_logger_raw()->log(
           spdlog::level::err, "Failed to submit to queue! (vk::Result={})", static_cast<int>(submit_result));
         if (fence) { device.destroyFence(fence); }
-        // Submission FAILED, so the buffer is not pending either - free it
-        // rather than leak it on the error path.
+        // A failed submission leaves nothing pending, so free rather than leak.
         device.freeCommandBuffers(command_pool, 1, &command_buffer);
         command_buffer = vk::CommandBuffer{};
         return false;
@@ -111,16 +106,7 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
     }
 
-    // The submission is fully synchronous by this point - fence-waited, or
-    // queue.waitIdle() in both fallback paths above - so the buffer is
-    // provably NOT pending and freeing it is legal (the validation layer
-    // enforces exactly that). It used to be leaked here with a comment about
-    // "potentially pending buffers", but nothing reaches this line before the
-    // wait completes; meanwhile every texture upload, buffer upload, layout
-    // transition and AS build allocated one of these into the pool for the
-    // lifetime of the process, and each GUI model reload leaked dozens more.
-    // (The per-submit fence create/destroy above is a separate, smaller
-    // inefficiency and is deliberately untouched here.)
+    // Every path above has waited, so the buffer is not pending and freeing it is legal.
     device.freeCommandBuffers(command_pool, 1, &command_buffer);
     command_buffer = vk::CommandBuffer{};
     return true;

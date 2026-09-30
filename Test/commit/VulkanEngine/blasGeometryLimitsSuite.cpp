@@ -1,6 +1,4 @@
-// Pins blasTriangleLimits' contract: maxVertex is the highest addressable
-// vertex index (count - 1), never the vertex count itself, and an empty mesh
-// must not wrap to 0xFFFFFFFF.
+// maxVertex is the highest vertex index (count - 1), not the count, and an empty mesh must not wrap to 0xFFFFFFFF.
 
 #include <array>
 #include <gtest/gtest.h>

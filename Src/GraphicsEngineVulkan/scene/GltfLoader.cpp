@@ -69,10 +69,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
 
     std::shared_ptr<Model> model = std::make_shared<Model>(device);
 
-    // Decode + upload each recorded base-colour image (increment d); textureID
-    // in each material indexes into these, added in the same order. If a
-    // document had no textures, reserve the default so textureID 0 is valid -
-    // matching the OBJ path.
+    // Upload order must match the textureIDs parseCpu assigned.
     for (std::size_t i = 0; i < textureImages.size(); ++i) {
         const std::vector<unsigned char> &encoded = textureImages[i];
         Texture texture;
@@ -82,12 +79,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     }
     ensureAtLeastOneTexture(*model, device, command_pool);
 
-    // One Mesh per glTF primitive (backlog #10). Each range is that primitive's
-    // slice of the flat arrays; a sub-mesh's indices are re-based to its own
-    // vertex subset. A single-primitive glTF has exactly one range spanning
-    // everything, so this builds one mesh - behaviour-identical to before. Each
-    // mesh shares the full materials array (its materialIndex holds the original
-    // indices); a per-mesh material subset is a later optimisation.
+    // One mesh per glTF primitive; each shares the full materials array (materialIndex keeps original indices).
     addMeshesForRanges(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
     return model;
 }
@@ -99,29 +91,16 @@ TexCoordSetInfo describeTexCoordSet(int texcoord)
 
 namespace {
 
-// material_roughness() (common/material_rules.slang) reads material.shininess
-// only through its `material.roughness < 0` sentinel branch - the fallback a
-// glTF material takes when it has no pbrMetallicRoughness block. That branch
-// always evaluated the old `mix(128, 1, roughnessFactor)` expression at
-// roughnessFactor's default of 1.0 (roughness stays 1.0F unless the block is
-// present, and when it is present shininess is never read), which is 1.0.
-// Pinning it here documents that as the actual invariant instead of a fiction
-// computed from a value nothing reads.
+// Shininess is read only without a pbrMetallicRoughness block, where the default roughnessFactor makes it 1.0.
 constexpr float kFallbackShininess = 1.0F;
 
-/// Neutral Lambertian stand-in, used for primitives with no material. The
-/// fields are ObjMaterial's; textureID -1 means untextured.
+/// Neutral untextured Lambertian stand-in for primitives with no material.
 ObjMaterial neutralMaterial()
 {
-    // Only diffuse and shininess differ from ObjMaterial's defaults; every
-    // other field (emission, dissolve, textureID, ...) already matches.
     return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = kFallbackShininess };
 }
 
-/// Warns once when a texture's UV set is anything but TEXCOORD_0, the only
-/// set the vertex layout binds. `slotLabel` names the texture in the message
-/// ("base-colour", "emissive", "normal"). No-op when the material has no
-/// texture in this slot.
+/// Warns when a texture uses a UV set other than TEXCOORD_0, the only one the vertex layout binds.
 void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
 {
     if (view.texture == nullptr) { return; }
@@ -133,19 +112,14 @@ void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_vi
     }
 }
 
-/// The top two rows of a KHR_texture_transform T*R*S 3x3 matrix (the third
-/// row is always [0,0,1] and is omitted), for one texture slot.
+/// Top two rows of a KHR_texture_transform T*R*S matrix; the third is always [0,0,1].
 struct UvTransformRows
 {
     glm::vec3 row0{ 1.0F, 0.0F, 0.0F };
     glm::vec3 row1{ 0.0F, 1.0F, 0.0F };
 };
 
-/// Reads `view`'s KHR_texture_transform, if any, into its two UV-matrix rows.
-/// Returns the identity rows (no-op transform) when the slot has no texture
-/// or no transform - so slots without the extension are bit-unchanged.
-/// `slotLabel` names the slot ("base-colour", "normal", "metallic-roughness",
-/// "emissive") for the "UV set override ignored" warning.
+/// Identity rows when the slot has no texture or no transform.
 UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
 {
     if (view.texture == nullptr || view.has_transform == 0) { return {}; }
@@ -154,10 +128,7 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
     const glm::vec2 offset(transform.offset[0], transform.offset[1]);
     const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
 
-    // T * R * S, same convention as the Rust loader's load_primitive
-    // (crates/webgpu_renderer/src/asset/gltf_loader.rs, base_uv_transform),
-    // including the negated rotation sign (glTF's `rotation` is clockwise in
-    // UV space).
+    // Same T*R*S as the Rust loader, rotation negated because glTF's is clockwise in UV space.
     const glm::mat3 uvMatrix =
       glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
 
@@ -165,9 +136,7 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
     rows.row0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
     rows.row1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
 
-    // KHR_texture_transform can itself override which UV set the transform
-    // applies to. That is not applied - so say so rather than silently
-    // dropping it.
+    // The transform's own UV-set override is not applied, so warn instead of dropping it silently.
     if (transform.has_texcoord != 0 && transform.texcoord != 0) {
         spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the {} UV set to "
                      "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
@@ -177,11 +146,7 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
     return rows;
 }
 
-/// One glTF material texture slot: the cgltf view to read, the label used in
-/// diagnostics, and the colour space its texel data uploads in (true = sRGB,
-/// false = linear). Base-colour and emissive carry gamma-encoded colour and
-/// are sRGB; metallic-roughness and normal carry scalar/tangent-space data
-/// and are linear (glTF 2.0 SS3.9.2/SS3.9.3).
+/// One texture slot; `srgb` is true for colour (base-colour, emissive), false for data (glTF 2.0 SS3.9.2/3).
 struct GltfTextureSlot
 {
     const cgltf_texture_view *view;
@@ -189,15 +154,7 @@ struct GltfTextureSlot
     bool srgb;
 };
 
-/// The four texture slots a glTF material carries, always in this fixed order
-/// (base-colour, metallic-roughness, normal, emissive). Every caller that
-/// needs "all of a material's texture slots" - UV-transform reading, TEXCOORD
-/// warnings, texture-slot assignment - loops over this table once instead of
-/// hand-copying the has_pbr_metallic_roughness guard per call site. The two
-/// pbr slots are gated on has_pbr_metallic_roughness HERE - the only place the
-/// guard survives - pointing at a static all-zero view (view.texture ==
-/// nullptr) when the block is absent, so downstream `view.texture == nullptr`
-/// checks behave exactly as they do for an absent normal/emissive texture.
+/// The only place the pbr guard lives: without the block, the pbr slots point at an empty view.
 std::array<GltfTextureSlot, 4> gltfTextureSlots(const cgltf_material &material)
 {
     static const cgltf_texture_view kNoView{};
@@ -213,23 +170,13 @@ std::array<GltfTextureSlot, 4> gltfTextureSlots(const cgltf_material &material)
     } };
 }
 
-/// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
-/// diffuse (the dominant term this forward renderer reads) and its alpha becomes
-/// dissolve. metallic_factor and roughness_factor both carry through losslessly
-/// to ObjMaterial::metallic and ObjMaterial::roughness. `shininess` (below) is
-/// pinned to kFallbackShininess: it is the OBJ-only fallback path
-/// material_roughness() takes when ObjMaterial::roughness is the "no authored
-/// roughness" sentinel, which a glTF material reaches only when it has no
-/// pbrMetallicRoughness block - `roughness_factor` is never read in that case.
-/// Textures are incremented; textureID stays -1 here.
+/// Maps a glTF material to ObjMaterial; texture IDs are assigned later in parseCpu.
 ObjMaterial fromGltfMaterial(const cgltf_material &material)
 {
     glm::vec3 baseColor(0.8F);
     float baseAlpha = 1.0F;
     float metallic = 0.0F;
-    // -1.0F: no authored roughness (matches ObjMaterial's sentinel default).
-    // Set below only when the material actually has a pbr_metallic_roughness
-    // block, so materials without one keep resolving through `shininess`.
+    // -1 sentinel: without a pbr block, roughness resolves through shininess.
     float authoredRoughness = -1.0F;
     const char *materialName = material.name != nullptr ? material.name : "<unnamed>";
     if (material.has_pbr_metallic_roughness != 0) {
@@ -239,32 +186,16 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
         authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
     }
-    // KHR_materials_emissive_strength scales the emissive contribution past the
-    // [0,1] glTF factor range (for HDR emitters). Fold it into the factor so the
-    // shading paths stay unchanged; default 1.0 when the extension is absent.
+    // KHR_materials_emissive_strength is folded into the factor, so shaders need not know it.
     const float emissiveStrength = material.has_emissive_strength != 0 ? material.emissive_strength.emissive_strength : 1.0F;
     const glm::vec3 emission(material.emissive_factor[0] * emissiveStrength,
       material.emissive_factor[1] * emissiveStrength,
       material.emissive_factor[2] * emissiveStrength);
 
-    // glTF alphaMode MASK -> the shader discards where base-colour alpha < cutoff
-    // (cut-out foliage/decals). OPAQUE and BLEND map to -1 (never discard); real
-    // BLEND compositing needs a sorted transparent pass that this engine does not
-    // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
+    // BLEND renders opaque (-1) like OPAQUE: the engine has no sorted transparent pass.
     const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
-    // Vertex has exactly one UV slot (bound to TEXCOORD_0); a texture naming
-    // any other set is silently mis-sampled unless we say so. The Rust loader
-    // supports TEXCOORD_0/1 and warns past that - this loader supports only
-    // TEXCOORD_0, so it warns on any non-zero set, for every slot that has a
-    // texture. glTF KHR_texture_transform is declared per `textureInfo`, so
-    // base-colour, metallic-roughness, normal and emissive each get their own
-    // T*R*S UV transform. Absent on a slot -> identity rows (1,0,0)/(0,1,0)
-    // for that slot, so untransformed materials (and untransformed slots of a
-    // partially-transformed material) are bit-unchanged. One pass over
-    // gltfTextureSlots' fixed order covers every slot instead of four
-    // hand-copied call sites; the table order becomes the warning order
-    // (nothing asserts on ordering).
+    // KHR_texture_transform is per slot, so each slot reads its own rows.
     const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
     std::array<UvTransformRows, 4> uvTransforms{};
     for (std::size_t i = 0; i < textureSlots.size(); ++i) {
@@ -287,9 +218,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         .uv_transform_row1 = baseColorUvTransform.row1,// KHR_texture_transform T*R*S row 1, base colour
         .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
         .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
-        // cgltf_texture_view::scale is left at its zero-initialized default when
-        // there is no normalTexture, so guard on the texture pointer rather than
-        // trusting the field.
+        // cgltf leaves scale zero without a normalTexture, so guard on the pointer.
         .normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F,
         .normal_uv_transform_row0 = normalUvTransform.row0,
         .normal_uv_transform_row1 = normalUvTransform.row1,
@@ -301,27 +230,18 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     };
 }
 
-/// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per
-/// accessor element. cgltf handles the underlying component type and stride.
+/// Reads a 2-, 3- or 4-component float attribute into `out`, one entry per accessor element.
 template<int N, typename VecT>
 void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
 {
-    // Pre-fill with 1.0: cgltf_accessor_read_float writes only
-    // min(accessor's component count, N) floats, so a VEC3 COLOR_0 accessor
-    // read with N=4 leaves the 4th (alpha) component untouched. Pre-filling
-    // makes that case default to alpha = 1.0 instead of uninitialized memory.
-    // A no-op for every attribute whose accessor component count equals N
-    // (position, normal, uv), since the read then overwrites every component.
+    // Pre-filled with 1.0: a VEC3 COLOR_0 read with N=4 leaves alpha unwritten.
     out.assign(accessor->count, VecT(1.0F));
     for (cgltf_size i = 0; i < accessor->count; ++i) {
         cgltf_accessor_read_float(accessor, i, glm::value_ptr(out[i]), N);
     }
 }
 
-/// Percent-decodes a URI (glTF requires URI-encoding for reserved characters,
-/// so a real exporter emits a space as %20). Decodes only well-formed %XX
-/// triplets (two valid hex digits); anything else - a bare '%' or a truncated
-/// escape - is left byte-for-byte rather than failing the whole decode.
+/// Decodes only well-formed %XX triplets; a bare or truncated escape is kept as is.
 std::string percentDecodeUri(const std::string &uri)
 {
     std::string out;
@@ -338,23 +258,14 @@ std::string percentDecodeUri(const std::string &uri)
     return out;
 }
 
-/// True if `candidate` (already weakly_canonical) is `base` itself or nested
-/// under it. Used to reject a glTF image URI that walks out of the document's
-/// directory via `..` - a `.gltf` is untrusted input fed from the GUI's file
-/// picker. lexically_relative (rather than a string-prefix compare) avoids the
-/// classic "/foo/bar" matching "/foo/barbaz" false positive.
+/// Rejects `..` escapes from untrusted glTFs; lexically_relative avoids "/foo/bar" matching "/foo/barbaz".
 bool isWithinDirectory(const std::filesystem::path &candidate, const std::filesystem::path &base)
 {
     const std::filesystem::path rel = candidate.lexically_relative(base);
     return !rel.empty() && rel.begin()->string() != "..";
 }
 
-/// Returns the ENCODED image bytes (PNG/JPG/...) for a glTF image, or empty if
-/// unavailable. Handles the three forms a glTF document can use: glb
-/// buffer-view embedded (bytes in a loaded buffer), a base64 data-URI (cgltf
-/// decodes it), and a sibling-file URI resolved against `documentDir` - the
-/// layout `obj2gltf`/`obj_to_gltf.rs` emits. A remote URI (`http:`/`https:`)
-/// is out of scope and yields no bytes, not a fetch.
+/// Encoded bytes from a buffer view, base64 data URI or sibling file; empty for remote URIs or on failure.
 std::vector<unsigned char> extractImageBytes(
   const cgltf_image *image, const cgltf_options &options, const std::filesystem::path &documentDir)
 {
@@ -365,9 +276,7 @@ std::vector<unsigned char> extractImageBytes(
         const auto *base = static_cast<const unsigned char *>(image->buffer_view->buffer->data);
         const cgltf_size offset = image->buffer_view->offset;
         const cgltf_size size = image->buffer_view->size;
-        // A malformed file can declare a buffer view that runs past its
-        // buffer; slicing base+offset..base+offset+size then reads OOB. Reject
-        // any view that does not fit (offset+size guarded against overflow).
+        // Reject a view running past its buffer, written so offset + size cannot overflow.
         const cgltf_size buffer_size = image->buffer_view->buffer->size;
         if (offset > buffer_size || size > buffer_size - offset) { return {}; }
         return std::vector<unsigned char>(base + offset, base + offset + size);
@@ -380,10 +289,7 @@ std::vector<unsigned char> extractImageBytes(
         if (pos != std::string::npos) {
             const char *b64 = uri.c_str() + pos + marker.size();
             const cgltf_size b64len = uri.size() - pos - marker.size();
-            // A valid base64 payload is a positive multiple of 4. Anything
-            // shorter made (b64len/4)*3 - padding UNDERFLOW (cgltf_size is
-            // unsigned), producing a ~SIZE_MAX allocation/read request from a
-            // one-character URI. Reject non-conforming lengths outright.
+            // Anything but a positive multiple of 4 would underflow the unsigned size below.
             if (b64len < 4 || (b64len % 4) != 0) { return {}; }
             cgltf_size padding = 0;
             if (b64[b64len - 1] == '=') { ++padding; }
@@ -399,10 +305,7 @@ std::vector<unsigned char> extractImageBytes(
             return {};
         }
 
-        // Not a data URI. A scheme prefix (data:/http:/https:) names a form
-        // this loader does not fetch - a remote asset is out of scope, and a
-        // malformed data: URI (no "base64," marker) must not fall through to
-        // being read as a relative filesystem path.
+        // Remote and malformed data: URIs must not fall through to a filesystem read.
         if (uri.rfind("data:", 0) == 0 || uri.rfind("http:", 0) == 0 || uri.rfind("https:", 0) == 0) { return {}; }
 
         std::string decodedUri = percentDecodeUri(uri);
@@ -438,12 +341,7 @@ std::vector<unsigned char> extractImageBytes(
     return {};
 }
 
-/// Maps a glTF sampler's wrap/filter settings onto GltfSamplerDesc, mirroring
-/// asset/gltf_loader.rs's `to_cpu_sampler` (the mapping the WebGPU renderer
-/// uses for the same document). A null `sampler` (the texture named none) or
-/// an unset (`_undefined`) filter yields GltfSamplerDesc's own defaults -
-/// repeat + linear + linear, byte-identical to this loader's
-/// pre-sampler-support behaviour.
+/// Must match gltf_loader.rs's to_cpu_sampler; no sampler or an undefined filter keeps the defaults.
 GltfSamplerDesc gltfSamplerDesc(const cgltf_sampler *sampler)
 {
     GltfSamplerDesc desc{};
@@ -465,11 +363,7 @@ GltfSamplerDesc gltfSamplerDesc(const cgltf_sampler *sampler)
 
     desc.magFilter = sampler->mag_filter == cgltf_filter_type_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
 
-    // The mipmap half of minFilter selects mipmapMode, the magnification half
-    // selects minFilter - the same split to_cpu_sampler makes via
-    // (min_nearest, mip_nearest). A bare Nearest/Linear (no mipmap qualifier)
-    // is treated the same as its *_mipmap_nearest/*_mipmap_linear sibling,
-    // matching the Rust loader exactly.
+    // Split like to_cpu_sampler; a bare Nearest/Linear counts as its *_mipmap_* sibling.
     switch (sampler->min_filter) {
     case cgltf_filter_type_nearest:
     case cgltf_filter_type_nearest_mipmap_nearest:
@@ -505,11 +399,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
   unsigned int fallbackMaterial,
   bool mirrored)
 {
-    // Triangles, triangle strips and triangle fans are all supported
-    // (strips/fans are triangulated into a list below). Points and
-    // lines are not drawable in this triangle-only renderer, so they
-    // are skipped - but a strip/fan used to be skipped too, silently
-    // dropping whole meshes exported that way.
+    // Strips and fans are triangulated below; points and lines are skipped.
     const cgltf_primitive_type primType = primitive->type;
     if (primType != cgltf_primitive_type_triangles && primType != cgltf_primitive_type_triangle_strip
         && primType != cgltf_primitive_type_triangle_fan) {
@@ -535,11 +425,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
             if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
             break;
         case cgltf_attribute_type_color:
-            // COLOR_0 multiplies the base colour, alpha included (glTF spec).
-            // The file may store it as vec3 or vec4; readAttribute<4> pre-fills
-            // alpha to 1.0 for the vec3 case (see its comment). Absent -> white
-            // below, so the shader multiply is a no-op for the common
-            // uncoloured mesh.
+            // COLOR_0 multiplies the base colour, alpha included; absent means white.
             if (attribute->index == 0) { readAttribute<4>(attribute->data, colors); }
             break;
         case cgltf_attribute_type_tangent:
@@ -555,22 +441,12 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     const auto base = static_cast<unsigned int>(vertices.size());
     for (std::size_t i = 0; i < positions.size(); ++i) {
         const glm::vec3 worldPos = glm::vec3(world * glm::vec4(positions[i], 1.0F));
-        // A missing NORMAL used to become a constant (0,1,0), so a
-        // normal-less glTF lit as if every face pointed up. The spec
-        // requires computing flat normals; done below once this
-        // primitive's index list is known. Placeholder for now.
+        // Placeholder when NORMAL is absent: flat normals are computed below once the indices are known.
         const glm::vec3 worldNormal =
           i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
         const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
         const glm::vec4 vcolor = i < colors.size() ? colors[i] : glm::vec4(1.0F);
-        // An authored TANGENT is in the primitive's local space, like
-        // POSITION/NORMAL; the xyz direction transforms with the model's
-        // linear part (world, NOT normalMatrix's inverse-transpose - a
-        // tangent lies IN the surface, it does not need to stay
-        // perpendicular to it). `mirrored` already reverses this primitive's
-        // triangle winding for a negative-determinant transform; the
-        // handedness sign must flip the same way so the shader's
-        // reconstructed bitangent still matches the (now-reversed) winding.
+        // A tangent lies in the surface, so it takes `world`, not normalMatrix; handedness flips with mirroring.
         const glm::vec4 vtangent = i < tangents.size()
           ? glm::vec4(glm::normalize(glm::mat3(world) * glm::vec3(tangents[i])),
               mirrored ? -tangents[i].w : tangents[i].w)
@@ -578,10 +454,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         vertices.emplace_back(worldPos, worldNormal, vcolor, uv, vtangent);
     }
 
-    // Gather the primitive's local index sequence (from the accessor,
-    // or the implicit 0..N-1 for a non-indexed primitive), then emit a
-    // triangle LIST into the global buffer - triangulating strips and
-    // fans as we go.
+    // A non-indexed primitive uses the implicit sequence 0..N-1.
     std::vector<unsigned int> localSeq;
     if (primitive->indices != nullptr) {
         const cgltf_accessor *idx = primitive->indices;
@@ -599,22 +472,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     const std::size_t primIndexStart = indices.size();
     const auto vertexCount = positions.size();
     std::size_t droppedTriangles = 0;
-    // Malformed files can carry indices that don't address any vertex the
-    // primitive actually shipped (fuzz-found hazard, mirrors ObjLoader.cpp's
-    // face_valid guard): validate every corner before emitting the triangle.
-    // computeFlatNormals below and the BLAS build both index vertices
-    // unchecked, so an out-of-range corner reaching either is an
-    // out-of-bounds write / device fault rather than a diagnosable error.
-    //
-    // glTF 2.0 spec (3.7.4. Transformations): "the determinant of the
-    // node's global transform... indicates the winding order of the mesh
-    // triangles - if positive, the winding order triangle is unchanged; if
-    // negative, the winding order must be reversed". `mirrored` carries that
-    // sign so a mirrored node's triangles still front-face towards the
-    // viewer. MeshDrawRecorder.cpp sets eBack culling for every non-double-
-    // sided mesh, so an unreversed mirror is back-face-culled into
-    // invisibility; computeFlatNormals below derives its normal from this
-    // same corner order, so it must run (and does) after this reversal.
+    // Drops out-of-range triangles (flat normals and the BLAS index unchecked); reverses winding for mirrored nodes.
     const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
         if (a >= vertexCount || b >= vertexCount || c >= vertexCount) {
             ++droppedTriangles;
@@ -631,8 +489,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         }
     };
     if (primType == cgltf_primitive_type_triangle_strip) {
-        // Strip: alternate winding each step to keep a consistent
-        // front face (glTF/OpenGL convention).
+        // Alternate winding each step to keep a consistent front face.
         for (std::size_t i = 0; i + 2 < localSeq.size(); ++i) {
             if ((i & 1U) == 0U) {
                 emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
@@ -657,36 +514,22 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
           vertexCount);
     }
 
-    // Flat normals when NORMAL is absent (glTF spec: implementations
-    // MUST compute them). Per-triangle geometric normal from the
-    // already-world-space vertex positions, assigned to each of the
-    // triangle's vertices - the same flat approximation the OBJ path
-    // uses (kataglyphis.vulkan.vertex's computeFlatNormals, the shared
-    // copy of this loop). Only runs for primitives that shipped no normals.
+    // The glTF spec requires flat normals when NORMAL is absent; this must follow the winding reversal.
     if (normals.empty()) { vertex::computeFlatNormals(vertices, indices, primIndexStart); }
 
-    // TANGENT absent: generate it (needs the final normals above, so this
-    // must run after computeFlatNormals). A document shipping TANGENT keeps
-    // its authored values verbatim - already placed in vertices above.
+    // Generated only when TANGENT is absent, after the final normals exist.
     if (tangents.empty()) { vertex::computeTangents(vertices, indices, primIndexStart); }
 
-    // One material id per triangle of this primitive (materialIndex is
-    // per-face, like the OBJ path). All of a primitive's triangles share
-    // its material.
     const unsigned int primitiveMaterial =
       primitive->material != nullptr
         ? static_cast<unsigned int>(primitive->material - data->materials)
         : fallbackMaterial;
-    // One id per EMITTED triangle - after triangulation, not from the
-    // raw index count (which for a strip/fan over-counts by ~3x).
+    // One id per emitted triangle: the raw index count over-counts strips and fans.
     const std::size_t triStart = materialIndex.size();
     const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
     materialIndex.insert(materialIndex.end(), emittedTriangles, primitiveMaterial);
 
-    // This primitive's slice of the flat arrays, so uploadParsed can build
-    // it as its own Mesh (backlog #10). The union of all ranges is exactly
-    // the flat arrays, so a single-primitive glTF yields one range and is
-    // behaviour-identical.
+    // This primitive's slice of the flat arrays, built as its own mesh.
     const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
     meshRanges.push_back(MeshRange{ static_cast<std::size_t>(base),
       positions.size(),
@@ -700,9 +543,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
 void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial)
 {
     if (node->mesh != nullptr) {
-        // glTF 2.0 spec (Skins): the transform of a skinned mesh node MUST be
-        // ignored - only joint transforms position a skinned mesh. The engine
-        // has no joint animation, so skinned vertices stay in bind pose.
+        // The spec ignores a skinned node's transform; without joint animation it stays in bind pose.
         glm::mat4 world(1.0F);
         if (node->skin == nullptr) {
             cgltf_float worldRaw[16];
@@ -710,9 +551,7 @@ void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsig
             world = glm::make_mat4(worldRaw);
         }
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
-        // A skinned node keeps world == identity above, so its determinant is
-        // +1 and it is never mirrored - correct, bind-pose vertices are
-        // unmirrored regardless of the joint transforms that will move them.
+        // A negative determinant means a mirrored node (glTF 2.0 SS3.7.4); skinned nodes never are.
         const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
 
         for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
@@ -740,10 +579,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     cgltf_options options{};
     cgltf_data *data = nullptr;
     if (cgltf_parse_file(&options, modelFile.c_str(), &data) != cgltf_result_success) { return false; }
-    // Structural validation before we walk the document: cgltf_parse checks
-    // JSON well-formedness, cgltf_validate checks that counts, indices and
-    // references are internally consistent. The GUI feeds arbitrary user
-    // files here, and the walk below trusts these invariants.
+    // The GUI feeds arbitrary files, and the walk below trusts cgltf_validate's invariants.
     if (cgltf_validate(data) != cgltf_result_success) {
         cgltf_free(data);
         return false;
@@ -753,30 +589,12 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         return false;
     }
 
-    // One ObjMaterial per glTF material, plus a trailing neutral used by any
-    // primitive that references none. `materialIndex` (per triangle) points into
-    // this table.
-    //
-    // Materials that share the same glTF (image, sampler, colour space) triple
-    // share one textureImages slot: each is decoded/uploaded once no matter
-    // how many materials point at it, which matters because textureID indexes
-    // into the engine's fixed MAX_TEXTURE_COUNT descriptor budget. Colour
-    // space is part of the key, not just an attribute of the slot: an image
-    // used as both sRGB base colour and linear normal map needs two slots,
-    // one per format, since a slot can only carry one image format.
+    // Slots dedup on (image, sampler, srgb) to save the MAX_TEXTURE_COUNT budget; colour space needs its own slot.
     const std::filesystem::path documentDir = std::filesystem::path(modelFile).parent_path();
 
     std::map<std::tuple<const cgltf_image *, const cgltf_sampler *, bool>, int> imageSlot;
 
-    // Assigns `view`'s (image, sampler, srgb) triple a slot in textureImages,
-    // reusing an existing slot when some earlier texture (base-colour or
-    // emissive, on this material or an earlier one) already named the same
-    // triple - slots are the shared 128-entry descriptor budget, so a
-    // document whose emissive and base-colour views point at the same image
-    // must land on ONE slot. `srgb` selects the colour space the texel data
-    // is uploaded in (true for base-colour/emissive, false for normal maps).
-    // Returns -1 ("no texture") when the view has no texture or its bytes
-    // cannot be extracted.
+    // Returns -1 when the view has no texture or its bytes cannot be extracted.
     const auto assignTextureSlot = [&](const cgltf_texture_view &view, bool srgb) -> int {
         if (view.texture == nullptr) { return -1; }
         const cgltf_texture *tex = view.texture;
@@ -798,10 +616,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
-        // Same fixed slot order as gltfTextureSlots (base-colour,
-        // metallic-roughness, normal, emissive); each slot's `srgb` flag
-        // already carries its colour space, so one loop replaces the guarded
-        // pbr pair plus two unconditional calls.
+        // Slot order: base-colour, metallic-roughness, normal, emissive.
         const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
         std::array<int, 4> assignedSlots{};
         for (std::size_t i = 0; i < textureSlots.size(); ++i) {
@@ -816,24 +631,13 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());
     materials.push_back(neutralMaterial());
 
-    // Walk the default scene only (glTF spec: a document may name one via
-    // `scene`; otherwise the first entry of `scenes` is the convention every
-    // viewer follows), matching asset/gltf_loader.rs's
-    // `default_scene().or_else(|| scenes().next())` - the two walks must
-    // change together. Each mesh instance carries its world transform (glTF
-    // has nodes the OBJ path lacks; bake the transform into positions like
-    // the Rust loader does). A mesh referenced by several nodes is emitted
-    // once per node, matching glTF instancing semantics.
+    // Must change together with gltf_loader.rs. See docs/model-loading.md § Which nodes a glTF load walks.
     const cgltf_scene *scene =
       data->scene != nullptr ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
     if (scene != nullptr) {
         for (cgltf_size n = 0; n < scene->nodes_count; ++n) { visitNode(scene->nodes[n], data, fallbackMaterial); }
     } else {
-        // No `scenes` array at all - cgltf_validate permits this. Fall back to
-        // the old flat walk (every node processed once, no recursion into
-        // children - they are already in data->nodes) so such a file still
-        // loads, but warn since this is not the spec's intended path and can
-        // pull in nodes no scene ever referenced.
+        // No scenes: walk every node once without recursion, as children are already in data->nodes.
         spdlog::warn("GltfLoader: {} has no scenes; loading every node in the document", modelFile);
         for (cgltf_size n = 0; n < data->nodes_count; ++n) {
             const cgltf_node *node = &data->nodes[n];

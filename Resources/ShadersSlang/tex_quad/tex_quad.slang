@@ -1,6 +1,4 @@
-// Simple textured quad for the GUI overlay (Rust/WebGPU side).
-// tex_quad.wgsl is generated from this file and checked into the Rust
-// crate by wgslMap. Emits WGSL.
+// Rust/WebGPU GUI-overlay quad: the checked-in tex_quad.wgsl is generated from this file.
 
 struct TexQuadVsOut
 {

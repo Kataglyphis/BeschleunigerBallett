@@ -55,9 +55,6 @@ void GUI::render()
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    // ImGui::ShowDemoWindow();
-
-    // render your GUI
     ImGui::Begin("GUI v" PROJECT_VERSION);
 
     if (ImGui::CollapsingHeader("Model Selection")) {
@@ -65,10 +62,7 @@ void GUI::render()
         const auto model_names = sceneConfig::getAvailableModelDisplayNames();
         const int model_count = static_cast<int>(model_paths.size());
         
-        // Find index of standard model if needed or keep existing index.
-        // This controls the combo's initial display selection AND is the
-        // index handleModelTransformChange gates the Position/Rotation
-        // controls on - it must not stay -1.
+        // Must not stay -1: handleModelTransformChange gates the Position/Rotation controls on it.
         if (guiSceneSharedVars.selected_model_index == -1 && model_count > 0) {
             guiSceneSharedVars.selected_model_index =
               sceneConfig::defaultSelectedModelIndex(model_paths, sceneConfig::defaultModelRelativePath());
@@ -116,14 +110,7 @@ void GUI::render()
 
     ImGui::Separator();
 
-    // Derived from the shared vars every frame - they are the single source
-    // of truth. These were function-local statics initialized once, and the
-    // assignment below wrote the STATIC back into the shared vars each frame:
-    // any programmatic write (a test, a config load, future scripting) was
-    // stomped on the next GUI frame. Deferred mode was unselectable from code,
-    // which turned GoldenRender.DeferredMatchesForwardRoughly into a vacuous
-    // forward-vs-forward comparison - and let three independent deferred-path
-    // breaks live undetected behind a passing golden.
+    // Re-derived from the shared vars every frame, never cached, so writes from code are not stomped.
     int e = guiRendererSharedVars.pathTracing ? 2 : (guiRendererSharedVars.raytracing ? 1 : 0);
     ImGui::RadioButton("Rasterizer", &e, 0);
     ImGui::SameLine();
@@ -163,7 +150,6 @@ void GUI::render()
         ImGui::SliderInt("Samples / pixel", &guiRendererSharedVars.pathTracingSamplesPerPixel, 1, 64);
         ImGui::SliderInt("Max bounces", &guiRendererSharedVars.pathTracingMaxBounces, 1, 16);
     }
-    // ImGui::Checkbox("Ray tracing", &guiRendererSharedVars.raytracing);
 
     ImGui::Separator();
 
@@ -247,9 +233,7 @@ void GUI::render()
 
     ImGui::Separator();
 
-    // Culling has no visual signature when it works and none when it is wrong
-    // either - geometry is simply absent. These counts are what turn
-    // "something is missing" into "culling dropped it".
+    // Wrong culling has no visual signature beyond missing geometry; these counts make it visible.
     if (ImGui::CollapsingHeader("Visibility")) {
         ImGui::Checkbox("Frustum culling", &guiRendererSharedVars.frustum_culling_enabled);
         const unsigned int drawn = guiRendererSharedVars.visibility.meshes_drawn;
@@ -279,20 +263,13 @@ void GUI::render()
 
 void GUI::cleanUp()
 {
-    // The Vulkan half needs a live device and only ever ran once it was
-    // initialized.
     if (device) {
         ImGui_ImplVulkan_Shutdown();
         device->getLogicalDevice().destroyDescriptorPool(gui_descriptor_pool);
         gui_descriptor_pool = nullptr;
         device.reset();
     }
-    // The ImGui/GLFW half owns no Vulkan handles, so it must run whether or
-    // not the device is alive - otherwise a device-lost shutdown (which
-    // never reaches the branch above; see App.cpp) leaks the whole ImGui
-    // context. Guarded on the context itself, not on `device`, so a second
-    // call (the destructor's safety net after an explicit cleanUp()) is a
-    // no-op.
+    // Runs even without a device, or a device-lost shutdown leaks the ImGui context; the guard keeps it idempotent.
     if (ImGui::GetCurrentContext() != nullptr) {
         ImGui_ImplGlfw_Shutdown();
         ImGui::DestroyContext();
@@ -313,8 +290,6 @@ void GUI::create_gui_context(Window *frontend_window,
 
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;// Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
-    // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad
-    // Controls
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();

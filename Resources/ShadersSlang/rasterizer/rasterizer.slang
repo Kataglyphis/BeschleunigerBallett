@@ -8,12 +8,7 @@ import push_constants;
 import raster_geometry;
 import material_textures;
 
-// Forward rasterizer shaders. Sole source for this shader. Emits SPIR-V only.
-//
-// NOTE: The GLSL vertex shader uses inverse(model) for the normal matrix.
-// Slang has no inverse() for SPIR-V, so the normal matrix is precomputed on
-// the CPU and passed as row-packed invModelRows in the push constants (see
-// common/push_constants.slang for why it is rows, not a full float4x4).
+// The normal matrix comes precomputed in push constants: Slang has no inverse() for SPIR-V.
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
@@ -39,18 +34,12 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
 
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
     float3 N = normalize(In.shadingNormal);
-    // Back faces reach this shader only where culling was disabled, and
-    // culling is disabled only for doubleSided materials (see
-    // MeshDrawRecorder.cpp's dynamic eCullMode) - !isFrontFace is therefore
-    // the doubleSided test; no ObjMaterial field is needed for it.
+    // Only doubleSided materials disable culling (MeshDrawRecorder.cpp), so a back face means doubleSided.
     if (!isFrontFace) N = -N;
     N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
-    // map_d's alpha is independent of which base-colour branch is taken
-    // below, so it is sampled once up front and folded into both sides of
-    // the textureID branch's alpha_masked_out() call (the glTF alpha product
-    // rule: baseColorFactor.a * baseColorTexture.a * COLOR_0.a * map_d).
+    // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
@@ -73,9 +62,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
 
     albedo *= In.fragmentColor.rgb;
 
-    // KHR_materials_unlit: skip lighting, shadowing and emissive alike and
-    // return the base colour as-is (spec: "MUST NOT be lit"), before N/V are
-    // used for anything.
+    // KHR_materials_unlit: skip lighting, shadowing and emissive alike.
     if (material.unlit != 0) return float4(albedo, 1.0);
 
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
@@ -91,8 +78,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
     color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
 
-    // Emissive is surface-emitted radiance, not reflected light - it is
-    // unshadowed and unattenuated, so it is added after shadowing, not before.
+    // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);
 
     return float4(color, 1.0);

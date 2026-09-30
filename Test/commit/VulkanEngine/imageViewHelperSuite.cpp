@@ -1,12 +1,3 @@
-// Direct unit coverage for common/ImageViewHelper.hpp's
-// buildImageViewCreateInfo - the helper that replaced two hand-written
-// vk::ImageViewCreateInfo blocks in VulkanImageView::create and
-// CascadedShadowMap::createFramebuffers.
-//
-// CascadedShadowMap's copy dropped the component swizzles (leaving them at
-// the struct default, which happens to also be eIdentity) -
-// ComponentsAreAllIdentity below is the regression test for that drift.
-
 #include <gtest/gtest.h>
 
 #include <vulkan/vulkan.hpp>

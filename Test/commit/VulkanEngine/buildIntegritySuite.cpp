@@ -1,7 +1,4 @@
-// Regression guards for build-system bugs that were expensive to diagnose.
-//
-// These are filesystem checks, not GPU tests: they run anywhere, including CI
-// containers without an adapter.
+// Filesystem-only guards against costly build-system bugs; no GPU needed, so they run in any CI container.
 
 #include <gtest/gtest.h>
 
@@ -57,13 +54,7 @@ using Kataglyphis::TestSupport::repoRoot;
 using Kataglyphis::TestSupport::slangRoot;
 using Kataglyphis::TestSupport::spirvRoot;
 
-// Build-SlangShaders.ps1 names each compiled artifact
-// "<source-stem>.<entry-point>.<ext>", where <source-stem> is the .slang
-// filename with only the ".slang" extension removed - it may itself contain
-// a dot, e.g. "raytrace.rchit" for raytracing/raytrace.rchit.slang - and
-// <entry-point> is a manifest entry-point name, which never contains a dot.
-// So the source stem is recovered by dropping the LAST dot-separated
-// component of the .spv's own stem (the entry point), not the first.
+// Artifacts are "<source-stem>.<entry-point>.spv" and only the stem may contain dots, so drop the last component.
 fs::path source_for_spirv(const fs::path &spv_path, const fs::path &spirv_root, const fs::path &slang_root)
 {
     const fs::path relative_dir = fs::relative(spv_path.parent_path(), spirv_root);
@@ -76,20 +67,14 @@ fs::path source_for_spirv(const fs::path &spv_path, const fs::path &spirv_root, 
     return slang_root / relative_dir / (source_stem + ".slang");
 }
 
-// Strips a trailing "// ..." comment so prose mentioning a constant's name
-// cannot be mistaken for its definition.
+// Strips a trailing "// ..." comment so prose naming a constant cannot pass for its definition.
 std::string strip_line_comment(const std::string &line)
 {
     const auto comment_pos = line.find("//");
     return comment_pos == std::string::npos ? line : line.substr(0, comment_pos);
 }
 
-// Recursion helper for import_closure: walks `source`'s `import <id>;`
-// statements, resolving each identifier to a real .slang path (common/ takes
-// precedence over the importing file's own directory, matching how the
-// remaining name candidates - if that resolution ever needs a third
-// fallback - could be added), and recurses into every resolved file exactly
-// once via `visited`.
+// Recursion helper for import_closure; `visited` makes each resolved file recurse exactly once.
 void collect_import_closure(const fs::path &slang_root, const fs::path &source, std::set<fs::path> &visited,
   std::set<fs::path> &closure)
 {
@@ -116,11 +101,7 @@ void collect_import_closure(const fs::path &slang_root, const fs::path &source, 
     }
 }
 
-// Every .slang file transitively reachable from `source` via `import <id>;`
-// statements (Slang has no preprocessor #include; `import` plays the role
-// .glsl includes used to). Does not include `source` itself. `slang_root`'s
-// common/ is checked before the importing file's own directory, so a module
-// name that exists in both resolves to the shared one.
+// Every .slang file `source` transitively imports, excluding itself; common/ wins over the importer's own directory.
 std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &source)
 {
     std::set<fs::path> visited;
@@ -130,9 +111,7 @@ std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &so
     return closure;
 }
 
-// The newest mtime across `source`'s import closure, plus which file it came
-// from (so callers can name the actual stale import instead of a generic
-// "somewhere under common/"). False when the closure is empty.
+// Newest mtime in the import closure and its file, so callers can name the stale import; false if the closure is empty.
 bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::file_time_type &out_time, fs::path &out_path)
 {
     const auto closure = import_closure(slang_root, source);
@@ -151,22 +130,9 @@ bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::f
     return found;
 }
 
-// Resources/ShadersSlang/shader-manifest.json is the SINGLE source of truth
-// for the Slang shader build: both scripts/windows/Build-SlangShaders.ps1
-// and scripts/linux/compile-slang-shaders.sh consume it. It replaced the two
-// per-script hand-maintained copies of the manifest/WGSL-map/patch tables
-// that this suite used to cross-check against each other - with one data
-// file there is no second copy left to drift, so the tests below instead
-// verify the FILESYSTEM (compiled SPIR-V, checked-in Rust-crate WGSL)
-// against that one manifest, and ShaderManifestJsonIsPresentAndWellFormed
-// fails loudly if the file goes missing or corrupt, because neither build
-// script can run without it.
+// shader-manifest.json is both Slang build scripts' single source of truth, so these tests check the files against it.
 
-// One "wgslMap" row: a Slang source whose combined WGSL emit is copied into
-// a Rust crate's shader directory. histogram.wgsl is absent by construction:
-// it is hand-written, with no generating Slang source at all (Slang's
-// InterlockedAdd on RWStructuredBuffer is not supported for the WGSL
-// target).
+// One wgslMap row; histogram.wgsl has none, being hand-written (Slang cannot emit its InterlockedAdd to WGSL).
 struct WgslMapping
 {
     std::string slang_source;// "src": relative to Resources/ShadersSlang/
@@ -174,46 +140,25 @@ struct WgslMapping
     std::string wgsl_file;   // "out": destination file name
 };
 
-// Everything this suite needs out of shader-manifest.json, parsed once and
-// shared (see shader_manifest below).
+// What this suite needs from shader-manifest.json, parsed once (see shader_manifest below).
 struct ShaderManifestData
 {
-    // Relative (to Resources/ShadersSlang/) .slang paths of every enabled
-    // manifest row whose targets include 'spirv' - exactly the sources the
-    // C++ Vulkan renderer consumes.
+    // Enabled rows targeting spirv (paths relative to Resources/ShadersSlang/): what the C++ renderer consumes.
     std::set<std::string> vulkan_spirv_sources;
-    // Distinct first path components of vulkan_spirv_sources - the
-    // build/spirv/ subdirectories the manifest emits into. Every other
-    // subdirectory of Resources/ShadersSlang/ (bloom, ssao, forward, sky,
-    // ibl, gpu_cull, tonemap, tex_quad, ...) is a Rust/WebGPU shader that
-    // only ever emits WGSL and must not be scanned for SPIR-V.
+    // The build/spirv/ subdirectories; every other shader directory is WGSL-only and never scanned for SPIR-V.
     std::set<std::string> engine_spirv_subdirs;
-    // Relative (to Resources/ShadersSlang/) .slang paths of every enabled
-    // manifest row, regardless of target - used to check that every Slang
-    // source with an entry point is accounted for, not just the SPIR-V ones.
+    // Every enabled row's .slang path whatever its target, so no Slang entry point goes unaccounted for.
     std::set<std::string> all_enabled_manifest_files;
-    // Union of "targets" (e.g. {"spirv"}, {"wgsl"}, or both) over every
-    // enabled row for a given file - used by
-    // ShaderSharingDocMatchesTheManifestTargets to classify each source as
-    // spirv-only, wgsl-only, or (unexpectedly) both.
+    // Union of targets per file, to classify each source as spirv-only, wgsl-only or both.
     std::map<std::string, std::set<std::string>> file_targets;
     std::vector<WgslMapping> wgsl_map;
-    // Output filenames keyed by "depthTexturePatches" (documentation
-    // "_comment" keys excluded).
+    // "depthTexturePatches" output filenames, without the "_comment" documentation keys.
     std::set<std::string> depth_patched_files;
-    // "minSlangcVersionForWgsl": the toolchain floor both compile scripts use
-    // to decide whether the combined WGSL emit may run at all. Empty when the
-    // key is absent - ShaderManifestPinsAMinimumSlangcVersionForWgsl fails on
-    // that, because an absent floor silently re-enables the broken emit.
+    // "minSlangcVersionForWgsl"; empty when absent, which its own test fails, as no floor re-enables the broken emit.
     std::string min_slangc_version_for_wgsl;
 };
 
-// Strict parse of shader-manifest.json: any missing/mistyped field in a row
-// returns std::nullopt rather than skipping the row, so a malformed manifest
-// fails ShaderManifestJsonIsPresentAndWellFormed loudly instead of silently
-// shrinking every JSON-derived check. Exceptions are disabled project-wide,
-// so nlohmann's no-throw parse mode is used and every access is type-checked
-// up front instead of relying on at()'s throws.
+// Strict: a malformed row returns std::nullopt rather than being skipped; no-throw parse, since exceptions are off.
 std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest_path)
 {
     std::ifstream file(manifest_path);
@@ -283,9 +228,7 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
     return data;
 }
 
-// Parses shader-manifest.json exactly once per process and shares the result
-// across every test in this suite. std::nullopt means the file is missing or
-// malformed - callers must ASSERT on has_value(), never skip.
+// Parsed once per process; std::nullopt means missing or malformed, so callers ASSERT on has_value(), never skip.
 const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_root)
 {
     static const std::optional<ShaderManifestData> cached =
@@ -293,10 +236,7 @@ const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_ro
     return cached;
 }
 
-// A .slang file is only ever compiled on its own if slangc can find an entry
-// point in it. Files that exist purely to be `import`ed (e.g.
-// raytracing/rt_types.slang) never appear in Build-SlangShaders.ps1's
-// manifest and must not be expected to have a matching .spv.
+// Import-only files have no entry point and are never compiled alone, so they need no matching .spv.
 bool has_entry_point(const fs::path &slang_source)
 {
     const auto content = readFileText(slang_source);
@@ -304,8 +244,7 @@ bool has_entry_point(const fs::path &slang_source)
     return content->find("[shader(") != std::string::npos;
 }
 
-// True if some .spv directly under spirv_root's mirror of source's directory
-// maps back (via source_for_spirv) to exactly this source file.
+// True if a .spv in the mirror of source's directory maps back to exactly this source.
 bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spirv_root, const fs::path &slang_root)
 {
     const fs::path relative_source_dir = fs::relative(source.parent_path(), slang_root);
@@ -321,9 +260,7 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
     return false;
 }
 
-// Every binding constant shared between host_device_shared_vars.hpp (C++) and
-// scene_types.slang (Slang). Both are hand-mirrored today - see
-// HostAndShaderSharedConstantsAgree below for why that is dangerous.
+// Binding constants hand-mirrored between host_device_shared_vars.hpp and scene_types.slang.
 const std::vector<std::string> kSharedConstantNames = {
     "MAX_TEXTURE_COUNT", "MAX_CASCADES", "MAX_PCF_RADIUS", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING",
     "TEXTURES_BINDING", "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING",
@@ -333,9 +270,7 @@ const std::vector<std::string> kSharedConstantNames = {
 
 bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
 
-// Parses the integer that follows a constant name at `name_end`, accepting
-// both "#define NAME 3" (no '=') and "[static] const int NAME = 3;" (with
-// '=' before the digits).
+// The integer after a constant name, for both "#define NAME 3" and "[static] const int NAME = 3;".
 std::optional<int> parse_int_after(const std::string &line, std::size_t name_end)
 {
     std::size_t pos = name_end;
@@ -354,9 +289,7 @@ std::optional<int> parse_int_after(const std::string &line, std::size_t name_end
     return std::stoi(line.substr(start, pos - start));
 }
 
-// Scans `path` line by line for every name in kSharedConstantNames, matching
-// it as a whole word so e.g. TEXTURES_BINDING does not also match a longer
-// identifier that merely contains it as a substring.
+// Whole-word matches only, so a longer identifier containing a constant's name is ignored.
 std::map<std::string, int> parse_int_constants(const fs::path &path)
 {
     std::map<std::string, int> result;
@@ -382,10 +315,7 @@ std::map<std::string, int> parse_int_constants(const fs::path &path)
     return result;
 }
 
-// Every distinct GTest suite name (a TEST(...)/TEST_F(...) macro's first
-// argument) defined anywhere under Test/commit/VulkanEngine. Matches only
-// lines whose first non-whitespace characters are the macro name, so a suite
-// name appearing in a comment or a string literal is not picked up.
+// Every GTest suite name under tests_dir; anchored at line start, so comments and string literals do not count.
 std::set<std::string> collect_defined_suites(const fs::path &tests_dir)
 {
     std::set<std::string> suites;
@@ -419,12 +349,7 @@ std::set<std::string> collect_defined_suites(const fs::path &tests_dir)
     return suites;
 }
 
-// Every TEST(<suite>, ...) test name defined anywhere under `tests_dir` whose
-// suite is exactly `suite`. Same start-of-line anchoring as
-// collect_defined_suites, so a name in a comment or a string literal is not
-// picked up. Pure file I/O - never runs the tests themselves, which matters
-// for GoldenRender/Integration: they require a GPU that the CI container
-// does not have.
+// Test names of `suite`, anchored like collect_defined_suites; file I/O only, so GPU suites list without a GPU.
 std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, const std::string &suite)
 {
     std::vector<std::string> names;
@@ -455,9 +380,7 @@ std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, con
     return names;
 }
 
-// The five named integers in docs/gpu-golden-testing.md's
-// `<!-- golden-counts: defined=N runnable=N integration=N total=N excluded=N -->`
-// marker line.
+// The five integers of docs/gpu-golden-testing.md's golden-counts marker line.
 struct GoldenCountsMarker
 {
     int defined = 0;
@@ -480,10 +403,7 @@ std::optional<int> parse_marker_field(const std::string &line, const std::string
     return std::stoi(line.substr(digits_start, digits_end - digits_start));
 }
 
-// Parses docs/gpu-golden-testing.md's golden-counts marker line. Returns
-// std::nullopt if the marker line, or any of its five fields, is missing -
-// the caller distinguishes that from "file not found" so a deleted marker is
-// a hard failure rather than a silent pass.
+// std::nullopt if the marker or any field is missing, so a deleted marker fails rather than passes.
 std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -512,16 +432,7 @@ std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc
     return std::nullopt;
 }
 
-// Parses the `:-`-prefixed exclusion section of docs/gpu-golden-testing.md's
-// `--gtest_filter='...'` line in the "Known issue" section (the known-device-
-// lost tests excluded from the "runs clean" claim there), returning each
-// excluded test as a (suite, name) pair. The doc has an earlier, unrelated
-// `--gtest_filter='GoldenRender.*:Integration.*'` example with no exclusion
-// section, so a line is only a match once it actually contains `:-`; lines
-// without it are skipped rather than taken as "no exclusions". Returns
-// std::nullopt only if the file cannot be opened; an empty vector means no
-// line with a `:-` exclusion section was found at all - the caller must fail
-// loudly on that, not skip.
+// The doc's known-issue filter exclusions as (suite, name); only lines with `:-` count, and finding none must fail.
 std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_test_exclusion_filter(
   const fs::path &doc_path)
 {
@@ -556,12 +467,7 @@ std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_tes
     return std::vector<std::pair<std::string, std::string>>{};
 }
 
-// Parses docs/path-tracing.md's `<!-- pt-goldens: name1, name2, ... -->`
-// marker line into the list of TEST(GoldenRender, ...) names it lists,
-// trimming whitespace around each comma-separated entry. Returns
-// std::nullopt if the marker line is missing, malformed (no closing "-->"),
-// or lists zero names - a deleted marker must fail the calling test, not
-// silently pass.
+// Names in docs/path-tracing.md's pt-goldens marker; std::nullopt if missing, malformed or empty, so deletion fails.
 std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -595,11 +501,7 @@ std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &
     return std::nullopt;
 }
 
-// Parses the exact suite-name globs out of the Windows x64 lane's hand-written
-// `$gpuOnlySuites` PowerShell array (scripts/windows/Invoke-WindowsLane.ps1, its
-// CPU-suite run; windows-x64.yml until 2026-09-26). Anchored on the array opener
-// and its `-join ':'` closer so an unrelated array elsewhere in the file cannot
-// be picked up. Returns std::nullopt only if the file cannot be opened.
+// Suite globs of Invoke-WindowsLane.ps1's $gpuOnlySuites array, anchored on its opener and -join closer.
 std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::path &lane_path)
 {
     const auto lines = readFileLines(lane_path);
@@ -630,10 +532,7 @@ std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::p
     return suites;
 }
 
-// Every fuzz-target name declared via kataglyphis_add_fuzz_test(<name> ...)
-// in Test/fuzz/CMakeLists.txt. The function definition itself
-// ("function(kataglyphis_add_fuzz_test fuzz_target source_file)") does not
-// match: there is a space, not '(', right after the macro name there.
+// Fuzz targets declared via kataglyphis_add_fuzz_test(<name> ...); the definition has a space there, so it never matches.
 std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
 {
     std::vector<std::string> targets;
@@ -654,13 +553,7 @@ std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
     return targets;
 }
 
-// Every benchmark name Test/perf/perfSuite.cpp registers via BENCHMARK(<name>)
-// - and, for names chained with one or more ->Arg(<n>), "<name>/<n>" for each
-// argument, matching Google Benchmark's own run-name convention (e.g.
-// "BM_ComputeCascadeData/1"). Modeled on parse_declared_fuzz_targets: a plain
-// substring scan per line, with the same "parsed zero declarations" guard so
-// a macro rename fails the perf-baseline gate test instead of silently
-// passing it.
+// Benchmark names, as "<name>/<n>" per chained ->Arg(<n>) like Google Benchmark's run names; zero found fails the gate.
 std::vector<std::string> parse_declared_perf_benchmarks(const fs::path &source_path)
 {
     std::vector<std::string> names;
@@ -700,11 +593,7 @@ std::vector<std::string> parse_declared_perf_benchmarks(const fs::path &source_p
     return names;
 }
 
-// Reads Test/perf/baselines/win-9070xt-32core.json (Google Benchmark's own
-// JSON output format) and returns benchmarks[].name for every row. Follows
-// parse_shader_manifest's no-throw nlohmann convention above: exceptions are
-// disabled project-wide, so a malformed file returns std::nullopt rather than
-// throwing.
+// benchmarks[].name from a Google Benchmark JSON baseline; no-throw parse, since exceptions are disabled.
 std::optional<std::vector<std::string>> parse_perf_baseline_names(const fs::path &baseline_path)
 {
     std::ifstream file(baseline_path);
@@ -726,25 +615,13 @@ std::optional<std::vector<std::string>> parse_perf_baseline_names(const fs::path
     return names;
 }
 
-// Parses the fuzz-target names out of the Windows x64 lane's fuzz-seed loop
-// (scripts/windows/Invoke-WindowsLane.ps1; windows-x64.yml until 2026-09-26):
-// a PowerShell `foreach (`$t in @('a','b',...))` loop. Anchored on
-// "foreach (`$t in @(" (the backtick escapes $t inside the
-// surrounding double-quoted PowerShell string) and the following "))", so an
-// unrelated foreach loop elsewhere in the file cannot be picked up. Returns
-// std::nullopt only if the file cannot be opened; an empty vector means the
-// anchor text itself was not found, which the caller must fail loudly on
-// rather than skip.
+// Fuzz targets of Invoke-WindowsLane.ps1's seed loop, anchored so no other loop matches; empty means no anchor: fail.
 std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &lane_path)
 {
     const auto lines = readFileLines(lane_path);
     if (!lines) { return std::nullopt; }
 
-    // Two spellings, both legal: the step used to run in a host-side pwsh
-    // block where `$t` needed backtick-escaping so the RUNNER did not expand
-    // it; since the step moved to ANTfrastructure's run-in-windows-container
-    // action the command is passed through env, so it is a plain `$t`. Accept
-    // either rather than pinning the test to one CI plumbing style.
+    // Escaped when a host shell would expand $t, plain when the command arrives via env; accept both.
     static const std::array<std::string, 2> kAnchors = { "foreach (`$t in @(", "foreach ($t in @(" };
     static const std::string kCloser = "))";
 
@@ -781,12 +658,7 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &la
     return std::vector<std::string>{};
 }
 
-// Parses the fuzz-target names out of reusable-linux.yml's "Run fuzzer tests" step: a
-// bash `for t in a b c; do` loop. Anchored on "for t in " and the following
-// "; do", so an unrelated for-loop elsewhere in the file cannot be picked up.
-// Returns std::nullopt only if the file cannot be opened; an empty vector
-// means the anchor text itself was not found, which the caller must fail
-// loudly on rather than skip. Modeled on parse_ci_fuzz_targets above.
+// Fuzz targets of reusable-linux.yml's "for t in ...; do" loop, anchored likewise; empty means no anchor: fail.
 std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::path &workflow_path)
 {
     const auto lines = readFileLines(workflow_path);
@@ -813,14 +685,7 @@ std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::pa
     return std::vector<std::string>{};
 }
 
-// Parses the fuzz-executable names out of Invoke-ClangClDebug.ps1's local
-// fuzz-run loop: a PowerShell `foreach ($fuzzExecutable in @('a.exe', ...))`
-// loop. Anchored the same way as parse_ci_fuzz_targets, then strips the
-// trailing ".exe" so the names compare directly against
-// kataglyphis_add_fuzz_test(<name> ...) declarations. Returns std::nullopt
-// only if the file cannot be opened; an empty vector means the anchor text
-// itself was not found, which the caller must fail loudly on rather than
-// skip.
+// Fuzz executables of Invoke-ClangClDebug.ps1's loop without ".exe", to compare with the declared targets.
 std::optional<std::vector<std::string>> parse_local_runner_fuzz_targets(const fs::path &script_path)
 {
     const auto lines = readFileLines(script_path);
@@ -868,12 +733,7 @@ using Kataglyphis::VulkanRendererInternals::PushConstantRasterizer;
 using Kataglyphis::VulkanRendererInternals::PushConstantRaytracing;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
 
-// --- SPIR-V struct-offset parsing, backing SharedStructOffsetsMatchTheCompiledSpirv ---
-//
-// Mirrors Kataglyphis::validateSpirvBlob's magic-number check
-// (vulkan_base/ShaderHelper.cpp) - that constant lives in an anonymous
-// namespace inside a module implementation unit and cannot be included from
-// here, so the literal is re-declared rather than reused.
+// SPIR-V parsing; the magic is re-declared because ShaderHelper.cpp's copy is module-private.
 constexpr uint32_t kSpirvMagicNumber = 0x07230203;
 constexpr std::size_t kSpirvHeaderWordCount = 5;
 constexpr uint32_t kOpName = 5;
@@ -881,8 +741,7 @@ constexpr uint32_t kOpMemberName = 6;
 constexpr uint32_t kOpMemberDecorate = 72;
 constexpr uint32_t kDecorationOffset = 35;
 
-// Decodes a SPIR-V literal string operand: ASCII/UTF-8 bytes packed 4 per
-// word (little end first), NUL-terminated and padded to a word boundary.
+// SPIR-V literal strings pack four bytes per word, low byte first, NUL-terminated and word-padded.
 std::string spirv_literal_string(const std::vector<uint32_t> &words, std::size_t word_start, std::size_t word_count)
 {
     std::string text;
@@ -898,12 +757,7 @@ std::string spirv_literal_string(const std::vector<uint32_t> &words, std::size_t
     return text;
 }
 
-// Parses a compiled .spv module for every named struct's per-member byte
-// Offset decoration: { struct name as emitted (e.g. "SceneUBO_std140") ->
-// { member name -> Offset } }. Returns std::nullopt if the file cannot be
-// opened or does not start with the SPIR-V magic number - callers treat
-// that as "not a SPIR-V module" rather than byte-swapping, the same
-// contract as Kataglyphis::validateSpirvBlob.
+// Emitted struct name -> member -> Offset decoration; std::nullopt if unreadable or not a SPIR-V module.
 std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spirv_member_offsets(
   const fs::path &spv_path)
 {
@@ -954,12 +808,7 @@ std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spir
 
 constexpr uint32_t kOpEntryPoint = 15;
 
-// SPIR-V's own opcodes for the implicit-LOD image sampling instructions -
-// automatic derivatives are only defined for Fragment shader invocations, so
-// any of these appearing in a module compiled for another execution model is
-// a spec violation the validator layers reject at pipeline-creation time.
-// Deliberately excludes OpImageQueryLod (100): that instruction is legal in
-// GLCompute as well as Fragment.
+// Implicit-LOD sampling needs derivatives, defined only in Fragment; OpImageQueryLod is left out, legal in GLCompute.
 const std::set<uint32_t> kImplicitLodImageOpcodes = {
     87,//  OpImageSampleImplicitLod
     89,//  OpImageSampleDrefImplicitLod
@@ -971,8 +820,7 @@ const std::set<uint32_t> kImplicitLodImageOpcodes = {
     311,// OpImageSparseSampleProjDrefImplicitLod
 };
 
-// Human-readable name for a SPIR-V ExecutionModel operand, for test failure
-// messages only - not exhaustive, just the models this repo's shaders use.
+// Execution-model names for failure messages; only the models this repo uses.
 std::string spirv_execution_model_name(uint32_t model)
 {
     switch (model) {
@@ -989,10 +837,7 @@ std::string spirv_execution_model_name(uint32_t model)
     }
 }
 
-// One compiled module's execution model (from its single OpEntryPoint - every
-// .spv this repo emits has exactly one) and the set of distinct opcodes used
-// anywhere in the module. Returns std::nullopt on the same "not a SPIR-V
-// module" / "no entry point found" conditions as parse_spirv_member_offsets.
+// A module's execution model (every .spv here has one entry point) and the distinct opcodes it uses.
 struct SpirvEntryPointInfo
 {
     uint32_t execution_model = 0;
@@ -1035,10 +880,7 @@ std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &
     return info;
 }
 
-// Sibling of parse_spirv_entry_point_info that counts occurrences instead of
-// just presence - some gates (e.g. TracedObjectIndexAddsTheGeometryIndex)
-// need to know an instruction appears at least N times, which a std::set
-// membership test cannot express. Same "not a SPIR-V module" contract.
+// Counts opcodes instead of recording presence, for gates that need "at least N"; same not-a-module contract.
 std::optional<std::map<uint32_t, std::size_t>> parse_spirv_opcode_counts(const fs::path &spv_path)
 {
     const auto text = readFileText(spv_path);
@@ -1069,12 +911,7 @@ std::optional<std::map<uint32_t, std::size_t>> parse_spirv_opcode_counts(const f
 constexpr uint32_t kOpDecorate = 71;
 constexpr uint32_t kDecorationBuiltIn = 11;
 
-// Sibling of parse_spirv_opcode_counts for OpDecorate ... BuiltIn <value>:
-// counting bare opcodes cannot distinguish "BuiltIn InstanceId" from
-// "BuiltIn InstanceCustomIndexKHR" since both are OpDecorate - the BuiltIn
-// enum value is an operand, not the opcode. Backs
-// TracedObjectIndexReadsTheInstanceCustomIndex. Same "not a SPIR-V module"
-// contract as its siblings.
+// BuiltIn values of OpDecorate, which opcode counts cannot tell apart; same not-a-module contract.
 std::optional<std::set<uint32_t>> parse_spirv_builtin_decorations(const fs::path &spv_path)
 {
     const auto text = readFileText(spv_path);
@@ -1105,22 +942,14 @@ std::optional<std::set<uint32_t>> parse_spirv_builtin_decorations(const fs::path
     return builtins;
 }
 
-// One shared-layout struct's contract: the struct name Slang emits it as in
-// compiled SPIR-V, paired with { emitted member name -> offsetof(HostType,
-// member) }. ArrayStride/MatrixStride are deliberately not checked here -
-// those live on OpDecorate of the pointer/array types, not OpMemberDecorate
-// of the struct, and need type-id chasing this pass does not do; that is a
-// scope decision, not an oversight.
+// Emitted struct name plus member offsets; strides live on the array types and are deliberately out of scope.
 struct SpirvStructContract
 {
     std::string spirv_name;
     std::map<std::string, std::size_t> member_offsets;
 };
 
-// PushConstantSkyBox_std430 deliberately has no entry below: SkyBox's
-// push-constant range setup (createGraphicsPipeline) and its push call
-// (recordCommands) both push a bare sizeof(uint32_t) with no host struct to
-// compare against.
+// No PushConstantSkyBox_std430 entry: SkyBox pushes a bare uint32_t with no host struct to compare.
 std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
 {
     return {
@@ -1142,9 +971,7 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "view", offsetof(GlobalUBO, view) },
             { "inv_projection", offsetof(GlobalUBO, inv_projection) },
             { "inv_view", offsetof(GlobalUBO, inv_view) } } },
-        // skybox.slang re-declares GlobalUBO's four members verbatim under its
-        // own ConstantBuffer name - same host type (GlobalUBO), different
-        // emitted struct name.
+        // skybox.slang re-declares GlobalUBO's members under its own name: same host type, another emitted struct.
         { "CameraUBO_std140",
           { { "projection", offsetof(GlobalUBO, projection) },
             { "view", offsetof(GlobalUBO, view) },
@@ -1204,25 +1031,13 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
         { "PushConstantRaytracing_std430",
           { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
         { "ShadowPushConstants_std430",
-          // shadow_map.slang names its second field objectIndex, while the
-          // host Kataglyphis::ShadowPushConstants (CascadedShadowMap.ixx)
-          // calls the same field cascadeIndex - CascadedShadowMap::recordCommands
-          // actually passes the flat object index through it
-          // (makeShadowPush(modelMatrix, object_index)), so the field is
-          // genuinely the shader's objectIndex under an older host name.
-          // Keying on the emitted name here checks the two sides agree on
-          // BYTE OFFSET, which is what the GPU actually reads.
+          // The host's cascadeIndex carries the shader's objectIndex (see makeShadowPush); what must agree is the offset.
           { { "model", offsetof(ShadowPushConstants, model) },
             { "objectIndex", offsetof(ShadowPushConstants, cascadeIndex) } } },
     };
 }
 
-// Finds the definition of `qualified_name(...)` in `text` (e.g.
-// "Kataglyphis::VulkanBuffer::create") and returns the first non-comment,
-// non-blank statement in its body, or std::nullopt if the function or its
-// body cannot be located. Assumes the parameter list itself contains no
-// parentheses - true for every overload this suite scans - so a simple
-// depth counter finds the parameter list's matching close paren.
+// First non-comment statement in the body of `qualified_name`; assumes its parameter list holds no parentheses.
 std::optional<std::string> first_statement_of_function(const std::string &text, const std::string &qualified_name)
 {
     const std::string signature = qualified_name + "(";
@@ -1258,10 +1073,7 @@ std::optional<std::string> first_statement_of_function(const std::string &text, 
     return text.substr(body_pos, stmt_end - body_pos + 1);
 }
 
-// Same signature-location logic as first_statement_of_function, but returns
-// the [begin, end) offsets of the whole brace-matched body instead of just
-// its first statement - so a caller can check that every occurrence of some
-// other call text falls inside one specific function.
+// Like first_statement_of_function, but returns the [begin, end) span of the whole body.
 std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
   const std::string &text, const std::string &qualified_name)
 {
@@ -1292,15 +1104,7 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
 
 }// namespace
 
-// Both the build-time compiler (scripts/windows/Build-SlangShaders.ps1) and
-// the runtime fallback used to reuse a .spv whenever it merely EXISTED, with
-// no timestamp check. Every shader edit after the first build was then
-// silently ignored and the GPU executed stale SPIR-V - a fragment shader
-// edited at 14:00 was still being rendered from a .spv produced at 18:46 the
-// previous day, which invalidated hours of debugging.
-//
-// This test fails if that regresses: after a build, no committed .spv may be
-// older than the .slang source it was compiled from.
+// A reused stale .spv silently ignores shader edits, so no .spv may be older than its .slang source.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
 {
     const fs::path repo_root = repoRoot();
@@ -1343,11 +1147,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
                               << joinViolations(stale);
 }
 
-// A Slang module that a compiled .spv's source actually imports (transitively,
-// via import_closure) being newer than that .spv means the shader was not
-// recompiled after the module changed. Scoped per-entry-point rather than to
-// "the newest edit anywhere under common/", so editing one material module no
-// longer flags every .spv that never imports it.
+// A .spv older than a module its source really imports was not recompiled; scoped to the closure, not all of common/.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 {
     const fs::path repo_root = repoRoot();
@@ -1389,12 +1189,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
                                << joinViolations(stale);
 }
 
-// Proves import_closure resolves only real `import` statements and recurses
-// through them: ssao.slang imports fullscreen and nothing material-related,
-// so material_fetch must not appear in its closure. rasterizer.slang imports
-// material_fetch directly, and material_fetch itself imports scene_types, so
-// scene_types reaching rasterizer's closure only works if the recursion
-// actually walks material_fetch's own imports rather than just rasterizer's.
+// ssao's closure must not hold material_fetch; rasterizer's reaches scene_types only by recursing through material_fetch.
 TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
 {
     const fs::path slang_root = slangRoot();
@@ -1417,14 +1212,7 @@ TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
     EXPECT_TRUE(rasterizer_closure.contains("common/scene_types.slang"));
 }
 
-// Nothing in this repo validated the Slang compiler's output against the
-// SPIR-V spec itself - an illegal implicit-LOD .Sample() call sat in
-// path_tracing.slang's compute kernel (execution model GLCompute) until it
-// device-lost the GPU, because implicit LOD needs an automatic derivative,
-// which only exists for Fragment shader invocations. This walks every
-// compiled .spv the same way CompiledShadersAreNotOlderThanTheirSources does
-// and asserts none of them use an implicit-LOD image instruction outside a
-// Fragment-stage module.
+// Implicit LOD needs derivatives, which only Fragment has; outside it the sample is illegal and can lose the device.
 TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
 {
     const fs::path repo_root = repoRoot();
@@ -1462,15 +1250,7 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
       << joinViolations(violations);
 }
 
-// VulkanBuffer and VulkanImage are documented in AGENTS.md as "move-only with
-// destructor release". Both operator=(&&) overloads honour that by calling
-// cleanUp() before overwriting their handle, but create() did not - calling
-// create() a second time on an already-created instance overwrote `buffer`/
-// `image` and `allocation` and leaked the previous VMA allocation. This test
-// reads all four sources as text and asserts the first statement in each
-// create()'s body is its matching release, so the obligation lives in
-// create() itself rather than at every call site. A behavioural test would
-// need a device.
+// create() must release first, or a second call leaks the previous allocation; a text check, as behaviour needs a device.
 TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
 {
     const fs::path repo_root = repoRoot();
@@ -1508,11 +1288,7 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
     }
 }
 
-// DescriptorSetGroup::create() did not release a previous layout/pool either
-// - a second create() call overwrote `layout`/`pool` and leaked both. Same
-// text-order reasoning as ResourceCreateReleasesThePreviousAllocation above:
-// this asserts create()'s first statement is releaseGpuResources(), the
-// GPU-resource half of cleanUp(), so the release lives in create() itself.
+// Likewise create() must open with releaseGpuResources(), or a second call leaks the layout and pool.
 TEST(BuildIntegrity, DescriptorSetGroupCreateReleasesThePreviousAllocation)
 {
     const fs::path repo_root = repoRoot();
@@ -1532,13 +1308,7 @@ TEST(BuildIntegrity, DescriptorSetGroupCreateReleasesThePreviousAllocation)
       << *first_statement << "\" in " << source.string();
 }
 
-// Texture::uploadRgba and SkyBox::uploadCubeMapFaces both re-create an image
-// that an existing VulkanImageView still looks at. VUID-vkDestroyImage-image-
-// 01000 requires the view to be destroyed before the image is, so the view
-// release must appear, in source order, before the createImage() call that
-// triggers VulkanImage::cleanUp() on the old image. This is a text-order
-// check, not a behavioural one - see ResourceCreateReleasesThePreviousAllocation's
-// comment for why (a behavioural test would need a device).
+// VUID-vkDestroyImage-image-01000: the view release must precede the createImage() that frees the old image.
 TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
 {
     const fs::path repo_root = repoRoot();
@@ -1576,16 +1346,7 @@ TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
     }
 }
 
-// GLM_FORCE_DEPTH_ZERO_TO_ONE used to be defined ONLY in App.cpp - a
-// translation unit that does no projection math - so camera and shadow
-// projections were built with OpenGL's [-1,1] depth range while feeding a
-// Vulkan [0,1] API. It is now set PUBLIC on VulkanEngineCore, which propagates
-// to everything that links it (including this test).
-//
-// This test deliberately does NOT define the macro itself: it verifies the
-// propagation. If someone removes the target_compile_definitions, projections
-// silently revert to OpenGL conventions and every depth-dependent feature
-// (shadow cascades above all) misbehaves in ways that are painful to trace.
+// Leaves GLM_FORCE_DEPTH_ZERO_TO_ONE undefined on purpose: it checks VulkanEngineCore propagates it to every linker.
 TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
 {
     constexpr float kNear = 1.0F;
@@ -1611,12 +1372,7 @@ TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
     EXPECT_NEAR(ortho_near, 0.0F, 1e-3F) << "glm::ortho near plane should map to 0, got " << ortho_near;
 }
 
-// EVERY Slang source with an entry point, in a subdirectory the C++ engine
-// consumes, must produce SPIR-V - not just the ones a pipeline currently
-// loads. Build-SlangShaders.ps1 fails the whole script on a slangc error
-// (unlike the old glslc-based compile-shaders.ps1, which only warned), but a
-// source that was never added to the manifest at all would otherwise go
-// unnoticed until pipeline creation.
+// Every entry-point source the engine consumes must compile, or one missing from the manifest surfaces only at runtime.
 TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
 {
     const fs::path repo_root = repoRoot();
@@ -1652,15 +1408,7 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
                                  << joinViolations(missing);
 }
 
-// Every literal .spv path referenced from Src/**/*.cpp, expressed relative to
-// spirv_root the same way ActivePipelineShadersHaveCompiledBinaries checks
-// it - either a full "Resources/ShadersSlang/build/spirv/..." literal
-// (Clouds.cpp), or a bare filename concatenated onto the last in-scope
-// `slang_spv_dir` constant declared earlier in the same source (the other
-// seven callers). Positional (not per-file) tracking of slang_spv_dir keeps
-// this honest if a file ever grows a second one for a different subdirectory.
-// Returns {spv path relative to spirv_root, source file - for failure
-// messages}; a source may appear more than once (one row per literal).
+// (.spv path, source) per literal: full paths, or names appended to the last in-scope slang_spv_dir.
 std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_by_sources(const fs::path &repo_root)
 {
     static const std::string kSpirvPrefix = "Resources/ShadersSlang/build/spirv/";
@@ -1701,13 +1449,7 @@ std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_
     return result;
 }
 
-// Every shader the Vulkan pipelines actually load must have a compiled .spv.
-// A missing binary only surfaces at pipeline creation, i.e. at runtime on a
-// machine that may not be yours. The required list is derived (via
-// collect_spirv_paths_referenced_by_sources) from the `.spv` literals under
-// Src/ rather than hand-copied, so adding a compute/raster pass needs no edit
-// here - it just needs to actually reference its .spv the way every existing
-// caller does.
+// Every loaded shader needs a .spv, or it fails only at runtime; the list derives from the literals under Src/.
 TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
 {
     const fs::path repo_root = repoRoot();
@@ -1717,10 +1459,7 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     const fs::path spirv_root = spirvRoot();
 
     const auto referenced = collect_spirv_paths_referenced_by_sources(repo_root);
-    // Guards against the scanner silently finding nothing - the failure mode
-    // that would make this test *worse* than the hand-maintained list it
-    // replaced. This floor (the size of the original list) must only be
-    // raised, never lowered, when a pass is added.
+    // Catches a scanner that silently finds nothing; raise this floor when a pass is added, never lower it.
     ASSERT_GE(referenced.size(), 19U)
       << "collect_spirv_paths_referenced_by_sources found only " << referenced.size()
       << " .spv reference(s) under Src/ - expected at least 19 from Rasterizer.cpp, DeferredRasterizer.cpp, "
@@ -1741,13 +1480,7 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
                                  << joinViolations(missing);
 }
 
-// host_device_shared_vars.hpp (C++) and scene_types.slang (Slang) hand-mirror
-// the same ten binding constants with no shared source of truth. A silent
-// divergence would corrupt every descriptor binding without a validation
-// error, because each side is internally self-consistent. Asserting every
-// name is present in BOTH files (not just equal where both happen to match)
-// means a renamed constant fails loudly instead of the pair silently going
-// unchecked.
+// A silent divergence corrupts every binding with no validation error; each name must exist in both files, not just match.
 TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
 {
     const fs::path repo_root = repoRoot();
@@ -1766,11 +1499,7 @@ TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
     }
 }
 
-// The test above parses host_device_shared_vars.hpp as text, so it would
-// happily agree with a header edit that the actual build never sees (e.g. a
-// stray duplicate definition later in the file, or a macro guarded out by an
-// #ifdef). This test instead includes the real header and compares the
-// Slang-side values against the constants the compiler actually produced.
+// Compares against the compiled header, since a text parse can agree with an edit the build never sees.
 TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
 {
     const fs::path repo_root = repoRoot();
@@ -1799,14 +1528,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("GBUFFER_DEPTH_BINDING"), GBUFFER_DEPTH_BINDING);
 }
 
-// The Windows x64 lane (scripts/windows/Invoke-WindowsLane.ps1) runs every CPU suite
-// by default and excludes GPU suites by name (`$gpuOnlySuites`), the same
-// negative-filter shape reusable-linux.yml already uses via `--ctest-exclude`.
-// A suite added to Test/commit/VulkanEngine no
-// longer needs to be added anywhere to run in CI - the only thing that can
-// still drift silently is the GPU-exclusion list itself: an entry there that
-// does not match the hardcoded set below, or that does not name a suite that
-// actually exists.
+// The Windows lane runs every suite but the excluded GPU ones, so only that exclusion list can drift.
 TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
 {
     const fs::path repo_root = repoRoot();
@@ -1828,11 +1550,7 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
     ASSERT_FALSE(defined_suites.empty()) << "found zero TEST()/TEST_F() suites under Test/commit/VulkanEngine - "
                                             "the scan itself is broken";
 
-    // The container ships the Vulkan loader, so SKIP_WITHOUT_GPU's
-    // glfwVulkanSupported() check can answer "yes" with no physical device
-    // present, after which device creation aborts the process rather than
-    // skipping. These stay excluded until a GPU-capable self-hosted runner
-    // exists.
+    // The container has a Vulkan loader but no GPU, so these abort in device creation instead of skipping.
     const std::set<std::string> gpu_excluded_suites = { "GoldenRender", "Integration" };
 
     EXPECT_EQ(filter_set, gpu_excluded_suites)
@@ -1847,12 +1565,7 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
     }
 }
 
-// The Windows lane's fuzz target list (Invoke-WindowsLane.ps1) is a hand-maintained
-// array. Unlike the gtest suites above, it has no negative-filter equivalent
-// (fuzz targets are per-target executables, not gtest_filter globs), so it
-// still needs an explicit check: a fuzz target declared in
-// Test/fuzz/CMakeLists.txt but never added to that array does not run in CI,
-// and nothing says so.
+// Fuzz targets have no negative filter, so one missing from the Windows lane's array silently never runs.
 TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 {
     const fs::path repo_root = repoRoot();
@@ -1876,12 +1589,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
     const std::set<std::string> ci_set(ci_targets.begin(), ci_targets.end());
 
-    // FuzzTest smoke targets (dummy.cpp / example_fuzz_test.cpp) - they exist
-    // to prove the fuzzing harness itself works, not to cover engine surface.
-    // The Windows lane runs them alongside every other declared target (see
-    // BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi below), so this set is
-    // currently empty; it stays here as the extension point for a future
-    // smoke-only target that should not gate CI.
+    // For a future smoke-only target that should not gate CI; empty, since every target runs today.
     const std::set<std::string> excluded_from_ci;
 
     std::vector<std::string> missing_from_ci;
@@ -1906,16 +1614,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << joinViolations(dead_ci_entries);
 }
 
-// shader_file_reader_fuzz_test and texture_loading_fuzz_test used to run only
-// on the opt-in Windows lane (see AGENTS.md "What CI runs": reusable-linux.yml runs on
-// every push, windows-x64.yml only on [build-win]), so a real engine-surface
-// fuzzer could sit unexercised for weeks between opt-in runs, and nothing
-// noticed when a new target was added to neither lane. This gates every
-// target declared in Test/fuzz/CMakeLists.txt against the Linux workflow, the
-// Windows lane script (Invoke-WindowsLane.ps1) AND the local host runner
-// (Invoke-ClangClDebug.ps1), which used to hard-code only the two FuzzTest smoke
-// targets and silently skip the five with real
-// engine-surface coverage.
+// Every declared fuzz target must run in the Linux workflow, the Windows lane and the local runner, or it goes unexercised.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 {
     const fs::path repo_root = repoRoot();
@@ -1958,10 +1657,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     const std::set<std::string> windows_set(windows_targets_opt->begin(), windows_targets_opt->end());
     const std::set<std::string> local_set(local_targets_opt->begin(), local_targets_opt->end());
 
-    // A target may be absent from a lane only if it is listed here, with a
-    // reason - e.g. a linked-VulkanEngineCore target crashing at static init
-    // on the Linux lane the way scene_config_fuzz_test's comment above
-    // describes. Empty means every declared target runs in every lane.
+    // A target may skip a lane only if listed here with a reason; empty means every target runs everywhere.
     struct NotRunInCi
     {
         std::string target;
@@ -1991,10 +1687,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
          "in kNotRunInCi with a reason: "
       << joinViolations(missing);
 
-    // Unlike the Linux workflow and the Windows lane script (whose loops are cross-checked
-    // against declared_targets in BuildIntegrity.EveryFuzzTargetIsInTheWindowsCiFuzzList
-    // and mirrored by construction for reusable-linux.yml), the local runner has no
-    // other test catching a stale/renamed entry, so check both directions here.
+    // Nothing else catches a stale local-runner entry, so check both directions here.
     std::vector<std::string> dead_local_entries;
     for (const auto &target : *local_targets_opt) {
         if (!declared_set.contains(target)) { dead_local_entries.push_back(target); }
@@ -2006,14 +1699,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
       << joinViolations(dead_local_entries);
 }
 
-// A source-shape gate, not a behavioural one: it does not exercise a runner
-// end-to-end (that would need a stub executable and a fake build tree), only
-// that each Invoke-ClangCl*.ps1 helper contains a top-level `exit` statement
-// whose argument is a variable. Invoke-ClangClDebug.ps1 used to launch the app
-// without ever propagating its exit code - the launch happened inside an
-// Invoke-WithAsanOptions scriptblock, and a non-zero result was downgraded to
-// a warning that never escaped - so a device-lost or fatal-submit run read as
-// a clean quit. This stops that shape from silently coming back.
+// Source-shape gate: each Invoke-ClangCl*.ps1 must `exit` with a variable, or a failed run reads as a clean quit.
 TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 {
     const fs::path repo_root = repoRoot();
@@ -2061,14 +1747,7 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
       << joinViolations(missing_exit);
 }
 
-// Test/perf/perfSuite.cpp and Test/perf/baselines/win-9070xt-32core.json are
-// two independently hand-maintained lists of the same benchmark set, exactly
-// like the fuzz-target check above. Compare-PerfBaseline.ps1 deliberately
-// never fails on a one-sided entry (see its header - the suite grows over
-// time and that alone should not fail a comparison), which means a benchmark
-// added to perfSuite.cpp without a matching baseline row is silently never
-// compared. This test closes that hole at the source instead of in the
-// comparator.
+// Compare-PerfBaseline.ps1 ignores one-sided entries, so a benchmark without a baseline row is silently never compared.
 TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 {
     const fs::path repo_root = repoRoot();
@@ -2116,36 +1795,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
       << joinViolations(dead_baseline_rows);
 }
 
-// SlangWgslPatchTablesAgree and SlangCompileManifestsAgree lived here until
-// 2026-08-02. Both existed only to pin two hand-maintained copies of the same
-// data against each other - the manifest and the depth-texture patch table,
-// duplicated across Build-SlangShaders.ps1 and .sh. Both copies are gone:
-// Resources/ShadersSlang/shader-manifest.json is now the single source both
-// scripts read, so there is no second table left to disagree with. The
-// remaining tests below verify the FILESYSTEM against that manifest, which is
-// the check that still has teeth.
-
-// CompiledShadersAreNotOlderThanTheirSources guards the SPIR-V artifacts; the
-// checked-in Rust-crate WGSL artifacts (the manifest's wgslMap) have no
-// equivalent guard, and they live two directories away
-// (third_party/OxidANT/crates/.../shaders) from the
-// Slang source that generates them. A regenerate that drops one of the
-// depth-texture patches, or a .slang edit that never gets propagated, is
-// silent today. This walks the wgslMap and asserts each checked-in .wgsl is
-// not older than its source OR the newest import in that source's real
-// import_closure (see import_closure/newest_import_for above) - the same
-// pair of checks CompiledShadersAreNotOlderThanTheirSources /
-// …ThanSharedIncludes apply to the SPIR-V side, now scoped to imports the
-// source actually reaches rather than "newest file anywhere under common/".
-// mtimes are meaningless after a fresh clone (git does not preserve them), so
-// this is a local-iteration guard that catches "I edited a .slang and forgot
-// to regenerate" before you commit - not the CI backstop; that is the
-// content-based freshness gate (task 3 below). What this still does NOT
-// catch: a shader that genuinely imports the edited module but whose emitted
-// WGSL is byte-identical is never re-copied by the compile scripts, so its
-// mtime stays behind and this gate keeps reporting it stale on every run.
-// The real fix is a content stamp written by the compile scripts (which live
-// upstream in ANTfrastructure); out of scope here.
+// Local guard (a clone resets mtimes): WGSL must not predate its source or imports; byte-identical re-emits stay stale.
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = repoRoot();
@@ -2200,11 +1850,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
                                << joinViolations(stale);
 }
 
-// WGSL has no string literals, so a "//" can only ever appear as the start of
-// a comment - the Slang WGSL backend itself emits none. A "//" in a checked-in
-// destination from the manifest's wgslMap is therefore always a hand-edit made
-// directly on the generated file, with a regenerate's expiry date on it: the
-// next compile-slang-shaders run silently drops it. Catch it here instead.
+// WGSL has no string literals and the backend emits no comments, so any "//" is a hand-edit the next regenerate drops.
 TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 {
     const fs::path repo_root = repoRoot();
@@ -2246,25 +1892,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
       << joinViolations(hand_edits);
 }
 
-// WGSL requires every non-builtin member of an inter-stage (varying) struct to
-// carry @location(N); only @builtin members may omit it. slangc
-// 2026.1-52-gc8ddf20bb (Vulkan SDK 1.4.341.1 - the ANTfrastructure Linux image)
-// drops @location from varying structs in the COMBINED emit (compiled without
-// -entry/-stage, which is exactly how the manifest's wgslMap files are
-// produced) while emitting it correctly per entry point from the SAME binary;
-// slangc 2026.8 is correct on both Windows and Linux and reproduces these
-// files byte-for-byte. A regeneration on the older toolchain therefore turned
-// `@location(0) uv_0 : vec2<f32>` into a bare `uv_0 : vec2<f32>` in eight of
-// the ten checked-in files - WGSL naga rejects, committed silently because
-// nothing looked at the emit. The compile scripts now skip the emit below the
-// manifest's minSlangcVersionForWgsl and hard-fail on a violation above it;
-// this is the backstop that runs in CI on every platform and cannot be
-// bypassed by regenerating with a different tool.
-//
-// A struct with at least one @builtin/@location member is an IO struct, so
-// every member of it must carry one of those attributes. Structs with no such
-// member (uniform/storage layouts, which use @align instead) are not IO and
-// are skipped.
+// CI backstop for docs/shader-build-pipeline.md § The combined WGSL emit needs slangc ≥ 2026.8.
 TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
 {
     const fs::path repo_root = repoRoot();
@@ -2341,11 +1969,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
       << joinViolations(violations);
 }
 
-// The floor above is only enforced if it is actually in the manifest: both
-// compile scripts treat a missing minSlangcVersionForWgsl as "no floor" (they
-// must, so an older manifest still builds), which would silently re-enable the
-// broken combined emit on the container's slangc. Pin its presence and shape
-// here instead - the scripts compare the leading MAJOR.MINOR only.
+// The scripts read a missing floor as none, re-enabling the broken emit; they compare MAJOR.MINOR only.
 TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
 {
     const fs::path repo_root = repoRoot();
@@ -2363,23 +1987,7 @@ TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
          "unparseable as new enough";
 }
 
-// `Resources/Shaders/` (the pre-Slang GLSL tree) was deleted once the Slang
-// migration finished; every .slang file is now the sole source for its
-// shader, and no .glsl/.vert/.frag/.geom/.tesc/.tese/.comp/.rgen/.rchit/.rmiss
-// file exists anywhere in the tree any more. A handful of comments still
-// said "Mirrors Resources/Shaders/..." or named a bare GLSL-era shader-stage
-// file for months afterward, pointing a reader at something that no longer
-// exists instead of at the file they were already reading - the same
-// failure mode as trusting stale SPIR-V above: a comment claiming the
-// authoritative version lives elsewhere. This walks every .slang file under
-// Resources/ShadersSlang/ (excluding the build/ output directory) plus every
-// comment in a .cpp/.hpp/.ixx file under Src/GraphicsEngineVulkan/ and
-// Src/shared/, and fails naming any file plus line that either:
-//   (a) mentions the deleted Resources/Shaders path,
-//   (b) mentions a GLSL-era shader-stage extension - none of these can
-//       exist in the tree any more, so any occurrence is stale, or
-//   (c) names a *.slang file, by basename, for which no file with that
-//       basename exists under Resources/ShadersSlang/.
+// Comments must not name the deleted GLSL tree, a GLSL-era stage extension, or a .slang basename that does not exist.
 TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
 {
     const fs::path repo_root = repoRoot();
@@ -2399,13 +2007,9 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
     }
     ASSERT_FALSE(real_slang_basenames.empty()) << "found zero .slang files under " << slang_root.string();
 
-    // Trailing slash matters: "Resources/Shaders" alone is a substring of
-    // the current "Resources/ShadersSlang" tree, which every file under
-    // Resources/ShadersSlang legitimately mentions in path comments.
+    // Trailing slash: without it this also matches the live Resources/ShadersSlang tree.
     static const std::string kDeadPath = "Resources/Shaders/";
-    // Not followed by ".slang": raytrace.rchit.slang legitimately contains
-    // ".rchit" as a mid-name segment - only a *trailing* GLSL-era extension
-    // (nothing left to exist as a real file) is dead.
+    // Only a trailing GLSL-era extension is dead; raytrace.rchit.slang carries one mid-name.
     static const std::regex kDeadExtension(R"(\.(glsl|frag|vert|geom|tesc|tese|comp|rgen|rchit|rmiss)(?!\.slang)\b)");
     static const std::regex kSlangMention(R"([A-Za-z0-9_./-]+\.slang)");
 
@@ -2433,8 +2037,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
         }
     };
 
-    // .slang files: scan every line - shader source has no string-literal
-    // filenames that would collide with these patterns.
+    // .slang files: every line, as shader source has no filename string literals.
     for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         const fs::path &path = it->path();
@@ -2450,8 +2053,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
         }
     }
 
-    // C++ sources: comment-only, so a live string literal such as
-    // Raytracing.cpp's "raytrace.rgen.rgen_main.spv" is never scanned.
+    // C++ sources: comments only, so live .spv string literals are never scanned.
     for (const char *sub_dir : { "GraphicsEngineVulkan", "shared" }) {
         const fs::path root = repo_root / "Src" / sub_dir;
         if (!fs::exists(root)) { continue; }
@@ -2481,12 +2083,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
       << joinViolations(violations);
 }
 
-// The deferred geometry pass used to invent its own "0.1 alpha cutoff"
-// fallback for OPAQUE materials instead of sharing material_rules.slang's
-// alpha_masked_out() with the forward rasterizer and shadow map shaders -
-// see ObjMaterial.hpp's alphaCutoff contract (negative means never discard).
-// This pins all three raster shaders to the one shared predicate so the
-// drift cannot silently come back.
+// All three raster shaders share alpha_masked_out(); a negative alphaCutoff never discards.
 TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
 {
     const fs::path repo_root = repoRoot();
@@ -2516,10 +2113,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
                                   + kBannedFallback + "' alpha-cutoff fallback");
         }
 
-        // A MASK material with no base-colour texture must alpha-test its
-        // factor alone (glTF's texture term defaults to 1) - so the shader
-        // must call alpha_masked_out() on both sides of its "textureID >= 0"
-        // branch, not just the textured one.
+        // An untextured MASK material still alpha-tests its factor, so both sides of the textureID branch call it.
         std::size_t occurrences = 0;
         for (std::size_t pos = text.find(kSharedPredicate); pos != std::string::npos;
              pos = text.find(kSharedPredicate, pos + kSharedPredicate.size())) {
@@ -2532,9 +2126,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         }
     }
 
-    // The MASK test's alpha is baseColorFactor.a * baseColorTexture.a - if the
-    // shared predicate stops multiplying by material.dissolve, every caller
-    // above silently loses the factor half of that product again.
+    // MASK alpha is baseColorFactor.a times texture alpha; without dissolve every caller loses the factor half.
     {
         const fs::path path = repo_root / "Resources/ShadersSlang/common/material_rules.slang";
         const auto textOpt = readFileText(path);
@@ -2543,8 +2135,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
 
         const std::size_t fn_start = text.find("bool alpha_masked_out(");
         ASSERT_NE(fn_start, std::string::npos) << "alpha_masked_out() definition not found in " << path.string();
-        // The function body is a handful of lines; a fixed window comfortably
-        // covers it without needing to brace-match the closing '}'.
+        // A fixed window covers the short body without brace matching.
         const std::string body = text.substr(fn_start, 400);
         if (body.find("material.dissolve") == std::string::npos) {
             violations.push_back(
@@ -2558,14 +2149,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
       << joinViolations(violations);
 }
 
-// Batch XVIII moved the guard-plus-default-plus-combine wrapper around the
-// emissive/metallic-roughness/normal-map texture slots into
-// common/material_textures.slang's resolved_emission[_lod0](),
-// resolved_metallic_roughness[_lod0]() and resolved_normal[_lod0](), the
-// same way batch X moved the raw sample_*() calls themselves. This pins the
-// raw sample_emissive/sample_normal/sample_metallic_roughness (and their
-// _lod0 twins) calls down to that one owning module, so a future shading
-// path cannot silently reintroduce a hand-rolled wrapper around them.
+// Raw emissive, normal and metallic-roughness samples belong to material_textures.slang, so no path re-wraps them.
 TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
 {
     const fs::path repo_root = repoRoot();
@@ -2581,12 +2165,7 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
     };
     static const std::string kOwningFile = "common/material_textures.slang";
 
-    // path_tracing.slang's Lambertian-only kernel deliberately keeps its
-    // metallic-roughness block inline (see resolved_metallic_roughness_lod0's
-    // doc comment in material_textures.slang) rather than adopting
-    // resolved_metallic_roughness_lod0(): that helper's untextured-material
-    // fallback would silently start applying material.metallic to a kernel
-    // whose glTF default is metallicFactor == 1.0.
+    // path_tracing keeps its block inline: the helper's fallback would apply metallic (glTF default 1.0) to its kernel.
     static const std::string kSanctionedExceptionFile = "path_tracing/path_tracing.slang";
     static const std::string kSanctionedExceptionCall = "sample_metallic_roughness_lod0(";
 
@@ -2625,13 +2204,7 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
       << joinViolations(violations);
 }
 
-// common/material_rules.slang exists so the ray tracing / path tracing entry
-// points - which cannot import material_fetch.slang without an
-// ambiguous-reference compile error over its objectDescription binding -
-// can still call the three pure material rules. A `[vk::binding` sneaking
-// back into this module, or either function reappearing in
-// material_fetch.slang, would silently reintroduce that conflict for the
-// next shading path that tries to import it.
+// material_rules.slang stays binding-free so RT and PT entry points can import it without an ambiguous binding.
 TEST(BuildIntegrity, MaterialRulesModuleStaysBindingFree)
 {
     const fs::path repo_root = repoRoot();
@@ -2666,14 +2239,7 @@ TEST(BuildIntegrity, MaterialRulesModuleStaysBindingFree)
       << "material_fetch.slang re-defines alpha_masked_out() - it should live only in material_rules.slang";
 }
 
-// path_tracing.slang's ray queries used to trace with RAY_FLAG_FORCE_OPAQUE,
-// and a ray query has no any-hit stage, so a glTF MASK cut-out committed as
-// a solid quad and cast a solid shadow - the last of five shading paths with
-// that bug. Both of path_tracing.slang's queries (the bounce ray and the NEE
-// shadow ray) must instead alpha-test candidates via alpha_test.slang's
-// shared ray_hit_masked_out(), which raytrace.rahit.slang's any-hit shader
-// also calls. This pins that fix so RAY_FLAG_FORCE_OPAQUE cannot silently
-// come back to either ray query.
+// Ray queries have no any-hit stage, so under FORCE_OPAQUE a MASK cut-out hits and shadows as a solid quad.
 TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
 {
     const fs::path repo_root = repoRoot();
@@ -2730,14 +2296,7 @@ TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
       << joinViolations(violations);
 }
 
-// glTF base colour = baseColorFactor * sampled texture (see
-// material_fetch.slang's base_color() helper and GltfLoader.cpp's
-// fromGltfMaterial, which keeps the factor in ObjMaterial::diffuse even when
-// a texture is also present). Each of these four shaders has a
-// "textureID >= 0" branch that samples the base-colour texture; this scans
-// that branch and fails if it samples a texture without routing the result
-// through base_color(, which would silently drop the material's factor
-// again the way forward.slang's reference path never did.
+// glTF base colour is factor times texture, so every textured branch must route its sample through base_color(.
 TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
 {
     const fs::path repo_root = repoRoot();
@@ -2797,14 +2356,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
       << joinViolations(violations);
 }
 
-// f0 = mix(0.04, albedo, metallic) is brdf.slang's contract for reflectance
-// at normal incidence (see brdf_direct's doc comment). A shading path that
-// hard-codes the third argument to a 0.0 literal instead of the material's
-// metallic value renders every metal as a dielectric - this was true of
-// rasterizer.slang, deferred.slang and raytrace.rchit.slang until
-// ObjMaterial grew a metallic field. Scans every .slang file (excluding
-// build/) for a `lerp(float3(0.04), <expr>, 0.0)` call and fails if the
-// third argument is still the 0.0 literal rather than a variable.
+// f0 = mix(0.04, albedo, metallic); a literal 0.0 there renders every metal as a dielectric.
 TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
 {
     const fs::path slang_root = slangRoot();
@@ -2838,18 +2390,7 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
       << joinViolations(violations);
 }
 
-// KHR_texture_transform must apply to every base-colour sample, not just
-// four of the five shading paths - the path-tracing ray-query kernel and the
-// RT closest-hit shader used to sample raw UVs while the three raster paths
-// (forward, deferred, shadow) already routed through transform_uv(), so a
-// model using the extension rendered inconsistently depending on which mode
-// was active. Scans each shading source as text and requires that every line
-// sampling `textures[...]` via `textureSamplers[...]` also calls transform_uv(
-// or one of its per-slot named accessors (normal_uv(/metallic_roughness_uv(/
-// emissive_uv(, see common/base_color.slang) on the same line. The any-hit
-// alpha test's sample site lives in common/alpha_test.slang
-// (raytrace.rahit.slang and path_tracing.slang's ray-query candidate loop
-// both call it), not in raytrace.rahit.slang itself.
+// Every texture sample line must also call transform_uv( or a per-slot accessor, or render modes disagree.
 TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 {
     const fs::path repo_root = repoRoot();
@@ -2905,13 +2446,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
       << joinViolations(violations);
 }
 
-// ObjMaterial::emission is parsed by both loaders and uploaded to the GPU,
-// but until this gate nothing in the shading paths actually read it - every
-// glTF/OBJ emitter rendered black in both the forward and deferred paths
-// while the Rust twin lit them. This scans the shader sources as text (the
-// source-text gate pattern used throughout this file) and fails if any of
-// the four shading paths (rasterizer, deferred, ray tracing, path tracing)
-// stops consuming material.emission.
+// Every shading path must consume material.emission, or emitters render black.
 TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -2928,13 +2463,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     EXPECT_NE(scene_types_text.find("float3 emission"), std::string::npos)
       << "scene_types.slang no longer declares ObjMaterial::emission. " << kFailureMessage;
 
-    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
-    // material_emission() into common/material_textures.slang's
-    // resolved_emission()/resolved_emission_lod0() - each of the four
-    // shading paths below now calls one of those instead of material_emission()
-    // directly (see EmissionSamplingUsesTheSharedHelperInEveryShadingPath for
-    // the check that material_textures.slang itself still wires
-    // emissiveTextureID through material_emission()).
+    // The paths call resolved_emission[_lod0](); the next test checks that helper still reaches material_emission().
     const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
     const auto rasterizer_text_opt = readFileText(rasterizer_path);
     ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
@@ -2969,12 +2498,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
       << "path_tracing.slang no longer adds throughput * resolved_emission_lod0() at the hit. " << kFailureMessage;
 }
 
-// ObjMaterial::emissiveTextureID (glTF emissiveTexture, see EmissiveIsConsumedByEveryShadingPath above for the
-// factor-only case) is dedup'd into the same texture-slot budget as textureID, but only actually LIT if every
-// shading path samples it through the shared common/emission.slang helper rather than four hand-rolled multiplies -
-// this scans the shader sources as text (the source-text gate pattern used throughout this file) and fails if any
-// of the four shading paths stops calling material_emission(), or if emission.slang itself stops multiplying the
-// sampled texture into the factor.
+// The emissive texture lights only through emission.slang's shared helper, which must multiply it into the factor.
 TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -2992,12 +2516,7 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
       << "emission.slang's material_emission() no longer multiplies the sampled emissiveTexture into the factor. "
       << kFailureMessage;
 
-    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
-    // material_emission() into material_textures.slang's resolved_emission()/
-    // resolved_emission_lod0() - it is now the sole direct importer of
-    // emission.slang and the sole direct caller of material_emission(); the
-    // four shading paths below call resolved_emission[_lod0]() instead (see
-    // EmissiveIsConsumedByEveryShadingPath for the exact call site per path).
+    // material_textures.slang is the sole caller of material_emission(); the paths call resolved_emission[_lod0]().
     const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
     const auto material_textures_text_opt = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
@@ -3029,13 +2548,7 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
     }
 }
 
-// ObjMaterial::normalTextureID (glTF normalTexture, follow-up to the tangent-plumbing task naming these four
-// shading paths) is dedup'd into the same texture-slot budget as textureID/emissiveTextureID, but only actually
-// perturbs shading if every shading path derives a TBN basis from the per-vertex tangent and runs the sampled
-// texture through the shared common/normal_map.slang helper rather than four hand-rolled copies - this scans the
-// shader sources as text (the source-text gate pattern used throughout this file) and fails if any of the four
-// shading paths stops calling apply_normal_map(), or if normal_map.slang itself stops perturbing by the sampled
-// tangent-space normal.
+// Normal maps perturb shading only through normal_map.slang's shared helper, which must use the sampled normal.
 TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -3073,13 +2586,7 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
       << "forward.slang's fs_main must not left-multiply the row-built (t, b, nGeom) basis - that is the "
          "world-to-tangent transform, not tangent-to-world.";
 
-    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
-    // apply_normal_map() into material_textures.slang's resolved_normal()/
-    // resolved_normal_lod0() - it is now the sole direct importer of
-    // normal_map.slang and the sole direct caller of apply_normal_map(),
-    // with material.normalScale folded in there instead of at each call
-    // site. The four shading paths below call resolved_normal[_lod0]()
-    // instead.
+    // material_textures.slang is the sole caller of apply_normal_map() and folds in normalScale.
     const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
     const auto material_textures_text_opt = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
@@ -3116,12 +2623,7 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
     }
 }
 
-// ObjMaterial::alphaTextureID (OBJ map_d, follow-up to the map_d-becomes-a-MASK-cutoff task) is dedup'd into the
-// same texture-slot budget as textureID/emissiveTextureID/normalTextureID, but only actually alpha-tests a map_d
-// cut-out if every one of the four alpha-testing sites - the two raster paths, the shadow pass and the shared ray
-// query alpha test - samples it and folds it into the alpha handed to alpha_masked_out(). This scans the shader
-// sources as text (the source-text gate pattern used throughout this file) and fails if any of the four sites stops
-// branching on ObjMaterial::alphaTextureID.
+// All four alpha-testing sites must fold the map_d texture into the alpha they test.
 TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -3149,15 +2651,7 @@ TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
     }
 }
 
-// KHR_texture_transform is declared per texture slot (glTF 2.0 spec), so the normal, metallic-roughness and
-// emissive samples must transform their UV through their OWN named accessor (normal_uv()/metallic_roughness_uv()/
-// emissive_uv() in common/base_color.slang), not the bare transform_uv(uv, material) overload - which resolves to
-// the base-colour rows. Sampling a non-base slot with the base-colour rows silently tiles/offsets that slot's
-// texture identically to base-colour instead of independently (or not at all, for a material that transforms only
-// a non-base slot). common/material_textures.slang is the sole place these three slots are sampled today - every
-// shading path calls its explicit-LOD or implicit-LOD helper instead of hand-rolling the sample
-// (TextureSlotSamplingHasOneOwner below pins that no shading path still does) - so this scans that one file rather
-// than every shading path, once each for its explicit-LOD and implicit-LOD helper.
+// Transforms are per slot, and the bare transform_uv overload applies the base-colour rows to any slot it samples.
 TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
 {
     const fs::path repo_root = repoRoot();
@@ -3190,11 +2684,7 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
           << ") exactly once from its explicit-LOD helper and once from its implicit-LOD helper. " << kFailureMessage;
     }
 
-    // The alpha (map_d) slot has no KHR_texture_transform slot of its own (an OBJ-only extension, not part of the
-    // glTF spec's per-slot transform list) and deliberately reuses the base-colour rows via the bare
-    // transform_uv(uv, material) overload, same as every shading path's own inline base-colour sample - that is the
-    // legitimate case this gate must not flag. sample_alpha_lod0/sample_alpha are the only two bare-overload callers
-    // left in this file.
+    // The OBJ-only map_d slot has no transform of its own, so its two samplers legitimately use the bare overload.
     std::size_t bareTransformUvCalls = 0;
     std::size_t pos = 0;
     while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
@@ -3207,15 +2697,7 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
       << kFailureMessage;
 }
 
-// Deferred from batch IX with a stated prerequisite (9ee460cb, symbolic binding numbers) that has since landed:
-// rasterizer.slang, deferred.slang, shadow_map.slang, raytrace.rchit.slang and alpha_test.slang each declared their
-// own [vk::binding(TEXTURES_BINDING, 0)] / [vk::binding(SAMPLER_BINDING, 0)] textures[]/textureSamplers[] pair, and
-// rasterizer.slang, deferred.slang, raytrace.rchit.slang and path_tracing.slang each hand-rolled the same
-// resolve_texture_slot(...) + Sample()/SampleLevel() pair for the alpha (map_d), normal, metallic-roughness and
-// emissive slots. common/material_textures.slang is now the sole owner of both: this pins that no consumer
-// redeclares the bindings, and that no consumer still spells the four-slot sample pattern inline instead of calling
-// material_textures.slang's helpers. The base-colour (ObjMaterial::textureID) slot is deliberately not checked
-// here - it stays inline at each call site next to the shading control flow that differs per shader.
+// material_textures.slang alone declares the texture bindings and samples the four non-base slots; base colour stays inline.
 TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
 {
     const fs::path repo_root = repoRoot();
@@ -3234,11 +2716,7 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
     EXPECT_NE(owner_text_opt->find(kSamplersBinding), std::string::npos)
       << owner_path.string() << " no longer declares the textureSamplers[] binding";
 
-    // The five prior per-file binding owners, plus path_tracing.slang (never declared its own copy - it always
-    // reached textures/textureSamplers through alpha_test.slang, and now also imports material_textures.slang
-    // directly for its own explicit-LOD samples): the explicit consumer list, same shape as
-    // kSharedDescriptorSetBindings above and for the same reason - a directory walk would also have to explain away
-    // this test file's and material_textures.slang's own legitimate mentions of these identifiers.
+    // An explicit list: a directory walk would have to excuse this file's and material_textures.slang's own mentions.
     static const std::vector<fs::path> kConsumers = {
         slang_root / "rasterizer/rasterizer.slang",
         slang_root / "deferred/deferred.slang",
@@ -3248,9 +2726,7 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
         slang_root / "path_tracing/path_tracing.slang",
     };
 
-    // The four texture-slot fields whose resolve_texture_slot(obj, material.<field>) + Sample()/SampleLevel() pair
-    // must now live only in material_textures.slang. resolve_texture_slot(obj, material) (no field - the
-    // base-colour overload) is deliberately excluded; it stays inline at every shading path's own call site.
+    // The base-colour overload of resolve_texture_slot stays inline at each path, so it is not listed.
     static const std::vector<std::string> kSlotFields = {
         "material.alphaTextureID",
         "material.normalTextureID",
@@ -3287,18 +2763,7 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
       << violations.size() << " texture-slot sampling ownership violation(s):" << joinViolations(violations);
 }
 
-// normal_uv()/metallic_roughness_uv()/emissive_uv() in common/base_color.slang (C++ Vulkan renderer, ObjMaterial) and
-// base_color_uv()/metallic_roughness_uv()/normal_uv()/emissive_uv()/occlusion_uv() in forward/forward.slang (Rust
-// WebGPU renderer, PrimUniforms) are the sole named accessors for their slot's KHR_texture_transform row pair; the
-// row members themselves - (normal|metallic_roughness|emissive)_uv_transform_row[01] on the C++ side,
-// (base|mr|normal|emissive|occlusion)_uv_row[01] on the Rust side - must therefore appear only inside those
-// accessor bodies and the two structs' declarations. A shading path naming a row member directly (rather than
-// calling the accessor) can pair a slot's row0 with another slot's row1 - both are the same vector type on the same
-// struct, so the mismatch is well-typed and silently samples the wrong UV. Unlike base_color.slang/scene_types.slang
-// (which contain nothing but accessor/struct declarations, so a whole-file allowance is safe), forward.slang also
-// holds the shading entry points (fs_main, vs_shadow_masked, fs_shadow_masked) that must call the accessors rather
-// than name a row member themselves, so its allowance is scoped to just the accessor bodies and the PrimUniforms
-// declaration, tracked by brace depth, rather than exempting the whole file.
+// Row members only inside their accessors and structs: naming them directly can pair one slot's row0 with another's row1.
 TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
 {
     const fs::path repo_root = repoRoot();
@@ -3367,13 +2832,7 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
       << joinViolations(violations, "", "\n");
 }
 
-// forward.slang's uv-set mask bit (prim.material_flags.y) must be read by exactly one accessor per texture slot -
-// base_color_uv_select() (folded into base_color_uv()), metallic_roughness_uv(), normal_uv(), emissive_uv() and
-// occlusion_uv() - never inlined a second time at a call site, or a future hand-rolled mask selection could
-// silently diverge from the accessors' bit assignment. This is a narrower companion to
-// PerSlotUvTransformRowsAreSpelledInExactlyOnePlace above (which catches a hand-paired row0/row1), covering the
-// case where the mask bit alone is re-derived instead of the row pair: it counts every `prim.material_flags.y`
-// read and fails if there are more than one per slot.
+// One uv-set mask read per slot accessor, so a hand-rolled selection cannot diverge from their bit assignment.
 TEST(BuildIntegrity, ForwardShaderUvSetMaskHasOneOwnerPerSlot)
 {
     const fs::path repo_root = repoRoot();
@@ -3397,15 +2856,7 @@ TEST(BuildIntegrity, ForwardShaderUvSetMaskHasOneOwnerPerSlot)
                                           "instead of calling the accessor";
 }
 
-// ObjMaterial::metallicRoughnessTextureID (glTF pbrMetallicRoughness.metallicRoughnessTexture) is dedup'd into the
-// same texture-slot budget as textureID/emissiveTextureID/normalTextureID, but only actually varies the metallic/
-// roughness terms if every shading path samples it and runs the result through the shared
-// common/material_rules.slang channel swizzle (glTF 2.0 SS3.9.2: G = roughness, B = metallic) rather than four
-// hand-rolled copies - this scans the shader sources as text (the source-text gate pattern used throughout this
-// file) and fails if material_rules.slang stops exposing the swizzle, or if rasterizer/deferred/raytrace.rchit/
-// path_tracing stop calling it. path_tracing.slang is a Lambertian-only kernel with no roughness/BRDF term, so it
-// is checked only for referencing the texture ID and calling material_metallic_roughness() (never a bare
-// mrSample.b/mrSample.g read), same as the other three.
+// Every shading path must swizzle metallic-roughness through material_rules.slang (G = roughness, B = metallic).
 TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -3428,16 +2879,7 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
          "roughness factor. "
       << kFailureMessage;
 
-    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
-    // material_metallic_roughness() into material_textures.slang's
-    // resolved_metallic_roughness()/resolved_metallic_roughness_lod0() for
-    // rasterizer/deferred/raytrace.rchit. path_tracing.slang deliberately
-    // keeps its block inline instead of adopting
-    // resolved_metallic_roughness_lod0() - see that helper's doc comment in
-    // material_textures.slang: the shared helper's untextured-material
-    // fallback (today's factors) would silently start applying
-    // material.metallic to this Lambertian-only kernel, which never
-    // consumed it before.
+    // path_tracing keeps its block inline: the shared fallback would apply metallic to its Lambertian-only kernel.
     const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
     const auto material_textures_text_opt = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
@@ -3486,10 +2928,7 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
     }
 }
 
-// KHR_materials_unlit must return the base colour unlit in all four shading
-// paths (spec: unlit materials "MUST NOT be lit"). This scans the shader
-// sources as text and fails if any of the four stops branching on
-// ObjMaterial::unlit, reporting which file is missing it.
+// Unlit materials "MUST NOT be lit", so every shading path branches on ObjMaterial::unlit.
 TEST(BuildIntegrity, UnlitIsHonouredByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -3522,12 +2961,7 @@ TEST(BuildIntegrity, UnlitIsHonouredByEveryShadingPath)
       << kFailureMessage;
 }
 
-// Vertex.color (glTF COLOR_0) is fetched by every loader and uploaded to the
-// GPU alongside position/normal, but the rasterizer and deferred paths are
-// the only ones that ever multiplied it into shading - the ray tracing and
-// path tracing paths silently ignored per-vertex colour. This scans the
-// shader sources as text and fails if any of the four shading paths stops
-// referencing Vertex.color.
+// Every shading path must consume Vertex.color (glTF COLOR_0), not just the raster ones.
 TEST(BuildIntegrity, VertexColourIsConsumedByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -3566,16 +3000,7 @@ TEST(BuildIntegrity, VertexColourIsConsumedByEveryShadingPath)
       << "path_tracing.slang no longer uses Vertex.color. " << kFailureMessage;
 }
 
-// The object->world normal transform is the inverse-transpose of the
-// object->world matrix, i.e. WorldToObject applied as a *row* multiply
-// (mul(v, M), the HLSL/Slang convention where mul(M, v) is a column
-// multiply). Both raytrace.rchit.slang and path_tracing.slang once
-// column-multiplied WorldToObject instead, which agrees with the correct
-// row form only when the model's linear part is orthonormal with no
-// non-uniform scale/shear (e.g. identity or pure translation) - exactly the
-// default scene, which is why no golden test caught it. This scans the
-// shader sources as text and fails if either reintroduces the column
-// spelling, or drops the row spelling / the closest-hit face-forward.
+// Normals take WorldToObject as a row multiply, mul(v, M); the column form agrees only for orthonormal models.
 TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
 {
     const fs::path repo_root = repoRoot();
@@ -3609,26 +3034,7 @@ TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
       << "path_tracing.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
 }
 
-// scene_types.slang's MAX_CASCADES is the gated source of truth for the
-// cascade count - HostAndShaderSharedConstantsAgree above pins it against
-// host_device_shared_vars.hpp. That gate is blind to a second, independent
-// "static const int" redeclaring the same value under a cascade-ish name
-// elsewhere: raising MAX_CASCADES on both currently-gated sides would pass
-// every existing pin test while a shader still reading its own stale local
-// copy kept clamping to the old count. shadow_map.slang carried exactly this
-// (`NUM_CASCADES = 3`) until it was retired in favour of importing
-// MAX_CASCADES directly. This scans every other .slang file for a
-// "static const int" whose name contains "CASCADE" (case-insensitive) and
-// whose value equals MAX_CASCADES, and fails if one exists.
-//
-// The scan is restricted to Vulkan-consumed shaders (per
-// parse_vulkan_consumed_slang_sources, i.e. the compile-slang-shaders.sh
-// manifest rows that target 'spirv') rather than every .slang file: WGSL-only
-// shaders such as forward/forward.slang pin their own cascade count on the
-// Rust side (see forward.slang's "Must match CASCADE_COUNT in forward.rs"
-// comment) and cannot go stale against this C++-side MAX_CASCADES - the C++
-// engine never loads them, so a redeclaration there is not the bug this gate
-// exists to catch.
+// A local cascade-count copy survives a MAX_CASCADES bump; WGSL-only shaders pin theirs on the Rust side, so skip them.
 TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 {
     const fs::path repo_root = repoRoot();
@@ -3698,33 +3104,14 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
       << joinViolations(violations);
 }
 
-// One declared variable's [vk::binding(...)] attribute in the shared render
-// descriptor set, checked against scene_types.slang's named constant for it.
+// One shared-set [vk::binding(...)] declaration and the scene_types.slang constant it must name.
 struct SharedDescriptorBinding
 {
     std::string relative_path;
     std::string variable_name;
 };
 
-// The shared render descriptor set's nineteen set-0 declarations
-// (globalUBO_BINDING / sceneUBO_BINDING / OBJECT_DESCRIPTION_BINDING /
-// TEXTURES_BINDING / SAMPLER_BINDING / SHADOW_MAP_BINDING), the ray-tracing
-// set-1 declarations that share the same shared descriptor set resources
-// (TLAS_BINDING / OUT_IMAGE_BINDING / ACCUMULATION_IMAGE_BINDING), plus
-// deferred.slang's four gbuffer input-attachment set-1 declarations
-// (GBUFFER_NORMAL_BINDING / GBUFFER_ALBEDO_BINDING / GBUFFER_MATERIAL_BINDING
-// / GBUFFER_DEPTH_BINDING) - twenty-three declarations in total, across the
-// files that declare them. common/alpha_test.slang is not listed: it already
-// used the named constants before this gate existed.
-// textures/textureSamplers now declare once in common/material_textures.slang
-// (TextureSlotSamplingHasOneOwner below pins that no consumer redeclares
-// them) rather than once per consumer, so rasterizer.slang, deferred.slang,
-// shadow_map.slang and raytrace.rchit.slang no longer have their own
-// textures/textureSamplers rows here. Deliberately NOT the full set of every
-// [vk::binding(...)] in these files - shadow_map.slang's own
-// [vk::binding(1, 1)] lightSpaceMatrices is a pipeline-local set with no
-// named constant in scene_types.slang, so listing it here would be a
-// permanent, unfixable violation rather than a real regression.
+// Shared-set declarations per file; pipeline-local bindings with no named constant are deliberately absent.
 const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     {"common/material_fetch.slang", "objectDescription"},
     {"common/material_textures.slang", "textures"},
@@ -3751,22 +3138,7 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     {"path_tracing/path_tracing.slang", "accumulationImage"},
 };
 
-// HostAndShaderSharedConstantsAgree pins scene_types.slang's nine binding
-// constants against host_device_shared_vars.hpp, and the C++ side writes its
-// descriptor layout with the names
-// (VulkanRenderer::createSharedRenderDescriptorResources) - but nothing
-// checked that a shader's own [vk::binding(...)] attribute is actually
-// derived from the name rather than a bare integer that happens to agree
-// today. Renaming or renumbering e.g. SHADOW_MAP_BINDING would update the
-// host header and scene_types.slang in lockstep while a shader's literal
-// stayed behind, with every existing pin test still green. Same failure
-// mode NoShaderRedeclaresTheCascadeCount closes for MAX_CASCADES above; same
-// gate shape here, but over an explicit (file, declared-variable) list
-// rather than a directory walk - the exclusions noted on
-// kSharedDescriptorSetBindings above are the reason: a walk would also have
-// to explain away the pipeline-local bindings that have no named constant to
-// begin with (shadow_map.slang's lightSpaceMatrices, deferred.slang's
-// subpass inputs, and every standalone post-processing shader's own set).
+// Bindings must use the named constants, or a renumbering moves both headers while a shader literal stays behind.
 TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
 {
     const fs::path slang_root = slangRoot();
@@ -3792,10 +3164,7 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
             const std::size_t binding_pos = line.find("vk::binding(");
             if (binding_pos == std::string::npos) { continue; }
 
-            // Whole-word search: the variable name may also occur as a
-            // prefix of a longer identifier earlier on the same line (e.g.
-            // "globalUBO" inside "globalUBO_BINDING" or "GlobalUBO"'s type),
-            // so every occurrence must be tried, not just the first.
+            // Whole word, trying every occurrence: the name can prefix a longer identifier earlier on the line.
             bool matched_this_line = false;
             std::size_t search_from = 0;
             while (true) {
@@ -3847,37 +3216,21 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
       << joinViolations(violations);
 }
 
-// One traced object-index source file and how many instance+geometry index
-// pairs it is expected to contain, backing TracedObjectIndexAddsTheGeometryIndex.
+// A traced object-index source and how many instance-plus-geometry index pairs it must contain.
 struct TracedObjectIndexFile
 {
     std::string relative_path;
     int expected_pair_count;
 };
 
-// path_tracing.slang's two RayQuery candidate loops (bounce + NEE shadow)
-// plus its committed-hit block; raytrace.rchit.slang and raytrace.rahit.slang
-// each resolve their one hit with a single expression. Update the expected
-// count here if a traced object-index site is added, removed, or moved.
+// Update these counts when a traced object-index site is added, removed or moved.
 const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
     {"path_tracing/path_tracing.slang", 3},
     {"raytracing/raytrace.rchit.slang", 1},
     {"raytracing/raytrace.rahit.slang", 1},
 };
 
-// Regression gate for the multi-mesh device-lost fix (BACKLOG.md):
-// ASManager stamps instanceCustomIndex/InstanceID with the model's
-// *first-mesh* flat index (ASManager.cpp's createTLAS), so every traced
-// object-index expression must add the matching geometry accessor
-// (Committed*/Candidate*/bare GeometryIndex()) to reach the mesh that was
-// actually hit - an instance accessor alone always resolves to the model's
-// first mesh. path_tracing_main's committed-hit block used to read only
-// CommittedInstanceIndex() (now CommittedInstanceID()), which faulted on any
-// multi-mesh model past its first mesh (out-of-bounds buffer-device-address
-// read on the mismatched vertex/index buffers). Source half below asserts
-// every instance accessor pairs with its geometry counterpart; SPIR-V half
-// confirms the compiled path_tracing module actually emits the extra opcode
-// this implies.
+// The custom index names a model's first mesh, so every traced index must add the geometry index to reach the hit mesh.
 TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
 {
     const fs::path slang_root = slangRoot();
@@ -3945,19 +3298,7 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
          "stale (recompile with Build-SlangShaders.ps1)";
 }
 
-// Regression gate for the second half of the multi-mesh device-lost fix
-// (BACKLOG.md): Slang's HLSL-shaped InstanceIndex() reads the TLAS *instance*
-// index (SPIR-V BuiltIn InstanceId, 6 / OpRayQueryGetIntersectionInstanceIdKHR,
-// 6020), not the host-supplied instanceCustomIndex ASManager::createTLAS
-// actually stamps with the model's first-mesh flat index - that value is
-// only reachable via InstanceID() / Candidate*InstanceID() /
-// Committed*InstanceID() (BuiltIn InstanceCustomIndexKHR, 5327 /
-// OpRayQueryGetIntersectionInstanceCustomIndexKHR, 6019). The two spellings
-// coincide only while every model holds exactly one mesh, so this was latent
-// rather than firing on the single-model reproducer scene - see
-// TracedObjectIndexAddsTheGeometryIndex above for the sibling geometry-index
-// half of the same contract. Presence/absence only, not exact counts: counts
-// move with inlining.
+// InstanceIndex() is the TLAS instance index, not the stamped custom index; presence only, as counts move with inlining.
 TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
 {
     constexpr uint32_t kBuiltInInstanceId = 6;
@@ -4008,20 +3349,7 @@ TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
          "the host-written instanceCustomIndex, found " << instance_id_count << " occurrence(s)";
 }
 
-// Regression gate for the RT/PT objectDescription centralization:
-// common/material_fetch.slang owns the [vk::binding(OBJECT_DESCRIPTION_BINDING, 0)]
-// objectDescription binding and the raw MaterialIDs*/Materials* lookup it wraps
-// (fetch_object_description() / fetch_material()) - every other shading path
-// must fetch through those two functions rather than re-declaring the
-// binding or hand-rolling the lookup, the way path_tracing.slang and
-// raytrace.rchit.slang used to. Scans every SPIR-V-targeted shader entry
-// point (per shader_manifest's vulkan_spirv_sources, same source
-// NoShaderRedeclaresTheCascadeCount above scans) plus the shared common/
-// modules those shaders import - a stray binding or lookup could land in
-// either. common/scene_types.slang is excluded: it is the struct definition
-// site for both the objectDescription binding's element type and the
-// material_index_address field itself, so it legitimately contains both
-// substrings without being a "shading path".
+// Only material_fetch.slang declares objectDescription and does the lookup; scene_types.slang just defines the types.
 TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFetch)
 {
     const fs::path repo_root = repoRoot();
@@ -4082,13 +3410,7 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
       << " - " << kFixSuggestion;
 }
 
-// cascaded_shadow.slang reads two SceneUBO fields the host already clamps
-// (SceneUboMarshal.hpp's clampPcfRadius and fillSceneUboCascades) and must
-// clamp them again itself: the host is the first lock, the shader is the
-// second, and only the second is what actually protects the
-// cascadeLightSpaceMatrices[] index / tap loop bound at GPU-execution time.
-// This pins that both clamps still exist in the shader source, so a future
-// edit cannot silently drop one half of the double lock.
+// The shader re-clamps what the host clamps, as only its own clamp guards the matrix index and tap loop on the GPU.
 TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
 {
     const fs::path repo_root = repoRoot();
@@ -4106,17 +3428,7 @@ TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
       << "cascaded_shadow.slang must clamp pcfRadius to MAX_PCF_RADIUS before the tap loop";
 }
 
-// dirShadowMap.init(...) used to also run inline in VulkanRenderer's
-// constructor (a second, hard-coded MAX_CASCADES/startup-resolution copy of
-// what reinitShadowMapForCurrentSettings() does), and the per-image light
-// matrices were re-seeded via an explicit loop right after construction
-// instead of through the same flag-driven path every later re-init uses. A
-// re-init (GUI shadow-resolution/cascade-count change, or a swapchain-image-
-// count change) left every image but the next one drawFrame() acquired
-// holding stale or default-constructed matrices, because dirShadowMap's own
-// seed loop runs before updateUniforms() has recomputed cascadeData for the
-// new settings. This is a source-level "one rule, one definition" gate - the
-// only kind of coverage available for a path that needs a device.
+// One init() and one seeding path, or a re-init leaves every image but the next with stale light matrices.
 TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
 {
     const fs::path repo_root = repoRoot();
@@ -4158,12 +3470,7 @@ TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
     EXPECT_GT(upload_count, 0U) << "expected at least one uploadLightMatrices( call in VulkanRenderer.cpp";
 }
 
-// The flattened texture-slot clamp (int(obj.texture_offset) + textureID,
-// clamped into [0, MAX_TEXTURE_COUNT - 1]) has exactly one definition:
-// resolve_texture_slot() in scene_types.slang. Every consumer must call it
-// rather than re-deriving the clamp locally - a second copy could drift from
-// the "over-cap models sample a wrong slot" behaviour VulkanRenderer.cpp's
-// warning documents.
+// resolve_texture_slot() is the texture-slot clamp's one definition; a local copy could drift from it.
 TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
 {
     const fs::path repo_root = repoRoot();
@@ -4202,13 +3509,7 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
       << "calling resolve_texture_slot(): " << joinViolations(other_definitions);
 }
 
-// dirLight.direction stores the direction the light TRAVELS (a host-slider
-// convention confirmed by CascadedShadowMapMath.cpp and the path-tracing
-// history key). Every shader that wants the vector pointing TOWARD the light
-// must negate it. clouds.slang once read the field un-negated, integrating
-// self-shadowing and phase scattering away from the sun instead of toward it.
-// This gate pins the one convention across every consumer: negation must
-// happen right where the field is read, inside normalize(...).
+// dirLight.direction is the travel direction, so toward-light vectors negate it where read, inside normalize(...).
 TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 {
     const fs::path repo_root = repoRoot();
@@ -4241,8 +3542,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
                 search_from = marker_pos + kMarker.size();
                 ++occurrences_checked;
 
-                // Walk back over the qualifying "scene." / "sceneUBO_lighting."
-                // prefix to find where the read expression actually starts.
+                // Walk back over the "scene." or "sceneUBO_lighting." prefix to where the read starts.
                 std::size_t expr_start = marker_pos;
                 while (expr_start > 0
                        && (is_identifier_char(line[expr_start - 1]) || line[expr_start - 1] == '.')) {
@@ -4283,12 +3583,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
       << joinViolations(violations);
 }
 
-// Completed item 8 removed the hard-coded `roughness = 0.9` from forward
-// shading; raytrace.rchit.slang kept its own copy until this test's commit
-// moved the shininess -> roughness mapping into common/material_rules.slang's
-// material_roughness(). Guards against a numeric literal being reintroduced
-// by any shading path, and against a shading path silently dropping the
-// shared helper call.
+// Roughness comes from material_roughness() in every shading path, never a literal.
 TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
 {
     const fs::path repo_root = repoRoot();
@@ -4328,12 +3623,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
       << violations.size() << " shader site(s) hard-code roughness instead of deriving it from the material:"
       << joinViolations(violations);
 
-    // Batch XVIII moved the metallic-roughness guard-plus-default-plus-combine
-    // wrapper - including the material_roughness() fallback call - into
-    // material_textures.slang's resolved_metallic_roughness()/
-    // resolved_metallic_roughness_lod0(); rasterizer/deferred/raytrace.rchit
-    // now derive roughness by calling one of those instead of
-    // material_roughness() directly.
+    // Three paths reach material_roughness() through material_textures.slang's resolved_metallic_roughness helpers.
     const fs::path material_textures_path = slang_root / "common/material_textures.slang";
     const auto material_textures_content = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_content.has_value()) << "missing " << material_textures_path.string();
@@ -4360,11 +3650,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
     }
 }
 
-// GltfLoader.cpp pins ObjMaterial::shininess to a fixed fallback value on the
-// assumption that common/material_rules.slang's material_roughness() is the
-// only shader reader (see the kFallbackShininess comment). This scans every
-// checked-in .slang for `material.shininess` so a future shading path cannot
-// start reading the pinned field elsewhere without this test noticing.
+// GltfLoader pins shininess to a fallback, safe only while material_roughness() is its sole shader reader.
 TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
 {
     const fs::path repo_root = repoRoot();
@@ -4410,12 +3696,7 @@ TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
       << joinViolations(violations);
 }
 
-// bloom.slang's fs_brightpass and tonemap.slang's fs_main must agree on
-// where auto-exposure is applied: bloom pre-exposes in the bright pass (so
-// its fixed THRESHOLD of 1.0 means something across the whole auto-exposure
-// range), and tonemap must apply exposure to the raw HDR term only - never
-// to the bloom term, which would double-expose it. See BACKLOG.md's
-// "Threshold bloom in post-exposure units" entry for the reasoning.
+// Bloom pre-exposes in its bright pass, so tonemap exposes only the raw HDR term, never bloom a second time.
 TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
 {
     const fs::path repo_root = repoRoot();
@@ -4451,9 +3732,7 @@ TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
     ASSERT_EQ(depth, 0u) << "unbalanced parentheses after aces_tonemap( in " << tonemap_path.string();
     const std::string composite_expr = tonemap_source.substr(args_start, pos - 1 - args_start);
 
-    // Split the composite's top-level '+' terms (none of them contain nested
-    // '+' inside parens here, but track depth anyway so a future refactor
-    // that adds one does not silently break this into the wrong terms).
+    // Split top-level '+' terms, tracking paren depth for any future nested '+'.
     std::vector<std::string> terms;
     std::size_t term_start = 0;
     std::size_t term_depth = 0;
@@ -4518,10 +3797,7 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
             if (marker_pos == std::string::npos) { break; }
             ++occurrences_checked;
 
-            // The enclosing statement runs from the previous statement
-            // terminator (';' or '{') up to the call site - the tap coordinate
-            // must be range-checked to [0,1] on both components somewhere in
-            // that statement (e.g. the condition of a guarding ternary).
+            // The tap coordinate must be range-checked to [0,1] somewhere in its enclosing statement.
             std::size_t statement_start = marker_pos;
             while (statement_start > 0 && stripped_text[statement_start - 1] != ';'
                    && stripped_text[statement_start - 1] != '{') {
@@ -4569,16 +3845,9 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
 
 namespace {
 
-// A text-only call-graph reachability check for the whole Slang corpus (see
-// EverySlangFunctionIsReachableFromAnEntryPoint below). No real Slang front
-// end is available to this suite, so this is a tokenizer, not a parser: it
-// extracts identifiers and a handful of punctuation marks and reasons about
-// brace/paren nesting depth, nothing more.
+// Slang call-graph reachability: a tokenizer, not a parser, as no Slang front end is available here.
 
-// One identifier or one punctuation mark of interest ("(){}:;,") found while
-// scanning a file. Whitespace, numeric literals, and every other character
-// are not tokenized at all - see tokenize_slang below for why numeric
-// literals need special handling.
+// One identifier or one of "(){}:;," found in a scan; everything else is skipped.
 struct SlangToken
 {
     std::string text;
@@ -4586,11 +3855,7 @@ struct SlangToken
     bool is_identifier = false;
 };
 
-// Tokenizes comment/string-stripped Slang source text into SlangTokens.
-// Numeric literals (including a letter suffix, e.g. "8u", "1.0f") are
-// consumed and discarded as a single opaque run rather than left for the
-// generic scan - otherwise a suffix letter like the 'u' in "8u" would start
-// its own spurious one-character identifier token.
+// Numeric literals are swallowed with their suffix, or the 'u' in "8u" would become an identifier.
 std::vector<SlangToken> tokenize_slang(const std::string &text)
 {
     std::vector<SlangToken> tokens;
@@ -4623,10 +3888,7 @@ std::vector<SlangToken> tokenize_slang(const std::string &text)
     return tokens;
 }
 
-// Blanks out double-quoted string contents (keeping the quotes and every
-// other character in place, so offsets are unaffected) - only
-// `[shader("...")]`-style attributes carry string literals in this corpus,
-// but this is generic rather than special-cased to that attribute.
+// Blanks string contents but keeps the quotes, so offsets are unaffected.
 std::string strip_string_literals(const std::string &line)
 {
     std::string result = line;
@@ -4644,23 +3906,14 @@ std::string strip_string_literals(const std::string &line)
 // True once `line`, trimmed, is empty.
 bool is_blank_line(const std::string &line) { return line.find_first_not_of(" \t\r") == std::string::npos; }
 
-// True if `line`, trimmed, starts with '[' - every Slang attribute
-// ([shader(...)], [numthreads(...)], [vk::binding(...)], ...) in this corpus
-// is written on its own line directly above the declaration it decorates.
+// Every attribute in this corpus sits on its own line above the declaration it decorates.
 bool is_attribute_line(const std::string &line)
 {
     const auto first = line.find_first_not_of(" \t\r");
     return first != std::string::npos && line[first] == '[';
 }
 
-// Whether the contiguous run of blank/attribute lines immediately preceding
-// stripped_lines[def_line_index] contains a `[shader("...")]` attribute -
-// the marker that makes a function a call-graph root. Slang stacks multiple
-// attributes directly on top of each other with no blank line between them
-// (gpu_cull.slang's `cs_main` has `[shader("compute")]` then
-// `[numthreads(64, 1, 1)]` immediately above it), so this walks the whole
-// contiguous run rather than looking at only the single immediately
-// preceding line, which would miss exactly that case.
+// Walks the whole attribute run above a definition, since [shader(...)] may sit under other stacked attributes.
 bool preceded_by_shader_attribute(const std::vector<std::string> &stripped_lines, std::size_t def_line_index)
 {
     std::size_t i = def_line_index;
@@ -4685,16 +3938,7 @@ struct SlangFunctionDef
     std::string raw_def_line; // original (unstripped) text of `line`, for allowlist marker lookup
 };
 
-// Scans one already comment/string-stripped, tokenized file for function
-// definitions: two consecutive identifier tokens (a return type and a name)
-// immediately followed by '(' at brace depth 0. This is deliberately not a
-// real parser - see EverySlangFunctionIsReachableFromAnEntryPoint's comment
-// for why a text gate is enough here - but two lightweight checks keep it
-// honest: the parameter list's matching ')' is located by paren-depth
-// counting (so multi-line parameter lists such as rasterizer.slang's
-// `vs_main` do not break it), and after skipping an optional
-// " : SEMANTIC" clause the next token must be '{' - a bare declaration
-// (next token ';') is not treated as a definition.
+// A definition is type, name, '(' at depth 0, the matching ')', an optional semantic, then '{', never ';'.
 void collect_functions_from_file(const std::vector<std::string> &stripped_lines, const std::vector<std::string> &raw_lines,
                                   const std::string &relative_file, std::vector<SlangFunctionDef> &out)
 {
@@ -4776,9 +4020,7 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
     }
 }
 
-// Every function definition under Resources/ShadersSlang (excluding
-// build/), analysed as one global corpus rather than per file - see
-// EverySlangFunctionIsReachableFromAnEntryPoint for why.
+// Every function under Resources/ShadersSlang as one corpus, because imports cross files.
 std::vector<SlangFunctionDef> collect_slang_functions(const fs::path &slang_root)
 {
     std::vector<SlangFunctionDef> functions;
@@ -4804,12 +4046,7 @@ std::vector<SlangFunctionDef> collect_slang_functions(const fs::path &slang_root
     return functions;
 }
 
-// A deliberate exception to EverySlangFunctionIsReachableFromAnEntryPoint,
-// with the reason the function is not reachable from any [shader(...)]
-// entry point. Every entry must be matched by a
-// "// UNREACHABLE_SLANG_FUNCTION_OK: <marker>" trailing comment on the
-// function's definition line (checked below), so an exemption cannot rot
-// silently after the line it protects moves or is deleted.
+// A justified exception; its marker must trail the definition line, so it cannot rot after the line moves.
 struct UnreachableSlangAllowlistEntry
 {
     std::string file;// relative to Resources/ShadersSlang/, forward slashes
@@ -4822,32 +4059,7 @@ const std::string kUnreachableSlangMarkerPrefix = "UNREACHABLE_SLANG_FUNCTION_OK
 
 }// namespace
 
-// Two shipped regressions in one week (the `ibl` batch XIII found, and the
-// `forward` one immediately above in this file's history) shared the same
-// signature: the .slang source still defined the helper, the emitted output
-// no longer contained it, and nothing called it any more - a lost call site,
-// not dead code that should have been deleted. This is the general form of
-// that check: every function defined anywhere under Resources/ShadersSlang
-// must be reachable, by name, from some `[shader("...")]` entry point.
-//
-// The corpus is analysed globally rather than per file because Slang has no
-// preprocessor #include - modules are pulled in via `import` (e.g.
-// ibl.slang's `import fullscreen;`), so a helper's caller routinely lives in
-// a different file than its definition. Reachability is therefore also by
-// NAME rather than by a fully resolved symbol: two unrelated functions that
-// happen to share a name (ibl.slang's own `distribution_ggx` and
-// common/brdf.slang's) are both treated as reachable if either name is
-// called from a root, which can only produce false negatives (a genuinely
-// dead function hiding behind a live same-named one), never false
-// positives - an acceptable trade for a text gate with no real Slang front
-// end behind it.
-//
-// A dead helper usually means a lost call site, not a helper that should be
-// deleted: deleting `sky_radiance` (see forward.slang) would have "fixed"
-// this gate and cemented that regression rather than catching it. Triage
-// every finding - wire the call back up, or if it is a genuine one-off
-// (a proven-out toolchain spike, a test fixture), justify it in
-// kUnreachableSlangAllowlist above rather than deleting the function.
+// Every function must be reachable by name from an entry point; an unreachable one is a lost call site: rewire it.
 TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 {
     const fs::path repo_root = repoRoot();
@@ -4858,12 +4070,7 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 
     const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
 
-    // Self-verifying floors: EveryShaderSourceHasCompiledBinary has already
-    // been burned once by a parser change that silently found nothing and
-    // still read as a pass. These floors are well below the real counts (at
-    // time of writing: ~90 functions, ~53 entry points) so ordinary shader
-    // edits never bump into them, but a scan that finds (near-)zero of
-    // either cannot pass silently.
+    // Floors far below the real counts, so a scan that silently finds nothing cannot pass.
     const int total_functions = static_cast<int>(functions.size());
     const int total_roots =
       static_cast<int>(std::count_if(functions.begin(), functions.end(), [](const auto &fn) { return fn.is_root; }));
@@ -4953,13 +4160,7 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 
 namespace {
 
-// Resolves the transitive closure of `import <module>;` lines starting from
-// `entry_relative` (relative to slang_root, forward slashes). Every wgslMap
-// source's imports resolve to Resources/ShadersSlang/common/<module>.slang
-// today - see the grep in this task's history - so that is the only place
-// looked up; a common/ module that itself imports another common/ module
-// (e.g. cascaded_shadow.slang -> scene_types.slang) is still followed,
-// because the worklist recurses into every file it adds.
+// Transitive imports of `entry_relative`; wgslMap sources import only from common/, which is looked up recursively.
 std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, const std::string &entry_relative)
 {
     std::set<std::string> file_set;
@@ -4982,17 +4183,7 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
     return file_set;
 }
 
-// Every Slang function name reachable, by name, from a [shader("...")] entry
-// point defined in `entry_relative` (the wgslMap source itself - a shared
-// common/ module never carries an entry point), restricted to functions
-// defined somewhere in `file_set`. This mirrors
-// EverySlangFunctionIsReachableFromAnEntryPoint's worklist walk above, but
-// scoped to one source's own import closure rather than the whole corpus:
-// the combined WGSL emit for that source only ever contains ITS call graph,
-// so a same-named function reachable only via some unrelated source (e.g.
-// another wgslMap entry that happens to import the same common/ module) must
-// not count here - that would produce a false negative, not a false
-// positive, but it would defeat the point of restricting the scope at all.
+// Names reachable from `entry_relative`'s entry points within `file_set`: its WGSL holds only its own call graph.
 std::set<std::string> slang_function_names_reachable_from_source(const std::vector<SlangFunctionDef> &all_functions,
                                                                    const std::set<std::string> &file_set,
                                                                    const std::string &entry_relative)
@@ -5039,20 +4230,7 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
 
 }// namespace
 
-// mtimes (CheckedInWgslIsNotOlderThanItsSlangSource, above) cannot survive a
-// `git clone`, so they are a local-iteration guard only, not a CI backstop -
-// this is that backstop. For each wgslMap source, every Slang function
-// reachable from its OWN [shader("...")] entry point(s) must appear, by
-// name, in the checked-in destination WGSL: `fn <name>(` for an (unmangled)
-// entry point itself, or `fn <name>_<digits>(` for a helper, since slangc's
-// WGSL backend mangles every non-entry function with a numeric suffix. A
-// lambert_diffuse-shaped regression - defined, called, but the emitted WGSL
-// silently lost it on the next regenerate - fails loudly here instead of
-// shipping. `fullscreen_vs` (imported by ibl.slang but never called, since
-// ibl.slang defines its own vs_fullscreen with different winding) must NOT
-// show up as a violation: the reachability restriction to `entry_relative`'s
-// own import closure is what keeps it out of ibl.slang's reachable set in
-// the first place.
+// The CI backstop mtimes cannot be: each reachable function must appear in the WGSL, helpers as `fn <name>_<digits>(`.
 TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 {
     const fs::path repo_root = repoRoot();
@@ -5119,25 +4297,14 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 
 namespace {
 
-// One `struct <Name> { ... }` definition found somewhere under
-// Resources/ShadersSlang - the struct-name counterpart to SlangFunctionDef.
-// Needed because a common module's public surface is not just its
-// functions: ibl.slang imports fullscreen only for `FullscreenVsOut`, never
-// calling `fullscreen_vs` at all (see
-// EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl's comment above) -
-// a function-name-only version of the check below would flag that import as
-// unused and be wrong.
+// Struct definitions too, because a module can be imported for a struct alone.
 struct SlangStructDef
 {
     std::string name;
     std::string relative_file;// relative to Resources/ShadersSlang, forward slashes
 };
 
-// Scans one already comment/string-stripped file's tokens for `struct
-// <Name>` pairs. Unlike collect_functions_from_file this needs no brace or
-// paren bookkeeping: `struct` is a keyword that only ever precedes the
-// type's name, so any "struct" identifier token immediately followed by
-// another identifier token is a definition.
+// `struct` always precedes the type name, so no brace or paren bookkeeping is needed.
 void collect_structs_from_file(const std::vector<std::string> &stripped_lines, const std::string &relative_file,
                                 std::vector<SlangStructDef> &out)
 {
@@ -5154,8 +4321,7 @@ void collect_structs_from_file(const std::vector<std::string> &stripped_lines, c
     }
 }
 
-// Every relative path (forward slashes, relative to slang_root) of a
-// non-generated .slang file under `slang_root`.
+// Forward-slashed relative paths of every non-generated .slang file under `slang_root`.
 std::vector<std::string> collect_all_slang_relative_paths(const fs::path &slang_root)
 {
     std::vector<std::string> paths;
@@ -5171,8 +4337,7 @@ std::vector<std::string> collect_all_slang_relative_paths(const fs::path &slang_
     return paths;
 }
 
-// Every `struct` definition under Resources/ShadersSlang (excluding
-// build/), mirroring collect_slang_functions.
+// Every struct definition under Resources/ShadersSlang, like collect_slang_functions.
 std::vector<SlangStructDef> collect_slang_structs(const fs::path &slang_root)
 {
     std::vector<SlangStructDef> structs;
@@ -5188,15 +4353,7 @@ std::vector<SlangStructDef> collect_slang_structs(const fs::path &slang_root)
     return structs;
 }
 
-// Resolves `import <module_name>;` to the .slang file slangc would find:
-// slangc searches -I paths in order (see Get-SlangIncludeArgument in
-// WindowsSlang.Common.psm1) - the importing file's own directory first, then
-// every directory under Resources/ShadersSlang. Two modules share a
-// filename in this corpus today (common/noise.slang and compute/noise.slang
-// - see tests/noise_test.slang, which imports the common/ one), so an exact
-// same-directory match is tried first, then a common/ preference, matching
-// how those two actually resolve in practice; anything left ambiguous falls
-// back to the alphabetically-first candidate.
+// Resolves an import as slangc does: same directory, then common/, then the alphabetically first candidate.
 std::optional<std::string> resolve_slang_module(const std::map<std::string, std::vector<std::string>> &files_by_stem,
                                                   const std::string &module_name,
                                                   const std::string &importer_relative_file)
@@ -5218,14 +4375,7 @@ std::optional<std::string> resolve_slang_module(const std::map<std::string, std:
 
 }// namespace
 
-// forward.slang claimed to tonemap via `import aces;` while the actual
-// tonemap pass lives entirely in tonemap/tonemap.slang - the import was dead
-// weight left over from before that split, and the header comment above it
-// was simply wrong (see the fix alongside this test). This is the general
-// form of that check: for every `import <module>;` anywhere in the Slang
-// corpus, the importing file must actually reference at least one of the
-// module's exported function or struct names - otherwise the import (and
-// any comment justifying it) is stale and should be deleted.
+// An import whose functions and structs the importer never names is stale, and so is any comment justifying it.
 TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 {
     const fs::path repo_root = repoRoot();
@@ -5309,14 +4459,7 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
       << joinViolations(violations);
 }
 
-// histogram.slang used to compile to nothing (its manifest row was
-// "disabled": true, kept only for documentation) while looking, to a casual
-// reader, like a live shader - no gate could see that mismatch because every
-// existing check starts from the manifest and walks outward, never from the
-// filesystem inward. This is the inverse check: every .slang source with an
-// entry point must be claimed by some enabled manifest row, so a source that
-// compiles to nothing (or was never added at all) fails loudly instead of
-// aging invisibly.
+// The inverse of the manifest-driven checks: every source with an entry point needs an enabled manifest row.
 TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
 {
     const fs::path repo_root = repoRoot();
@@ -5331,11 +4474,7 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
     int entry_point_sources_checked = 0;
     std::vector<std::string> violations;
     for (const std::string &relative_path : collect_all_slang_relative_paths(slang_root)) {
-        // common/ is a module directory with no entry points of its own;
-        // has_entry_point matches "[shader(" inside comments too, and
-        // common/fullscreen.slang's fullscreen_vs usage-example comment has
-        // one - an exclusion by convention, not a workaround for a real
-        // entry point.
+        // common/ has no entry points; has_entry_point would match a "[shader(" in a usage-example comment.
         if (relative_path.starts_with("common/")) { continue; }
         if (!has_entry_point(slang_root / relative_path)) { continue; }
 
@@ -5354,13 +4493,7 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
       << joinViolations(violations);
 }
 
-// The ten Slang sources feeding wgslMap used to say "Mirrors <x>.wgsl" in
-// their header comments, describing a two-way relationship that stopped
-// being true once the WGSL became a one-way build output of the Slang
-// source - the same "source still says it does X" drift
-// EveryImportedSlangModuleIsUsed and EverySlangFunctionIsReachableFromAnEntryPoint
-// exist for, one level up: the file rather than the function. Cheap, exact,
-// and it names the drift it prevents.
+// Generated WGSL is a one-way output, so no Slang source may claim to mirror it.
 TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
 {
     const fs::path repo_root = repoRoot();
@@ -5395,9 +4528,7 @@ struct ModuleInterface
     fs::path path;// absolute path of the declaring .ixx
 };
 
-// Extracts the module name from a line of the form "<prefix><name>;",
-// trimming surrounding whitespace. Returns an empty string if `line` does
-// not start with `prefix` or has no terminating ';'.
+// Module name from "<prefix><name>;", or empty if the prefix or the ';' is missing.
 std::string extract_module_name(const std::string &line, const std::string &prefix)
 {
     if (line.compare(0, prefix.size(), prefix) != 0) { return {}; }
@@ -5412,9 +4543,7 @@ std::string extract_module_name(const std::string &line, const std::string &pref
     return name.substr(first, last - first + 1);
 }
 
-// Every `export module <name>;` interface under `src_root`. Primary module
-// interfaces only (the project has no module partitions today); a file is
-// assumed to declare at most one module.
+// Every `export module <name>;` under `src_root`; no partitions, at most one module per file.
 std::vector<ModuleInterface> collect_module_interfaces(const fs::path &src_root)
 {
     std::vector<ModuleInterface> modules;
@@ -5436,8 +4565,7 @@ std::vector<ModuleInterface> collect_module_interfaces(const fs::path &src_root)
     return modules;
 }
 
-// name -> generic-string paths of every .cpp/.ixx file under `roots`
-// containing an `import <name>;` or `export import <name>;` line.
+// Module name -> the .cpp/.ixx files that import or re-export it.
 std::map<std::string, std::set<std::string>> collect_module_importers(const std::vector<fs::path> &roots)
 {
     std::map<std::string, std::set<std::string>> importers;
@@ -5464,18 +4592,7 @@ std::map<std::string, std::set<std::string>> collect_module_importers(const std:
 
 }// namespace
 
-// A module interface (.ixx) that nothing imports is still compiled into
-// every build - Src/GraphicsEngineVulkan/CMakeLists.txt globs *.ixx into
-// VulkanEngineCore's CXX_MODULES file set unconditionally - and is rescanned
-// by clang-scan-deps on every configure. Two such modules
-// (kataglyphis.shared.scene.vertex / kataglyphis.shared.scene.obj_material)
-// existed for no reason but that nobody deleted their wrapper .ixx after the
-// equivalent kataglyphis.vulkan.vertex / kataglyphis.vulkan.obj_material
-// modules were introduced - a standing trap, since both pairs exported the
-// same `::Vertex` / `::ObjMaterial` type. This test asserts the set of
-// interfaces with zero importers stays empty, so a module that loses its
-// last importer is caught instead of silently becoming build-time-only
-// weight.
+// Every .ixx is globbed into the build and rescanned each configure, so one nothing imports is dead weight.
 TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
 {
     const fs::path repo_root = repoRoot();
@@ -5491,9 +4608,7 @@ TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
     const std::vector<fs::path> search_roots = { src_root, repo_root / "Test" };
     const std::map<std::string, std::set<std::string>> importers = collect_module_importers(search_roots);
 
-    // Modules with a justified reason to have no importer (e.g. a
-    // consciously-rootless entry point module). Empty today - an entry here
-    // requires a written reason, not just a failing test.
+    // A rootless module needs a written reason here; none today.
     const std::set<std::string> allowed_rootless_modules = {};
 
     std::vector<std::string> unimported;
@@ -5521,35 +4636,19 @@ TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
 
 namespace {
 
-// file (relative to Src/GraphicsEngineVulkan/, forward slashes) : marker ->
-// a deliberate exception to the rule below, with the reason it does not
-// need ASSERT_VULKAN. This is not a way to silence a real gap - every entry
-// must be justified, and every entry must be matched by a
-// "// UNCHECKED_VULKAN_RESULT_OK: <marker>" trailing comment on the exempted
-// line in the source (checked by VulkanCreationResultsAreChecked below), so
-// an exemption cannot rot silently after the line it protects moves or is
-// deleted.
+// A justified exception; its marker must trail the exempted line, so it cannot rot after the line moves.
 struct AllowlistEntry
 {
     std::string file;
     std::string marker;
 };
 
-// Both former entries here (ShaderHelper.cpp's already-fatal-abort-above and
-// Clouds.cpp's noise-dispatch-skip-on-failure) became dead once the ".result"
-// check in the ±8-line window was accepted as satisfying the gate on its own
-// (see VulkanCreationResultsAreChecked below): each site's explicit
-// `if (x.result != ...)` a few lines above its `.value` read already
-// satisfies the gate without a special-case exemption.
+// Empty: an explicit ".result" check near a ".value" read already satisfies the gate.
 const std::vector<AllowlistEntry> kCheckedResultAllowlist = {};
 
 const std::string kUncheckedResultMarkerPrefix = "UNCHECKED_VULKAN_RESULT_OK: ";
 
-// Returns the index of the kCheckedResultAllowlist entry whose marker is
-// present as a trailing "// UNCHECKED_VULKAN_RESULT_OK: <marker>" comment on
-// `line`, or -1 if none matches. Anchoring on the marker text rather than the
-// line number means an unrelated edit above the exempted line cannot turn a
-// live exemption into a false positive (or, worse, a silently-wrong one).
+// Matched by marker text, not line number, so an edit above an exempted line cannot shift the exemption.
 int allowlisted_result_check_index(const std::string &relative_file, const std::string &line)
 {
     for (std::size_t idx = 0; idx < kCheckedResultAllowlist.size(); ++idx) {
@@ -5562,17 +4661,7 @@ int allowlisted_result_check_index(const std::string &relative_file, const std::
     return -1;
 }
 
-// True if `line` calls something that looks like a Vulkan/VMA creation or
-// allocation function: the keyword immediately followed by an uppercase
-// letter (Vulkan's camelCase naming, e.g. "createDescriptorPool",
-// "vmaCreateAllocator") and, after any further identifier characters, an
-// opening paren. The uppercase requirement is what tells a real Vulkan call
-// apart from an unrelated identifier that merely contains the keyword, such
-// as std::filesystem::create_directories(...) or a "..._create_info"
-// struct-field reference - both continue with '_', not a capital letter.
-// The left-boundary check similarly rejects "recreateSwapChain(", where
-// "create" is not a word start. Reuses is_identifier_char from the
-// constant-parsing helpers above.
+// A create or allocate keyword at a word start, then an uppercase letter (camelCase, not snake_case), then '('.
 bool looks_like_creation_call(const std::string &line)
 {
     static const std::vector<std::string> keywords = { "create", "Create", "allocate", "Allocate" };
@@ -5595,11 +4684,7 @@ bool looks_like_creation_call(const std::string &line)
     return false;
 }
 
-// Same shape as looks_like_creation_call, keyed on the query verbs instead
-// of the creation/allocation ones. `enumeratePhysicalDevices`,
-// `getSurfaceCapabilitiesKHR` and friends return a vk::ResultValue exactly
-// like a create*/allocate* call does, but the naming-based gate above never
-// saw them - every surface and enumeration query silently slipped past it.
+// The same for query verbs, which return vk::ResultValue too but slip past the creation matcher.
 bool looks_like_query_call(const std::string &line)
 {
     static const std::vector<std::string> keywords = { "get", "Get", "enumerate", "Enumerate" };
@@ -5624,26 +4709,10 @@ bool looks_like_query_call(const std::string &line)
 
 }// namespace
 
-// The instance-extension check used to detect a missing extension, log it,
-// and then build a vk::Instance from a createInstance() call whose
-// ResultValue was never checked one line later - a failure would silently
-// continue with a null-handle instance. Exceptions are disabled project-wide
-// (VULKAN_HPP_NO_EXCEPTIONS), so ASSERT_VULKAN's log-critical-and-abort is the
-// only fail-fast mechanism available; a missed check is a straight path to a
-// null-handle dereference downstream.
-//
-// This test scans every .cpp under Src/GraphicsEngineVulkan/ for a
-// vk::ResultValue::value read with no ASSERT_VULKAN nearby. It cannot
-// understand control flow, so it looks in a window around the ".value" read
-// on both sides - the check-then-assign idiom used throughout the codebase
-// puts ASSERT_VULKAN just above the read, but Rasterizer.cpp and
-// DeferredRasterizer.cpp instead assign inside an `if (result == eSuccess)`
-// with ASSERT_VULKAN in the `else`, which is a few lines *below* the read.
+// Exceptions are off, so each ".value" read needs an ASSERT_VULKAN in a window on both sides (else-branches sit below).
 TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 {
-    // Self-verifying floor: assert the widened matcher actually fires before
-    // relying on it below, so a future edit that neuters it fails loudly
-    // instead of quietly reporting zero violations forever.
+    // Prove the matcher fires first, so a neutered one cannot report zero violations forever.
     EXPECT_TRUE(looks_like_query_call("  auto x = d.getSurfaceFormatsKHR(*s).value;"));
     EXPECT_FALSE(looks_like_query_call("  auto x = getter(y).value;"));
 
@@ -5679,11 +4748,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
                     triggered = true;
                 }
                 if (lines[w].find("ASSERT_VULKAN") != std::string::npos) { asserted = true; }
-                // A query (unlike a creation/allocation call) is legitimately
-                // handled with an explicit `if (x.result != ...)` rather than
-                // an abort. Exclude the .value line itself so an unrelated
-                // ".result" mention there cannot retroactively satisfy a
-                // check that was never actually performed.
+                // Queries may check ".result" explicitly, but never on the ".value" line itself.
                 if (w != i && lines[w].find(".result") != std::string::npos) { asserted = true; }
             }
             if (!triggered || asserted) { continue; }
@@ -5725,19 +4790,13 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 
 namespace {
 
-// The one non-call occurrence of "beginCommandBuffer(" under Src/ is the
-// function's own definition signature in CommandBufferManager.cpp.
+// The one non-call "beginCommandBuffer(" under Src/ is its own definition.
 bool is_begin_command_buffer_definition_line(const std::string &line)
 {
     return line.find("beginCommandBuffer(vk::Device device") != std::string::npos;
 }
 
-// Looks backward from `call_line` (inclusive) up to `lookback` lines for a
-// "vk::CommandBuffer <name>" declaration and returns <name>, or an empty
-// string if none is found. The declaration is always on the call line itself
-// (single-line "vk::CommandBuffer x = ...beginCommandBuffer(...)") or one to
-// two lines above it, when the declaration and the call are split across a
-// line break.
+// The name declared as "vk::CommandBuffer <name>" on the call line or up to `lookback` lines above, else empty.
 std::string declared_command_buffer_name(const std::vector<std::string> &lines, std::size_t call_line, int lookback)
 {
     static const std::string marker = "vk::CommandBuffer ";
@@ -5757,14 +4816,7 @@ std::string declared_command_buffer_name(const std::vector<std::string> &lines, 
 
 }// namespace
 
-// beginCommandBuffer (CommandBufferManager.cpp) documents a null vk::CommandBuffer
-// return on either the pool-null guard or an allocate/begin failure. Exceptions
-// are disabled project-wide, so that null handle is the only failure signal a
-// caller has - recording commands into it, or handing it to
-// endAndSubmitCommandBuffer's queue.submit, is undefined behaviour. This scans
-// every .cpp under Src/ for a beginCommandBuffer( call and requires a
-// "!<the assigned variable>" null-check within the following kWindow lines,
-// mirroring VulkanCreationResultsAreChecked's window-scan shape above.
+// A null command buffer is beginCommandBuffer's only failure signal, so each result needs a null check.
 TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
 {
     const fs::path repo_root = repoRoot();
@@ -5822,15 +4874,7 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
       << joinViolations(violations);
 }
 
-// endAndSubmitCommandBuffer's submit half used to return void, so a failed
-// queue.submit was invisible to every caller - compactBLAS in particular
-// would destroy the (never-copied) original BLAS right after a submit that
-// silently failed. It now returns bool; this scans every .cpp under Src/ for
-// an endAndSubmitCommandBuffer( call and requires the result to be either
-// assigned to a variable, used in a condition, or explicitly discarded via
-// static_cast<void>(...) - mirroring EveryBeginCommandBufferResultIsChecked
-// above, but the qualifying forms differ because most call sites have
-// nothing to unwind on failure and legitimately discard the result.
+// Each submit result is assigned, tested, or explicitly discarded with static_cast<void>, so a failure is never invisible.
 TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
 {
     const fs::path repo_root = repoRoot();
@@ -5878,14 +4922,7 @@ TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
       << joinViolations(violations);
 }
 
-// 0c4d2faa added the null-check gate above (EveryBeginCommandBufferResultIsChecked)
-// for every beginCommandBuffer() call, but a checked return is not the same as a
-// handled failure: ASManager::createTLAS used to index blas[model_index]
-// unconditionally, and Clouds::createStorageTexture used to hand a null texture
-// back into createTextures/createDescriptorSets/recreateFrameResources and four
-// VulkanRenderer call sites. This pins the fix: createBLAS reports failure to its
-// caller, createTLAS refuses to index a short BLAS vector, and the clouds storage
-// texture path no longer has an escaping null.
+// A checked null is not a handled failure: createTLAS must not index a short BLAS vector, nor clouds hand out null.
 TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
 {
     const fs::path repo_root = repoRoot();
@@ -5932,13 +4969,7 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
          "subsystem has no defined rendering behaviour, so a failed command buffer must ASSERT_VULKAN instead";
 }
 
-// uploadRgba used to discard endAndSubmitCommandBuffer's result with
-// static_cast<void>, so a failed submit still returned true and left an
-// unwritten image bound into the descriptor array. This pins the fix: the
-// call site in Texture.cpp must consume the result (not this call site
-// specifically, discards are legitimate elsewhere - see
-// EveryEndAndSubmitCommandBufferResultIsChecked above), and createDefaultTexture
-// must forward uploadRgba's bool instead of swallowing it as void.
+// uploadRgba must consume the submit result, or a failed upload reports success with an unwritten image bound.
 TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
 {
     const fs::path repo_root = repoRoot();
@@ -5968,14 +4999,7 @@ TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
          "its callers instead of swallowing it as void";
 }
 
-// Third and last instalment of the family TextureUploadConsumesTheSubmitResult
-// pins: the vertex/index/TLAS/object-description uploads and the skybox
-// cubemap used to report success they never verified, because
-// VulkanBufferManager::copyBuffer and createBufferAndUploadVectorOnDevice
-// discarded endAndSubmitCommandBuffer's result with static_cast<void>. A
-// failed transfer produces undefined buffer contents that the BLAS builder
-// and every shader read as geometry - this must surface as a bool, not
-// vanish silently.
+// Buffer and cubemap uploads must surface a failed submit, or shaders read undefined contents as geometry.
 TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
 {
     const fs::path repo_root = repoRoot();
@@ -6033,19 +5057,7 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
          "command-buffer overload should remain";
 }
 
-// drawFrame used to have three post-acquire early returns that left
-// frameSync's imageAvailableSemaphore() signaled with no pending wait, then
-// handed that same semaphore straight back to the next frame's
-// vkAcquireNextImageKHR (which requires an unsignaled semaphore) - a
-// validation-layer hazard on every framebuffer-size-change, out-of-range
-// image index or record_commands failure. abort_frame_after_acquire()
-// (drawFrame's second lambda, next to abort_frame_with_fatal_error) fixes
-// this by recreating the swap chain - which destroys and recreates every
-// semaphore - before returning. This scans every bare `return;` between the
-// acquireNextImageKHR( call and frameSync.advanceFrame() and requires it be
-// preceded (within the previous three non-blank lines) by a call to
-// abort_frame_after_acquire( or abort_frame_with_fatal_error(, so a future
-// early return added to this span cannot reintroduce the leak silently.
+// A post-acquire early return must go through an abort helper, or the next acquire reuses a signaled semaphore.
 TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
 {
     const fs::path repo_root = repoRoot();
@@ -6113,21 +5125,7 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
       << joinViolations(violations);
 }
 
-// docs/gpu-golden-testing.md's golden-suite counts have already had to be
-// corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
-// once found the doc claiming 21 tests when the suite held 28. Pins the
-// doc's `<!-- golden-counts: ... -->` marker against a pure file-I/O count of
-// TEST(GoldenRender, ...) / TEST(Integration, ...) definitions, following the
-// same "parse two sources, compare, fail with both numbers" pattern this
-// suite uses throughout. Must never run the golden tests themselves to count them
-// - they need a GPU the CI container does not have.
-// Scans docs/gpu-golden-testing.md for a bare integer written immediately
-// next to "runnable" / "defined" / "`Integration` tests" outside the
-// golden-counts marker line - a second hand-typed copy of a number the
-// marker already tracks. This is exactly what let the doc's counts drift out
-// of sync three times before the marker existed: the marker got fixed, the
-// prose sentence next to it did not. Pure substr scanning, no regex, matching
-// the rest of this file's parsing style.
+// Counts typed into the doc's prose outside the marker: the second copy that drifts while the marker stays right.
 std::vector<std::string> find_bare_golden_count_copies(const fs::path &doc_path)
 {
     std::vector<std::string> violations;
@@ -6222,18 +5220,7 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
       << joinViolations(bare_copies);
 }
 
-// docs/path-tracing.md's "## Verification" section drifted out of sync with
-// the golden suite: it counted four PT-facing goldens and its "Open work"
-// section still asked for a furnace-mode golden after
-// PathTracingPassesTheWhiteFurnaceTest had already shipped it, alongside
-// RaytracedLargeMeshDoesNotLoseTheDevice - six PT-facing goldens exist, not
-// four. Pins the doc's `<!-- pt-goldens: ... -->` marker against a pure
-// file-I/O scan of TEST(GoldenRender, PathTracing...)/
-// TEST(GoldenRender, Raytraced...) definitions, following
-// GoldenTestCountsInDocsMatchTheSuite's "parse two sources, compare, fail
-// with both sides named" pattern, and mirrors
-// RendererImprovementLogDoesNotAskForShippedWork's shipped-work check for
-// the furnace toggle specifically.
+// Pins docs/path-tracing.md's pt-goldens marker to the PathTracing and Raytraced goldens the suite defines.
 TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
 {
     const fs::path repo_root = repoRoot();
@@ -6298,9 +5285,7 @@ TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
       << " already ships it (\"KATAGLYPHIS_PT_FURNACE\") - the doc is asking for shipped work.";
 }
 
-// Parses docs/model-loading.md's `<!-- max-texture-count: N -->` marker line.
-// Returns std::nullopt if the marker line, or its value, is missing - a
-// deleted or malformed marker must fail the calling test, not skip it.
+// std::nullopt if the max-texture-count marker or its value is missing, so a deleted marker fails.
 std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -6315,9 +5300,7 @@ std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
     return std::nullopt;
 }
 
-// Parses `const int MAX_TEXTURE_COUNT = <N>;` out of
-// common/host_device_shared_vars.hpp by plain file I/O, not by including the
-// header - the point is to catch the header changing out from under the doc.
+// Plain file I/O, not an include: the point is to catch the header changing under the doc.
 std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
 {
     const auto lines = readFileLines(header_path);
@@ -6332,12 +5315,7 @@ std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
     return std::nullopt;
 }
 
-// docs/model-loading.md's "Textures, samplers and the 128-slot budget"
-// section pins MAX_TEXTURE_COUNT in prose; pins the doc's
-// `<!-- max-texture-count: N -->` marker against a pure file-I/O read of the
-// header constant so the two cannot silently drift apart, following the same
-// "parse two sources, compare, fail with both numbers" pattern as
-// GoldenTestCountsInDocsMatchTheSuite above.
+// Pins docs/model-loading.md's max-texture-count marker to the header constant.
 TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
 {
     const fs::path repo_root = repoRoot();
@@ -6363,28 +5341,7 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
       << " defines MAX_TEXTURE_COUNT = " << *header_value;
 }
 
-// docs/model-loading.md used to be the one doc in the tree written to cite
-// `file:line` locations, and this gate was scoped to it alone - but the same
-// rotting shape had already spread into Src/ and the shaders unobserved:
-// eighteen sites, at least eight already pointing at unrelated code by the
-// time they were found (a function moves ten lines and the citation now
-// points at unrelated code, silently). Widened to scan every comment under
-// Src/ and Resources/ShadersSlang/ too, then widened again to Test/, the
-// most heavily hand-commented tree in the repo and the last one left
-// unscanned. docs/ as a whole is still NOT scanned: docs/cpp-renderer-
-// improvements.md is the sole exemption, a chronological log where a
-// citation pinned to a historical commit is legitimate, and BACKLOG.md is
-// not scanned at all. Every other doc, and now every source/shader/test
-// comment, cites symbol names instead.
-//
-// kFileLinePattern alone missed the same-file shorthand, because it
-// requires a `filename.ext` before the colon. That shorthand rots exactly
-// the same way (a function moves, the number now points at unrelated code)
-// and had already rotted at multiple sites by the time it was found, so
-// kBareLinePattern catches a bare colon followed by digits (optionally a
-// dash and more digits) wherever it is not itself preceded by a digit
-// (which would make it part of an unrelated ratio-style token or a second
-// colon in a namespace or URL scheme).
+// Cite symbols, not line numbers, which silently point at unrelated code once a function moves; bare colons rot too.
 TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
 {
     const fs::path repo_root = repoRoot();
@@ -6444,12 +5401,7 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
       << joinViolations(violations);
 }
 
-// docs/model-loading.md's "Material fields and where they come from" table
-// claims to cover every ObjMaterial member; nothing enforced that claim, so a
-// member has now been appended without a row twice. Held here as the same
-// hand-maintained-list-plus-gate shape ObjMaterial_natural (above) already
-// uses, so the two lists fail together when a member is appended without
-// either being updated.
+// Every ObjMaterial member needs a row in the doc's material table; this list fails alongside ObjMaterial_natural's.
 TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
 {
     const fs::path repo_root = repoRoot();
@@ -6471,11 +5423,7 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
       << doc_path.string() << " is missing its \"Material fields and where they come from\" section";
     const std::string table_text = doc_content->substr(table_start);
 
-    // A "_row0" / "_row1" pair is documented as one table row, and the table
-    // is free to spell the second half out in full ("`foo_row1`") or as the
-    // shorthand it actually uses for three of the four pairs ("`_row1`", right
-    // next to "`foo_row0`" on the same line) - both are "documented", so a
-    // "_row1" member is satisfied by either spelling on the row0 member's line.
+    // A row pair shares one table row, so "_row1" counts in full or as the shorthand on its row0 line.
     std::vector<std::string> missing;
     for (const char *member : kObjMaterialMembers) {
         const std::string full = std::string("`") + member + "`";
@@ -6504,15 +5452,7 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
                                   << joinViolations(missing);
 }
 
-// docs/model-loading.md's "srgb" row hand-summarises which `.mtl` directives
-// are sRGB-uploaded vs. linear; nothing enforced that summary against the
-// per-slot rows (textureID/emissiveTextureID/normalTextureID/
-// metallicRoughnessTextureID) that actually name those directives, so
-// `map_Ke` went missing from the srgb row three commits after
-// ObjLoader.cpp's emissive slot started resolving it. Every backtick-quoted
-// `map_...` directive named in a *TextureID row's `.mtl` cell must also
-// appear (case-insensitively) in the `srgb` row's `.mtl` cell - a mechanical
-// consequence of the table's own content, not a second hand-maintained list.
+// The hand-summarised srgb row must name every map_... directive the *TextureID rows name.
 TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
 {
     const fs::path repo_root = repoRoot();
@@ -6529,10 +5469,7 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
     const std::string table_text = doc_content->substr(
       table_start, table_end == std::string::npos ? std::string::npos : table_end - table_start);
 
-    // Split the table into "| cell | cell | ... |" rows, each row into its
-    // pipe-delimited cells (Member / glTF source / .mtl source / Read by).
-    // Non-table prose lines (no leading '|') are skipped, so the heading's
-    // own prose paragraph before the table does not confuse row 0/1 below.
+    // Table rows only: prose lines without a leading '|' would shift the row indices below.
     std::vector<std::vector<std::string>> rows;
     {
         std::istringstream stream(table_text);
@@ -6554,8 +5491,7 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
             rows.push_back(std::move(cells));
         }
     }
-    // Row 0 is the header ("| Member | ... |"), row 1 the "| --- | ... |"
-    // separator; data rows start at index 2.
+    // Rows 0 and 1 are the header and separator; data starts at 2.
     ASSERT_GE(rows.size(), 2U) << doc_path.string() << "'s material table has no data rows";
 
     static const std::regex kBacktickToken(R"(`([^`]*)`)");
@@ -6605,14 +5541,7 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
       << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:" << joinViolations(missing, "\n  add `", "` to the srgb row's .mtl column");
 }
 
-// docs/shader-sharing.md's "Known glTF loader divergences" section claims to
-// be the place the C++ and Rust glTF loaders stay honest with each other, but
-// nothing enforced that claim - it shipped with one bullet while at least
-// four other real divergences (KHR_materials_unlit, occlusionTexture/
-// occlusionStrength, per-slot KHR_texture_transform, alphaMode BLEND) went
-// unrecorded. Same hand-maintained-list-plus-gate shape as
-// ModelLoadingDocDocumentsEveryObjMaterialMember (above): this only checks
-// that every key has a row, not that the row's content is accurate.
+// Every known C++/Rust glTF loader divergence needs a doc row; presence only, not accuracy.
 TEST(BuildIntegrity, ShaderSharingDocCoversEveryKnownLoaderDivergence)
 {
     const fs::path repo_root = repoRoot();
@@ -6643,9 +5572,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryKnownLoaderDivergence)
       << joinViolations(missing);
 }
 
-// Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
-// line. Returns std::nullopt if the marker line, or its value, is missing -
-// a deleted or malformed marker must fail the calling test, not skip it.
+// std::nullopt if the format-drift-denominator marker or its value is missing, so a deleted marker fails.
 std::optional<int> parse_format_drift_denominator_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -6660,9 +5587,7 @@ std::optional<int> parse_format_drift_denominator_marker(const fs::path &doc_pat
     return std::nullopt;
 }
 
-// Counts files with the eight extensions Get-ProjectCppFiles (the container
-// build's clang-format check) tracks, under one root, skipping any `build*`
-// directory the same way that PowerShell helper's git-less fallback does.
+// Counts what Get-ProjectCppFiles tracks, skipping build* directories like its git-less fallback.
 std::size_t count_cpp_sources(const fs::path &root)
 {
     static const std::set<std::string> kCppExtensions = { ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".ixx" };
@@ -6682,19 +5607,7 @@ std::size_t count_cpp_sources(const fs::path &root)
     return count;
 }
 
-// docs/code-quality.md's "Known state" section pins the total tracked C/C++
-// source count (the denominator of its X-of-Y formatting-drift figure) in a
-// `<!-- format-drift-denominator: N -->` marker so the figure can be checked
-// mechanically even though the deviating count itself needs clang-format
-// (unavailable in the Linux CI lane) to re-measure. This mirrors
-// MaxTextureCountInDocsMatchesTheHeader's "parse two sources, compare, fail
-// with both numbers" pattern, but pins the doc against a live directory walk
-// instead of a header constant - the same drift that let 72/125 rot into
-// 77/136 and then the actual 140/211 undetected for weeks.
-//
-// This only guards the denominator. The deviating numerator still needs a
-// human to re-run clang-format and update the doc by hand; a green run here
-// says nothing about whether that numerator is still accurate.
+// Pins only the drift figure's denominator to a live count; the numerator needs clang-format and a human.
 TEST(BuildIntegrity, FormatDriftDenominatorMatchesTheTrackedSourceCount)
 {
     const fs::path repo_root = repoRoot();
@@ -6721,11 +5634,7 @@ TEST(BuildIntegrity, FormatDriftDenominatorMatchesTheTrackedSourceCount)
          "denominator, not the deviating count).";
 }
 
-// Parses docs/shader-sharing.md's `<!-- shader-targets:begin -->` /
-// `:end` marker table - one `| \`<file>\` | spirv|wgsl |` row per Slang
-// entry-point source. Returns std::nullopt if the marker pair is missing, so
-// a deleted marker block fails the calling test instead of comparing against
-// an empty (vacuously matching) map.
+// The shader-targets marker table; std::nullopt without the markers, so an empty map cannot match vacuously.
 std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -6756,12 +5665,7 @@ std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(co
     return rows;
 }
 
-// Parses docs/shader-sharing.md's `<!-- shared-module-targets:begin -->` /
-// `:end` marker table - one `| \`common/<name>.slang\` | <target> |` row,
-// where <target> is spirv, wgsl, both, or (unused). Mirrors
-// parse_shader_targets_marker above: returns std::nullopt if the marker pair
-// is missing, so a deleted marker block fails the calling test instead of
-// comparing against an empty (vacuously matching) map.
+// The shared-module-targets marker table (spirv, wgsl, both or unused), with the same missing-marker contract.
 std::optional<std::map<std::string, std::string>> parse_shared_module_targets_marker(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -6792,13 +5696,7 @@ std::optional<std::map<std::string, std::string>> parse_shared_module_targets_ma
     return rows;
 }
 
-// For every Resources/ShadersSlang/common/*.slang module, the union of
-// targets ('spirv', 'wgsl') over every enabled manifest entry-point source -
-// tests/*.slang included, they are real dual-emit consumers and exactly why
-// brdf/noise are genuinely both-target - whose import_closure reaches it.
-// A module with no consumer at all (present under common/ but not currently
-// imported by anything compiled) maps to "(unused)"; two targets collapse to
-// "both"; one target is reported as-is.
+// Per common/*.slang module, the union of targets over every enabled source (tests included) whose closure reaches it.
 std::map<std::string, std::string> shared_module_target_truth(const fs::path &slang_root, const ShaderManifestData &manifest)
 {
     std::map<std::string, std::set<std::string>> module_targets;
@@ -6835,22 +5733,7 @@ std::map<std::string, std::string> shared_module_target_truth(const fs::path &sl
     return result;
 }
 
-// docs/shader-sharing.md's shader-targets table claims, per Slang
-// entry-point source, which single target it compiles to (spirv for the C++
-// Vulkan engine, wgsl for the Rust WebGPU renderer). shader-manifest.json is
-// the actual source of truth Build-SlangShaders.ps1/.sh read from, so this
-// pins the doc against it the same way MaxTextureCountInDocsMatchesTheHeader
-// pins a doc constant against its header - a previous revision of this doc
-// claimed ten WGSL-only shaders were "compiled to both targets", which this
-// test would have caught immediately.
-//
-// tests/*.slang (brdf_test.slang, noise_test.slang) are excluded on both
-// sides: they are CI dual-emit smoke tests documented separately in the
-// "CI guards" paragraph, not production entry points, and they are the one
-// case that genuinely does compile to both targets - which is exactly why
-// they do not belong in a table whose two columns are spirv-only/wgsl-only.
-// histogram.wgsl is excluded too: it has no Slang source (hand-written WGSL
-// fallback), so it can never appear in shader-manifest.json's manifest[].
+// Each source's documented target must match shader-manifest.json; dual-emit tests/ and hand-written histogram are out.
 TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
 {
     const fs::path repo_root = repoRoot();
@@ -6913,14 +5796,7 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
          "fallback) and cannot appear in shader-manifest.json";
 }
 
-// docs/shader-sharing.md's shared-module-targets table claims, per
-// Resources/ShadersSlang/common/ module, which target(s) actually reach it
-// through the manifest's import graph. Recomputes shared_module_target_truth
-// from import_closure + shader-manifest.json and asserts set equality in
-// both directions, so a module missing from the table AND a table row for a
-// module that no longer exists under common/ both fail loudly - the same
-// shape as ShaderSharingDocMatchesTheManifestTargets above, just one level
-// deeper (modules instead of entry points).
+// The shared-module table must equal the targets recomputed from the import graph, in both directions.
 TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
 {
     const fs::path repo_root = repoRoot();
@@ -6967,10 +5843,7 @@ TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
       << doc_path.string() << "'s shared-module-targets table disagrees with the import graph on:" << joinViolations(mismatched);
 }
 
-// Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in
-// `path`. Returns nullopt if the attribute is not found, so callers can tell
-// "found and mismatched" apart from "a renamed/removed attribute silently
-// matched zero times".
+// The first [numthreads(X, Y, Z)]; std::nullopt when absent, so a renamed attribute cannot match zero times.
 std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
 {
     const auto contentsOpt = readFileText(path);
@@ -6985,15 +5858,7 @@ std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
     return std::array<int, 3>{ std::stoi(match[1].str()), std::stoi(match[2].str()), std::stoi(match[3].str()) };
 }
 
-// Clouds.cpp dispatches the noise and cloud compute passes using
-// kNoiseWorkgroupSize/kCloudWorkgroupSize (CloudDispatch.hpp) to size the
-// thread-group grid. Those constants have no compiler-enforced link to the
-// [numthreads(...)] attribute the corresponding Slang kernel actually
-// declares - halving noise.slang's workgroup to (4,4,4) without touching
-// CloudDispatch.hpp would leave 7/8 of the noise volume undefined, and
-// nothing short of a GPU golden test would notice. Mirrors
-// HostAndShaderSharedConstantsAgree's "parse the shader text, compare
-// against the compiled host value" shape.
+// Dispatch constants have no compiler link to [numthreads]; a mismatch leaves most of the noise volume undefined.
 TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
 {
     const fs::path repo_root = repoRoot();
@@ -7031,11 +5896,7 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
-// Parses the [min, max] bounds out of clouds.slang's
-// `cloud.num_march_steps = int(clamp(scene.cloudParameters.w, MIN, MAX));`.
-// Returns nullopt if the assignment is not found, matching parse_numthreads's
-// convention so a rewritten expression fails loudly rather than matching
-// zero times.
+// [min, max] of the num_march_steps clamp; std::nullopt when the expression is not found.
 std::optional<std::pair<float, float>> parse_cloud_march_steps_range(const std::string &contents)
 {
     static const std::regex kPattern(
@@ -7045,8 +5906,7 @@ std::optional<std::pair<float, float>> parse_cloud_march_steps_range(const std::
     return std::make_pair(std::stof(match[1].str()), std::stof(match[2].str()));
 }
 
-// Parses the [min, max] bounds out of clouds.slang's
-// `cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, MIN, MAX));`.
+// [min, max] of the num_march_steps_to_light clamp.
 std::optional<std::pair<float, float>> parse_cloud_light_march_steps_range(const std::string &contents)
 {
     static const std::regex kPattern(R"(num_march_steps_to_light\s*=\s*int\(\s*clamp\(\s*scene\.cloudLightMarch\.x\s*,)"
@@ -7056,15 +5916,7 @@ std::optional<std::pair<float, float>> parse_cloud_light_march_steps_range(const
     return std::make_pair(std::stof(match[1].str()), std::stof(match[2].str()));
 }
 
-// clouds.slang clamps both march-step counts defensively even though the
-// host (SceneUboMarshal.hpp's fillSceneUboClouds) already clamps them before
-// packing - a shader must not trust a UBO. The two clamps have no
-// compiler-enforced link to CloudDispatch.hpp's
-// kMin/kMaxCloudMarchSteps/kMin/kMaxCloudLightMarchSteps, which the GUI
-// slider and the host packer are also built from; this pins the shader
-// literals against those constants so the three places agree. Mirrors
-// CloudDispatchGridsMatchTheShaderWorkgroupSizes's "parse the shader text,
-// compare against the compiled host value" shape.
+// The shader's defensive clamps must match CloudDispatch.hpp, which the GUI slider and host packer also use.
 TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
 {
     const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
@@ -7094,11 +5946,7 @@ TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
       << Kataglyphis::kMaxCloudLightMarchSteps << ')';
 }
 
-// Parses the operand list of noise.slang's `noiseVolume[tid] = float4( ... );`
-// assignment, splitting on top-level commas (respecting nested parens, so an
-// operand like `worley(uvw, 4.0)` counts as one argument, not two). Returns
-// nullopt if the assignment is not found, matching parse_numthreads's
-// "std::nullopt when the pattern is absent" convention.
+// Operands of the noiseVolume float4 write, split on top-level commas; std::nullopt when absent.
 std::optional<std::vector<std::string>> parse_noise_volume_write_operands(const std::string &contents)
 {
     static const std::regex kAssignStart(R"(noiseVolume\[tid\]\s*=\s*float4\()");
@@ -7149,8 +5997,7 @@ std::optional<std::vector<std::string>> parse_noise_volume_write_operands(const 
     return operands;
 }
 
-// Extracts the brace-delimited body of the first function found via
-// `signature_needle` (a substring unique to that function's declaration).
+// Body of the first function whose declaration contains `signature_needle`.
 std::string extract_function_body(const std::string &contents, const std::string &signature_needle)
 {
     const size_t sig_pos = contents.find(signature_needle);
@@ -7167,13 +6014,7 @@ std::string extract_function_body(const std::string &contents, const std::string
     return contents.substr(brace_pos, pos - brace_pos);
 }
 
-// noise.slang used to normalise its 128^3 thread id by a bare 256.0 (half
-// the actual volume extent, so the noise only ever covered the volume's
-// first octant) and hard-coded .b/.a to 0.0/1.0, even though clouds.slang's
-// sample_density weights all four channels into baseDensity and the cirrus
-// band. Neither gap was compiler-visible - both compiled and ran, just
-// silently produced the wrong picture. Mirrors HostAndShaderSharedConstantsAgree's
-// "parse the shader text, compare against the compiled host value" shape.
+// The noise must span the whole volume and fill every channel sample_density reads; neither gap is compiler-visible.
 TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads)
 {
     const fs::path repo_root = repoRoot();
@@ -7195,8 +6036,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
       << noise_path.string() << "'s NOISE_VOLUME_EXTENT (" << parsed_extent
       << ") does not match CloudDispatch.hpp's kNoiseVolumeExtent (" << Kataglyphis::kNoiseVolumeExtent << ')';
 
-    // (b) None of the four float4() operands may be a bare numeric literal -
-    // that is exactly how .b/.a ended up hard-coded to 0.0/1.0 last time.
+    // (b) No float4() operand may be a bare numeric literal, a hard-coded channel.
     const auto operands = parse_noise_volume_write_operands(*noise_contents);
     ASSERT_TRUE(operands.has_value()) << "no `noiseVolume[tid] = float4( ... );` assignment found in "
                                        << noise_path.string();
@@ -7214,11 +6054,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
              "cloud shape";
     }
 
-    // Cross-check: the swizzle components clouds.slang's sample_density
-    // actually reads off noiseCoarse/noiseFine (the 256- and 64-world-unit
-    // period samples) must be exactly {r, g, b, a}, so this gate fails
-    // loudly if that consumer contract changes instead of silently checking
-    // a stale set.
+    // sample_density must read exactly r, g, b and a, so a changed consumer fails instead of checking a stale set.
     const auto clouds_contents = readFileText(clouds_path);
     ASSERT_TRUE(clouds_contents.has_value()) << "could not read " << clouds_path.string();
     const std::string sample_density_body =
@@ -7238,12 +6074,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
       << "'s sample_density reads a different swizzle-component set off noiseCoarse/noiseFine than {r, g, b, a}";
 }
 
-// The cloud noise volume used to be written on a dedicated compute queue
-// while the eExclusive storage image it lives in is owned by the graphics
-// family - undefined contents on the family that samples it, with no
-// ownership transfer performed. Guards against the ad-hoc compute command
-// pool / queue reappearing, and against VulkanDevice growing back a
-// getComputeQueue() accessor that would tempt a caller into the same bug.
+// The eExclusive noise image belongs to the graphics family, so it is written there, with no compute queue or pool.
 TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
 {
     const fs::path repo_root = repoRoot();
@@ -7273,14 +6104,7 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
          "graphics queue instead";
 }
 
-// sample_density used to wrap the sample position into the noise volume's
-// [0, 1) domain with abs(fmod(x, N)) / N. fmod keeps the sign of its
-// dividend, so for negative x that returns (-N, 0], and abs() then maps -x
-// and +x onto the SAME texel - a mirror across the origin plane, not a wrap.
-// With the shipped cloud defaults the mirror plane sits almost exactly in
-// the middle of the visible box, so the cloud field rendered as a mirror
-// image of itself. frac(x) = x - floor(x) returns [0, 1) for negative
-// inputs too and wraps correctly. Guards against abs(fmod(...)) reappearing.
+// abs(fmod(x, N)) maps -x and +x onto one texel, a mirror; frac() wraps negative positions correctly.
 TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
 {
     const fs::path repo_root = repoRoot();
@@ -7307,12 +6131,7 @@ TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
                                  "not abs(fmod(...))";
 }
 
-// clouds.slang used to multiply density by the distance already travelled
-// along the ray (`float(i) / float(num_march_steps)`) instead of a per-step
-// LENGTH, making the volume ~63x too dense at the default quality and turning
-// the quality slider into a de-facto density slider. Guards against that
-// shape reappearing, both in the primary march and in light_march's mean
-// (rather than integrated) density.
+// Density scales by a constant step length, not distance travelled, or the quality slider becomes a density slider.
 TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
 {
     const fs::path repo_root = repoRoot();
@@ -7341,14 +6160,7 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
          "integrated optical depth (density * step length), not a mean density";
 }
 
-// phase_HG used to peak away from the sun (denominator added 2*g*cosTheta
-// instead of subtracting it), and the powder effect used to raise
-// transmittance directly instead of attenuating in-scattered light - both
-// silent, since neither has a numerical oracle in this suite (see the task
-// commit message for why one isn't added here either). This pins the text
-// shape of the fix so a future edit can't reintroduce either bug unnoticed:
-// a sign flip in the phase denominator, or a powder assignment onto
-// transmittance, would both slip past every other test in this file.
+// Text pins with no numerical oracle: the phase denominator's sign, and powder kept off transmittance.
 TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance)
 {
     const fs::path repo_root = repoRoot();
@@ -7359,9 +6171,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
     const std::string &contents = *contentsOpt;
 
-    // cosTheta = dot(rayDirection, normalize(-dirLight.direction)) - a positive
-    // g must peak at cosTheta = +1 (forward scattering, looking toward the
-    // sun), which requires SUBTRACTING 2*g*cosTheta from the denominator.
+    // Positive g peaks toward the sun (cosTheta = +1) only if 2*g*cosTheta is subtracted.
     static const std::regex kPhaseSignFixed(R"(1\.0\s*\+\s*g\s*\*\s*g\s*-\s*2\.0\s*\*\s*g)");
     EXPECT_TRUE(std::regex_search(contents, kPhaseSignFixed))
       << clouds_path.string()
@@ -7374,8 +6184,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
       << " contains the sign-flipped phase denominator (1.0 + g*g + 2.0*g*cosTheta), which "
          "peaks away from the sun instead of toward it";
 
-    // No line may assign transmittance from an expression that mentions
-    // powder - the powder term belongs on lightEnergy, not on transmittance.
+    // Powder belongs on lightEnergy, never in a transmittance assignment.
     const auto lines = readFileLines(clouds_path);
     ASSERT_TRUE(lines.has_value()) << "missing " << clouds_path.string();
     static const std::regex kPlainTransmittanceAssign(R"(transmittance\s*=[^=*])");
@@ -7389,10 +6198,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
           << line << ")";
     }
 
-    // Inside the march loop, the ONLY assignment to transmittance must be the
-    // Beer-Lambert `*= exp(-...)` - transmittance is monotonically
-    // non-increasing along the ray by construction, and nothing else in the
-    // loop may touch it.
+    // In the march loop transmittance only decreases, through the Beer-Lambert `*= exp(-...)`.
     const std::size_t loop_start = contents.find("for (int i = 0; i < cloud.num_march_steps; i++)");
     ASSERT_NE(loop_start, std::string::npos)
       << clouds_path.string() << " is missing the primary march loop";
@@ -7423,12 +6229,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     }
 }
 
-// clouds.slang used to carry a write-only `model_to_world` (seven assignments
-// feeding nothing - box_intersect only ever consumes inv_model_to_world)
-// under three comments that all claimed the inverse was "precomputed on the
-// CPU", which is false: Slang has no inverse() for SPIR-V, so it is formed
-// inline in clouds_main from cloud.radius/cloud.offset. Guards against the
-// dead forward matrix and the CPU-precompute claim both reappearing.
+// Slang has no SPIR-V inverse(), so clouds_main forms the box inverse itself; no dead forward matrix, no CPU claim.
 TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
 {
     const fs::path repo_root = repoRoot();
@@ -7439,10 +6240,7 @@ TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
     ASSERT_TRUE(clouds_contents_opt.has_value()) << "missing " << clouds_path.string();
     const std::string &clouds_contents = *clouds_contents_opt;
 
-    // std::regex here is ECMAScript, which has no lookbehind, so "not
-    // preceded by inv_" cannot be expressed directly. Every surviving
-    // occurrence of "model_to_world" must be part of "inv_model_to_world" -
-    // the two counts diverge the instant a forward matrix is reintroduced.
+    // ECMAScript regex has no lookbehind, so compare counts: every "model_to_world" must be an "inv_model_to_world".
     auto countOccurrences = [](const std::string &text, const std::string &needle) {
         std::size_t count = 0;
         std::size_t pos = 0;
@@ -7480,13 +6278,7 @@ TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
          "ARE CPU-precomputed into GlobalUBO)";
 }
 
-// The nine cloud.<field> <- scene.<field>.<component> pairs SceneUboMarshal.hpp's
-// fillSceneUboClouds (host) and clouds_main's unpack block (shader) must
-// agree on. Shared by CloudUboPackingMatchesTheShaderUnpack (checks it
-// against the shader) and CloudsDocTablesMatchTheirSources (checks
-// docs/clouds.md's cloud-ubo table against this same list), so the two tests
-// cannot silently diverge into two different "ground truths" for the same
-// nine-row table.
+// The host-to-shader cloud UBO pairs, shared by the unpack test and the doc-table test so their truths cannot diverge.
 struct CloudUboFieldPair
 {
     const char *cloud_field;
@@ -7505,15 +6297,7 @@ constexpr std::array<CloudUboFieldPair, 9> kCloudUboFieldPairs{ {
   { "offset", "cloudMeshOffset", "xyz" },
 } };
 
-// SceneUboMarshal.hpp's fillSceneUboClouds (the host packer) and this shader
-// (the only unpack side) are two hand-written mirrors of the same seven-value
-// layout, tied together by nothing but a comment. sceneUboLayoutSuite pins
-// the four cloud vec4s' byte *offsets* but says nothing about what goes
-// inside them, so a component swap on either side is invisible to every
-// other test. This pins each host component to the exact shader field it
-// must land in, matching on field-and-component pairs (not whole lines) so
-// the shader's surrounding max/clamp/> 0.5 wrappers don't make it brittle,
-// and names the pair that moved on failure.
+// Offsets are pinned elsewhere, but a component swap is not; each host component must land in its shader field.
 TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
 {
     const fs::path repo_root = repoRoot();
@@ -7535,9 +6319,7 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
     }
 }
 
-// std::string-owning counterpart to CloudUboFieldPair (whose const char*
-// fields point at literal storage from kCloudUboFieldPairs and must not be
-// reused for parsed, temporary text).
+// Owning counterpart of CloudUboFieldPair, whose const char* fields may only point at literals.
 struct ParsedCloudUboRow
 {
     std::string cloud_field;
@@ -7545,10 +6327,7 @@ struct ParsedCloudUboRow
     std::string component;
 };
 
-// Parses docs/clouds.md's `<!-- cloud-ubo:begin -->` / `:end` marker table -
-// one `| <gui control> | \`cloud.<field>\` | \`<sceneField>.<component>\` |`
-// row per SceneUBO field/component pair. Returns std::nullopt if the marker
-// pair is missing, matching parse_shader_targets_marker's convention.
+// docs/clouds.md's cloud-ubo marker table; std::nullopt without the markers.
 std::optional<std::vector<ParsedCloudUboRow>> parse_cloud_ubo_doc_table(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -7582,9 +6361,7 @@ std::optional<std::vector<ParsedCloudUboRow>> parse_cloud_ubo_doc_table(const fs
     return rows;
 }
 
-// Parses docs/clouds.md's `<!-- cloud-constants:begin -->` / `:end` marker
-// table - one `| \`<name>\` | <value> | ... |` row per CloudDispatch.hpp
-// constant. Returns std::nullopt if the marker pair is missing.
+// docs/clouds.md's cloud-constants marker table; std::nullopt without the markers.
 std::optional<std::map<std::string, long long>> parse_cloud_constants_doc_table(const fs::path &doc_path)
 {
     const auto lines = readFileLines(doc_path);
@@ -7615,16 +6392,7 @@ std::optional<std::map<std::string, long long>> parse_cloud_constants_doc_table(
     return rows;
 }
 
-// docs/clouds.md hand-maintains two tables that would otherwise silently rot:
-// the cloud-ubo table (GUI control -> shader field -> SceneUBO
-// field/component) and the cloud-constants table (every CloudDispatch.hpp
-// constant + the shader token it pins). This checks both against their
-// actual source of truth - kCloudUboFieldPairs (the same list
-// CloudUboPackingMatchesTheShaderUnpack already derives, reused rather than
-// hand-copied a second time) and the compiled CloudDispatch.hpp constants
-// themselves - so a doc edit that drifts from either fails here instead of
-// silently going stale, the same failure mode ShaderSharingDocMatchesTheManifestTargets
-// guards against for the shader-targets table.
+// Both hand-maintained clouds.md tables must match their sources, kCloudUboFieldPairs and the compiled constants.
 TEST(BuildIntegrity, CloudsDocTablesMatchTheirSources)
 {
     const fs::path repo_root = repoRoot();
@@ -7685,13 +6453,7 @@ TEST(BuildIntegrity, CloudsDocTablesMatchTheirSources)
     }
 }
 
-// PathTracing.cpp dispatches the path tracing compute pass using
-// kPathTracingWorkgroupSizeX/Y (PathTracingDispatch.hpp) to size the
-// thread-group grid. Those constants have no compiler-enforced link to the
-// [numthreads(...)] attribute path_tracing.slang actually declares - this
-// already went wrong once (found 2026-07-31 at (16, 8) against a shader
-// compiled at (8, 8), under-covering the image width by 2x every frame).
-// Mirrors CloudDispatchGridsMatchTheShaderWorkgroupSizes's shape.
+// The dispatch constants have no compiler link to [numthreads]; a mismatch under-covers the image every frame.
 TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
 {
     const fs::path repo_root = repoRoot();
@@ -7718,15 +6480,7 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
       << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }
 
-// Any image barrier that transitions into eShaderReadOnlyOptimal is handing
-// the image to a shader that samples it - naming a stage other than
-// eFragmentShader as the destination silently drops the actual hazard being
-// guarded against (PathTracing.cpp named eVertexShader on both edges of its
-// offscreen image barrier until this gate was added, even though nothing in
-// the pass reads a vertex-stage sampler). Raytracing.cpp's
-// raytracingToPostImageBarrier is the correct twin this gate is modelled on.
-// Anchored on source text via regex, not line numbers, so it survives
-// reformatting.
+// A barrier into eShaderReadOnlyOptimal must name the stage that samples the image, or the real hazard goes unguarded.
 TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 {
     const fs::path repo_root = repoRoot();
@@ -7737,10 +6491,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
     };
 
-    // Barriers are built via Kataglyphis::buildImageMemoryBarrier
-    // (common/ImageBarrierHelper.hpp) rather than field-by-field assignment,
-    // so the gate looks for `name = buildImageMemoryBarrier(image, oldLayout,
-    // newLayout, ...)` and reads newLayout back out of the third argument.
+    // Barriers come from buildImageMemoryBarrier, whose third argument is newLayout.
     static const std::regex kBarrierConstruction(
       R"((\w+)\s*=\s*Kataglyphis::buildImageMemoryBarrier\(([\s\S]*?)\);)");
     static const std::regex kPipelineBarrierCall(R"(commandBuffer\.pipelineBarrier\(([\s\S]*?)\);)");
@@ -7830,14 +6581,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
     EXPECT_TRUE(violations.empty()) << joinViolations(violations);
 }
 
-// A stray NUL or other C0 control byte inside a source file makes
-// grep/ripgrep treat the whole file as binary ("binary file matches" instead
-// of printing the line), which silently excludes every call site in it from
-// this project's grep-based planner/executor workflow. SceneConfig.cpp's
-// KATAGLYPHIS_MODEL_OVERRIDE guard carried a literal NUL byte instead of the
-// two-character '\0' escape for exactly this reason until this test caught
-// it. UTF-8 continuation bytes (>= 0x80) and BOMs are not control bytes and
-// are intentionally not flagged.
+// A stray control byte makes grep treat the whole file as binary and skip it; UTF-8 bytes and BOMs are fine.
 TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
 {
     const fs::path repo_root = repoRoot();
@@ -7896,13 +6640,7 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
       << joinViolations(offenders);
 }
 
-// Every layout contract in this repo used to be a hand-copied number: the
-// SceneUBO_std140.cascadeSplits drift (fixed by SceneUboLayoutUnit's pad
-// member) survived because nothing compared the host offsetof()s against
-// what slangc actually emitted. This test makes the compiled SPIR-V the
-// source of truth: it parses every committed .spv's OpName/OpMemberName/
-// OpMemberDecorate triples and checks each contracted struct's members land
-// at the same byte offset the host struct computes.
+// The compiled SPIR-V is the layout truth: each contracted member's Offset must equal the host offsetof().
 TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
 {
     const fs::path repo_root = repoRoot();
@@ -7961,17 +6699,7 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
       << joinViolations(offset_mismatches);
 }
 
-// The host/device push-constant and UBO headers (PushConstant*.hpp,
-// GlobalUBO.hpp, SceneUBO.hpp, and the shared/scene/ Vertex.hpp and
-// ObjMaterial.hpp) used to be dual-compiled: an `#ifdef __cplusplus` guard
-// switched between a C++ definition and a bare-GLSL one for a shader
-// compiler that read these headers directly. That compiler was deleted with
-// Resources/Shaders/ (see SlangSourcesDoNotReferenceTheDeletedGlslTree
-// above), so every one of these headers is now compiled only by C++, and the
-// GLSL half of the guard is dead text describing a build that no longer
-// exists. `KTG_VEC2`/`KTG_VEC3` were the same shim under a different name.
-// This walks every .hpp/.ixx under Src/ (skipping third_party/) and fails on
-// any line still mentioning either, so the shim cannot silently come back.
+// Only C++ compiles the shared headers now, so the GLSL dual-compile shim (`#ifdef __cplusplus`, KTG_VEC*) is dead.
 TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
 {
     const fs::path repo_root = repoRoot();
@@ -8012,13 +6740,7 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
 
 namespace {
 
-// Parses the member names straight out of SceneUBO's C++ definition (not the
-// compiled SPIR-V - a member the host writes but no shader reads compiles
-// fine and never turns up in SharedStructOffsetsMatchTheCompiledSpirv, which
-// only checks members shaders DO reference). Follows the same "scan by
-// text, not by AST" approach as SharedStructOffsetsMatchTheCompiledSpirv's
-// SPIR-V parser above. Members prefixed `_pad` are layout filler, not data a
-// shader could plausibly read, and are skipped.
+// Member names from SceneUBO's C++ text, as an unread member never reaches SPIR-V; _pad filler is skipped.
 std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_path)
 {
     const std::string text = readFileText(header_path).value_or(std::string{});
@@ -8045,10 +6767,7 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
 
     const std::string body = text.substr(open_brace + 1, close_brace - open_brace - 1);
     const std::regex array_suffix(R"(\[[^\]]*\])");
-    // A genuine member declaration's last token before ';' is a bare
-    // identifier. Anything else (e.g. the closing `");` of a static_assert
-    // message that wraps onto its own line) is not a declaration and is
-    // skipped rather than mis-captured as a bogus member name.
+    // A declaration ends in a bare identifier; anything else, like a wrapped static_assert message, is skipped.
     const std::regex identifier(R"(^[A-Za-z_]\w*$)");
 
     std::vector<std::string> names;
@@ -8073,11 +6792,7 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
     return names;
 }
 
-// Parses the member names straight out of scene_types.slang's ObjMaterial
-// mirror (the shader-visible layout, scalar layout - see
-// ObjMaterial.hpp's comment). Same brace-matching approach as
-// parse_scene_ubo_member_names above, but the member declarations are bare
-// Slang type + identifier (`float3 diffuse;`), not C++ ones.
+// Member names of scene_types.slang's scalar-layout ObjMaterial mirror, brace-matched like the SceneUBO parser.
 std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_types_path)
 {
     const std::string text = readFileText(scene_types_path).value_or(std::string{});
@@ -8114,14 +6829,7 @@ std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_t
 
 }// namespace
 
-// SceneUBO is 352 bytes uploaded to every swapchain image every frame, and
-// nothing checked that a member the host fills is ever read by a shader -
-// cloudMovementDirection shipped as a dead vec4 for this exact reason. This
-// is the gate: parse every member name out of the C++ struct, then fail
-// listing any that no Slang source under Resources/ShadersSlang mentions by
-// name. Same shape as EveryShaderHotReloadImplementationIsCalledByTheRenderer
-// and EverySlangFunctionIsReachableFromAnEntryPoint - reachability, checked
-// in one direction, on data instead of code.
+// Every SceneUBO member, uploaded per image every frame, must be read by some shader.
 TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
 {
     const fs::path repo_root = repoRoot();
@@ -8161,12 +6869,7 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
       << joinViolations(unread);
 }
 
-// ObjMaterial mirrors SceneUBO's blind spot: a member the host packs into
-// every material record but that zero shaders read compiles fine and just
-// costs bytes forever - ambient/specular/transmittance/ior/illum shipped
-// this way until this gate. Parses the member names straight out of
-// scene_types.slang's ObjMaterial mirror (the shader-visible layout) and
-// fails listing any that no Slang source references as `material.<name>`.
+// Every ObjMaterial member must be read as `material.<name>` somewhere, or it only costs bytes.
 TEST(BuildIntegrity, EveryObjMaterialFieldIsReadByAShader)
 {
     const fs::path repo_root = repoRoot();
@@ -8207,14 +6910,7 @@ TEST(BuildIntegrity, EveryObjMaterialFieldIsReadByAShader)
       << joinViolations(unread);
 }
 
-// EverySceneUboFieldIsReadByAShader above checks whole member names, so a
-// member whose .xyz is read but whose .w quietly starts carrying real data
-// (cam_pos.w used to ship fov this way - nothing ever read it back) passes
-// that gate anyway. This test reads SceneUboMarshal.hpp's fillSceneUboCamera
-// / fillSceneUboDirectionalLight source directly: for each
-// `ubo.<field> = glm::vec4(<xyz>, <wArg>)` assignment, if wArg is not a
-// float literal (i.e. it packs real per-frame data rather than a filler
-// constant), asserts some .slang source dereferences `<field>.w`.
+// A .w that packs real data rather than a literal filler must be read as `<field>.w` by some shader.
 TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
 {
     const fs::path repo_root = repoRoot();
@@ -8266,18 +6962,7 @@ TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
          ".w slot this test verifies - if that packing moved, this sanity check needs updating too";
 }
 
-// FileReader.ixx spells out the rule this test enforces: the error_code
-// overload of std::filesystem's query functions is REQUIRED, not stylistic,
-// because exceptions are disabled project-wide (-fno-exceptions/EHs-) and the
-// throwing overloads therefore std::terminate the whole process on any OS
-// error the query reports - most commonly permission denied. scanAvailableModels
-// used to walk a user-populated directory (Resources/Models, recursively)
-// with the throwing range-for form; a permission-denied subdirectory or a
-// junction loop was enough to take the engine down instead of skipping the
-// entry. This scans every .cpp/.ixx/.hpp under Src/ for a call to one of the
-// throwing-capable functions and fails any call site with no error_code
-// argument in sight. A deliberate exception can carry a
-// "// NO_EC_OK: <reason>" trailing comment.
+// With exceptions off, throwing filesystem overloads terminate on any OS error; pass an error_code or mark NO_EC_OK.
 TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
 {
     const fs::path repo_root = repoRoot();
@@ -8295,10 +6980,7 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
     };
     static const std::string kNoEcMarker = "NO_EC_OK:";
 
-    // Not a full parser - a plain substring search for the naming idioms this
-    // codebase actually uses for an std::error_code out-parameter (ec,
-    // *_ec, *_error, error_code, or the FileReader.ixx "ignored" idiom for a
-    // deliberately-discarded one).
+    // A substring search for this codebase's error_code naming idioms, not a parser.
     auto carries_error_code_token = [](const std::string &text) {
         return text.find("ec") != std::string::npos || text.find("error") != std::string::npos
           || text.find("ignored") != std::string::npos;
@@ -8386,12 +7068,7 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
       << joinViolations(violations);
 }
 
-// Descriptor set layout/pool/set triads must be declared through
-// DescriptorSetGroup (vulkan_base/DescriptorSetGroup.ixx) rather than
-// hand-rolled per subsystem - see that class's own comment on the triads it
-// was extracted to own. The allowlist below is anchored to relative file
-// paths (stable across line-number churn), not line numbers, matching the
-// other allowlists in this file.
+// Descriptor triads go through DescriptorSetGroup; the allowlist is anchored on file paths, not line numbers.
 TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
 {
     const fs::path repo_root = repoRoot();
@@ -8404,14 +7081,7 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
         "vk::DescriptorSetLayoutCreateInfo", "vk::DescriptorPoolCreateInfo", "vk::DescriptorSetAllocateInfo"
     };
 
-    // DescriptorSetGroup.cpp is the abstraction's own implementation - it
-    // stays a whole-file exemption (its internal count is an implementation
-    // detail, and pinning it to a fixed number would fail on every
-    // legitimate edit). GUI.cpp is different: it creates exactly one
-    // descriptor pool for ImGui, which allocates and manages its own
-    // descriptor sets internally via ImGui_ImplVulkan, so it gets a
-    // per-file budget instead of a blanket skip - a second, hand-rolled
-    // triad added to that file would still be caught.
+    // The class's own file is exempt outright; GUI.cpp's one ImGui pool gets a budget, so a second triad still fails.
     static const std::array<const char *, 1> kExemptFiles = {
         "Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp"
     };
@@ -8494,15 +7164,7 @@ TEST(BuildIntegrity, DescriptorBudgetsNameOnlyFilesThatStillHaveTriads)
     }
 }
 
-// asManager.createASForScene()/createTLAS() rebuild the acceleration
-// structure that the raytracing/post/GBuffer descriptors are bound to; a
-// rebuild that isn't immediately followed by updateAllDescriptorSets()
-// leaves those descriptors bound to the TLAS handle the rebuild just
-// destroyed - reproduced on the RX 9070 XT as a
-// VUID-vkCmdDispatch-None-08114 validation error (see 08f01ce5). The only
-// place that pairs the rebuild with the descriptor refresh is
-// VulkanRenderer::refreshAfterSceneChange, so every call site must go
-// through it rather than calling the ASManager methods directly.
+// AS rebuilds go through refreshAfterSceneChange, or descriptors keep the destroyed TLAS (VUID-vkCmdDispatch-None-08114).
 TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -8553,9 +7215,7 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
                 std::smatch match;
                 if (std::regex_search(line, match, kFunctionSignature)) {
                     if (line.find('{') != std::string::npos) {
-                        // Signature and opening brace share this line (e.g. a
-                        // one-line forwarding function) - the brace-counting
-                        // pass below will clear this once its body closes.
+                        // Signature and brace share this line; the brace counting below clears it when the body closes.
                         current_function = match[1].str();
                     } else {
                         pending_function_name = match[1].str();
@@ -8603,13 +7263,7 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
          "allow-list needs updating if it was renamed or its signature changed";
 }
 
-// Every stage class that defines its own shaderHotReload(...) must actually
-// be called from VulkanRenderer::shaderHotReload, or hot reload silently
-// does nothing for that stage (see DeferredRasterizer::shaderHotReload,
-// which was fully implemented but uncalled). This is a count-based gate
-// rather than a name-to-member allowlist deliberately - a hand-maintained
-// mapping is the failure mode 30154355 just removed from Windows CI's suite
-// allowlist.
+// The renderer must call every stage's shaderHotReload, or reload silently skips it; counted, not hand-mapped.
 TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
 {
     const fs::path repo_root = repoRoot();
@@ -8685,11 +7339,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
       << joinViolations(implementing_classes);
 }
 
-// Every subsystem that loads SPIR-V must implement shaderHotReload, or the
-// GUI's reload button silently does nothing for it. SkyBox, CascadedShadowMap
-// and Clouds were missing theirs until this gate was added - source-scanned
-// by the literal SPIR-V directory rather than a hand-maintained file list, so
-// the NEXT pipeline-owning subsystem cannot be added without one either.
+// Every SPIR-V loading subsystem needs shaderHotReload; found by its SPIR-V directory, not a hand-kept file list.
 TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
 {
     const fs::path repo_root = repoRoot();
@@ -8776,12 +7426,7 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
       << spirv_loading_files.size() << " subsystem(s) load SPIR-V - some reload is silently unreachable.";
 }
 
-// Every stage's shaderHotReload(...) recreates its pipeline (and thus a fresh
-// vk::PipelineLayout) without first destroying the old layout - only
-// DeferredRasterizer got this right; PostStage, Rasterizer, Raytracing and
-// PathTracing all overwrote a live handle, leaking one vk::PipelineLayout per
-// hot reload. All five stages create a layout in their create function, so
-// the rule below needs no per-class exceptions.
+// Hot reload must destroy the old pipeline layout before recreating it, or each reload leaks one.
 TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
 {
     const fs::path repo_root = repoRoot();
@@ -8855,13 +7500,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
       << joinViolations(offenders);
 }
 
-// Raytracing::shaderHotReload destroys and recreates graphicsPipeline, but
-// the shader binding table buffers hold shader-group handles read out of the
-// *previous* pipeline (see Raytracing::createSBT). Shader group handles are
-// only valid for the pipeline that produced them, so every hot reload must
-// rebuild the SBT alongside the pipeline or traceRaysKHR reads handles from a
-// destroyed pipeline - a spec violation. This gate cannot be deleted as
-// arbitrary busywork for that reason.
+// Shader group handles are valid only for their own pipeline, so a hot reload must rebuild the SBT too.
 TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
 {
     const fs::path repo_root = repoRoot();
@@ -8903,11 +7542,7 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
          "traceRaysKHR reads shader-group handles from a destroyed pipeline";
 }
 
-// Clouds and PathTracing used to each hand-roll their own
-// vk::ComputePipelineCreateInfo. createComputePipeline
-// (vulkan_base/ShaderHelper.ixx/.cpp) is now the one place that builds one -
-// this pins that down so a future compute pass cannot silently reintroduce
-// the duplication.
+// Compute pipelines are built only by createComputePipeline.
 TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -8918,8 +7553,7 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
 
     static const char *const kRawComputePipelineTypeName = "vk::ComputePipelineCreateInfo";
 
-    // ComputePipelineHelper.hpp is the pure builder; ShaderHelper.cpp is the
-    // device-side helper's own implementation.
+    // The pure builder and the device-side helper's own implementation.
     static const std::array<const char *, 2> kExemptFiles = {
         "Src/GraphicsEngineVulkan/common/ComputePipelineHelper.hpp",
         "Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp"
@@ -8953,15 +7587,7 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
       << joinViolations(violations);
 }
 
-// Raytracing.cpp used to hand-roll six vk::PipelineShaderStageCreateInfo
-// (four stages) and four vk::RayTracingShaderGroupCreateInfoKHR field-by-field,
-// with twelve VK_SHADER_UNUSED_KHR sentinels spelled out where
-// common/ShaderStageHelper.hpp's buildShaderStageCreateInfo/
-// buildGeneralShaderGroup/buildTrianglesHitGroup builders now do the job in
-// four lines. This pins that down so a future pipeline cannot silently
-// reintroduce the duplication - a wrong pName or a wrong UNUSED_KHR sentinel
-// is a value a compiler cannot check, and produces a silently broken
-// pipeline rather than a build error.
+// Stages and shader groups go through the shared builders: a wrong pName or UNUSED_KHR sentinel compiles fine.
 TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
 {
     const fs::path repo_root = repoRoot();
@@ -8977,10 +7603,7 @@ TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
 
     static const std::regex kPNameAssignment(R"(\.pName\s*=[^=])");
     static const std::regex kStageAssignment(R"(\.stage\s*=[^=])");
-    // A local vk::PipelineShaderStageCreateInfo declaration - PipelineBuilder's
-    // std::span<...>/std::vector<...> *parameters* of that type construct
-    // nothing, so they must not trip this. Requires the type name not be
-    // immediately preceded by a template angle bracket on the same match.
+    // Local declarations only: span or vector parameters of the type construct nothing, so no '<' may precede it.
     static const std::regex kLocalDeclaration(
       R"((?:^|[^<,]\s)vk::PipelineShaderStageCreateInfo\s+\w+\s*[{;])");
 
@@ -9031,13 +7654,7 @@ TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
       << joinViolations(violations);
 }
 
-// Every hand-rolled destroyPipelineLayout(...)/destroyPipeline(...) teardown
-// pair used to be spelled out at each of the 20 call sites across 8 files.
-// Kataglyphis::destroyPipelineAndLayout (common/PipelineLayoutHelper.hpp) is
-// now the one place that destroys a pipeline and its layout together - this
-// pins that down so a future stage cannot silently reintroduce the
-// duplication, the same way ComputePipelinesAreCreatedThroughTheSharedHelper
-// pins down pipeline creation.
+// Pipelines and their layouts are destroyed only through destroyPipelineAndLayout.
 TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -9082,21 +7699,7 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
       << joinViolations(violations);
 }
 
-// Every raster stage used to spell out its own depth attachment creation
-// chain by hand: chooseDepthFormat -> createImage(...,
-// eDepthStencilAttachment, eDeviceLocal) -> createImageView(...).
-// Kataglyphis::VulkanRendererInternals::createDepthAttachment
-// (renderer/DepthAttachment.ixx) is now the one place that chain is spelled
-// out - this pins that down the same way PipelineTeardownGoesThroughTheSharedHelper
-// does for pipeline teardown, so a fourth raster stage cannot pick a
-// different tiling or memory property by accident. CascadedShadowMap's
-// shadow map array is a deliberate non-goal (a sampled 2D array behind a
-// comparison sampler, not a plain attachment) and is allowlisted via a
-// "// DEPTH_ATTACHMENT_CHAIN_OK: <marker>" trailing comment on the exempted
-// line rather than a bare file exemption, so an unrelated edit cannot
-// silently widen the exemption to a second call site added later in the
-// same file (e8b1db52 is the precedent for anchoring an allowlist to a
-// source marker instead of a line number).
+// Depth attachments come from createDepthAttachment; the shadow array is exempt by its line marker, not by file.
 TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
 {
     const fs::path repo_root = repoRoot();
@@ -9105,10 +7708,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    // Matches only the image-usage-flag spelling, not the unrelated
-    // vk::AccessFlagBits::eDepthStencilAttachment* / vk::ImageLayout::
-    // eDepthStencilAttachmentOptimal / vk::FormatFeatureFlagBits::
-    // eDepthStencilAttachment spellings, which appear in several other files.
+    // The image-usage spelling only; the access, layout and format-feature spellings are unrelated.
     static const char *const kUsageBit = "ImageUsageFlagBits::eDepthStencilAttachment";
     static const char *const kMarkerPrefix = "DEPTH_ATTACHMENT_CHAIN_OK: ";
 
@@ -9155,13 +7755,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
                                   "this check too";
 }
 
-// Rasterizer, DeferredRasterizer and PostStage used to each spell out their
-// own external subpass dependency by hand; they now share
-// Kataglyphis::buildExternalColorDepthDependency (common/RenderPassHelper.hpp)
-// for their single shared depth image. SkyBox and CascadedShadowMap keep
-// their own inline dependency - a genuinely different edge, documented on the
-// helper - so this pins down that no other raster stage picks the hand-rolled
-// shape back up by accident.
+// Raster stages share buildExternalColorDepthDependency; SkyBox and CascadedShadowMap keep a genuinely different edge.
 TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
 {
     const fs::path repo_root = repoRoot();
@@ -9172,16 +7766,13 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
 
     static const char *const kExternalAssign = "srcSubpass = VK_SUBPASS_EXTERNAL";
     static const char *const kStageAssign = "srcStageMask =";
-    // The helper's own definition, and the two passes with a genuinely
-    // different dependency shape, are exempt from this rule.
+    // The helper's own definition and the two passes with a genuinely different dependency.
     static const std::set<std::string> kAllowedFiles = {
         "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp",
         "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
         "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp"
     };
-    // How many lines after the srcSubpass assignment to look for a hand-rolled
-    // srcStageMask assignment - every existing hand-rolled site sets it within
-    // the next couple of lines (an interleaved comment at most).
+    // Hand-rolled sites set srcStageMask within a couple of lines of srcSubpass.
     static constexpr std::size_t kLookaheadLines = 4;
 
     std::vector<std::string> violations;
@@ -9218,16 +7809,7 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
       << joinViolations(violations);
 }
 
-// Colour twin of NoStageHandRollsTheDepthAttachmentChain: every raster stage
-// used to spell out its own plain colour attachment creation chain by hand -
-// createImage(..., eColorAttachment, eDeviceLocal) -> createImageView(...,
-// eColor). Kataglyphis::VulkanRendererInternals::createColorAttachment
-// (renderer/ColorAttachment.ixx) is now the one place that chain is spelled
-// out. Non-plain colour views (storage/array/cube textures, and the swapchain
-// view over an image it does not own) are deliberate non-goals, allowlisted
-// via a "// COLOR_ATTACHMENT_CHAIN_OK: <marker>" trailing comment on the
-// exempted line rather than a bare file exemption, for the same reason the
-// depth gate anchors to a source marker instead of a line number.
+// Plain colour attachments come from createColorAttachment; other views are exempt only by their line marker.
 TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
 {
     const fs::path repo_root = repoRoot();
@@ -9284,13 +7866,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
                                   "removed, delete this check too";
 }
 
-// CascadedShadowMap used to create TWO byte-identical image views over the
-// same shadow-map-array image: shadowMapArray's own sampled view (init(),
-// passed (format, eDepth, 1, e2DArray, numCascades)) and a second view built
-// by hand in createFramebuffers() from the exact same five values, purely to
-// hand to the framebuffer as its attachment. createFramebuffers() now reuses
-// shadowMapArray->getImageView() instead, and the shadowMapArrayView member
-// is gone.
+// The framebuffer reuses the shadow array's sampled view instead of a byte-identical second one.
 TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
 {
     const fs::path repo_root = repoRoot();
@@ -9332,12 +7908,7 @@ TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
          "that createFramebuffers() reuses shadowMapArray's own image view";
 }
 
-// Every hand-rolled framebuffer teardown used to be spelled out at each of
-// nine call sites across five stages, four of which duplicated it a second
-// time inside their own cleanUp(). Kataglyphis::destroyFramebuffers /
-// destroyFramebuffer (common/FramebufferHelper.hpp) are now the one place
-// that destroy framebuffers - this pins that down the same way
-// PipelineTeardownGoesThroughTheSharedHelper does for pipelines.
+// Framebuffers are destroyed only through destroyFramebuffers and destroyFramebuffer.
 TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -9381,11 +7952,7 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
       << joinViolations(violations);
 }
 
-// Every hand-rolled render-pass teardown used to be spelled out at each of
-// five stages' cleanUp(). Kataglyphis::destroyRenderPass
-// (common/RenderPassHelper.hpp) is now the one place that destroys render
-// passes - this pins that down the same way
-// FramebufferTeardownGoesThroughTheSharedHelper does for framebuffers.
+// Render passes are destroyed only through destroyRenderPass.
 TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -9429,14 +7996,7 @@ TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
       << joinViolations(violations);
 }
 
-// Four render stages' framebuffers reference the outgoing swapchain's image
-// views, so VulkanRenderer::recreateSwapChain() must destroy them before
-// calling vulkanSwapChain.recreate() - recreateFrameResources() necessarily
-// runs after that call (it needs the new image views), so the teardown
-// cannot move into the stages themselves. Dropping one of those destroy
-// calls leaks N framebuffers per window resize and only surfaces as a
-// live-object error at vkDestroyDevice, which no CI lane runs - this pins
-// the ordering down so that stays true.
+// recreateSwapChain() destroys stage framebuffers first; a missed one leaks per resize, seen only at vkDestroyDevice.
 TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)
 {
     const fs::path repo_root = repoRoot();
@@ -9473,8 +8033,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
 
     const std::string body = contents.substr(body_open, body_close - body_open + 1);
 
-    // Blank out '//'-comment lines (offsets preserved) so a call that was
-    // commented out rather than removed cannot satisfy the checks below.
+    // Blank out comment lines, offsets kept, so a commented-out call cannot satisfy the checks.
     std::string code_only = body;
     for (std::size_t line_start = 0; line_start < code_only.size();) {
         std::size_t line_end = code_only.find('\n', line_start);
@@ -9492,9 +8051,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
     ASSERT_NE(recreate_pos, std::string::npos)
       << "recreateSwapChain no longer calls vulkanSwapChain.recreate(...) - update this gate";
 
-    // Receiver -> the file that would define its ::destroyFramebuffers(), if
-    // it owns any framebuffers at all (clouds does not). A receiver missing
-    // from this map fails the test so a sixth stage cannot be added silently.
+    // Receiver -> the file defining its destroyFramebuffers(); an unmapped receiver fails, so no stage slips in.
     static const std::map<std::string, const char *> kReceiverFiles = {
         { "postStage", "Src/GraphicsEngineVulkan/renderer/PostStage.cpp" },
         { "rasterizer", "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp" },
@@ -9542,14 +8099,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
     }
 }
 
-// Texture::createImage takes in_mip_levels but, before this test existed, only
-// uploadRgba's own path assigned it to the mip_levels field - every other
-// caller (Clouds, SkyBox, CascadedShadowMap) went through createImage
-// directly and left mip_levels at its 0 default, so getMipLevel() and the
-// sampler's maxLod silently disagreed with the image that was actually
-// created. There is no device-free way to construct a Texture and call
-// createImage (it needs VMA and a logical device), so this pins the source
-// text instead of exercising the function.
+// createImage must record mip_levels itself, or getMipLevel() and maxLod disagree; text-checked, as it needs a device.
 TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
 {
     const fs::path repo_root = repoRoot();
@@ -9587,16 +8137,7 @@ TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
          "sampler's maxLod would go back to depending on which constructor path ran.";
 }
 
-// Every feature bit enabled on features11/features12/features13/features2 in
-// VulkanDevice::create_logical_device must come from an availability query
-// (available_features11/12/13, availableRayTracingFeatures2, ...), never a
-// hardcoded literal - the one place that is allowed to hardcode a bit to true
-// is inside the `if (deviceSupportsHardwareAcceleratedRRT)` block, because the
-// checks immediately above it already proved those specific bits are
-// available on this device. A hardcoded bit anywhere else risks requesting a
-// feature vkCreateDevice then rejects with VK_ERROR_FEATURE_NOT_PRESENT on a
-// device that does not support it - the engine does not start at all, rather
-// than degrading.
+// Feature bits come from availability queries; only the proven hardware-RT block may hardcode true, or startup fails.
 TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
 {
     const fs::path repo_root = repoRoot();
@@ -9651,15 +8192,7 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
       << joinViolations(violations);
 }
 
-// Pins the SHAPE of the cascade light-matrix double-buffering fix, not its
-// runtime behaviour: the bug (the CPU rewriting a single UBO while up to
-// MAX_FRAME_DRAWS in-flight shadow passes may still be reading it) is a data
-// race on host-coherent memory, invisible to both the golden render suites
-// and Vulkan synchronization validation - there is no observable symptom to
-// assert on short of a flaky multi-frame GPU race repro. So this checks the
-// source directly: the buffer is a std::vector (one per swapchain image, like
-// globalUBOBuffer/sceneUBOBuffer), and recordCommands binds the set for the
-// CURRENT image_index rather than always set 0.
+// A single light-matrix UBO races in-flight passes invisibly to goldens and validation, so the source shape is pinned.
 TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
 {
     const fs::path repo_root = repoRoot();
@@ -9699,18 +8232,7 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
          "current, while the shadow pass keeps sampling set 0 regardless of image_index.";
 }
 
-// dirShadowMap is sized per swapchain image (lightMatricesBuffers, above) but
-// recreateSwapChain()'s newImageCount != oldImageCount branch only calls
-// reprovisionPerImageResources() - which never touched dirShadowMap - so the
-// shadow pass silently stopped rendering for any image added past the
-// original count. reinitShadowMapForCurrentSettings() (extracted out of
-// handleShadowResolutionChange, which already proved the
-// cleanUp()+init()+createGraphicsPipeline() sequence) must be called from
-// reprovisionPerImageResources() too, and strictly after
-// initDescriptorResources() - CascadedShadowMap::init caches the
-// sharedRenderDescriptors layout, and initDescriptorResources() is what
-// (re)creates that layout via cleanUpDescriptorResources()/initDescriptorResources()
-// in reprovisionPerImageResources() itself.
+// An image-count change must reinit the shadow map too, after initDescriptorResources() recreates the layout it caches.
 TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountChange)
 {
     const fs::path repo_root = repoRoot();
@@ -9783,17 +8305,7 @@ TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountC
          "layout that is about to be destroyed.";
 }
 
-// ObjLoader::uploadParsed and GltfLoader::uploadParsed used to each hand-roll
-// their own texture-slot-fill and mesh-range-to-Mesh loop; the only genuine
-// difference between them (texture bytes from a file vs. from memory) got
-// buried inside that duplication, and the one non-genuine difference
-// (GltfLoader forwarding MeshRange::doubleSided, ObjLoader relying on
-// add_new_mesh's default argument) went unnoticed for it. ModelAssembly.ixx
-// (kataglyphis.vulkan.model_assembly) is now the one place that fills a
-// texture slot, builds meshes from MeshRanges, and checks the device-free /
-// empty-parse preconditions - this pins that down so a future loader (or
-// uploadParsed itself) cannot silently reintroduce a hand-rolled copy that
-// drifts from the shared one again.
+// Texture slots, meshes and upload preconditions go through ModelAssembly.ixx, so the loaders cannot drift apart.
 TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 {
     const fs::path repo_root = repoRoot();
@@ -9802,14 +8314,7 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
     const fs::path src_root = repo_root / "Src";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    // sliceMeshRange's own definition (MeshRange.ixx) and createDefaultTexture's
-    // own definition (Texture.ixx/.cpp) are exempt - everyone else, including
-    // ModelAssembly.ixx's own callers, must reach them through the shared
-    // functions ModelAssembly.ixx wraps them in. ObjLoader.cpp/GltfLoader.cpp
-    // are exempt too, but only from uploadPreconditionsMet: they are its two
-    // intended callers (uploadParsed's guard), not a hand-rolled duplicate of
-    // it - a *third* loader reimplementing the device/vertices checks inline
-    // rather than calling the shared guard is what this test still catches.
+    // The wrapped functions' own definitions, and the two loaders as the shared guard's intended callers.
     static const std::array<const char *, 6> kExemptFiles = {
         "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
         "Src/GraphicsEngineVulkan/scene/MeshRange.ixx",
@@ -9854,15 +8359,7 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
       << joinViolations(violations);
 }
 
-// CascadedShadowMap::createDescriptorSetAndPipeline() used to spin up a
-// throwaway command pool + VulkanBufferManager staging round trip to seed a
-// host-visible buffer that uploadLightMatrices() overwrites before the first
-// frame anyway. It now takes the renderer's own graphics_command_pool through
-// init() (unused today, but kept for parity with every other stage's
-// init(..., commandPool) signature) and writes lightMatricesBuffers directly
-// through getMappedData(). Pin both halves of that: the renderer stays the
-// only place that owns a command pool, and the shadow map file stays free of
-// the staging abstraction it no longer needs.
+// Only the renderer owns a command pool, and the shadow map seeds its host-visible buffers without staging.
 TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
 {
     const fs::path repo_root = repoRoot();
@@ -9915,25 +8412,7 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
          "VulkanBufferManager staging round trip";
 }
 
-// Rasterizer and DeferredRasterizer used to call chooseDepthFormat() once in
-// createTextures() and again in createRenderPass(), so the render-pass
-// attachment format and the depth image it is paired with were derived
-// independently and could silently diverge. CascadedShadowMap already caches
-// the result in a member and reads it a second time; this test holds all
-// three remaining depth-owning render stages to that invariant. PostStage
-// dropped out of this list along with its depth attachment entirely - see
-// "Delete the depth attachment that PostStage and SkyBox allocate, clear and
-// synchronize but never test or write" - nothing read it, so there is no
-// depth_format left to derive.
-//
-// Rasterizer and DeferredRasterizer now derive it indirectly - through
-// Kataglyphis::VulkanRendererInternals::createDepthAttachment
-// (renderer/DepthAttachment.ixx), which calls chooseDepthFormat() and
-// returns the result - rather than calling chooseDepthFormat() in their own
-// text, so the invariant is checked at the one place all three stages still
-// share: the member assignment itself. Two occurrences would mean the
-// member was derived and (re)assigned twice in the same file, which is
-// exactly the divergence this test exists to catch.
+// Each depth-owning stage assigns depth_format once, so the render-pass format and depth image cannot diverge.
 TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
 {
     const fs::path repo_root = repoRoot();
@@ -9968,18 +8447,7 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
     }
 }
 
-// Every image memory barrier used to be spelled out at each of seven call
-// sites across Raytracing.cpp, PathTracing.cpp and FrameCapture.ixx, hand-
-// rolled via default construction (`vk::ImageMemoryBarrier name{};`) followed
-// by field-by-field assignment. Kataglyphis::buildImageMemoryBarrier
-// (common/ImageBarrierHelper.hpp) is now the one place that builds an image
-// barrier - this pins that down the same way FramebufferTeardownGoesThrough
-// TheSharedHelper does for framebuffer teardown.
-//
-// The scan looks specifically for the empty-brace default-construction
-// idiom, not every mention of the type: a converted call site still declares
-// a `const vk::ImageMemoryBarrier` local to hold the helper's return value,
-// and that is exactly the pattern this test must NOT flag.
+// Image barriers come from buildImageMemoryBarrier; only empty-brace default construction is flagged, not the type.
 TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -9988,13 +8456,7 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    // Per-file budgets, not whole-file exemptions: VulkanImage.cpp and
-    // Texture.cpp each build one vk::ImageMemoryBarrier from a general
-    // transition helper's own aspect/mip/layer parameters, not boilerplate.
-    // VulkanRenderer.cpp's two cloud-output barriers are the subject of a
-    // separate, blocked backlog entry. Every file not listed here has an
-    // implicit budget of 0. ImageBarrierHelper.hpp (the helper's own
-    // definition) matches nothing, so it needs no entry at all.
+    // Per-file budgets rather than exemptions; every unlisted file has a budget of 0.
     static const std::map<std::string, std::size_t> kBarrierBudgets = {
         { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
         { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
@@ -10072,13 +8534,7 @@ TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
     }
 }
 
-// Texture::generateMipMaps' two eShaderReadOnlyOptimal barriers route their
-// access mask and pipeline stage through ImageLayoutHelper.hpp's shared rule
-// rather than a hand-written eFragmentShader destination stage, so the model
-// textures they publish stay synchronized for raytrace.rchit.slang's ray
-// queries and the path_tracing.slang compute kernel, not just the raster
-// fragment shaders. A reintroduced eFragmentShader literal would silently
-// narrow that destination stage back to raster-only.
+// RT and compute also sample the mips, so an eFragmentShader literal in Texture.cpp would narrow the stage.
 TEST(BuildIntegrity, TextureUploadDoesNotNarrowItsShaderReadStage)
 {
     const fs::path repo_root = repoRoot();
@@ -10094,12 +8550,7 @@ TEST(BuildIntegrity, TextureUploadDoesNotNarrowItsShaderReadStage)
          "or the compute/ray-tracing readers of the mip chain lose synchronization.";
 }
 
-// docs/cpp-renderer-improvements.md's "In progress" section once asked for
-// the redundant same-layout swapchain barrier removal as still outstanding
-// after the removal had already shipped (2026-07-19) - the doc contradicted
-// the source it describes. Follows NoGeneratedWgslSourceClaimsToMirrorItsOutput's
-// structure: read both files, assert the contradiction cannot coexist, and
-// name both sides in the failure message.
+// The log must not ask for the swapchain barrier removal the source has already shipped.
 TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
 {
     const fs::path repo_root = repoRoot();
@@ -10136,14 +8587,7 @@ TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
          "remaining queue, but " << renderer_path.string() << " already records the removal (\"used to sit here\").";
 }
 
-// Internal linkage in a header gives every translation unit its own copy of
-// the function, and an inline function that names one (chooseDepthFormat used
-// to call the internal-linkage choose_supported_format) is IFNDR under
-// [basic.def.odr] - which is exactly how FormatHelper.hpp got into this state.
-// Namespace-scope function definitions in this tree are unindented, while
-// static member functions inside a class body are indented, so column 0 is
-// the whole discriminator between "internal-linkage free function" and
-// "static member function" (the latter is fine and must stay untouched).
+// An inline function naming a static header function is IFNDR; column 0 tells free functions from static members.
 TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
 {
     const fs::path repo_root = repoRoot();
@@ -10185,12 +8629,7 @@ TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
       << joinViolations(violations);
 }
 
-// AGENTS.md states that cleanUp() must be idempotent and safe to call twice.
-// The idempotence itself is not source-scannable, but the destructor half of
-// the convention is: every class that declares cleanUp() should call it from
-// its own destructor, so a caller who forgets the explicit call (or a
-// device-lost path that skips it, see App.cpp) still gets torn down. Four
-// classes are intentionally exempt - see kExemptClasses below.
+// Every class with cleanUp() calls it from its destructor, so a skipped explicit call still tears down.
 TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
 {
     const fs::path repo_root = repoRoot();
@@ -10199,18 +8638,12 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    // Mesh, VulkanBufferManager: every member is already RAII, so `= default`
-    // is correct - there is nothing for a destructor call to do.
-    // VulkanDevice, VulkanInstance: VulkanRenderer::cleanUp() owns the
-    // teardown order between the logical device and the instance; a
-    // destructor call would let either move independently of that order.
+    // Mesh and VulkanBufferManager are fully RAII; VulkanRenderer owns the device and instance teardown order.
     static const std::array<const char *, 4> kExemptClasses = {
         "Mesh", "VulkanBufferManager", "VulkanDevice", "VulkanInstance"
     };
 
-    // Anchored to the start of a line (no leading whitespace) so prose like
-    // "...exactly the class of bug..." in a comment cannot masquerade as a
-    // class declaration.
+    // Anchored at line start, so prose mentioning a class cannot pass for a declaration.
     const std::regex class_pattern(R"(\nclass\s+(\w+))");
 
     std::vector<std::string> violations;
@@ -10237,8 +8670,7 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
         const fs::path cpp_path = fs::path(path).replace_extension(".cpp");
         if (const auto cpp_contents = readFileText(cpp_path)) { combined_contents += *cpp_contents; }
 
-        // Matches "~Name() { cleanUp(); }" whether spelled inline in the
-        // .ixx or out-of-line (possibly namespace-qualified) in the .cpp.
+        // Matches "~Name() { cleanUp(); }" inline or out-of-line, possibly namespace-qualified.
         const std::regex dtor_pattern(
           R"(~)" + class_name + R"(\s*\(\s*\)\s*\{\s*cleanUp\s*\(\s*\)\s*;\s*\})");
         if (std::regex_search(combined_contents, dtor_pattern)) { continue; }
@@ -10256,10 +8688,7 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
       << joinViolations(violations);
 }
 
-// App::run() used to unconditionally `return EXIT_SUCCESS;`, so a device-lost
-// or fatal-submit run was reported to the OS as a clean quit. The exit code
-// must now be derived (via Kataglyphis::appExitCode) from how the frame loop
-// actually ended - see appExitCodeSuite.cpp for the derivation itself.
+// App::run() derives its exit code via appExitCode, or a lost device reads as a clean quit.
 TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
 {
     const fs::path repo_root = repoRoot();
@@ -10278,13 +8707,7 @@ TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
          "hard-coded, or a broken run is reported as a clean quit again.";
 }
 
-// std::shared_ptr<VulkanDevice> is the single most widely passed object in
-// the engine. Passing it by value pays two atomic refcount operations per
-// call for a parameter that is usually only read; every non-sink parameter
-// must take it as `const std::shared_ptr<VulkanDevice> &`. The three
-// genuine sinks (DescriptorSetGroup::create, the GltfLoader ctor, the
-// ShaderStagePair ctor) keep it by value because they move it into a
-// member, and are marked with a trailing "// DEVICE_SINK_OK: " comment.
+// By value costs two atomic refcount ops per call, so non-sinks take const &; sinks carry a DEVICE_SINK_OK marker.
 TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
 {
     const fs::path repo_root = repoRoot();
@@ -10338,10 +8761,7 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
                                   "if all sinks were removed, delete this check too";
 }
 
-// Main.cpp used to carry a hand-rolled parse_command_line()/print_usage()
-// pair alongside absl::ParseCommandLine - ~62 dead lines describing a
-// --help/--gpu contract main() never called. This gate pins abseil as the
-// single CLI front end so the dead parser cannot silently come back.
+// abseil is the one CLI front end, so no dead hand-rolled parser can come back.
 TEST(BuildIntegrity, MainHasOneCommandLineParser)
 {
     const fs::path repo_root = repoRoot();
@@ -10361,17 +8781,7 @@ TEST(BuildIntegrity, MainHasOneCommandLineParser)
       << source.string();
 }
 
-// buildIntegritySuite, renderPassCreateHelperSuite and sceneAsyncLoadSuite
-// each used to carry their own copy of a repo-root walk-up helper and their
-// own whole-file stream-iterator slurp - three copies of each, one
-// (renderPassCreateHelperSuite's) even with a different failure contract than
-// the other two. RepoFiles.hpp collapsed all of that into
-// repoRoot()/slangRoot()/spirvRoot()/readFileText(). This scans every
-// Test/**/*.cpp and Test/**/*.hpp for the two textual signatures a
-// reimplementation would have to contain, so a fourth copy cannot grow back
-// silently. The signatures below are deliberately built by runtime
-// concatenation rather than spelled out as single literals - otherwise this
-// gate would contain, and thus fail, its own banned pattern.
+// No suite may regrow its own repo-root or file-slurp helper; the banned signatures are concatenated so this file passes.
 TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
 {
     const fs::path test_root = repoRoot() / "Test";
@@ -10407,12 +8817,7 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
       << joinViolations(violations);
 }
 
-// README.md and docs/source/conf.py drifted to the old "Kataglyphis-Renderer"
-// repository slug after the rename to BeschleunigerBallett -
-// conf.py's repository_url was fixed but project/breathe_projects/
-// breathe_default_project were not, and the README's build badges kept
-// pointing at someone else's CI. Nothing else gates prose, so a partial
-// rename like that can sit there indefinitely.
+// The docs must name this repository, not its old slug: nothing else gates prose after a rename.
 TEST(BuildIntegrity, DocsNameThisRepository)
 {
     const fs::path repo_root = repoRoot();
@@ -10449,14 +8854,7 @@ TEST(BuildIntegrity, DocsNameThisRepository)
       << joinViolations(violations);
 }
 
-// The C++ engine's swapchain is UNORM, not sRGB (SwapchainChoices.hpp's
-// chooseBestSurfaceFormat), so there is no hardware encode on present -
-// every fragment shader that writes directly into the swapchain
-// (post/post.slang, the last stage of the post pass, and skybox/skybox.slang,
-// which bypasses the post pass entirely) must apply linear_to_srgb itself.
-// If a future change ever prefers an sRGB surface format instead, this gate
-// must fail loudly so those shader-side encodes get removed with it - see
-// BACKLOG.md's "sRGB-encode every shader that writes the swapchain" entry.
+// The swapchain is UNORM, so shaders writing it encode sRGB; an sRGB surface format would double-encode.
 TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
 {
     const fs::path repo_root = repoRoot();
@@ -10467,8 +8865,7 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
     const auto swapchain_choices_text = readFileText(swapchain_choices_path);
     ASSERT_TRUE(swapchain_choices_text.has_value()) << "missing " << swapchain_choices_path.string();
 
-    // Match vk::Format::e...Srgb..., not vk::ColorSpaceKHR::eSrgbNonlinear -
-    // the latter is the expected, unrelated presentation color space.
+    // An sRGB vk::Format, not the expected eSrgbNonlinear presentation color space.
     static const std::regex kSrgbFormat(R"(vk::Format::e\w*Srgb)");
     EXPECT_FALSE(std::regex_search(*swapchain_choices_text, kSrgbFormat))
       << swapchain_choices_path.string()
@@ -10506,13 +8903,7 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
     }
 }
 
-// Pins the anisotropy fix: every buildSamplerCreateInfo call must derive its
-// maxAnisotropy argument from Kataglyphis::resolveMaxAnisotropy(...) (which
-// itself clamps to the device's queried limit), never a bare numeric literal
-// above 1.0 - a literal above the device's maxSamplerAnisotropy limit is
-// VUID-VkSamplerCreateInfo-anisotropyEnable-01071. Also pins that
-// vk::PhysicalDevice::getFeatures()/getFeatures2() only run inside
-// VulkanDevice.cpp, the one place a device's capabilities should be queried.
+// maxAnisotropy comes from resolveMaxAnisotropy (VUID-VkSamplerCreateInfo-anisotropyEnable-01071); features are queried in VulkanDevice.cpp only.
 TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
 {
     const fs::path repo_root = repoRoot();
@@ -10522,8 +8913,7 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
     static const std::string kSignature = "buildSamplerCreateInfo(";
-    // A bare floating-point literal greater than 1 - "1.0F" / "1.0f" is the
-    // disabled-anisotropy sentinel and stays allowed.
+    // A literal above 1; "1.0F" or "1.0f" is the disabled-anisotropy sentinel.
     static const std::regex kLiteralAboveOne(R"(^\s*(?:[2-9]|\d{2,})(?:\.\d+)?[fF]?\s*$)");
     static const char *const kGetFeatures = "getFeatures";
 
@@ -10546,12 +8936,7 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
         while ((sig_pos = contents.find(kSignature, sig_pos)) != std::string::npos) {
             const std::size_t args_begin = sig_pos + kSignature.size();
 
-            // Balanced-paren extraction (not a lazy `\);` regex): a `\);`
-            // regex would run past the parameter list on the two sites where
-            // this text names a declaration/definition rather than a call -
-            // `buildSamplerCreateInfo(...) -> vk::SamplerCreateInfo` has no
-            // `);` right after its own parameter list, so a lazy regex keeps
-            // scanning into unrelated code far below looking for the next one.
+            // Balanced parens, not a lazy regex, which would run past a declaration's parameter list into unrelated code.
             std::size_t pos = args_begin;
             int paren_depth = 1;
             while (pos < contents.size() && paren_depth > 0) {
@@ -10565,10 +8950,7 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
 
             const std::string call_args = contents.substr(args_begin, pos - 1 - args_begin);
 
-            // Depth-aware split: a top-level comma separates arguments, but
-            // maxAnisotropy is itself a nested call
-            // (resolveMaxAnisotropy(anisotropyEnable, device->maxSamplerAnisotropy()))
-            // whose internal comma must not be mistaken for one.
+            // Split on top-level commas only: maxAnisotropy is itself a nested call with its own comma.
             std::vector<std::string> args;
             std::size_t arg_start = 0;
             int depth = 0;
@@ -10612,13 +8994,7 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
       << joinViolations(get_features_violations);
 }
 
-// ASSERT_VULKAN (common/Utilities.hpp) used to expand to a bare unbraced
-// `if`, so every call site was a statement fragment rather than a statement -
-// 38 of 49 sites omitted the trailing semicolon and relied on that. The macro
-// is now wrapped in do/while(false), which makes it a real statement that
-// *requires* the semicolon - a missing one is a compile error, so this test
-// is cheap insurance rather than the primary check. It also guards against a
-// future copy-pasted call site reintroducing the old, inconsistent spelling.
+// ASSERT_VULKAN is a do/while(false) statement, so every call site ends in ';'; the compiler is the primary check.
 TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
 {
     const fs::path repo_root = repoRoot();
@@ -10645,11 +9021,7 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
             const auto lines = readFileLines(path);
             if (!lines) { continue; }
 
-            // A call spanning multiple lines only closes its parens on its
-            // last line, so track the cumulative paren depth across lines
-            // rather than checking each line in isolation - a parenless
-            // argument line (e.g. "&allocation,") must not be mistaken for
-            // the closing line just because it has zero net parens.
+            // Track paren depth across lines: a paren-free argument line is not the call's closing line.
             bool inside_call = false;
             int paren_depth = 0;
             std::size_t call_start_line = 0;
@@ -10698,14 +9070,7 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
       << joinViolations(violations);
 }
 
-// glTF 2.0 Section 3.9.4 ("Normals") requires that a back-facing fragment of
-// a double-sided material flip its shading normal to face the viewer. All
-// three C++ raster shaders already disable culling for doubleSided meshes
-// (MeshDrawRecorder.cpp's dynamic eCullMode), so a back face reaching a
-// fragment shader is exactly the doubleSided case, and SV_IsFrontFace is the
-// cheapest available test for it. This scans the three raster shader sources
-// as text and fails if any of them stops reading SV_IsFrontFace or stops
-// negating its normal in response.
+// glTF 2.0 3.9.4: double-sided back faces flip their normal; with culling off for them, SV_IsFrontFace detects them.
 TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
 {
     const fs::path repo_root = repoRoot();
@@ -10746,12 +9111,7 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
       << kFailureMessage;
 }
 
-// Mesh used to hold its own `model` matrix plus a getModel()/setModel() pair
-// that nothing ever called - the per-model transform is owned by
-// Model::set_model/Model::getModel and reached through
-// Scene::update_model_matrix/Scene::getModelMatrix. A per-mesh copy would be
-// a second source of truth that no draw path reads, so it must not come
-// back.
+// Model owns the transform; a per-mesh matrix would be a second truth that no draw path reads.
 TEST(BuildIntegrity, MeshDoesNotHoldAModelMatrix)
 {
     const fs::path repo_root = repoRoot();
@@ -10773,13 +9133,7 @@ TEST(BuildIntegrity, MeshDoesNotHoldAModelMatrix)
       << "Mesh.ixx must not hold a glm::mat4 model member. " << kFailureMessage;
 }
 
-// Rasterizer and DeferredRasterizer each used to spell out their frame-texture
-// teardown twice - once in cleanUp() and once in recreateFrameResources() -
-// and the two copies had drifted apart in Rasterizer, where the
-// recreateFrameResources() copy dereferenced offscreenTextures/depthBufferImage
-// unconditionally while cleanUp()'s copy guarded them. This pins that both
-// call sites now go through a single releaseFrameTextures() helper, so a
-// future edit cannot paste a third (possibly-diverging) copy back in.
+// cleanUp() and recreateFrameResources() share releaseFrameTextures(), so their teardowns cannot drift apart.
 TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -10831,14 +9185,7 @@ TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
     }
 }
 
-// GltfLoader.cpp used to spell out the has_pbr_metallic_roughness guard three
-// times (once for factors/warnings, once for UV-transform reading, once for
-// texture-slot assignment) and call readUvTransform / warnUnsupportedTexCoordSet
-// / assignTextureSlot once per texture slot by hand. gltfTextureSlots()
-// collapses all four slots (base-colour, metallic-roughness, normal,
-// emissive) into one table that every caller loops over instead; this pins
-// that shape so the guard/call-site duplication cannot silently come back
-// slot by slot.
+// gltfTextureSlots() lists the four slots once, so per-slot guards and calls cannot multiply again.
 TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
 {
     const fs::path repo_root = repoRoot();
@@ -10848,9 +9195,7 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
     const auto lines_opt = readFileLines(path);
     ASSERT_TRUE(lines_opt.has_value()) << "missing " << path.string();
 
-    // Comments stripped: the doc comments on gltfTextureSlots and its callers
-    // spell out "has_pbr_metallic_roughness" in prose to explain the guard,
-    // which would otherwise be mistaken for a second code occurrence.
+    // Comments stripped, since doc comments name the guard in prose.
     std::string text;
     for (const auto &raw_line : *lines_opt) {
         text += strip_line_comment(raw_line);
@@ -10861,10 +9206,7 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
     ASSERT_TRUE(slots_span.has_value())
       << "gltfTextureSlots not found in " << path.string() << " - was the table rewrite reverted?";
 
-    // Everything outside gltfTextureSlots' own body - the guard and the three
-    // per-slot calls are only allowed to appear once each there, anchored to
-    // the function's body rather than a line number so the exemption tracks
-    // the function even if it moves.
+    // Everything outside gltfTextureSlots' body, anchored on the function rather than a line number.
     const std::string outside = text.substr(0, slots_span->first) + text.substr(slots_span->second);
 
     const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
@@ -10880,34 +9222,18 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
       << "has_pbr_metallic_roughness must be gated inside gltfTextureSlots (fromGltfMaterial's own factor read is "
          "the one allowed exception), not repeated once per texture-slot call site";
 
-    // readUvTransform/warnUnsupportedTexCoordSet are free functions, so their
-    // own signatures ("readUvTransform(const char *materialName, ...") also
-    // contain the function name followed by "(". Matching "materialName"
-    // (the literal argument every call site passes, with no type prefix)
-    // right after the opening paren selects call sites only, not the
-    // declaration.
+    // "materialName" right after the paren selects calls, since the free functions' own signatures match too.
     EXPECT_LE(count_occurrences(outside, "readUvTransform(materialName"), 1U)
       << "readUvTransform must be called from one loop over gltfTextureSlots' table, not once per texture slot";
     EXPECT_LE(count_occurrences(outside, "warnUnsupportedTexCoordSet(materialName"), 1U)
       << "warnUnsupportedTexCoordSet must be called from one loop over gltfTextureSlots' table, not once per "
          "texture slot";
-    // assignTextureSlot is a lambda ("assignTextureSlot = [&](..."), so every
-    // occurrence of "assignTextureSlot(" in the file is a call site.
+    // assignTextureSlot is a lambda, so every "assignTextureSlot(" is a call.
     EXPECT_LE(count_occurrences(outside, "assignTextureSlot("), 1U)
       << "assignTextureSlot must be called from one loop over gltfTextureSlots' table, not once per texture slot";
 }
 
-// endAndSubmitCommandBuffer's contract (CommandBufferManager.cpp) is that
-// `false` means the submitted work never happened - the command buffer is
-// freed either way, but nothing it recorded ran on the device. Discarding
-// that result with static_cast<void>(...) silently treats a submit failure
-// the same as success: the 2026-08 BLAS/TLAS/clouds/path-tracing cohort of
-// fixes converted every such discard at the time this gate was added, each
-// to whatever degraded behaviour its own call site defines. This test stops
-// a new discard from being reintroduced. A genuinely intentional discard is
-// still allowed via a trailing "// SUBMIT_RESULT_IGNORED_OK: <reason>"
-// comment on the same line, the same exemption shape
-// NoStageHandRollsTheColorAttachmentChain uses.
+// A false submit means nothing ran, so a discard treats failure as success; only a SUBMIT_RESULT_IGNORED_OK marker allows one.
 TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
 {
     const fs::path repo_root = repoRoot();
@@ -10960,15 +9286,7 @@ TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
                                     "would be silently checking nothing";
 }
 
-// rasterizer.slang's vs_main and deferred.slang's geometry_vs_main share one
-// vertex stage, common/raster_geometry.slang's raster_geometry_vs(), because
-// goldenRenderSuite.cpp's forward/deferred parity oracle requires the two
-// passes to produce identical world position, normal and tangent - a bug in
-// that oracle has already shipped once from the two bodies drifting apart.
-// This scans both shader sources as text and fails if either stops importing
-// raster_geometry or stops calling raster_geometry_vs(), or if either
-// contains its own "o.worldTangent =" assignment - the marker for a
-// re-hand-rolled vertex body that would reintroduce the drift.
+// Both raster passes share raster_geometry_vs(), since the forward/deferred parity oracle needs identical outputs.
 TEST(BuildIntegrity, TheTwoRasterGeometryPassesShareOneVertexStage)
 {
     const fs::path repo_root = repoRoot();
@@ -10999,15 +9317,7 @@ TEST(BuildIntegrity, TheTwoRasterGeometryPassesShareOneVertexStage)
     }
 }
 
-// path_tracing.slang's bounce direction used to be assigned unnormalized
-// (hitWorldNormal + a unit vector has length in [0, 2]), which quietly
-// corrupted three downstream consumers that are all measured in units of
-// rayDirection's length: ray.TMin's self-intersection epsilon, ray.TMax's
-// visibility distance, and the miss branch's sky gradient (skyT extrapolates
-// past [0, 1] once rayDirection.y leaves [-1, 1]). See docs/path-tracing.md's
-// Bounce bullet and the "Self-intersection is guarded by a 1e-4 normal
-// offset and ray-query t_min = 0.001" sentence, which this normalize keeps
-// true.
+// TMin, TMax and the sky gradient assume a unit bounce direction (see docs/path-tracing.md's Bounce bullet).
 TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
 {
     const fs::path repo_root = repoRoot();
@@ -11031,22 +9341,7 @@ TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
       << path_tracing_path.string() << " assigns the bounce direction without normalizing it. " << kFailureMessage;
 }
 
-// docs/shader-sharing.md's "Which C++ shading path reads which ObjMaterial
-// field" table is the fine-grained sibling of EveryObjMaterialFieldIsReadByAShader
-// (above): that gate only asks whether *some* shader mentions material.<field>
-// anywhere, so a field read by one shading path and silently dropped by
-// another still passes it - precisely the bug shape batches XI-XVII kept
-// re-discovering one field at a time. This test parses the ObjMaterial member
-// list out of scene_types.slang (parse_obj_material_member_names, reused from
-// EveryObjMaterialFieldIsReadByAShader above) and the doc's table, and checks
-// (a) exactly one row per member, no extras, (b) every row has five
-// non-empty cells, one per shading path, and (c) for every cell that does not
-// start with "not read", the corresponding shading path's own shader source
-// actually names the member - either directly as material.<name>, or through
-// one of the helper functions in kHelperFields below, the no-binding helpers
-// (material_rules.slang/base_color.slang/emission.slang/normal_map.slang/
-// material_textures.slang) every shading path funnels its ObjMaterial reads
-// through instead of dereferencing every field inline.
+// Per shading path, since a field dropped by one path still passes the any-shader check; reads may go through helpers.
 TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
 {
     const fs::path repo_root = repoRoot();
@@ -11069,10 +9364,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
     const std::string section_text = doc_content->substr(
       section_start, section_end == std::string::npos ? std::string::npos : section_end - section_start);
 
-    // Split into "| cell | cell | ... |" rows, each row into pipe-delimited
-    // cells (Member, rasterizer.slang, deferred.slang, raytrace.rchit.slang,
-    // path_tracing.slang, shadow_map.slang / alpha_test.slang) - same shape
-    // as ModelLoadingDocSrgbRowCoversEveryObjTextureDirective above.
+    // Rows of pipe-delimited cells: the member, then one column per shading path.
     std::vector<std::vector<std::string>> rows;
     {
         std::istringstream stream(section_text);
@@ -11094,8 +9386,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
             rows.push_back(std::move(cells));
         }
     }
-    // Row 0 is the header, row 1 the "| --- | ... |" separator; data rows
-    // start at index 2.
+    // Rows 0 and 1 are the header and separator; data starts at 2.
     ASSERT_GE(rows.size(), 2U) << doc_path.string() << "'s per-shading-path table has no data rows";
 
     static const std::regex kBacktickToken(R"(`([^`]*)`)");
@@ -11145,9 +9436,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
       << doc_path.string() << "'s per-shading-path table is missing a row for the following ObjMaterial member(s):"
       << joinViolations(missing_rows);
 
-    // One shading-path source blob per table column, in table-column order.
-    // shadow_map.slang and alpha_test.slang share one column - neither ever
-    // shades a colour, both are alpha-only ObjMaterial consumers.
+    // One source blob per column, in order; shadow_map and alpha_test share one, both alpha-only consumers.
     static constexpr std::array<const char *, 5> kColumnNames{ "rasterizer.slang", "deferred.slang",
         "raytrace.rchit.slang", "path_tracing.slang", "shadow_map.slang / alpha_test.slang" };
     std::array<std::string, 5> column_text;
@@ -11171,17 +9460,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
         }
     }
 
-    // Helper functions every shading path funnels its ObjMaterial reads
-    // through, and the fields each is known to consume - so a cell whose
-    // shader source names the helper (not material.<field> directly) still
-    // counts as a real read. resolved_emission/resolved_metallic_roughness/
-    // resolved_normal cover both their implicit-LOD and _lod0 explicit-LOD
-    // forms via substring match (the _lod0 name starts with the un-suffixed
-    // one). material_metallic_roughness and sample_metallic_roughness_lod0
-    // are path_tracing.slang's documented exception
-    // (material_textures.slang's header comment): it calls both directly
-    // instead of resolved_metallic_roughness[_lod0](), so those two raw
-    // helpers get their own entries.
+    // Helpers and the fields they read, so naming a helper counts; substring matching covers the _lod0 forms.
     const std::vector<std::pair<std::string, std::vector<std::string>>> kHelperFields{
         { "resolved_emission",
           { "emission", "emissiveTextureID", "emissive_uv_transform_row0", "emissive_uv_transform_row1" } },
@@ -11230,13 +9509,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
       << joinViolations(unverified);
 }
 
-// PostStage::createRenderpass builds its single colour attachment with
-// vk::AttachmentLoadOp::eLoad (the skybox pass already rendered into this
-// swapchain image), so a clear value passed to beginRenderPass can never be
-// consumed. If someone later switches the pass back to eClear, this test
-// should fail and tell them to update the gate rather than silently passing.
-// Alongside that, post.slang's fs_main must sample noisyTxt exactly once -
-// two identical fetches for one texel invite the reading that they differ.
+// The post pass loads its attachment, so a clear value is dead; fs_main samples noisyTxt exactly once.
 TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
 {
     const fs::path repo_root = repoRoot();
@@ -11256,8 +9529,7 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
       << post_stage_path.string()
       << " builds a ClearColorValue for a pass whose attachment is eLoad - this pass loads its attachment, so a "
          "clear value can never be consumed";
-    // The empty-span idiom (std::span<const vk::ClearValue>{}) still names
-    // the type - only a populated array/vector of clear values is dead here.
+    // The empty-span idiom still names the type; only a populated clear-value container is dead.
     EXPECT_EQ(post_stage_text.find("std::array<vk::ClearValue"), std::string::npos)
       << post_stage_path.string()
       << " builds an array of vk::ClearValue for a pass whose attachment is eLoad - this pass loads its "
@@ -11283,12 +9555,7 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
       << " time(s) in fs_main - expected exactly one fetch into a float4, with .rgb/.a taken from it";
 }
 
-// Parses every `BENCHMARK(NAME)` registration in perfSuite.cpp, together with
-// its trailing `->Arg(N)` chain up to the statement's `;`, and expands each
-// to the Google-Benchmark name(s) it produces at run time: no `->Arg` yields
-// the bare NAME, one or more `->Arg(N)` yields one "NAME/N" per argument.
-// Other chained calls (`->Unit(...)`) are matched but ignored - they do not
-// change the run name.
+// Run names per BENCHMARK: the bare NAME, or "NAME/N" per ->Arg(N); other chained calls leave the name alone.
 std::vector<std::string> parse_registered_benchmark_names(const std::string &perf_suite_text)
 {
     static const std::regex kRegistration(
@@ -11317,15 +9584,7 @@ std::vector<std::string> parse_registered_benchmark_names(const std::string &per
     return names;
 }
 
-// perfSuite.cpp is the source of truth for what BENCHMARK_MAIN() actually
-// registers; the checked-in baseline (win-9070xt-32core.json) exists to catch
-// perf regressions on exactly those functions. The two have drifted before:
-// BM_ComputeTangents grew two more ->Arg() rows on 2026-07-31 and the
-// baseline was never updated, so Compare-PerfBaseline.ps1 (deliberately
-// never-fatal for an unmatched benchmark - see its header comment) silently
-// stopped protecting the function it was added to guard. This test is the
-// commit-time half of that contract: the baseline must cover the suite, even
-// though a single comparison run is allowed not to.
+// The baseline must cover every registered run name, since Compare-PerfBaseline.ps1 never fails on a missing one.
 TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
 {
     const fs::path repo_root = repoRoot();
@@ -11371,13 +9630,7 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
                                 << perf_suite_path.string() << " - delete the stale row(s):" << joinViolations(stale);
 }
 
-// GUISceneSharedVars.ixx has grown eleven fields since GUI.cpp's shadow block
-// was written, and nothing has ever checked that a new one is reachable from
-// the GUI. shadow_distance and cascade_split_lambda were the latest to slip
-// through - both documented tunables that needed a rebuild to change. This
-// hand-maintained list must be kept in sync with GUISceneSharedVars.ixx; a
-// member added there needs either a control here or an entry in the
-// exemption comment above the list.
+// Every tunable scene var needs a GUI control; a new member needs a list entry or a reason in the comment above it.
 TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
 {
     const fs::path repo_root = repoRoot();
@@ -11387,10 +9640,7 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
     const auto gui_text = readFileText(gui_path);
     ASSERT_TRUE(gui_text.has_value()) << "could not open " << gui_path.string();
 
-    // Every GUISceneSharedVars member a user can tune, excluding the
-    // *_changed / *_requested latches (written by the GUI, not read from it),
-    // selected_model_index (driven by the model list, not a slider), and
-    // available_shadow_map_resolutions (labels, not a tunable value).
+    // Tunables only: not the *_changed or *_requested latches, selected_model_index, or the resolution labels.
     static constexpr std::array<const char *, 24> kTunables{ "directional_light_radiance",
         "directional_light_color", "directional_light_direction", "shadow_map_res_index", "num_shadow_cascades",
         "pcf_radius", "cascaded_shadow_intensity", "shadow_distance", "cascade_split_lambda",
@@ -11412,14 +9662,7 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
       << joinViolations(missing);
 }
 
-// The right-mouse look mode shipped in 6c4191ab without the "KEY Bindings"
-// panel being touched, and ESC has never been listed there either - the
-// panel is a hand-written string literal nothing checks against the input
-// code it is supposed to describe. This walks CameraController.ixx and
-// WindowInputCallbacks.ixx for every GLFW_KEY_*/GLFW_MOUSE_BUTTON_* symbol
-// they act on and asserts the panel literal in CommonGuiPanels.ixx mentions
-// each one, via a hand-maintained symbol->prose table so a new binding with
-// no table entry fails loudly by name instead of being silently invisible.
+// The key-bindings panel is a hand-written literal, so every bound key and button must map to prose in it.
 TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
 {
     const fs::path repo_root = repoRoot();
@@ -11462,10 +9705,7 @@ TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
         { "GLFW_MOUSE_BUTTON_RIGHT", "right mouse" },
     };
 
-    // Symbols that act on input but are deliberately not user-facing controls,
-    // with the reason each is exempt from needing panel prose. Empty today -
-    // every binding CameraController.ixx/WindowInputCallbacks.ixx implements
-    // is user-facing.
+    // Bound inputs deliberately not user-facing, each with a reason; none today.
     static const std::set<std::string> kExemptSymbols{};
 
     std::vector<std::string> unmapped;
@@ -11505,9 +9745,7 @@ std::optional<int> parse_commit_suite_test_count_marker(const fs::path &doc_path
     return std::nullopt;
 }
 
-// Counts every TEST(...)/TEST_F(...)/TEST_P(...) definition line across every
-// .cpp under Test/commit/VulkanEngine/, mirroring
-// `grep -c '^(TEST|TEST_F|TEST_P)\('`.
+// Counts TEST, TEST_F and TEST_P definition lines across the commit suite's .cpp files.
 int count_commit_suite_tests(const fs::path &tests_dir)
 {
     static const std::regex kTestPattern(R"(^(TEST|TEST_F|TEST_P)\()");
@@ -11526,14 +9764,7 @@ int count_commit_suite_tests(const fs::path &tests_dir)
     return count;
 }
 
-// docs/cpp-renderer-improvements.md's opening paragraph quotes a commit-suite
-// test count that nothing enforced, and it drifted 573 tests stale before
-// being caught. Fails loudly (not GTEST_SKIP) when the marker is missing, so
-// deleting it cannot silently pass the gate - same shape as
-// MaxTextureCountInDocsMatchesTheHeader above. Deliberately churny: every
-// test-adding change now also touches one line of this doc. That is the
-// price of the number in the first paragraph being true, and it is the same
-// trade PerfBaselineCoversEveryRegisteredBenchmark already makes.
+// The log's quoted commit-suite test count must be current: churny by design, and a missing marker fails.
 TEST(BuildIntegrity, ImprovementLogQuotesTheCurrentCommitSuiteTestCount)
 {
     const fs::path repo_root = repoRoot();
@@ -11555,23 +9786,7 @@ TEST(BuildIntegrity, ImprovementLogQuotesTheCurrentCommitSuiteTestCount)
       << " TEST/TEST_F/TEST_P case(s) - this is a one-line update to the marker in " << doc_path.string() << ".";
 }
 
-// VulkanDevice marks every one of its query accessors const; this gate keeps
-// a newly-added read-only accessor elsewhere in Src/ from reintroducing the
-// drift that left seventeen of them non-const.
-//
-// "Read-only" here deliberately excludes anything whose return type is a
-// non-const lvalue reference (Model::getTextures(), VulkanBuffer::getBuffer(),
-// GUI::getGuiSceneSharedVars(), ...): those hand out a mutable handle by
-// design - callers write through them - and are a different category from a
-// query accessor, out of scope for this gate. A pointer return (Texture*,
-// Mesh*, GLFWwindow*) stays in scope: for a unique_ptr<T>/shared_ptr<T>-backed
-// accessor, or a plain raw-pointer member, constness does not propagate to
-// the pointee, so marking the accessor const costs nothing.
-//
-// Free functions (e.g. Frustum.ixx's isVisible) are excluded by requiring the
-// match to start on an indented line: every inline accessor in Src/ is a
-// class member and therefore indented, while every free function here starts
-// at column 0.
+// Read-only accessors are const; mutable-reference returns are out of scope, pointer returns are not.
 TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
 {
     const fs::path repo_root = repoRoot();
@@ -11586,9 +9801,7 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
         std::string name;
         std::string reason;
     };
-    // Accessors proven - by the compiler, not by inspection - unable to
-    // become const without also changing their return type, which is a
-    // bigger, separate change than this gate makes.
+    // Accessors the compiler proved cannot become const without a return-type change.
     const std::vector<Exemption> exemptions = { { "Src/GraphicsEngineVulkan/scene/Model.ixx", "getMesh",
       "returns Mesh* via meshes[index] over std::vector<Mesh> - operator[] const yields const Mesh&, so "
       "&meshes[index] cannot convert to the non-const Mesh* this returns (unlike the "
@@ -11629,8 +9842,7 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
             const std::size_t prefix_start = line_start_pos == std::string::npos ? 0 : line_start_pos + 1;
             const std::string prefix = stripped_text.substr(prefix_start, match_start - prefix_start);
 
-            // Free functions in this codebase sit at namespace scope (column
-            // 0); every class member accessor is indented.
+            // Free functions sit at column 0; class member accessors are indented.
             if (prefix.empty() || (prefix.front() != ' ' && prefix.front() != '\t')) { continue; }
 
             const std::size_t trimmed_end = prefix.find_last_not_of(" \t");
@@ -11666,14 +9878,7 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
       << joinViolations(violations);
 }
 
-// This suite used to hand-roll the same "join a vector of strings for a gtest
-// failure message" lambda at 102 call sites, three of which had already
-// drifted into their own spelling of the separator. Kataglyphis::TestSupport::
-// joinViolations (RepoFiles.hpp) is now the one place that loop lives - this
-// pins that down the same way ImageMemoryBarriersGoThroughTheSharedHelper does
-// for hand-rolled barriers. A flat budget of 0 is correct here, unlike the
-// per-file barrier budgets: there is no legitimate reason for this file to
-// hand-roll the join again.
+// Violation lists go through joinViolations; a flat budget of 0, as this file never needs its own join.
 TEST(BuildIntegrity, ViolationListsGoThroughTheSharedJoiner)
 {
     const fs::path repo_root = repoRoot();

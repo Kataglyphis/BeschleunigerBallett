@@ -70,12 +70,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
     // similar to swap chain images, can share vertex buffers
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    // Map the requested vk::MemoryPropertyFlags onto a VMA allocation:
-    // - requiredFlags guarantees an exact superset of the requested properties
-    //   (e.g. HOST_VISIBLE | HOST_COHERENT or DEVICE_LOCAL).
-    // - Host-visible buffers additionally get sequential-write host access and
-    //   are persistently mapped, replacing the former mapMemory/unmapMemory
-    //   pattern at the call sites.
+    // requiredFlags keeps every requested property; host-visible buffers stay persistently mapped for sequential writes.
     VmaAllocationCreateInfo allocation_create_info{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(buffer_propertiy_flags);
@@ -84,20 +79,14 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     }
 
-    // vk::MemoryAllocateFlagBits::eDeviceAddress is handled by VMA itself: the
-    // allocator is created with VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT
-    // and adds VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT to every allocation whose
-    // buffer usage contains eShaderDeviceAddress. The parameter is kept for
-    // source compatibility with existing callers.
+    // VMA adds the device-address allocate flag itself; the parameter stays for source compatibility.
     std::ignore = buffer_allocate_flags;
 
     const VkBufferCreateInfo &c_buffer_info = static_cast<const VkBufferCreateInfo &>(buffer_info);
     VkBuffer c_buffer = VK_NULL_HANDLE;
     VmaAllocationInfo allocation_info{};
     if (buffer_usage_flags & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
-        // The device address of these buffers is consumed directly (SBT
-        // regions, acceleration structure scratch); enforce the alignment the
-        // implementation requires for such addresses.
+        // SBT regions and AS scratch consume these addresses directly, so enforce the required alignment.
         ASSERT_VULKAN(vmaCreateBufferWithAlignment(device->getVmaAllocator(),
                         &c_buffer_info,
                         &allocation_create_info,

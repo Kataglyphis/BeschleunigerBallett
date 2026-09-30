@@ -1,13 +1,4 @@
-// The CPU half of model loading, exercised with NO Vulkan device.
-//
-// This is the whole point of ObjLoader::parseCpu: 2802 ms of a 2818 ms model
-// load is device-free work (measured on the bundled 27 MB dinosaurs.obj), so
-// it can move to a worker thread while the ~15 ms of GPU upload stays on the
-// thread that owns the device.
-//
-// A test that needed a device could not prove that. These construct
-// ObjLoader{} - the CPU-only constructor - and would fail to link or crash if
-// the parse path touched Vulkan.
+// ObjLoader{} is the CPU-only constructor, so these fail if parseCpu ever touches Vulkan.
 
 #include <gtest/gtest.h>
 
@@ -51,13 +42,7 @@ TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
 {
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
-    // shadow_rig.obj ships no mtllib, so tinyobj reports material_id -1 for
-    // every face. The old plain uint32_t cast sent 0xFFFFFFFF to the GPU and
-    // every shader material fetch (materials.m[materialIDs.i[prim]]) became
-    // an out-of-bounds buffer-device-address read - on EVERY untextured
-    // model, silently, for the whole life of the loader. The loader appends
-    // a default material for exactly this case; the faces must actually
-    // point at it.
+    // Without a mtllib tinyobj reports material_id -1, which as uint32 makes every material fetch read OOB.
     Kataglyphis::ObjLoader loader;
     ASSERT_TRUE(loader.parseCpu(test_model()));
 
@@ -71,9 +56,7 @@ TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
 
 TEST(ObjParseUnit, AnObjWithoutAnMtlGetsANonEmittingMaterial)
 {
-    // emission(0, 0, 0.10) was inert until shading started reading it - it
-    // then became a constant blue glow on every .obj shipped without an
-    // .mtl. No authored Ke means no emitted radiance.
+    // No authored Ke means no emitted radiance, or every .obj without an .mtl glows.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_no_mtllib.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -97,11 +80,7 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
     const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
     if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
 
-    // dinosaurs.mtl carries Kd colours but not a single map_Kd. The loader
-    // used to give those materials textureID = 0, so they sampled texture
-    // slot 0 (the default white) and the model rendered its material colours
-    // as flat white for the engine's whole life. -1 is the contract the
-    // shaders' diffuse fallback keys on.
+    // The shaders' diffuse fallback keys on -1; slot 0 would sample the white default instead of Kd.
     Kataglyphis::ObjLoader loader;
     ASSERT_TRUE(loader.parseCpu(dino));
 
@@ -117,10 +96,7 @@ TEST(ObjParseUnit, MaterialsHaveZeroMetallic)
     const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
     if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
 
-    // dinosaurs.mtl authors no Pm directive, so every material must come back
-    // with ObjMaterial's default metallic (0.0) - the loader now does read
-    // the .mtl's Pm/Pr channels (see MtlPbrChannelsReachTheMaterial below),
-    // but the bundled dinosaurs simply never author either one.
+    // dinosaurs.mtl authors no Pm, so metallic stays at ObjMaterial's default.
     Kataglyphis::ObjLoader loader;
     ASSERT_TRUE(loader.parseCpu(dino));
 
@@ -132,9 +108,6 @@ TEST(ObjParseUnit, MaterialsHaveZeroMetallic)
 
 TEST(ObjParseUnit, MtlPbrChannelsReachTheMaterial)
 {
-    // tinyobjloader parses .mtl Pm/Pr into material_t::metallic/roughness;
-    // the loader used to stop at diffuse/emission/dissolve/shininess and
-    // discard both.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_pbr_channels";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -162,10 +135,7 @@ TEST(ObjParseUnit, MtlPbrChannelsReachTheMaterial)
 
 TEST(ObjParseUnit, AnMtlWithoutPrKeepsTheShininessSentinel)
 {
-    // No Pr directive: roughness must stay at ObjMaterial's negative
-    // sentinel so material_roughness() keeps deriving it from Ns, rather
-    // than being overwritten with tinyobjloader's Pr default of 0.0 (a
-    // perfect mirror indistinguishable from "not authored").
+    // tinyobjloader's Pr default 0.0 is a perfect mirror, indistinguishable from "not authored".
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_no_pr";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -193,12 +163,7 @@ TEST(ObjParseUnit, AnMtlWithoutPrKeepsTheShininessSentinel)
 
 TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
 {
-    // The OBJ analog of the glTF primitive split (#10): each OBJ shape (`o`/`g`
-    // group) becomes its own MeshRange so uploadParsed builds one Mesh per shape.
-    // dinosaurs.obj carries three `o` groups. The flat getters are unchanged (the
-    // tests above still hold) - the ranges just partition them. Red proof is
-    // structural: without the per-shape recording in loadVertices, getMeshRanges()
-    // is empty and the > 1 assertion fails.
+    // Each `o`/`g` shape becomes its own MeshRange; dinosaurs.obj has three.
     const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
     if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
 
@@ -208,11 +173,7 @@ TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
     const auto &ranges = loader.getMeshRanges();
     EXPECT_GT(ranges.size(), 1U) << "a multi-shape OBJ must split into more than one mesh";
 
-    // The ranges must tile the flat arrays contiguously with no gap or overlap:
-    // uploadParsed slices [vertexBase, vertexBase+vertexCount) out of the flat
-    // vertices and re-bases each shape's indices by -vertexBase, which is only
-    // valid if a shape's indices never reach outside its own vertex block (the
-    // per-shape dedup is what guarantees that).
+    // Re-basing by -vertexBase is valid only if the ranges tile the arrays and no index leaves its block.
     std::size_t vsum = 0;
     std::size_t isum = 0;
     std::size_t tsum = 0;
@@ -239,8 +200,7 @@ TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
 
 TEST(ObjParseUnit, SingleShapeObjIsOneMeshRangeSpanningEverything)
 {
-    // The safe-by-default half: a single-object OBJ yields exactly one range over
-    // the whole model, so uploadParsed builds the same single mesh it always did.
+    // A single-object OBJ must still build one mesh.
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
     Kataglyphis::ObjLoader loader;
@@ -257,9 +217,7 @@ TEST(ObjParseUnit, SingleShapeObjIsOneMeshRangeSpanningEverything)
 
 TEST(ModelPickerUnit, GltfModelsAppearInTheAvailableList)
 {
-    // The GUI picker's scan filtered on == ".obj" (case-sensitive), so the
-    // bundled GltfTest/cube.glb could never be selected even though the
-    // engine has a glTF loader wired into every other load path.
+    // The picker must offer glTF too, not only .obj.
     const auto paths = sceneConfig::getAvailableModelPaths();
     if (paths.empty()) { GTEST_SKIP() << "no Resources/Models directory in this environment"; }
 
@@ -275,9 +233,7 @@ TEST(ModelPickerUnit, GltfModelsAppearInTheAvailableList)
 
 TEST(ModelPickerUnit, AddingANullModelIsSafeNotACrash)
 {
-    // Loaders return nullptr for malformed assets; Scene::add_model used to
-    // dereference it unconditionally (model->getObjectDescription()), so a
-    // bad file picked in the GUI crashed the app inside reloadModel.
+    // Loaders return nullptr for malformed assets the GUI can pick.
     Kataglyphis::Scene scene;
     scene.add_model(nullptr);
     EXPECT_EQ(scene.getModelCount(), 0U) << "a failed load must leave the scene unchanged";
@@ -285,10 +241,7 @@ TEST(ModelPickerUnit, AddingANullModelIsSafeNotACrash)
 
 TEST(ObjParseUnit, MalformedInputFailsInsteadOfKillingTheProcess)
 {
-    // The GUI model picker can hand this arbitrary files. Until 2026-07-20
-    // loadTexturesAndMaterials called exit(EXIT_FAILURE) here, so selecting a
-    // bad file terminated the application - this test is the guard against
-    // that returning.
+    // The GUI picker hands this arbitrary files, so a bad one must fail the parse, not exit.
     Kataglyphis::ObjLoader loader;
 
     EXPECT_FALSE(loader.parseCpu("this/path/does/not/exist.obj"));
@@ -306,8 +259,7 @@ TEST(ObjParseUnit, ReparsingReplacesRatherThanAppends)
 
     ASSERT_TRUE(loader.parseCpu(test_model()));
 
-    // Model reload reuses a loader. Accumulating would double the mesh on
-    // every reload, which looks like z-fighting rather than like a leak.
+    // Reload reuses a loader; accumulating doubles the mesh, which looks like z-fighting, not a leak.
     EXPECT_EQ(loader.getVertices().size(), first_vertices);
     EXPECT_EQ(loader.getIndices().size(), first_indices);
 }
@@ -316,9 +268,7 @@ TEST(ObjParseUnit, ParsesOnAWorkerThreadWithTheSameResult)
 {
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
-    // The actual claim being made: this work can run off the render thread.
-    // Asserting it here means the async loader cannot be built on a parse
-    // that quietly depends on thread-local or device state.
+    // The async loader needs a parse free of thread-local and device state.
     Kataglyphis::ObjLoader on_main;
     ASSERT_TRUE(on_main.parseCpu(test_model()));
 
@@ -338,11 +288,7 @@ TEST(ObjParseUnit, ParsesOnAWorkerThreadWithTheSameResult)
 
 TEST(ObjParseUnit, AFaceWithAnOutOfRangeIndexIsDroppedWhole)
 {
-    // A malformed corner used to `continue` past just the bad vertex,
-    // leaving the face one index short of a triangle - desynchronising
-    // materialIndex from indices/3 and, via the flat-normal pass, reading
-    // past the end of indices. validate-then-emit drops the whole face
-    // instead: the good face survives untouched, the bad one leaves nothing.
+    // Dropping only the bad corner desyncs materialIndex from indices/3, so the whole face goes.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_bad_face.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -361,8 +307,7 @@ TEST(ObjParseUnit, AFaceWithAnOutOfRangeIndexIsDroppedWhole)
 
 TEST(ObjParseUnit, AFileWithOnlyMalformedFacesYieldsNoGeometry)
 {
-    // Same hazard with nothing left standing: every face falls to the guard,
-    // so the parse must leave empty arrays rather than crash walking them.
+    // Every face falls to the guard, leaving empty arrays.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_only_bad_face.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -381,11 +326,7 @@ TEST(ObjParseUnit, AFileWithOnlyMalformedFacesYieldsNoGeometry)
 
 TEST(ObjParseUnit, DegenerateTrianglesDoNotProduceNaNNormals)
 {
-    // No `vn` lines, so the loader falls back to flat-normal generation
-    // (kataglyphis.vulkan.vertex::computeFlatNormals - the copy shared with
-    // GltfLoader since this task consolidated the two hand-rolled loops).
-    // The triangle is zero-area (two coincident vertices): normalizing its
-    // cross product would divide by zero and hand the GPU a NaN normal.
+    // A zero-area triangle's cross product would normalize to a NaN normal.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_degenerate_face.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -407,10 +348,7 @@ TEST(ObjParseUnit, DegenerateTrianglesDoNotProduceNaNNormals)
 
 TEST(ObjParseUnit, FacesWithoutANormalIndexGetAFlatNormal)
 {
-    // Only the second face omits `vn`. The old guard only ran
-    // computeFlatNormals when attrib.normals was empty for the WHOLE file, so
-    // a mixed file left the second face's vertices at the zero normal they
-    // were initialised to. fillMissingFlatNormals must patch exactly that gap.
+    // Only the second face omits `vn`, so a whole-file check would leave it with zero normals.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_mixed_normals.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -435,8 +373,6 @@ TEST(ObjParseUnit, FacesWithoutANormalIndexGetAFlatNormal)
 
 TEST(ObjParseUnit, FullyNormalLessObjStillGetsFlatNormals)
 {
-    // Behaviour-preservation check: a file with no `vn` at all must produce
-    // the same result as before this task's guard rewrite.
     const auto tmp = std::filesystem::temp_directory_path() / "kat_no_normals.obj";
     {
         std::ofstream out(tmp, std::ios::binary);
@@ -458,9 +394,7 @@ TEST(ObjParseUnit, FullyNormalLessObjStillGetsFlatNormals)
 
 TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
 {
-    // docs/model-loading.md's first candidate: map_Kd resolves relative to
-    // the directory containing the .mtl, which is what the OBJ/MTL format
-    // actually specifies.
+    // The OBJ/MTL format resolves map_Kd relative to the .mtl's directory.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_beside";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -491,9 +425,6 @@ TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
 
 TEST(ObjParseUnit, MaterialsSharingAMapKdShareOneTextureSlot)
 {
-    // Two newmtl blocks naming the same map_Kd must upload that texture once:
-    // the second material reuses the first's textures slot instead of
-    // pushing a duplicate path.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_texture";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -528,8 +459,6 @@ TEST(ObjParseUnit, MaterialsSharingAMapKdShareOneTextureSlot)
 
 TEST(ObjParseUnit, MtlMapBumpBecomesTheNormalTextureSlot)
 {
-    // map_Bump names a normal map: it must resolve into a distinct,
-    // non-negative normalTextureID, separate from the diffuse textureID.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_bump";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -563,8 +492,7 @@ TEST(ObjParseUnit, MtlMapBumpBecomesTheNormalTextureSlot)
 
 TEST(ObjParseUnit, MtlNormPreferredOverMapBump)
 {
-    // When a .mtl names both directives, norm (a true tangent-space normal
-    // map) wins over map_Bump (conventionally a height map).
+    // norm is a true tangent-space normal map; map_Bump is conventionally a height map.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_norm_preferred";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -589,9 +517,7 @@ TEST(ObjParseUnit, MtlNormPreferredOverMapBump)
     ASSERT_EQ(loader.getMaterials().size(), 1U);
     EXPECT_GE(loader.getMaterials()[0].normalTextureID, 0);
 
-    // normalTextureID counts real (non-empty) texture pushes, not raw
-    // getTextureNames() position (an absent map_Kd still leaves a "" gap in
-    // that vector), so check by content instead of by indexing with the ID.
+    // An absent map_Kd leaves a "" gap in getTextureNames(), so the ID is not a position there.
     bool sawNormalPng = false;
     for (const std::string &name : loader.getTextureNames()) {
         const auto filename = std::filesystem::path(name).filename();
@@ -605,8 +531,6 @@ TEST(ObjParseUnit, MtlNormPreferredOverMapBump)
 
 TEST(ObjParseUnit, AnMtlWithoutANormalMapKeepsTheMinusOneSentinel)
 {
-    // No norm/map_Bump directive at all: normalTextureID must stay -1, the
-    // same "no texture" sentinel textureID already uses.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_no_normal";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -635,9 +559,7 @@ TEST(ObjParseUnit, AnMtlWithoutANormalMapKeepsTheMinusOneSentinel)
 
 TEST(ObjParseUnit, OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots)
 {
-    // The same on-disk file used as both map_Kd (sRGB) and map_Bump (linear)
-    // must land on two distinct slots - one per colour space - since a slot
-    // can only carry one image format.
+    // A slot carries one image format, so sRGB and linear uses of one file need two.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_file_two_slots";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -670,10 +592,7 @@ TEST(ObjParseUnit, OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots)
 
 TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
 {
-    // docs/model-loading.md's second candidate: the layout every shipped OBJ
-    // in this repo actually uses (crytek-sponza, Pillum, Sulo/WolfStahl,
-    // VikingRoom) - a bare filename in map_Kd, with the file itself one
-    // level down in textures/.
+    // Every shipped OBJ uses this layout: a bare map_Kd filename with the file in textures/.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_textures_subdir";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir / "textures");
@@ -703,11 +622,7 @@ TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
 
 TEST(ObjParseUnit, BackslashMapKdResolvesLikeAForwardSlash)
 {
-    // docs/model-loading.md: a Windows-authored map_Kd value must resolve
-    // the same as its forward-slash equivalent. viking_room.mtl's map_Kd is
-    // a bare filename with the texture one level down in textures/, so
-    // spelling the map_Kd as "textures\viking_room.png" exercises both the
-    // normalisation and the beside-the-.mtl candidate in one shot.
+    // A Windows-authored backslash map_Kd must resolve like its forward-slash form.
     const std::string obj = sceneConfig::resolveModelPath("Models/VikingRoom/viking_room.obj");
     if (!std::filesystem::exists(obj)) { GTEST_SKIP() << "VikingRoom asset not present"; }
     const std::string dir = std::filesystem::path(obj).parent_path().string();
@@ -722,8 +637,6 @@ TEST(ObjParseUnit, BackslashMapKdResolvesLikeAForwardSlash)
 
 TEST(ObjParseUnit, BareFilenameFallsBackToTheTexturesSubdirectory)
 {
-    // viking_room.mtl's actual map_Kd value: a bare filename, with the
-    // texture living one level down in textures/ - the second candidate.
     const std::string obj = sceneConfig::resolveModelPath("Models/VikingRoom/viking_room.obj");
     if (!std::filesystem::exists(obj)) { GTEST_SKIP() << "VikingRoom asset not present"; }
     const std::string dir = std::filesystem::path(obj).parent_path().string();
@@ -736,9 +649,7 @@ TEST(ObjParseUnit, BareFilenameFallsBackToTheTexturesSubdirectory)
 
 TEST(ObjParseUnit, EmptyBaseDirStaysRelative)
 {
-    // An OBJ referenced by a bare filename (no directory component) yields
-    // an empty base dir from getBaseDir(); that must not turn into a
-    // filesystem-root path ("/viking_room.png").
+    // An empty base dir must not become a filesystem-root path.
     const std::string resolved = Kataglyphis::resolveObjTexturePath("", "viking_room.png");
 
     EXPECT_FALSE(resolved.starts_with('/')) << "an empty base dir must not resolve against the filesystem root: "
@@ -748,10 +659,7 @@ TEST(ObjParseUnit, EmptyBaseDirStaysRelative)
 
 TEST(ObjParseUnit, NormDirectiveBumpMultiplierReachesNormalScale)
 {
-    // norm's own -bm must reach normalScale even with no map_Bump present at
-    // all: the old code read mp->bump_texopt.bump_multiplier unconditionally,
-    // which is tinyobjloader's default-initialised 1.0 when map_Bump was never
-    // parsed, silently dropping the norm directive's own scale.
+    // bump_texopt holds tinyobjloader's default 1.0 without map_Bump, so norm's own -bm must be read.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_norm_bump_multiplier";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -781,9 +689,7 @@ TEST(ObjParseUnit, NormDirectiveBumpMultiplierReachesNormalScale)
 
 TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirective)
 {
-    // When both directives are present, norm wins the texture slot (see
-    // MtlNormPreferredOverMapBump above) - its -bm must win too, rather than
-    // leaking map_Bump's own -bm onto the preferred norm map.
+    // norm wins the slot, so its -bm must win too.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_bump_multiplier_no_leak";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -821,9 +727,7 @@ TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirecti
 
 TEST(ObjParseUnit, MapKeBecomesTheEmissiveTextureSlot)
 {
-    // map_Ke names an emissive map: it must resolve into a distinct,
-    // non-negative emissiveTextureID, separate from the diffuse textureID,
-    // and (being authored colour like map_Kd) sRGB-flagged.
+    // map_Ke is authored colour like map_Kd, so it is sRGB.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_ke";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -866,9 +770,7 @@ TEST(ObjParseUnit, MapKeBecomesTheEmissiveTextureSlot)
 
 TEST(ObjParseUnit, MapKdAndMapKeNamingOneFileShareASlot)
 {
-    // The same on-disk file used as both map_Kd and map_Ke - both sRGB - must
-    // collapse onto one slot, the (resolved path, srgb) key's whole point,
-    // mirroring OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots's opposite case.
+    // Both sRGB, so the (resolved path, srgb) key collapses them onto one slot.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_file_ke_slot";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -900,11 +802,7 @@ TEST(ObjParseUnit, MapKdAndMapKeNamingOneFileShareASlot)
 
 TEST(ObjParseUnit, AMaterialWithoutMapKeKeepsTheSentinel)
 {
-    // dinosaurs.mtl ships no map_Ke directive at all: emissiveTextureID must
-    // stay -1, and (mirroring the normal-map absent case) no slot may be
-    // pushed for it - every material's texture count must still match one
-    // push per material (the always-pushed diffuse slot; dinosaurs.mtl also
-    // carries no normal/bump directive).
+    // No map_Ke means no slot pushed: one diffuse slot per material, nothing more.
     const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
     if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
 
@@ -922,11 +820,7 @@ TEST(ObjParseUnit, AMaterialWithoutMapKeKeepsTheSentinel)
 
 TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
 {
-    // map_d names a per-texel opacity map: it must resolve into a distinct,
-    // non-negative alphaTextureID, and (this engine having no sorted
-    // transparent pass) the material must be treated as a glTF MASK cut-out
-    // at the conventional 0.5 cutoff. A second material with no map_d
-    // directive must keep both sentinels untouched.
+    // There is no sorted transparent pass, so map_d becomes a MASK cut-out at 0.5.
     const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_d";
     std::filesystem::remove_all(dir);
     std::filesystem::create_directories(dir);
@@ -966,10 +860,7 @@ TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
 
 TEST(ObjParseUnit, UploadParsedOnADeviceFreeLoaderReturnsNull)
 {
-    // AsyncModelParse always hands parsed state to a device-owning loader, so
-    // this guard only fires when that wiring breaks - device-first, then
-    // empty-parse (ModelAssembly.ixx's uploadPreconditionsMet), since a
-    // device-free loader that also never parsed should report the device.
+    // The device check comes first, so a device-free loader that never parsed reports the device.
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
     Kataglyphis::ObjLoader loader;// device-free constructor
@@ -984,6 +875,3 @@ TEST(ObjParseUnit, UploadParsedBeforeAnyParseReturnsNull)
 
     EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run before a successful parseCpu";
 }
-
-// The async wrapper (AsyncModelParse) has its own dedicated coverage in
-// asyncModelParseSuite.cpp, suite AsyncModelParseUnit.

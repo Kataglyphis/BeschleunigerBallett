@@ -1,24 +1,13 @@
 import fullscreen;
 
-// Depth resolve: downsamples MSAA depth to single-sample via nearest-sample
-// selection (minimum depth = nearest fragment). depth_resolve.wgsl is
-// generated from this file and checked into the Rust crate by wgslMap.
-// Emits WGSL.
+// MSAA depth resolve keeping the nearest sample; the checked-in depth_resolve.wgsl is generated from this file.
 
 [vk::binding(0, 0)] Texture2DMS<float> msaaDepth;
 
 [shader("vertex")]
 FullscreenVsOut vs_main(uint vid : SV_VertexID)
 {
-    // Was a hand-rolled fullscreen triangle whose uv grew WITH ndc.y (uv.y=0
-    // at the bottom, 1 at the top) instead of matching the standard
-    // framebuffer/@builtin(position) convention fullscreen_vs uses (uv.y=0 at
-    // the top). fs_main below reads msaaDepth at that uv but WRITES via
-    // SV_Depth at its own (correctly, hardware-placed) fragCoord, so every
-    // resolved depth texel held the wrong source row - self.depth came out
-    // vertically mirrored versus the actual screen for any asymmetric scene,
-    // silently correct only when a consumer's own geometry was symmetric
-    // about the horizontal centreline (gpu_cull, ssao's own callers).
+    // uv.y must be 0 at the top: fs_main reads at uv but writes at fragCoord, else the depth is mirrored.
     return fullscreen_vs(vid);
 }
 

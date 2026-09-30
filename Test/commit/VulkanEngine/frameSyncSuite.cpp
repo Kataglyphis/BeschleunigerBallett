@@ -1,7 +1,4 @@
-// Pins FrameSync's device-free contract: a freshly constructed instance
-// cycles with frame_sync_count == 1, cleanUp() reports a fully torn-down
-// state, and advanceFrame() never divides by zero once frame_sync_count has
-// been zeroed by cleanUp() (the state create() leaves behind on failure).
+// A failed create() leaves frame_sync_count at 0, so advanceFrame() must never divide by it.
 
 #include <gtest/gtest.h>
 
@@ -45,8 +42,7 @@ TEST(FrameSyncUnit, AdvanceFrameIsSafeWhenSyncCreationFailed)
     Kataglyphis::FrameSync frame_sync;
     frame_sync.cleanUp(vk::Device{});
 
-    // Before the create()-failure guard was added, this modulo-by-zero was
-    // undefined behaviour / a crash. Must be a no-op now.
+    // Modulo by the zeroed count; must be a no-op.
     frame_sync.advanceFrame();
 
     EXPECT_EQ(frame_sync.currentFrame(), 0U);
@@ -56,8 +52,7 @@ TEST(FrameSyncUnit, ResetAndSizeSurvivesCleanUpsCounterReset)
 {
     Kataglyphis::FrameSync frame_sync;
 
-    // cleanUp() (called internally by resetAndSize()) zeroes frame_sync_count;
-    // the sizing computed afterwards must not be clobbered by that reset.
+    // resetAndSize() calls cleanUp(), which must not clobber the size set afterwards.
     frame_sync.resetAndSize(vk::Device{}, 3);
 
     EXPECT_EQ(frame_sync.frameSyncCount(), 3U);

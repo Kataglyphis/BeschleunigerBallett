@@ -1,17 +1,12 @@
 #!/usr/bin/env bash
-# build-coverage-llvm.sh - project wrapper around ANTfrastructure's generic
-# coverage driver (linux/scripts/lib/coverage.sh). Only this project's test
-# suite name, profile paths and exclusion filters live here.
+# build-coverage-llvm.sh - this project's suite, profile paths and filters over ANTfrastructure's lib/coverage.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
-# not honour - and fails naming the probed path AND the fix.
+# Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/coverage.sh
 antfrastructure_source linux/scripts/lib/compiler-llvm-tools.sh
 
@@ -37,19 +32,16 @@ done
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-build}}"
 COVERAGE_JSON="${COVERAGE_JSON_ARG:-${COVERAGE_JSON:-${BUILD_DIR}/coverage.json}}"
 
-# The pair must be the compiler's own: PATH's llvm-profdata is an older LLVM than the
-# image's clang and refused its raw profile ("no profile can be merged", 2026-09-24).
+# Use the compiler's own pair: PATH's older llvm-profdata rejects the image clang's raw profile.
 use_compiler_llvm_tools "${BUILD_DIR}" llvm-profdata llvm-cov
 require_tools llvm-profdata llvm-cov
 
-# compileTestSuite is device-free (it links VulkanEngineCore but touches no
-# Vulkan), which is what lets the coverage run work in headless CI.
+# compileTestSuite touches no Vulkan device, so coverage runs in headless CI.
 TEST_SUITE="${BUILD_DIR}/compileTestSuite"
 PROFRAW="${BUILD_DIR}/Test/compile/default.profraw"
 PROFDATA="${BUILD_DIR}/compileTestSuite.profdata"
 
-# No exclusion filters applied today; add llvm-cov -ignore-filename-regex
-# patterns here rather than in the shared library.
+# Project -ignore-filename-regex patterns go here, not in the shared library.
 COVERAGE_LLVM_IGNORE_REGEX=()
 
 coverage_llvm_generate_profile "${TEST_SUITE}" "${PROFRAW}"

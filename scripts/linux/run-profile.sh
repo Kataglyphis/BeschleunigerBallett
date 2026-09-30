@@ -5,10 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
-# not honour - and fails naming the probed path AND the fix.
+# Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/app-runner.sh
 
 APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"

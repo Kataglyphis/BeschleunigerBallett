@@ -1,9 +1,3 @@
-// Direct unit coverage for kataglyphis.vulkan.sampler_builder::buildSamplerCreateInfo
-// - the helper that replaced three drifted, hand-written vk::SamplerCreateInfo
-// literals in PostStage/Model/Texture. vk::SamplerCreateInfo is a plain struct,
-// so this pins each call site's exact field values field-by-field with no
-// device needed, guarding against the fields silently drifting apart again.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -48,8 +42,7 @@ TEST(SamplerBuilderUnit, MatchesModelSamplerConfigurationWithMipLevelAsMaxLod)
     EXPECT_EQ(info.minFilter, vk::Filter::eLinear);
     EXPECT_EQ(info.addressModeU, vk::SamplerAddressMode::eRepeat);
     EXPECT_EQ(info.borderColor, vk::BorderColor::eFloatOpaqueBlack);
-    // Model.cpp passes the texture's own mip level as maxLod (unlike PostStage's
-    // fixed 0.0F) - this is the one field the three sites genuinely disagree on.
+    // maxLod is the one field the call sites genuinely disagree on.
     EXPECT_FLOAT_EQ(info.maxLod, 4.0F);
     EXPECT_EQ(info.anisotropyEnable, static_cast<vk::Bool32>(VK_FALSE));
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 1.0F);
@@ -65,27 +58,19 @@ TEST(SamplerBuilderUnit, MatchesTextureSamplerConfigurationWithAnisotropyHardDis
     EXPECT_EQ(info.addressModeU, vk::SamplerAddressMode::eClampToEdge);
     EXPECT_EQ(info.addressModeV, vk::SamplerAddressMode::eClampToEdge);
     EXPECT_EQ(info.addressModeW, vk::SamplerAddressMode::eClampToEdge);
-    // Texture::createTextureSampler hard-disables anisotropy regardless of
-    // device support - a known asymmetry with the other two sites, preserved
-    // by the caller rather than the shared builder.
+    // Texture::createTextureSampler disables anisotropy regardless of device support; a known asymmetry.
     EXPECT_EQ(info.anisotropyEnable, static_cast<vk::Bool32>(VK_FALSE));
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 1.0F);
     EXPECT_EQ(info.borderColor, vk::BorderColor::eIntOpaqueBlack);
     EXPECT_FLOAT_EQ(info.maxLod, 5.0F);
-    // compareEnable/compareOp default to VK_FALSE/eNever when the caller omits
-    // them, as this call does. Texture::createTextureSampler's own defaults
-    // (VK_FALSE/eAlways) are threaded through explicitly instead - see
-    // MatchesShadowMapComparisonSamplerConfiguration below for a caller that
-    // opts in.
+    // Omitted compare arguments default to VK_FALSE/eNever.
     EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_FALSE));
     EXPECT_EQ(info.compareOp, vk::CompareOp::eNever);
 }
 
 TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
 {
-    // CascadedShadowMap.cpp's comparison sampler: linear filtering + a
-    // comparison op turns SampleCmpLevelZero into real bilinear PCF, unlike
-    // plain-sampled + manually-thresholded depth.
+    // Linear filtering plus a compare op makes SampleCmpLevelZero a real bilinear PCF tap.
     const vk::SamplerCreateInfo info = buildSamplerCreateInfo(vk::Filter::eLinear,
       vk::SamplerAddressMode::eClampToEdge,
       0.0F,
@@ -189,8 +174,7 @@ TEST(SamplerBuilder, FindSamplerReturnsNulloptForANewKey)
 
 TEST(SamplerBuilderUnit, SamplerDedupSeparatesDistinctWrapModes)
 {
-    // Same mip level, only the wrap mode differs - two textures that share a
-    // mip count but not a glTF sampler must not collapse onto one vk::Sampler.
+    // Same mip count, different wrap mode: must not collapse onto one vk::Sampler.
     GltfSamplerDesc repeatDesc{};
     GltfSamplerDesc clampDesc{};
     clampDesc.addressModeU = vk::SamplerAddressMode::eClampToEdge;

@@ -1,18 +1,4 @@
-// Shared analytic sky model: horizon/zenith/ground gradient, sun disk, and a
-// diffuse hemisphere irradiance approximation over the same gradient.
-//
-// Single source of truth for three copies that had to agree because each
-// feeds the others' ambient: sky/sky.slang's background render,
-// forward.slang's analytic IBL fallback (reflected specular via
-// hemisphere_irradiance + a caller-side sky_radiance wrapper), and the Rust
-// CPU panorama in ibl.rs (EnvironmentImage::sky) that gets convolved into the
-// prefiltered/irradiance maps replacing that same fallback.
-//
-// A combined "sky_radiance(dir, withSun)" is deliberately NOT provided here:
-// the two shader callers source their light direction/intensity from
-// different uniform blocks (sky.light_dir_intensity vs
-// frame.light_dir_ambient + frame.light_color_intensity.w), so each keeps its
-// own thin wrapper over sky_gradient + sun_disk.
+// Must match ibl.rs's EnvironmentImage::sky: sky.slang, forward.slang's IBL fallback and the Rust panorama agree.
 
 static const float3 SKY_ZENITH = float3(0.09, 0.16, 0.35);
 static const float3 SKY_HORIZON = float3(0.55, 0.62, 0.72);
@@ -27,8 +13,7 @@ float3 sky_gradient(float3 dir)
         return lerp(SKY_HORIZON, SKY_GROUND, clamp(-dir.y * 3.0, 0.0, 1.0));
 }
 
-// Analytic sun disk, additive on top of sky_gradient.
-// dir: view or reflection direction, lightDir: direction towards the light (not required normalized), intensity: light intensity.
+// Analytic sun disk, additive on top of sky_gradient; lightDir need not be normalized.
 float3 sun_disk(float3 dir, float3 lightDir, float intensity)
 {
     float3 l = normalize(lightDir);

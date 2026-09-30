@@ -1,15 +1,10 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  The Windows x64 lane's container half: what windows-x64.yml runs through the hub's
-  container-ci-windows.yml, and what a local container run executes too.
+  The Windows x64 lane's container half, run by windows-x64.yml and by a local container run.
 .DESCRIPTION
-  Build-Windows.ps1 builds clangcl-debug (the CPU tests and the fuzz targets) and clangcl-release
-  (the product, in dist\windows-x64). Then the CPU-only test suites, every fuzz target's seed
-  corpus, and the renderer timing and pixel comparisons, validation-only unless
-  KATAGLYPHIS_CI_HAS_GPU is 1. Every check after the build runs, and the lane fails if any did.
-  The WebDAV credentials and the signing password arrive as environment (WEBDAV_*,
-  REMOTE_BASE_PATH, MSIX_CERT_PASSWORD), which Build-Windows.ps1 reads itself.
+  Builds clangcl-debug and clangcl-release, then runs the CPU suites, fuzz seed corpora and renderer
+  comparisons; every check runs and the lane fails if any did. Secrets arrive as environment.
 #>
 [CmdletBinding()]
 param()
@@ -27,10 +22,7 @@ $buildArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $
 & pwsh @buildArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "::error::Build-Windows.ps1 exited $LASTEXITCODE"; exit 1 }
 
-# The CPU suites. The GPU-only ones stay out by NAME: a GPU-less runner still has the Vulkan loader,
-# so SKIP_WITHOUT_GPU can believe a device exists, and device creation then aborts the process.
-# BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites parses this array, one entry per line, from
-# its opening line to its joining line; a comment must not quote either, the parser takes the first.
+# Excluded by name: a GPU-less runner still has the Vulkan loader and aborts creating a device. BuildIntegrity parses this.
 $gpuOnlySuites = @(
   'GoldenRender.*'
   'Integration.*'
@@ -42,10 +34,7 @@ if (-not (Test-Path -LiteralPath $suite)) { $failed.Add("missing $suite") } else
   if ($LASTEXITCODE -ne 0) { $failed.Add("commitTestSuite.exe exited $LASTEXITCODE") }
 }
 
-# Each fuzz target's seed corpus in unit-test mode: CPU-only and quick, and a seed once found a real
-# terminate-on-throw bug. BuildIntegrity's fuzz-list tests parse the target list below from its one
-# line; a comment must not quote that line's opening text. A target gets ten minutes: a seed once
-# hung for 68 inside readTextFile (FileReader.ixx), and a hang must fail the lane, not stall it.
+# Seed corpora (CPU-only); BuildIntegrity parses this one-line list; ten minutes makes a hang fail, not stall.
 foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
   $exe = Join-Path $debugDir "$t.exe"
   if (-not (Test-Path -LiteralPath $exe)) { $failed.Add("missing $exe (fuzz targets are Debug + clang-cl only)"); continue }
@@ -57,14 +46,12 @@ foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','
   if ($p.ExitCode -ne 0) { $failed.Add("fuzz target $t exited $($p.ExitCode)") } else { Write-Host "--- $t OK" }
 }
 
-# A hosted runner has no GPU, so the comparisons check only their schema and pass names unless
-# KATAGLYPHIS_CI_HAS_GPU=1 (a self-hosted runner with an adapter) asks for the real one.
+# Hosted runners have no GPU: schema and pass names only, unless KATAGLYPHIS_CI_HAS_GPU=1.
 $validation = @(if ($env:KATAGLYPHIS_CI_HAS_GPU -ne '1') { '-ValidationOnly' })
 Write-Host "GPU available: $($validation.Count -eq 0)"
 & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Compare-RendererTimings.ps1') -RepoRoot $workspace @validation
 if ($LASTEXITCODE -ne 0) { $failed.Add("Compare-RendererTimings.ps1 exited $LASTEXITCODE") }
-# Exit 2 is the pixel script's "nothing was checked", certain without a GPU: a warning then, never a
-# pass, and fatal when a GPU should have produced frames (Compare-RendererPixels.Tests.ps1 pins it).
+# Exit 2 means nothing was checked: a warning without a GPU, never a pass, and fatal with one.
 & pwsh -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'Compare-RendererPixels.ps1') -RepoRoot $workspace @validation
 $pixels = $LASTEXITCODE
 if ($pixels -eq 2 -and $validation.Count -gt 0) {

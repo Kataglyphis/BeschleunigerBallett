@@ -1,15 +1,4 @@
-// CPU-only tests for frustum culling.
-//
-// Culling is the one optimisation that can silently DELETE things the user
-// should see, and the failure is invisible in aggregate metrics: a frame that
-// is missing an object still renders, still has plausible mean luminance, and
-// is faster. So these tests weigh the two error directions differently -
-// a false positive (drawing something off-screen) costs time, a false
-// negative (culling something visible) is a bug. Several tests below assert
-// only that visible things survive.
-//
-// Nothing here needs a GPU: extractFrustumPlanes/isVisible/transformAABB are
-// free functions over matrices, exactly so they can be tested this way.
+// A false positive costs time but a false negative silently deletes a visible object, so some tests assert survival.
 
 #include <gtest/gtest.h>
 
@@ -48,10 +37,7 @@ AABB box_at(const glm::vec3 &centre, float halfExtent)
     return AABB{ centre - glm::vec3(halfExtent), centre + glm::vec3(halfExtent) };
 }
 
-// Reference oracle: the eight-corner walk `transformAABB` used before it
-// switched to the center/extent form. Kept file-local (not the production
-// code path) so the new form can be checked against the old one instead of
-// against itself.
+// Independent eight-corner oracle, so the center/extent form is not checked against itself.
 AABB transform_aabb_via_eight_corners(const glm::mat4 &model, const AABB &box)
 {
     AABB out{};
@@ -95,8 +81,7 @@ TEST(FrustumUnit, BoxInFrontOfTheCameraIsVisible)
     EXPECT_TRUE(isVisible(planes, box_at({ 0.0F, 0.0F, -10.0F }, 1.0F)));
 }
 
-// The direction that matters. Each of these is somewhere a naive test gets
-// wrong, and every one of them is a visible object that must NOT disappear.
+// Each case is a visible object a naive plane test wrongly culls.
 TEST(FrustumUnit, NeverCullsGeometryTheCameraCanSee)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
@@ -105,8 +90,7 @@ TEST(FrustumUnit, NeverCullsGeometryTheCameraCanSee)
     EXPECT_TRUE(isVisible(planes, AABB{ { -1.0F, -1.0F, -0.5F }, { 1.0F, 1.0F, 0.5F } }))
       << "a box straddling the near plane is partly visible";
 
-    // Enormous box containing the whole frustum - no corner is inside any
-    // single plane's positive side in the obvious way, but it is visible.
+    // Enclosing the whole frustum puts no corner obviously inside, yet the box is visible.
     EXPECT_TRUE(isVisible(planes, box_at({ 0.0F, 0.0F, 0.0F }, 1000.0F)))
       << "a box enclosing the camera must not be culled";
 
@@ -117,8 +101,7 @@ TEST(FrustumUnit, NeverCullsGeometryTheCameraCanSee)
     EXPECT_TRUE(isVisible(planes, AABB{ { -12.0F, -1.0F, -20.0F }, { -6.0F, 1.0F, -18.0F } }))
       << "a box crossing the left frustum edge is partly visible";
 
-    // Degenerate/never-initialised bounds must be treated as visible: not
-    // knowing an object's size is not a licence to delete it.
+    // Unknown bounds are no licence to cull.
     AABB inverted{};
     inverted.min = glm::vec3(1.0F);
     inverted.max = glm::vec3(-1.0F);
@@ -126,25 +109,18 @@ TEST(FrustumUnit, NeverCullsGeometryTheCameraCanSee)
     EXPECT_TRUE(isVisible(planes, inverted)) << "unknown bounds must render, not vanish";
 }
 
-// Distinguishes the [0,1]-depth near plane (row2, view z = -kNear) from the
-// OpenGL form (row3 + row2, view z = -kNear/2) that CullsGeometryOutsideEachPlane
-// below cannot tell apart. A box entirely inside the sliver between the two
-// candidate planes is culled by row2 but survives row3 + row2.
+// Only a box in the sliver between row2 and the OpenGL row3 + row2 near plane tells the two apart.
 TEST(FrustumUnit, NearPlaneSitsAtTheProjectionNearDistance)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
 
-    // View z in [-0.09, -0.06]: closer to the camera than the accurate near
-    // plane at z = -kNear = -0.1 (so row2 alone culls it), but farther than
-    // the OpenGL-style plane at z = -kNear/2 = -0.05 (so row3 + row2 would
-    // let it survive).
+    // Between -kNear (row2 culls) and -kNear/2 (row3 + row2 would keep it).
     const AABB inSliver{ { -0.01F, -0.01F, -0.09F }, { 0.01F, 0.01F, -0.06F } };
     EXPECT_FALSE(isVisible(planes, inSliver))
       << "a box between the accurate and OpenGL-style near planes must be culled; "
          "if this fails, extractFrustumPlanes's near plane regressed to normalizePlane(row3 + row2)";
 
-    // Well past the near plane: must still be visible, so the assertion above
-    // cannot pass by culling everything.
+    // Control, so the assertion above cannot pass by culling everything.
     const AABB pastNearPlane{ { -0.01F, -0.01F, -0.2F }, { 0.01F, 0.01F, -0.15F } };
     EXPECT_TRUE(isVisible(planes, pastNearPlane)) << "geometry safely past the near plane must remain visible";
 }
@@ -153,14 +129,7 @@ TEST(FrustumUnit, CullsGeometryOutsideEachPlane)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
 
-    // Behind the camera, at several distances.
-    //
-    // These do NOT distinguish the [0,1]-depth near plane (row2) from the
-    // OpenGL one (row3 + row2) - see NearPlaneSitsAtTheProjectionNearDistance
-    // above for a test that does. The OpenGL form only shifts the near plane
-    // from -0.1 to -0.05, so it draws a sliver extra rather than admitting
-    // anything behind the viewer. Do not read these as guarding that choice;
-    // see the comment in Frustum.cpp.
+    // These pass with either near-plane form; NearPlaneSitsAtTheProjectionNearDistance is the one that distinguishes.
     EXPECT_FALSE(isVisible(planes, box_at({ 0.0F, 0.0F, 10.0F }, 1.0F))) << "geometry behind the camera must be culled";
     EXPECT_FALSE(isVisible(planes, box_at({ 0.0F, 0.0F, 0.05F }, 0.01F)))
       << "geometry just behind the camera must be culled";
@@ -177,9 +146,7 @@ TEST(FrustumUnit, CullsGeometryOutsideEachPlane)
     EXPECT_FALSE(isVisible(planes, box_at({ 0.0F, 100.0F, -10.0F }, 1.0F))) << "far above";
 }
 
-// A box that fits the camera frustum exactly must survive. This is what
-// catches an inverted plane normal: flip one and this fails while the crude
-// "far away is culled" tests above still pass.
+// Catches an inverted plane normal, which the "far away is culled" tests miss.
 TEST(FrustumUnit, BoxSpanningTheFrustumSurvivesEveryPlane)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
@@ -196,9 +163,7 @@ TEST(FrustumUnit, TransformAABBCoversTheRotatedBox)
 {
     const AABB unit{ glm::vec3(-1.0F), glm::vec3(1.0F) };
 
-    // 45 degrees about Z: the axis-aligned bound of the rotated box grows to
-    // sqrt(2) in x and y. Taking min/max of the transformed min/max corners
-    // alone would report 1.0 and clip the corners off.
+    // Transforming only the min/max corners would report 1.0 here instead of sqrt(2).
     const glm::mat4 rotation = glm::rotate(glm::mat4(1.0F), glm::radians(45.0F), glm::vec3(0.0F, 0.0F, 1.0F));
     const AABB rotated = transformAABB(rotation, unit);
 
@@ -222,12 +187,7 @@ TEST(FrustumUnit, TransformAABBHandlesTranslationAndScale)
     EXPECT_NEAR(moved.max.z, -3.0F, 1e-4F);
 }
 
-// Pins the center/extent form against the eight-corner reference it replaced
-// on a set of affine matrices covering the cases the two forms could
-// plausibly disagree on: identity, pure translation, uniform and
-// non-uniform scale (including a mirror, i.e. a negative scale), a rotation
-// about a non-axis vector, and a translate*rotate*scale composition matching
-// BM_TransformAABB's.
+// The matrices cover where the two forms could disagree, including a mirror (negative scale).
 TEST(FrustumUnit, TransformAabbMatchesTheEightCornerReference)
 {
     const AABB box{ glm::vec3(-1.0F, -2.0F, -0.5F), glm::vec3(3.0F, 1.5F, 2.0F) };
@@ -260,10 +220,7 @@ TEST(FrustumUnit, TransformAabbMatchesTheEightCornerReference)
     }
 }
 
-// The whole point, end to end: an object moved out of view is culled, and the
-// same object moved back is not. Culling must follow the model matrix, which
-// is what breaks if a caller tests object-space bounds against world-space
-// planes.
+// Breaks if a caller tests object-space bounds against world-space planes.
 TEST(FrustumUnit, CullingFollowsTheModelMatrix)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
@@ -276,26 +233,10 @@ TEST(FrustumUnit, CullingFollowsTheModelMatrix)
     EXPECT_FALSE(isVisible(planes, transformAABB(wayOffLeft, object)));
 }
 
-// The shadow-caster variant, and why it is not just isVisible with a flag.
-//
-// A cascade's ortho box is fitted to the camera frustum slice it covers, with
-// only a small padding toward the light. Geometry BETWEEN the light and that
-// box still casts into it - its shadow travels along the box's own depth axis
-// - but it sits outside the near plane. Culling it is the classic
-// missing-shadow-from-tall-geometry bug, and it looks like the shadow simply
-// not existing rather than like a culling error.
+// Geometry between the light and the cascade box sits outside the near plane but still casts into the box.
 TEST(FrustumUnit, ShadowCasterTestIgnoresOnlyTheNearPlane)
 {
-    // An ORTHOGRAPHIC light matrix, because that is the only thing this
-    // function is ever handed - a cascade's light-space view-projection.
-    //
-    // The distinction matters: under a PERSPECTIVE frustum the side planes
-    // also reject anything behind the apex, so dropping the near plane alone
-    // would not admit a caster between light and box. Under an ortho box the
-    // side planes run parallel to the light direction, which is exactly why
-    // dropping the near plane is both sufficient and safe. Testing this
-    // against a perspective matrix would assert a property the function does
-    // not have and is not asked for.
+    // Ortho only: its side planes parallel the light, which is what makes dropping just the near plane sufficient.
     const glm::mat4 lightView =
       glm::lookAt(glm::vec3(0.0F, 20.0F, 0.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, -1.0F));
     const glm::mat4 lightProjection = glm::ortho(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 40.0F);
@@ -306,16 +247,13 @@ TEST(FrustumUnit, ShadowCasterTestIgnoresOnlyTheNearPlane)
     EXPECT_TRUE(isVisible(planes, inside));
     EXPECT_TRUE(isVisibleAsShadowCaster(planes, inside));
 
-    // Between the light and the box - above the near plane, still casting
-    // straight down into it. This is the whole point of the variant.
+    // Above the near plane, still casting straight down into the box.
     const AABB betweenLightAndBox = box_at({ 0.0F, 35.0F, 0.0F }, 1.0F);
     EXPECT_FALSE(isVisible(planes, betweenLightAndBox)) << "the camera test must still reject it";
     EXPECT_TRUE(isVisibleAsShadowCaster(planes, betweenLightAndBox))
       << "a caster between the light and the cascade still casts into it";
 
-    // Side and far planes stay in force: something outside them in the
-    // light's XY casts its shadow outside the box too, and something past the
-    // far plane is behind everything the cascade covers.
+    // Outside the side planes the shadow misses the box; past the far plane it is behind everything covered.
     EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ -100.0F, 0.0F, 0.0F }, 1.0F))) << "far in light X";
     EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ 100.0F, 0.0F, 0.0F }, 1.0F))) << "far in light X";
     EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ 0.0F, 0.0F, 100.0F }, 1.0F))) << "far in light Y";

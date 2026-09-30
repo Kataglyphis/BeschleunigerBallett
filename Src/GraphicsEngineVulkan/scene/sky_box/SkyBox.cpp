@@ -39,9 +39,7 @@ void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPoo
     this->device = in_device;
 
     createMesh(commandPool);
-    // The layout/pool/set describe a binding shape, not a loaded resource, so
-    // they are created unconditionally here - createGraphicsPipeline() needs
-    // descriptorSetLayout valid on every path, including a failed load below.
+    // Unconditional: createGraphicsPipeline() needs the layout even when the load below fails.
     createDescriptorSetForCubeMap();
     loadCubeMap(commandPool);
 }
@@ -80,14 +78,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         }
     }
 
-    // Every face MUST match the first, and this is a memory-safety check, not
-    // a validation nicety. width/height/layerSize used to be single variables
-    // overwritten by each iteration, so only the LAST face's dimensions
-    // survived - while the memcpy loop below copies layerSize bytes out of
-    // EVERY face. A cubemap whose last face was larger than the first
-    // therefore read off the end of the earlier allocations, and one whose
-    // last face was smaller wrote its layers at overlapping offsets. It never
-    // fired only because the six shipped PNGs happen to be identical in size.
+    // Memory safety, not validation: the upload copies the first face's layerSize bytes out of every face.
     if (!cubemapFacesConsistent(face_widths, face_heights)) {
         spdlog::error("Skybox faces have inconsistent or degenerate dimensions; all six faces must match.");
         for (size_t j = 0; j < 6; j++) { stbi_image_free(face_data[j]); }
@@ -103,10 +94,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     std::array<const unsigned char*, 6> faces = {
         face_data[0], face_data[1], face_data[2], face_data[3], face_data[4], face_data[5]
     };
-    // sRGB, not UNORM: the DOOM skybox faces are sRGB-encoded PNGs, so a UNORM
-    // view fed gamma-space values into the HDR target that post then gamma-
-    // encodes again - the same defect the material-texture sRGB fix caught,
-    // on a separate texture path. sRGB makes the hardware decode to linear.
+    // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before post gamma-encodes.
     const bool uploaded =
       uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
 
@@ -123,9 +111,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
 void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
 {
-    // 1x1, 6-layer opaque-black RGBA8 (24 bytes of staging) - same upload
-    // shape as the real path, so a missing/broken skybox renders a black sky
-    // instead of leaving cubeMapTexture/descriptorSet pointed at nothing.
+    // Same upload path as the real faces, so a broken skybox renders black instead of binding nothing.
     std::array<const unsigned char*, 6> faces = {
         kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel,
         kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel
@@ -142,9 +128,7 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     vk::DeviceSize const layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
     vk::DeviceSize const imageSize = layerSize * 6;
 
-    // Destroy the previous view before createImage() replaces the image it
-    // looks at - VUID-vkDestroyImage-image-01000 requires every view created
-    // from an image to be destroyed before the image itself is.
+    // VUID-vkDestroyImage-image-01000: the old view must go before createImage() replaces its image.
     cubeMapTexture->releaseImageView();
 
     cubeMapTexture->createImage(device, width, height, 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
@@ -186,9 +170,7 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
 
     commandBuffer.copyBufferToImage(stagingBuffer.getBuffer(), cubeMapTexture->getImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
-    // Destination stage widens from eFragmentShader to eAllCommands versus the
-    // barrier this replaced - a strict widening (see ImageLayoutHelper.hpp's
-    // pipelineStageForLayout comment), not a behavioural regression.
+    // The helper's eAllCommands destination strictly widens a fragment-only stage (see pipelineStageForLayout).
     cubeMapTexture->getVulkanImage().transitionImageLayout(commandBuffer,
       vk::ImageLayout::eTransferDstOptimal,
       vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -225,8 +207,7 @@ void SkyBox::updateDescriptorSetForCubeMap()
 
 void SkyBox::createRenderPass(vk::Format format)
 {
-    // The post stage LOADS this colour attachment afterwards, so it is left in
-    // eColorAttachmentOptimal rather than handed straight to presentation.
+    // Left in eColorAttachmentOptimal, not presentable: the post stage loads this attachment next.
     const vk::AttachmentDescription colorAttachment =
       buildAttachmentDescription(format, vk::ImageLayout::eColorAttachmentOptimal);
 
@@ -285,8 +266,7 @@ void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint3
 
 void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md).
+    // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 
     ShaderStagePair stages{ device, slang_spv_dir + "skybox.vs_main.spv", slang_spv_dir + "skybox.fs_main.spv" };
@@ -398,8 +378,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
 void SkyBox::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path).
+    // Idempotent: the destructor calls it again as a safety net.
     if (!device) { return; }
 
     destroyFramebuffers();
@@ -425,9 +404,7 @@ void SkyBox::destroyFramebuffers()
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
-// Rebuilds framebuffers but deliberately does not destroy the previous ones -
-// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
-// this, while the swapchain images they reference still exist.
+// Does not destroy the old framebuffers: recreateSwapChain() must, while their swapchain images still exist.
 void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
 {
     createFramebuffers(imageViews, width, height);

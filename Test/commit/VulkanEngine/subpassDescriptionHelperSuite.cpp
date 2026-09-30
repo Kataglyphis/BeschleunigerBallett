@@ -1,14 +1,3 @@
-// Direct unit coverage for common/RenderPassHelper.hpp's
-// buildSubpassDescription - the helper that replaced five hand-written
-// vk::SubpassDescription blocks across Rasterizer, PostStage,
-// DeferredRasterizer, SkyBox and CascadedShadowMap.
-//
-// Three of those five hard-coded colorAttachmentCount = 1 as a literal next
-// to a single-element reference instead of deriving it from the span
-// actually passed - the same drift buildRenderPassCreateInfo's
-// attachmentCount and buildFramebufferCreateInfo's attachmentCount already
-// guard against for their respective arrays.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -35,8 +24,6 @@ constexpr std::array<vk::AttachmentReference, 4> kFourInputRefs{
 };
 }// namespace
 
-// Usable in a constant expression, matching the other RenderPassHelper.hpp
-// helpers' convention.
 static_assert(buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1), &kDepthRef)
                 .colorAttachmentCount
     == 1U,
@@ -83,8 +70,7 @@ TEST(SubpassDescriptionHelperUnit, DepthStencilAttachmentPointerRoundTrips)
 
 TEST(SubpassDescriptionHelperUnit, DepthStencilAttachmentIsNullWhenNoneIsPassed)
 {
-    // The DeferredRasterizer lighting-subpass shape: colour + input
-    // attachments, no depth attachment of its own.
+    // The deferred lighting subpass has no depth attachment of its own.
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&kColorRef, 1), nullptr,
       std::span<const vk::AttachmentReference>(kFourInputRefs));
@@ -127,10 +113,6 @@ TEST(SubpassDescriptionHelperUnit, ResolveAttachmentsAreLeftNull)
     EXPECT_EQ(subpass.pResolveAttachments, nullptr);
 }
 
-// One test per call site this helper replaced, each pinning the exact
-// vk::SubpassDescription that call site's createRenderPass now produces -
-// the way renderPassHelperSuite.cpp pins buildAttachmentDescription's callers.
-
 TEST(SubpassDescriptionHelperUnit, MatchesRasterizerSubpass)
 {
     // Rasterizer::createRenderPass: colour at 0, depth at 1, no input attachments.
@@ -148,9 +130,7 @@ TEST(SubpassDescriptionHelperUnit, MatchesRasterizerSubpass)
 
 TEST(SubpassDescriptionHelperUnit, MatchesPostStageSubpass)
 {
-    // PostStage::createRenderPass: same colour-at-0/depth-at-1 shape as
-    // Rasterizer, but over the swapchain colour target and a reused depth
-    // buffer rather than an offscreen one.
+    // Rasterizer's shape, over the swapchain target and a reused depth buffer.
     constexpr vk::AttachmentReference color_ref{ 0, vk::ImageLayout::eColorAttachmentOptimal };
     constexpr vk::AttachmentReference depth_ref{ 1, vk::ImageLayout::eDepthStencilAttachmentOptimal };
 
@@ -178,8 +158,7 @@ TEST(SubpassDescriptionHelperUnit, MatchesSkyBoxSubpass)
 
 TEST(SubpassDescriptionHelperUnit, MatchesCascadedShadowMapSubpass)
 {
-    // CascadedShadowMap::createRenderPass: depth-only, no colour attachment
-    // at all - the sole call site with an empty colour span.
+    // The only call site with an empty colour span.
     constexpr vk::AttachmentReference depth_ref{ 0, vk::ImageLayout::eDepthStencilAttachmentOptimal };
 
     const vk::SubpassDescription subpass =
@@ -192,9 +171,7 @@ TEST(SubpassDescriptionHelperUnit, MatchesCascadedShadowMapSubpass)
 
 TEST(SubpassDescriptionHelperUnit, MatchesDeferredRasterizerGeometrySubpass)
 {
-    // DeferredRasterizer::createRenderPass subpass 0: three G-buffer colour
-    // attachments (normal, albedo, material) plus depth - the only
-    // three-element colour span among the five call sites.
+    // The only three-element colour span: the G-buffer.
     const vk::SubpassDescription subpass =
       buildSubpassDescription(std::span<const vk::AttachmentReference>(kThreeColorRefs), &kDepthRef);
 
@@ -206,9 +183,7 @@ TEST(SubpassDescriptionHelperUnit, MatchesDeferredRasterizerGeometrySubpass)
 
 TEST(SubpassDescriptionHelperUnit, MatchesDeferredRasterizerLightingSubpass)
 {
-    // DeferredRasterizer::createRenderPass subpass 1: writes the final colour
-    // attachment while reading the geometry subpass's three G-buffers plus
-    // depth back as input attachments - no depth attachment of its own.
+    // Reads the G-buffers and depth back as input attachments, so it has no depth attachment of its own.
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&kColorRef, 1), nullptr,
       std::span<const vk::AttachmentReference>(kFourInputRefs));

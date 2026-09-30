@@ -48,11 +48,8 @@ void Model::add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
   std::vector<ObjMaterial> &materials,
   bool double_sided)
 {
-    // Append, not overwrite: a Model holds several meshes (one per glTF
-    // primitive / OBJ group), each added via its own call.
+    // One mesh per glTF primitive or OBJ group.
     meshes.emplace_back(vulkan_device, command_pool, vertices, indices, materialIndex, materials);
-    // The Mesh constructor is deliberately unchanged; the per-material doubleSided
-    // flag rides in separately (default false = back-face culled).
     meshes.back().setDoubleSided(double_sided);
 }
 
@@ -75,10 +72,7 @@ void Model::addSampler(const Texture &newTexture, const GltfSamplerDesc &sampler
         return;
     }
 
-    // Nearest-filtered assets are exactly the ones whose blocky look the
-    // author chose deliberately; anisotropy would just blur that away
-    // (usesNearestFiltering also keeps aniso off when the device does not
-    // support it, matching the pre-sampler-support behaviour).
+    // No anisotropy for nearest-filtered textures: it would blur the blocky look the author chose.
     const bool aniso = device->supportsSamplerAnisotropy() && !usesNearestFiltering(samplerDesc);
 
     vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(samplerDesc,

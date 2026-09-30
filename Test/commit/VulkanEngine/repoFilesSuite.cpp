@@ -1,5 +1,4 @@
-// Pins the contract of RepoFiles.hpp's readFileLines() and readFileText(), which
-// buildIntegritySuite.cpp now relies on for every source scan.
+// buildIntegritySuite.cpp relies on these readers for every source scan.
 
 #include <filesystem>
 #include <fstream>
@@ -46,9 +45,7 @@ TEST(RepoFilesUnit, ReadFileLinesNulloptForDirectoryPath)
     std::filesystem::remove(dir, ec);
 }
 
-// readFileText() shares readFileLines()' open path and so shared its bug: on
-// Linux a directory opens fine and only fails on read, which used to surface as
-// an empty-but-present string instead of std::nullopt.
+// On Linux a directory opens fine and only fails on read.
 TEST(RepoFilesUnit, ReadFileTextNulloptForDirectoryPath)
 {
     const auto dir = uniqueTempPath("kat_repofiles_text_dir");

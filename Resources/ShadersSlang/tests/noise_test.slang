@@ -1,7 +1,6 @@
 import noise;
 
-// CI guard: forces emit of the simplex noise + fbm math to both SPIR-V and
-// WGSL. Not loaded by any renderer — guards the shared noise module.
+// CI-only entry point: proves noise.slang compiles to both SPIR-V and WGSL; no renderer loads it.
 
 RWStructuredBuffer<float> outBuf;
 

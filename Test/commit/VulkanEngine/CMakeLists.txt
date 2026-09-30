@@ -2,10 +2,7 @@ include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 
 set(COMMIT_TEST_SUITE commitTestSuite)
 
-# Only the test sources - NOT the VulkanEngine sources
-# CONFIGURE_DEPENDS: build trees now persist between container builds
-# (see docs/container-build-caching.md), so without it a NEW test file is
-# silently never compiled - CMake would not re-run the glob.
+# CONFIGURE_DEPENDS: build trees persist between container builds, so a new test file would never be globbed.
 file(GLOB RENDERER_COMMIT_TEST_FILTER CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
@@ -22,8 +19,7 @@ kataglyphis_configure_common_test_target(${COMMIT_TEST_SUITE})
 target_sources(${COMMIT_TEST_SUITE} PRIVATE ${RENDERER_COMMIT_TEST_FILTER})
 kataglyphis_add_imgui_test_sources(${COMMIT_TEST_SUITE})
 
-# Link against VulkanEngineCore static library
-# This brings in all necessary libraries, includes, and module BMIs
+# VulkanEngineCore brings the libraries, includes and module BMIs.
 target_link_libraries(${COMMIT_TEST_SUITE} PRIVATE VulkanEngineCore gtest gtest_main)
 
 kataglyphis_enable_windows_vulkan_delay_load(${COMMIT_TEST_SUITE})

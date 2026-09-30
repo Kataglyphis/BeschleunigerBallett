@@ -1,9 +1,5 @@
 import rt_types;
 
-// Ray tracing miss shader: background color when a ray hits nothing.
-// Sole source for this shader. Emits SPIR-V only (Vulkan ray tracing —
-// WebGPU has no RT pipeline).
-
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
 
 [shader("miss")]

@@ -1,17 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/windows/Compare-RendererPixels.ps1's structural-metric
-# gate - the script previously threw an ObjectDisposedException on its own
-# success path (Get-LuminanceMetrics was called with $bmp.Width/$bmp.Height
-# AFTER $bmp.Dispose()), its -ValidationOnly mode checked hard-coded filenames
-# the frame-dump capture never writes, and an empty run reported PASSED
-# because $exitCode defaults to 0 and nothing set it otherwise. Invokes the
-# real script as a child process against small fixture PNGs generated with
-# System.Drawing, the same pattern Compare-RendererTimings.Tests.ps1 and
-# Compare-PerfBaseline.Tests.ps1 use.
-#
-# NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
-# assertion syntax (`Should Be 0`, never Pester 5's `Should -Be 0`).
+# Runs the real script against generated fixture PNGs. Pester 3.4.0: `Should Be`, not `Should -Be`.
 
 Describe 'Compare-RendererPixels' {
 
@@ -23,8 +12,7 @@ Describe 'Compare-RendererPixels' {
     Add-Type -AssemblyName System.Drawing.Common
 
     function New-FlatPng {
-      # A single flat colour everywhere: stddev == 0, exactly one luminance
-      # bucket - must be rejected as "essentially uniform".
+      # Flat colour: stddev 0 and one bucket, so it must fail as uniform.
       param([string]$Path, [int]$W = 64, [int]$H = 64)
       $bmp = [System.Drawing.Bitmap]::new($W, $H)
       $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -38,9 +26,7 @@ Describe 'Compare-RendererPixels' {
     }
 
     function New-StructuredPng {
-      # A diagonal black-to-white gradient: dozens of distinct luminance
-      # buckets, high stddev, well over half the pixels lit - must pass
-      # every structural check.
+      # Diagonal gradient: many buckets, high stddev, mostly lit, so it must pass.
       param([string]$Path, [int]$W = 64, [int]$H = 64)
       $bmp = [System.Drawing.Bitmap]::new($W, $H)
       $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -118,8 +104,7 @@ Describe 'Compare-RendererPixels' {
   It '-ValidationOnly validates a frame it actually finds on disk' {
     $outDir = Join-Path $script:tmpDir 'validation-hit'
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    # Named the way the real DISABLED_DumpsFrameToPng capture names its
-    # output, NOT the hard-coded 'cpp-vulkan.png' the old code checked for.
+    # Named like the real DISABLED_DumpsFrameToPng output, not a bare cpp-vulkan.png.
     New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan-shadows-on.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -ValidationOnly

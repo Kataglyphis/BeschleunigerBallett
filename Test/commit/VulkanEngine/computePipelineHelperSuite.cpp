@@ -1,7 +1,3 @@
-// Direct unit coverage for common/ComputePipelineHelper.hpp's two builders -
-// the pair that replaced Clouds' and PathTracing's independently hand-rolled
-// vk::PipelineShaderStageCreateInfo / vk::ComputePipelineCreateInfo blocks.
-
 #include <gtest/gtest.h>
 
 #include <string_view>
@@ -14,10 +10,7 @@ using Kataglyphis::buildComputeShaderStageCreateInfo;
 static_assert(buildComputeShaderStageCreateInfo(vk::ShaderModule(nullptr)).stage == vk::ShaderStageFlagBits::eCompute,
   "buildComputeShaderStageCreateInfo must be usable in a constant expression");
 
-// vk::PipelineLayout/vk::Pipeline's operator== is not constexpr in this
-// vulkan-hpp version, so this checks .flags (a Flags<> bitmask, whose
-// operator== IS constexpr) rather than handle equality - flags is still
-// enough to prove the whole call is a constant expression.
+// Handle operator== is not constexpr in this vulkan-hpp, so .flags proves the call is a constant expression.
 static_assert(
   buildComputePipelineCreateInfo(buildComputeShaderStageCreateInfo(vk::ShaderModule(nullptr)), vk::PipelineLayout(nullptr))
       .flags

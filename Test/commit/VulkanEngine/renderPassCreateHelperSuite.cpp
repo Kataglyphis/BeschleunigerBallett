@@ -1,12 +1,3 @@
-// Direct unit coverage for common/RenderPassHelper.hpp's
-// buildRenderPassCreateInfo - the helper that replaced five hand-written
-// vk::RenderPassCreateInfo blocks across Rasterizer, PostStage,
-// DeferredRasterizer, SkyBox and CascadedShadowMap.
-//
-// SkyBox's original call site hard-coded attachmentCount = 2 instead of
-// deriving it from the span it was handed - AttachmentCountIsDerivedFromTheSpan
-// below is the regression test for exactly that bug.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -88,9 +79,7 @@ TEST(RenderPassCreateHelperUnit, SingleAttachmentPassStillReportsOne)
 
 TEST(RenderPassCreateHelperUnit, FlagsAndPNextAreDefaultedSoCallersCanChainTheirOwn)
 {
-    // CascadedShadowMap assigns pNext on the returned value to chain a
-    // vk::RenderPassMultiviewCreateInfo - that is only safe if the helper
-    // itself leaves both fields untouched.
+    // CascadedShadowMap chains multiview info through pNext, which is safe only if the helper leaves it unset.
     const vk::RenderPassCreateInfo info = buildRenderPassCreateInfo(
       std::span<const vk::AttachmentDescription>(kThreeAttachments),
       std::span<const vk::SubpassDescription>(kOneSubpass), std::span<const vk::SubpassDependency>(kOneDependency));
@@ -109,11 +98,7 @@ using Kataglyphis::TestSupport::repoRoot;
 
 }// namespace
 
-// PostStage and SkyBox used to each allocate, clear and synchronize a depth
-// attachment that nothing ever sampled or otherwise read - reclaimed by the
-// backlog entry this test pins down. A source-level gate rather than a GPU
-// test, since the point is that the render passes no longer *declare* a
-// depth attachment at all, not that a particular pixel changed.
+// A source gate: nothing reads a Post or SkyBox depth attachment, so neither pass may declare one.
 TEST(RenderPassCreateHelperUnit, PostAndSkyboxPassesDeclareNoDepthAttachment)
 {
     const fs::path repo_root = repoRoot();
@@ -142,9 +127,7 @@ TEST(RenderPassCreateHelperUnit, PostAndSkyboxPassesDeclareNoDepthAttachment)
     EXPECT_EQ(sky_box_contents.find("depthAttachment"), std::string::npos)
       << "SkyBox.cpp's render-pass creation still declares a depthAttachment - see the same backlog entry";
 
-    // The gate above must not pass by deleting depth synchronization
-    // everywhere - Rasterizer and DeferredRasterizer each own a real,
-    // sampled-or-tested depth buffer and must keep synchronizing it.
+    // Control: the rasterizers own real depth buffers and must keep synchronizing them.
     const fs::path rasterizer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Rasterizer.cpp";
     const fs::path deferred_rasterizer_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "DeferredRasterizer.cpp";

@@ -1,10 +1,3 @@
-// Scene::reloadModel used to leave a pending beginModelLoadAsync() parse
-// running: a reload issued during the startup parse joined nobody, so the
-// worker's result landed in the scene (via pollModelLoad, still driven by the
-// frame loop) alongside the reloaded model instead of being discarded.
-// cancelPendingModelLoad() closes that gap; these pin its own behaviour and
-// that reloadModel() actually calls it.
-
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -38,10 +31,7 @@ using Kataglyphis::TestSupport::readFileText;
 using Kataglyphis::TestSupport::repoRoot;
 }// namespace
 
-// reloadModel() replaces the scene wholesale; if it does not first cancel a
-// still-running beginModelLoadAsync() parse, the worker's eventual result
-// still lands via pollModelLoad and the scene ends up holding both the
-// reloaded model and the startup one.
+// An uncancelled startup parse still lands via pollModelLoad, leaving both models in the scene.
 TEST(BuildIntegrity, ReloadModelCancelsAPendingAsyncParse)
 {
     const fs::path repo_root = repoRoot();

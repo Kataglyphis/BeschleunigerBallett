@@ -1,6 +1,4 @@
-// GPU occlusion culling (Rust/WebGPU side). gpu_cull.wgsl is generated
-// from this file and checked into the Rust crate by wgslMap. Emits WGSL.
-// Tests each primitive's projected AABB against the depth buffer.
+// Rust/WebGPU AABB-vs-depth occlusion culling: the checked-in gpu_cull.wgsl is generated from this file.
 
 struct CullParams
 {
@@ -21,8 +19,7 @@ struct Aabb
 [vk::binding(2, 0)] StructuredBuffer<Aabb> aabbData;
 [vk::binding(3, 0)] RWStructuredBuffer<uint> visibility;
 
-// Unit-cube corner selectors: lerp(aabb.min, aabb.max, UNIT_CORNERS[i])
-// walks all eight AABB corners.
+// lerp(aabb.min, aabb.max, UNIT_CORNERS[i]) walks all eight AABB corners.
 static const float3 UNIT_CORNERS[8] = {
     float3(0.0, 0.0, 0.0), float3(1.0, 0.0, 0.0),
     float3(0.0, 1.0, 0.0), float3(1.0, 1.0, 0.0),
@@ -30,8 +27,7 @@ static const float3 UNIT_CORNERS[8] = {
     float3(0.0, 1.0, 1.0), float3(1.0, 1.0, 1.0),
 };
 
-// Depth taps across the AABB's clamped screen-space rect. 8x8 keeps the
-// shader O(1) while still catching an occluder that only covers part of it.
+// 8x8 taps keep the test O(1) yet catch an occluder covering only part of the rect.
 static const uint DEPTH_TAPS = 8u;
 
 [shader("compute")]
@@ -43,9 +39,7 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
 
     Aabb aabb = aabbData[idx];
 
-    // Project all eight AABB corners. A box that crosses the near plane
-    // (any corner w <= 0) has no reliable NDC/UV — uncertainty must resolve
-    // to visible, never culled.
+    // A box crossing the near plane has no reliable UV, so it counts as visible.
     const float FAR_SENTINEL = 1e30;
     float aabbNear = FAR_SENTINEL;
     float2 uvMin = float2(FAR_SENTINEL, FAR_SENTINEL);
@@ -59,10 +53,7 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
 
         float2 ndc = clip.xy / clip.w;
         float depth = clip.z / clip.w;
-        // WebGPU framebuffer convention (+1 = top), not the Vulkan one this
-        // formula would use for ndc.y - see tile_rect_for_light's uv
-        // computation in tile_grid.rs, the correct version of this exact
-        // computation.
+        // WebGPU convention: ndc.y = +1 is the top row.
         float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 
         aabbNear = min(aabbNear, depth);
@@ -70,9 +61,7 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
         uvMax = max(uvMax, uv);
     }
 
-    // Clamp the screen-space rect to the viewport. A rect that merely
-    // extends past the screen edge stays visible; only an empty clamped
-    // rect (fully off-screen) is culled here.
+    // Only a fully off-screen rect is culled here.
     uvMin = clamp(uvMin, float2(0.0, 0.0), float2(1.0, 1.0));
     uvMax = clamp(uvMax, float2(0.0, 0.0), float2(1.0, 1.0));
     if (uvMax.x <= uvMin.x || uvMax.y <= uvMin.y) { visibility[idx] = 0u; return; }
@@ -81,8 +70,6 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
     depthTex.GetDimensions(w, h);
     int2 maxCoord = int2(int(w) - 1, int(h) - 1);
 
-    // Sample a bounded grid across the clamped rect and take the maximum
-    // (nearest-to-camera) sampled depth the box covers.
     float maxSampled = 0.0;
     for (uint ty = 0u; ty < DEPTH_TAPS; ++ty)
     {
@@ -96,7 +83,6 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
         }
     }
 
-    // Occluded only when the box's nearest corner is behind the closest
-    // surface everywhere it covers on screen.
+    // Occluded only when the nearest corner is behind the covered surface everywhere.
     visibility[idx] = (aabbNear > maxSampled) ? 0u : 1u;
 }

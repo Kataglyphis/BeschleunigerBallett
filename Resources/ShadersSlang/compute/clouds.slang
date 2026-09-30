@@ -1,15 +1,6 @@
 import scene_types;
 
-// Volumetric clouds compute kernel. Sole source for this shader. Emits
-// SPIR-V only.
-//
-// Ray-marches a cloud volume, sampling a 3D noise texture for density,
-// with Henyey-Greenstein phase function and Beer-Lambert transmittance.
-// The box intersection (iquilezles' ray-box formula, see box_intersect
-// below) is inlined here; Slang has no inverse() for SPIR-V, so the inverse
-// of this diagonal-scale-plus-translate box transform is formed directly in
-// clouds_main from cloud.radius and cloud.offset instead of inverting a
-// forward matrix.
+// Volumetric clouds: Henyey-Greenstein phase and Beer-Lambert transmittance over a 3D noise volume.
 
 static const float PI = 3.14159265358979323846;
 
@@ -35,15 +26,9 @@ struct Clouds
 
 float sample_density(float3 position, Clouds cloud)
 {
-    // Wrap with frac(), not the old abs-of-fmod trick: fmod keeps the
-    // dividend's sign, so for negative inputs, taking fmod(x, N)'s absolute
-    // value mapped -x and +x onto the SAME texel - a mirror across the
-    // origin plane, not a wrap. frac() = x - floor(x) returns [0, 1) for
-    // negative inputs too, wrapping correctly on both sides of the origin.
+    // frac() wraps negative inputs; the absolute value of fmod mirrors them across the origin instead.
     float3 uvwCoarse = frac((position + cloud.offset) / 256.0);
-    // Explicit LOD: this compute kernel has no fragment derivatives, so an
-    // implicit-LOD .Sample() fails SPIR-V validation. See rchit_main's
-    // base-colour sample comment in raytracing/raytrace.rchit.slang.
+    // Explicit LOD: compute has no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
     float4 noiseCoarse = noiseTexture.SampleLevel(uvwCoarse, 0.0);
 
     float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noiseCoarse.r - cloud.threshold) * cloud.scale
@@ -63,10 +48,7 @@ float sample_density(float3 position, Clouds cloud)
     return baseDensity + fineDensity * 0.3;
 }
 
-// cosTheta = dot(rayDirection, normalize(-dirLight.direction)), i.e. the
-// cosine between the view ray and the vector toward the sun. A positive g
-// must put the maximum at cosTheta = +1 (forward scattering, looking
-// toward the sun), not at -1.
+// cosTheta is between the view ray and the vector toward the sun; positive g peaks at +1 (forward scattering).
 float phase_HG(float cosTheta, float g)
 {
     float denom = 1.0 + g * g - 2.0 * g * cosTheta;
@@ -96,9 +78,7 @@ bool box_intersect(float3 ro, float3 rd, float4x4 txx, float3 rad, out float2 oT
 float light_march(float3 samplePos, Clouds cloud)
 {
     float totalDensity = 0.0;
-    // dirLight.direction is the direction the light travels; the vector
-    // toward the light is its negation, matching every other shader that
-    // reads this field (rasterizer/deferred/raytrace/path_tracing).
+    // dirLight.direction is where the light travels, so the vector toward it is the negation.
     float3 directionToLight = normalize(-scene.dirLight.direction.xyz);
     float2 oT;
     bool intersection = box_intersect(samplePos, directionToLight, cloud.inv_model_to_world, cloud.radius, oT);
@@ -139,12 +119,7 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     float3 eyePosition = scene.cam_pos.xyz;
 
     Clouds cloud;
-    // A shader must not trust a UBO, so these clamps stay even though the host
-    // (SceneUboMarshal.hpp's fillSceneUboClouds) already clamps both counts
-    // before packing them. The four literals here are owned by
-    // CloudDispatch.hpp's kMinCloudMarchSteps/kMaxCloudMarchSteps/
-    // kMinCloudLightMarchSteps/kMaxCloudLightMarchSteps and pinned against
-    // them by BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps.
+    // Clamped again although the host clamps; BuildIntegrity pins these literals to CloudDispatch.hpp's bounds.
     cloud.num_march_steps = int(clamp(scene.cloudParameters.w, 4.0, 128.0));
     cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0));
     cloud.scale = scene.cloudMeshScale.w;
@@ -153,19 +128,11 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     cloud.cirrus_effect = scene.cloudParameters.y;
     cloud.powder_effect = scene.cloudParameters.z > 0.5;
 
-    // cloud.scale is deliberately doing double duty: sample_density() uses it
-    // as a density multiplier, and here it also scales the box half-extents.
-    // The host clamps both cloud.scale and cloudMeshScale.xyz away from zero
-    // (SceneUboMarshal.hpp's clampCloudMeshScale) so this product - which the
-    // inverse matrix below divides by - can never be zero.
+    // cloud.scale is also the density multiplier; the host keeps both factors non-zero for the division below.
     cloud.radius = scene.cloudMeshScale.xyz * cloud.scale * 10.0;
     cloud.offset = scene.cloudMeshOffset.xyz;
 
-    // Slang has no inverse() for SPIR-V, so this diagonal-scale-plus-translate
-    // box transform's inverse is formed directly from cloud.radius and
-    // cloud.offset instead of inverting a forward matrix. See
-    // SceneUboMarshal.hpp's clampCloudMeshScale for why each divisor below is
-    // guaranteed non-zero.
+    // Built directly: Slang has no inverse() for SPIR-V.
     cloud.inv_model_to_world = float4x4(1.0);
     cloud.inv_model_to_world[0][0] = 1.0 / cloud.radius.x;
     cloud.inv_model_to_world[1][1] = 1.0 / cloud.radius.y;
@@ -191,11 +158,7 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
 
             float densityOfSample = sample_density(samplePos, cloud);
             float lightTransmittance = light_march(samplePos, cloud);
-            // Powder effect attenuates in-scattered light in dense regions
-            // (self-shadowing of small droplets near the sample). It must
-            // never raise transmittance: transmittance is monotonically
-            // non-increasing along the ray by construction, and nothing
-            // inside this loop may assign it anything but the `*=` below.
+            // Powder only dims in-scattering; transmittance changes solely through the `*=` below.
             float powder = cloud.powder_effect ? (1.0 - exp(-densityOfSample * dt * 2.0)) : 1.0;
 
             lightEnergy += densityOfSample * dt * transmittance * lightTransmittance * powder

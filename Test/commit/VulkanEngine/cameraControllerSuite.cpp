@@ -1,10 +1,4 @@
-// Exercises CameraController.ixx directly - it is device-free (no
-// VulkanDevice, no window), unlike CameraUnit in cameraSceneConfigSuite.cpp
-// which goes through the Camera class. These tests are the regression guard
-// for CameraControllerState's field mapping: every construction below uses
-// designated initializers by NAME, so a struct member reorder that would
-// silently rebind right<->up or yaw<->pitch in a positional-aggregate call
-// site is caught by the resulting wrong-axis assertions here.
+// Guards CameraControllerState's field mapping: a member reorder that rebinds right/up or yaw/pitch fails an axis check.
 
 #include <gtest/gtest.h>
 #include <glm/geometric.hpp>
@@ -32,9 +26,7 @@ void expect_vec3_near(const glm::vec3 &actual, const glm::vec3 &expected, float 
     EXPECT_NEAR(actual.z, expected.z, epsilon);
 }
 
-// Plain-member stand-in for Kataglyphis::Frontend::CameraState, so each test
-// owns its own storage and hands out a fresh CameraControllerState (a
-// reference aggregate) bound to it via `state(rig)`.
+// Stand-in for CameraState: each test owns the storage that `state(rig)` binds a reference aggregate to.
 struct Rig
 {
     glm::vec3 position{};
@@ -97,8 +89,7 @@ TEST(CameraControllerUnit, DKeyMovesAlongRightAndAAlongMinusRight)
     std::array<bool, GLFW_KEY_LAST + 1> keys{};
     keys[GLFW_KEY_D] = true;
     Kataglyphis::Frontend::apply_keyboard_input(state(rig), keys, kDeltaTime);
-    // A right<->up rebind would move along `up` (mostly +Y) instead of
-    // `right` (world +X at yaw -90), which the next line would catch.
+    // A right/up rebind would move along `up` (mostly +Y) instead, which this catches.
     expect_vec3_near(rig.position, start + right * kStep);
 
     keys[GLFW_KEY_D] = false;
@@ -190,11 +181,7 @@ TEST(CameraControllerUnit, AShortKeySpanIsIgnoredRatherThanReadPastTheEnd)
     const glm::vec3 start_position = rig.position;
     const float start_yaw = rig.yaw;
 
-    // GLFW_KEY_A/D/E/Q/S/W are all >= 65, so a 4-element span cannot cover
-    // any of them. Every entry is true here: if apply_keyboard_input read
-    // past the end of this span instead of bounds-checking, ASAN would
-    // catch the out-of-bounds read; the bounds-checked `pressed` lambda must
-    // instead treat every one of those keys as not pressed.
+    // Every movement key is at least 65, past this span's end; ASan catches a read there, so they must count as released.
     const std::array<bool, 4> short_keys{ true, true, true, true };
     Kataglyphis::Frontend::apply_keyboard_input(state(rig), short_keys, 1.0F);
 

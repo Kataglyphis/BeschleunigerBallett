@@ -9,12 +9,7 @@ struct ObjectDescription
     uint64_t index_address;
     uint64_t material_index_address;
     uint64_t material_address;
-    // First slot of this model's textures in the flattened global texture
-    // array. Material textureIDs are model-LOCAL; before this offset existed,
-    // only model 0's textures were bound and every other model's IDs collided
-    // with them. uint64 for layout parity with the fields above (scalar
-    // layout, host header whose layout is pinned against
-    // common/scene_types.slang's redeclaration).
+    // First global texture slot of this model (textureIDs are model-local); layout pinned to scene_types.slang.
     uint64_t texture_offset;
 };
 

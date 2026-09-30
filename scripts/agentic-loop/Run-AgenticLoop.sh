@@ -33,14 +33,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# ── Source reusable library from ANTfrastructure ───────────────────────────
-# Through the bootstrap (adopting-in-a-new-project.md section 8) rather than a
-# third_party literal, so the ANTFRASTRUCTURE_DIR override is honoured.
+# Through the bootstrap, not a third_party literal, so ANTFRASTRUCTURE_DIR is honoured.
 # shellcheck source=../linux/lib/antfrastructure.sh
 source "${REPO_ROOT}/scripts/linux/lib/antfrastructure.sh"
 antfrastructure_source linux/scripts/lib/agentic-loop.sh
 
-# ── Arg parsing (exported env flags are consumed by the library) ────────
+# The library reads the exported flags.
 CONFIG_PATH="${SCRIPT_DIR}/AgenticLoop.config.json"
 while [[ $# -gt 0 ]]; do
   case "$1" in

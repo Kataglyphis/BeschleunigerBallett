@@ -1,32 +1,21 @@
 #!/usr/bin/env bash
-# run-ctest.sh - project wrapper around ANTfrastructure's generic ctest runner.
-# Everything reusable (arg parsing, git safe.directory, Vulkan env, the ctest
-# verbosity/-T test flag set and the --ctest-exclude plumbing) lives in
-# ANTfrastructure's linux/scripts/lib/ctest-run.sh; only this project's defaults
-# live here.
+# run-ctest.sh [--virtual-display] - this project's defaults over ANTfrastructure's lib/ctest-run.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
-# not honour - and fails naming the probed path AND the fix.
+# Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/ctest-run.sh
 
 CTEST_RUN_DEFAULT_BUILD_DIR="build"
 CTEST_RUN_DEFAULT_BUILD_TYPE="Debug"
 CTEST_RUN_USAGE_INTRO="Runs the BeschleunigerBallett test suite inside the Linux container image."
 
-# No default --ctest-exclude: which suites run differs per lane (see
-# reusable-linux.yml), so the exclusion stays an explicit CI argument.
+# No default --ctest-exclude: the suites differ per lane, so reusable-linux.yml passes it.
 
-# --virtual-display (first argument only): run under Xvfb, so the GPU suites'
-# glfwInit() finds an X server and render on the image's llvmpipe instead of
-# skipping. xvfb-run must not be PID 1 - there it never sees Xvfb's ready
-# signal and hangs (measured in :latest 2026-09-29) - hence a child, not exec.
+# Xvfb lets the GPU suites render on llvmpipe; xvfb-run hangs as PID 1, hence a child, not exec.
 if [[ "${1:-}" == "--virtual-display" ]]; then
   shift
   xvfb-run -a -s "-screen 0 1920x1080x24" bash "${BASH_SOURCE[0]}" "$@"

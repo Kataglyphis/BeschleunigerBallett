@@ -1,18 +1,4 @@
-// The raster push constant's layout contract.
-//
-// PushConstantRasterizer is hand-mirrored in three places: as C++ here, and
-// as Slang inside Resources/ShadersSlang/common/push_constants.slang
-// (imported by both rasterizer.slang and deferred.slang, so those two agree
-// with each other automatically - only the C++/Slang pair can still drift).
-// The pipeline layout declares a range of sizeof(PushConstantRasterizer), so
-// if the C++ and Slang copies ever disagree about the struct's size or field
-// order the GPU reads whatever happens to follow - silently, with no
-// validation error, because the range is self-consistent on the host side.
-//
-// That is exactly how the single-object bug hid: the shaders indexed
-// object_description.i[0] unconditionally, so an index field being absent
-// or misplaced would have made no observable difference until a second model
-// existed.
+// Mirrored in common/push_constants.slang; the host range is self-consistent, so drift raises no validation error.
 
 #include <gtest/gtest.h>
 
@@ -35,32 +21,23 @@ using Kataglyphis::VulkanRendererInternals::PushConstantRaytracing;
 
 TEST(PushConstantRasterizerUnit, ModelMatrixComesFirstAtOffsetZero)
 {
-    // The vertex shaders read pc_raster.model; GLSL lays the block out with
-    // model at offset 0. A field inserted before it shifts every draw's
-    // transform.
+    // A field inserted before model would shift every draw's transform.
     EXPECT_EQ(offsetof(PushConstantRasterizer, model), 0U);
     EXPECT_EQ(sizeof(glm::mat4), 64U);
 }
 
 TEST(PushConstantRasterizerUnit, ObjectIndexFollowsTheMatrixAndIsCovered)
 {
-    // model (64 bytes) is followed by invModelRows[3] (3 * 16 = 48 bytes),
-    // then objectIndex.
+    // model (64 bytes), then invModelRows[3] (48 bytes), then objectIndex.
     EXPECT_EQ(offsetof(PushConstantRasterizer, objectIndex), 112U);
 
-    // The pipeline layout pushes sizeof(PushConstantRasterizer) bytes. If the
-    // struct were sized to the matrices alone, objectIndex would never reach
-    // the GPU and every draw would shade with whatever was left in the range.
+    // The layout pushes sizeof(PushConstantRasterizer) bytes, so objectIndex must fit inside it.
     EXPECT_GE(sizeof(PushConstantRasterizer), offsetof(PushConstantRasterizer, objectIndex) + sizeof(unsigned int));
 }
 
 TEST(PushConstantRasterizerUnit, FitsTheGuaranteedPushConstantBudget)
 {
-    // Vulkan guarantees only 128 bytes of push constant space. Exceeding it
-    // fails pipeline creation on conformant-but-minimal implementations while
-    // working fine on a desktop GPU - a bug that only appears on someone
-    // else's hardware. A full mat4 invModel (instead of the row-packed
-    // invModelRows[3]) would push this to 132 and fail this test.
+    // Vulkan guarantees only 128 bytes; more works on desktop GPUs and fails on minimal ones.
     EXPECT_LE(sizeof(PushConstantRasterizer), 128U);
 }
 
@@ -77,7 +54,6 @@ TEST(PushConstantRasterizerUnit, CarriesTheValuesItIsGiven)
 
 TEST(PushConstantRasterizerUnit, InvModelRowsRoundTripANonUniformScale)
 {
-    // Mirrors the extraction in Rasterizer.cpp / DeferredRasterizer.cpp:
     // GLM is column-major, so row i is (m[0][i], m[1][i], m[2][i], 0).
     const glm::mat4 model = glm::scale(glm::mat4(1.0F), glm::vec3(1.0F, 2.0F, 3.0F));
     const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(model));
@@ -88,9 +64,7 @@ TEST(PushConstantRasterizerUnit, InvModelRowsRoundTripANonUniformScale)
           glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
     }
 
-    // A diagonal scale matrix is its own transpose, so the inverse-transpose
-    // of diag(1, 2, 3) is diag(1, 1/2, 1/3) - exercised here as the row
-    // extraction under test, not just the math.
+    // A diagonal matrix is its own transpose, so the inverse-transpose is diag(1, 1/2, 1/3).
     EXPECT_FLOAT_EQ(push.invModelRows[0][0], 1.0F);
     EXPECT_FLOAT_EQ(push.invModelRows[1][1], 0.5F);
     EXPECT_FLOAT_EQ(push.invModelRows[2][2], 1.0F / 3.0F);
@@ -103,10 +77,7 @@ TEST(PushConstantRasterizerUnit, InvModelRowsRoundTripANonUniformScale)
     EXPECT_FLOAT_EQ(push.invModelRows[2][3], 0.0F);
 }
 
-// PushConstantPathTracing's layout contract: hand-mirrored in
-// Resources/ShadersSlang/path_tracing/path_tracing.slang (struct
-// PushConstantPathTracing, read as pc_ray). A reordered or inserted field
-// desyncs the two silently, exactly like the rasterizer struct above.
+// Mirrored in path_tracing/path_tracing.slang; a reordered field desyncs the two silently.
 TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantPathTracing, clearColor), 0U);
@@ -119,32 +90,21 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
     EXPECT_LE(sizeof(PushConstantPathTracing), 128U);
 }
 
-// PushConstantPost's layout contract: hand-mirrored in
-// Resources/ShadersSlang/post/post.slang (struct PushConstantPost, read as
-// pc_post).
+// Mirrored in post/post.slang.
 TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 0U);
     EXPECT_EQ(sizeof(PushConstantPost), 4U);
 }
 
-// PushConstantRaytracing's layout contract: hand-mirrored in
-// Resources/ShadersSlang/raytracing/rt_types.slang (struct
-// PushConstantRaytracing, read as pc_ray in raytrace.rgen.slang).
+// Mirrored in raytracing/rt_types.slang.
 TEST(PushConstantRaytracingUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantRaytracing, clear_color), 0U);
     EXPECT_EQ(sizeof(PushConstantRaytracing), 16U);
 }
 
-// ObjMaterial's scalar-block layout contract: the RT/PT kernels read this
-// struct through a buffer_reference/ByteAddressBuffer, so the C++ and Slang
-// (Resources/ShadersSlang/common/scene_types.slang) copies must agree on
-// every field's offset, not just the aggregate size. glm's plain (non-SIMD,
-// non-std140) vec3 packs its three floats with no trailing padding, so the
-// block is scalar-tight end to end - if any expectation below fails at
-// runtime, that is a REAL C++/Slang layout finding: investigate against the
-// .slang twin and report it, do not adjust the number to make the test pass.
+// A failure is a real C++/Slang layout finding against common/scene_types.slang; never adjust the numbers.
 TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
 {
     EXPECT_EQ(offsetof(ObjMaterial, diffuse), 0U);
@@ -172,11 +132,7 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(sizeof(ObjMaterial), 168U);
 }
 
-// ObjMaterial's default member initializers must carry exactly the sentinels
-// documented on each field (alphaCutoff < 0 = never discard, roughness < 0 =
-// derive from shininess, -1 = no texture). ObjMaterial became an aggregate
-// with no constructor, so this guarantee is no longer enforced by a
-// constructor body - it needs its own pin.
+// ObjMaterial is an aggregate, so only the member initializers carry its documented sentinels.
 TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinels)
 {
     const ObjMaterial m{};

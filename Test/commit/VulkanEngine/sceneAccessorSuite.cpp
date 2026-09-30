@@ -1,8 +1,4 @@
-// Scene's per-mesh accessors (getVertexBuffer/getIndexBuffer/getIndexCount/
-// isMeshDoubleSided/getMeshBounds) bounds-check the model index and then
-// index a mesh with no check at all - Model::getMesh(index) used to be a raw
-// &vector::operator[], i.e. out-of-range = UB. These pin the safe fallback
-// for a model with zero meshes, and the existing add_model(nullptr) guard.
+// The per-mesh accessors must bounds-check the mesh index too, not only the model index.
 
 #include <gtest/gtest.h>
 
@@ -89,9 +85,7 @@ TEST(SceneAccessorUnit, PerModelCountVectorsAreSizedByModelCount)
     }
 }
 
-// findModel()/findMesh() consolidate the eleven hand-written bounds checks
-// into one definition (Scene.ixx); these pin every accessor's documented
-// out-of-range fallback so the consolidation cannot silently change one.
+// All accessors share findModel()/findMesh(), so each documented fallback is pinned here.
 TEST(SceneAccessorUnit, EveryAccessorReturnsItsDocumentedFallbackOutOfRange)
 {
     Scene scene;

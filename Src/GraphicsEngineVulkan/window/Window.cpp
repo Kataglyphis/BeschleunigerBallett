@@ -87,8 +87,6 @@ auto Window::framebuffer_size_has_changed() const -> bool { return framebuffer_r
 
 void Window::init_callbacks()
 {
-    // TODO(jsh): remember this section for our later game logic
-    // for the space ship to fly around
     glfwSetWindowUserPointer(main_window, this);
     glfwSetKeyCallback(main_window, &key_callback);
     glfwSetMouseButtonCallback(main_window, &mouse_button_callback);
@@ -97,21 +95,13 @@ void Window::init_callbacks()
     glfwSetFramebufferSizeCallback(main_window, &framebuffer_size_callback);
     glfwSetWindowFocusCallback(main_window, &window_focus_callback);
     glfwSetCursorEnterCallback(main_window, &cursor_enter_callback);
-    // ImGui's GLFW backend is initialised with install_callbacks = false, and
-    // its changelog is explicit that callers MUST install the cursor-pos
-    // callback themselves - without it, ImGui_ImplGlfw_UpdateMouseData falls
-    // back to glfwGetCursorPos polling and its io.MousePos never matches what
-    // the callback-driven backend expects. Do NOT make this conditional on
-    // look mode again: look_mode_active (WindowInputState) is what gates
-    // camera motion now, not whether the callback is installed.
+    // Always installed: ImGui's GLFW backend runs without its own callbacks and needs this one; look mode gates the camera.
     glfwSetCursorPosCallback(main_window, &mouse_callback);
 }
 
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
-    // size itself is queried on demand via glfwGetFramebufferSize
-    // (VulkanRenderer::recreateSwapChain, VulkanSwapChain::initVulkanContext);
-    // this callback only flags the change.
+    // Only flags the change; the swapchain rebuild queries the size itself.
     (void)width;
     (void)height;
     auto *app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));

@@ -1,15 +1,5 @@
 #!/usr/bin/env bash
-# run-static-analysis-format.sh - project wrapper around ANTfrastructure's generic
-# code-quality driver. Everything reusable (cmake-format bootstrap, the
-# file-enumeration walks, clang-format, clang-tidy, and the container
-# compile-database path remapping) lives in ANTfrastructure's
-# linux/scripts/lib/code-quality.sh; only this project's source roots, tool
-# arguments and paths live here.
-#
-# NOTE: the Windows formatting/tidy path deliberately behaves differently on six
-# axes (source roots, module-TU skip, --header-filter, --checks, per-file vs
-# batched invocation, missing-compile-DB handling). They are enumerated at the
-# top of code-quality.sh. Do not "align" either side without reading that block.
+# run-static-analysis-format.sh - project roots over ANTfrastructure's lib/code-quality.sh, whose header lists the Windows divergences.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,10 +8,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
-# not honour - and fails naming the probed path AND the fix.
+# Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/code-quality.sh
 
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -33,11 +20,10 @@ RUN_CLANG_ANALYZE_HTML="${RUN_CLANG_ANALYZE_HTML:-false}"
 RUN_FORMAT_AND_TIDY="${RUN_FORMAT_AND_TIDY:-true}"
 RUN_SCAN_BUILD="${RUN_SCAN_BUILD:-true}"
 
-# --- Project defaults consumed by the shared library -------------------------
+# Project defaults for the shared library
 CODE_QUALITY_PROJECT_ROOT="${ROOT_DIR}"
 
-# Source roots walked for clang-format AND clang-tidy. Windows tidies Src only;
-# see divergence 1 in code-quality.sh.
+# Windows tidies Src only; see divergence 1 in code-quality.sh.
 CPP_SOURCE_ROOTS=(Src Test)
 
 # clang++ --analyze only ever looked at Src.
@@ -48,15 +34,7 @@ CODE_QUALITY_CMAKE_SEARCH_ROOT="."
 CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './third_party/*')
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
-# cmake-format is installed into the repo-local .venv when it is not on PATH.
-# The two bootstrap knobs that stood here are the HUB'S DEFAULT since
-# 2026-09-15 (code-quality.sh _code_quality_apply_default_bootstrap): it makes
-# the venv with 01-core/python_uv.sh and installs the hub's pinned
-# linux/scripts/cmake-format.requirements.txt - cmake-format==0.6.13 plus the
-# pyyaml it needs to read .cmake-format.yaml - into CODE_QUALITY_VENV_DIR. That
-# is byte-for-byte what the local pair did, and it is still NOT this repo's root
-# requirements.txt (the eleven-package Sphinx docs stack). Set the knobs again
-# only for a venv policy the default cannot express.
+# The hub's default bootstrap installs cmake-format from its pinned requirements, never this repo's requirements.txt.
 
 run_format_and_tidy() {
   code_quality_ensure_cmake_format
@@ -98,12 +76,7 @@ run_format_and_tidy() {
 
   warn "Disabling for internal bug of clang-tidy..."
   CODE_QUALITY_CLANG_TIDY_ARGS=(-checks=-modernize-use-scoped-lock)
-  # clang-tidy is the one tool the image's <triple>-clang++.cfg does not reach:
-  # LibTooling looks for the .cfg beside the compile DB's compiler path
-  # (/usr/bin/clang++, a symlink), not beside the real binary, so it selects the
-  # distro GCC's headers while the build used ${GCC_PREFIX}'s. Measured in
-  # :latest 2026-09-29 ("Selected GCC installation: /usr/bin/../lib/gcc/...").
-  # Only inside the image, where the build that wrote the DB used that prefix.
+  # LibTooling misses the image's clang++.cfg (it looks beside the /usr/bin symlink) and would pick distro GCC headers.
   if [[ -n "${GCC_PREFIX:-}" && -d "${GCC_PREFIX}" ]]; then
     CODE_QUALITY_CLANG_TIDY_ARGS+=("--extra-arg=--gcc-toolchain=${GCC_PREFIX}")
   fi
@@ -224,18 +197,7 @@ done
 # The compile-DB hint quotes the final build dir, so refresh it after parsing.
 CODE_QUALITY_COMPILE_DB_HINT="e.g. scripts/linux/cmake-configure-build.sh --build-dir ${BUILD_DIR} --preset <preset>"
 
-# The bind-mounted workspace is owned by the host user, not by the container's
-# root, so git refuses to operate in it ("detected dubious ownership") and every
-# git-touching step below - the compile-DB path remapping, the changed-file
-# walks - fails on a message that reads like a git bug. This marks it safe.
-#
-# The `|| true` this used to carry was a genuine suppression, not a guard: it
-# turned "git could not write its global config" into a silent no-op, and the
-# whole remainder of the gate then ran against a repository git would not touch.
-# The failure is now fatal, and the config write is attempted ONLY where it is
-# needed - inside the container, where /workspace exists. On a dev box the
-# checkout is already owned by the user running this, so there is nothing to
-# mark and nothing to fail.
+# Git refuses the host-owned bind mount ("dubious ownership"); no || true, a failed write must stop the gate.
 if [[ -d /workspace ]]; then
   git config --global --add safe.directory /workspace
 fi

@@ -1,26 +1,15 @@
 #!/usr/bin/env bash
-# common.sh - shared utilities for BeschleunigerBallett Linux scripts
-# Sources utilities from ANTfrastructure when available, provides fallbacks
+# common.sh - shared helpers for these scripts: ANTfrastructure's when reachable, local fallbacks otherwise.
 
 SCRIPT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Where ANTfrastructure is, and how to resolve a file inside it, comes from the
-# canonical bootstrap — a verbatim copy of upstream's
-# shared/linux/templates/antfrastructure.sh. It defines ANTFRASTRUCTURE_DIR (honouring
-# an environment override, which matters in the container) plus
-# antfrastructure_path / antfrastructure_source / antfrastructure_exec.
-#
-# Before this, the submodule path was spelled out here as a ../../.. literal.
-# Six repos each had their own version of that line; see ANTfrastructure
-# shared/linux/templates/README.md for what they drifted into.
+# Never a ../../.. literal: the bootstrap honours the ANTFRASTRUCTURE_DIR override the container needs.
 # shellcheck source=/dev/null
 source "${SCRIPT_LIB_DIR}/antfrastructure.sh"
 
 ANTFRASTRUCTURE_CORE="${ANTFRASTRUCTURE_DIR}/linux/scripts/01-core"
 
-# One value out of ANTfrastructure's linux/scripts/01-core/versions.env, the
-# fleet's owner of toolchain versions, so no script here carries a literal that
-# goes stale on the next pin bump. Fails naming the key and the file.
+# Read from versions.env so no literal here goes stale on a pin bump.
 antfrastructure_version() {
   local key="${1:?versions.env key required}" file value
   file="$(antfrastructure_path linux/scripts/01-core/versions.env)" || return 1
@@ -32,17 +21,7 @@ antfrastructure_version() {
   printf '%s' "${value}"
 }
 
-# source_module keeps THIS repo's search order, which is deliberately wider than
-# antfrastructure_source's single path:
-#   1. lib/<name>          — a local override wins
-#   2. ANTfrastructure        — the submodule checkout
-#   3. lib/../<name>       — legacy layout
-#   4. /opt/scripts/core   — where the image bakes these same files, and where
-#                            there is no submodule to resolve against at all
-# That last one is why this cannot simply become antfrastructure_source.
-# Fills _MODULE_CANDIDATES with the probe list for <name>. ONE definition, used
-# by both source_module and have_module: a second copy of this list is how a
-# presence test and the load that follows it drift apart.
+# Wider than antfrastructure_source on purpose: the image bakes these files at /opt/scripts/core, with no submodule.
 _module_candidates() {
   local name="$1"
   _MODULE_CANDIDATES=(
@@ -75,8 +54,7 @@ source_module() {
   return 1
 }
 
-# Is <name> resolvable at all? Answers the question the OPTIONAL imports below
-# actually ask, without conflating "not present" with "present and broken".
+# Presence only, so "present and broken" still fails loudly when sourced.
 have_module() {
   _module_candidates "${1:?module name required}"
   local c
@@ -86,9 +64,7 @@ have_module() {
   return 1
 }
 
-# Logging: ANTfrastructure's when reachable, a local definition when it is not.
-# This one is not optional - every script here calls info/warn/err - so the
-# fallback is a real implementation rather than a shrug.
+# Every script calls info/warn/err, so the logging fallback is a real implementation.
 if have_module logging.sh; then
   source_module logging.sh
 else
@@ -102,24 +78,7 @@ else
   log() { info "$@"; }
 fi
 
-# OPTIONAL ANTfrastructure modules. Every caller of these guards with `declare -F`
-# (source_vulkan_env below, get_build_jobs further down), so a missing one is a
-# documented degraded mode rather than a fault - the image bakes some of them at
-# /opt/scripts/core and a bare checkout has none.
-#
-# What is NOT optional, and what the `source_module X 2>/dev/null || true` this
-# replaces could not tell apart, is a module that EXISTS and fails to load: a
-# syntax error or a failed nested source became a silent no-op, and the first
-# symptom was an undefined function somewhere far away. Presence is now the
-# question asked, and a load failure is fatal.
-#
-# vulkan-env.sh in particular carries the union of the search strategies this
-# file and scripts/linux/run-debug.sh used to implement inline (explicit
-# $VULKAN_SETUP_SCRIPT, $VULKAN_VERSION under /opt/vulkan and ~/vulkan, the
-# arch-subdirectory glob, $VULKAN_SDK/setup-env.sh, the plain
-# /opt/vulkan/*/setup-env.sh sweep and the glslc-on-PATH short circuit) plus the
-# prefix handling from 02-toolchain/vulkan.sh, and it is dependency-free: it
-# does NOT drag in downloads.sh or a file-scope `set -euo pipefail`.
+# Absent is a degraded mode (callers guard with declare -F); present but failing to load is fatal.
 for _optional_module in platform.sh verify.sh parallelism.sh vulkan-env.sh; do
   if have_module "${_optional_module}"; then
     source_module "${_optional_module}"
@@ -127,9 +86,7 @@ for _optional_module in platform.sh verify.sh parallelism.sh vulkan-env.sh; do
 done
 unset _optional_module
 
-# Standard Vulkan environment sourcing (shared across all scripts).
-# Non-strict on purpose (strict=0): a dev box without an installed SDK must warn
-# and still proceed, unlike the image-side source_vulkan_sdk_env which returns 1.
+# strict=0: a dev box without an SDK warns and proceeds, unlike the image-side source_vulkan_sdk_env.
 source_vulkan_env() {
   if declare -F vulkan_env_source >/dev/null 2>&1; then
     vulkan_env_source "" "keep-libs" 0
@@ -140,13 +97,9 @@ source_vulkan_env() {
   return 0
 }
 
-# has_tool / require_tools have ONE owner: ANTfrastructure
-# linux/scripts/01-core/tool-checks.sh. The module guards each definition with
-# `declare -F`, so it must be sourced BEFORE any local definition.
+# tool-checks.sh guards each definition with declare -F, so source it before any local definition.
 source_module tool-checks.sh
 
-# Compute optimal parallel jobs (with memory cap)
-# Falls back to nproc if parallelism.sh not available
 get_build_jobs() {
   local mb_per_job="${1:-4000}"  # Default: 4GB per job
   
@@ -170,36 +123,6 @@ get_project_root() {
   cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd
 }
 
-# source_hub_module() stood here. It was a third, redundant way to reach into
-# the submodule - a <category>/<name> split over a hard-coded
-# "${SCRIPT_LIB_DIR}/../../../third_party/ANTfrastructure/..." literal that ignored
-# the ANTFRASTRUCTURE_DIR override the bootstrap above exists to provide, and that
-# returned a bare 1 so every caller had to invent its own error text.
-#
-# Its two callers (docs-build-web.sh and wasm-size-budget.sh, both for
-# lib/rust-toolchain.sh) now call antfrastructure_source directly with the full
-# hub-relative path. Nothing else referenced it.
-#
-# source_module() above is NOT redundant with antfrastructure_source and stays: its
-# search order is deliberately wider, ending at /opt/scripts/core, where the
-# image bakes these files and where there is no submodule to resolve against.
-
-# ---------------------------------------------------------------------------
-# Rust toolchain selection and CARGO_HOME, applied on source so every script in
-# this directory gets it (all 14 source this file).
-#
-# BOTH are ANTfrastructure's, and this file used to carry its own copies. They were
-# not merely duplicates, they were the weaker versions:
-#
-#   * the CARGO_HOME probe defaulted to /usr/local/cargo rather than
-#     $HOME/.cargo, so on a developer host with CARGO_HOME unset it probed a
-#     directory nobody can write, concluded "not writable", and silently
-#     redirected the real ~/.cargo to /tmp/cargo-home;
-#   * it tested with [[ -w ]], which the hub guard's own header names as the
-#     REJECTED test: [ -w ] reports the root-owned dir as writable to uid 1001
-#     while an actual touch is denied. The hub writes a probe file instead.
-#
-# The guards also ran anyway, transitively, through _cargo_wrapper.sh - so the
-# same algorithm was executing twice per invocation, in two versions.
+# Applied on source so every script here gets the hub's Rust toolchain and CARGO_HOME guards; never copy them.
 antfrastructure_source linux/scripts/02-toolchain/rust/_rust_toolchain_guard.sh
 antfrastructure_source linux/scripts/02-toolchain/rust/_cargo_home_guard.sh

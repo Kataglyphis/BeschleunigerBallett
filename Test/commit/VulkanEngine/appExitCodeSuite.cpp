@@ -1,9 +1,4 @@
-// App::run()'s exit-code derivation.
-//
-// Before this, App.cpp always returned EXIT_SUCCESS regardless of how the
-// frame loop ended, so a device-lost or fatal-submit run was reported as a
-// clean quit - Invoke-SyncValidation.ps1 and the Invoke-ClangCl*.ps1 helpers had
-// no way to tell a broken run from a normal window close.
+// App::run()'s exit code, which the validation scripts use to tell a broken run from a window close.
 
 #include <gtest/gtest.h>
 
@@ -23,8 +18,7 @@ TEST(AppExitCodeUnit, DeviceLossFails)
 
 TEST(AppExitCodeUnit, FatalFrameErrorWithoutDeviceLossFails)
 {
-    // The case hasDeviceLost() alone would miss: a failed wait/submit or an
-    // invalid sync handle that never set device_lost_detected.
+    // What hasDeviceLost() alone misses: a failed wait or submit that never set device_lost_detected.
     EXPECT_EQ(appExitCode(false, true), EXIT_FAILURE);
 }
 

@@ -9,11 +9,7 @@ module;
 
 module kataglyphis.vulkan.descriptor_set_group;
 
-// Split into its own implementation unit (of the SAME module as
-// DescriptorSetGroup.cpp) deliberately: deriveDescriptorPoolSizes() touches
-// no VulkanDevice, so keeping it out of the TU that does lets it be called
-// - and tested - without pulling device machinery in, matching the same
-// reasoning in CascadedShadowMapMath.cpp.
+// Own TU of the same module, so these helpers are callable and testable without device machinery.
 
 std::vector<vk::DescriptorPoolSize> Kataglyphis::deriveDescriptorPoolSizes(
   std::span<const vk::DescriptorSetLayoutBinding> bindings, uint32_t set_count)

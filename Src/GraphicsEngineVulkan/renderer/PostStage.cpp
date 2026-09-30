@@ -66,9 +66,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
-    // No clear values: createRenderpass()'s colour attachment uses eLoad, not
-    // eClear (the skybox pass already rendered into this swapchain image), so
-    // a clear value here would never be read.
+    // No clear values: the colour attachment loads the skybox pass's output.
     const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
       render_pass, framebuffers[image_index], swap_chain_extent, std::span<const vk::ClearValue>{});
 
@@ -98,8 +96,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path).
+    // Idempotent: the destructor calls it again after an explicit cleanUp.
     if (!device) { return; }
 
     destroyFramebuffers();
@@ -121,9 +118,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
-// Rebuilds framebuffers but deliberately does not destroy the previous ones -
-// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
-// this, while the swapchain images they reference still exist.
+// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
 void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 {
     createFramebuffer();
@@ -154,10 +149,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 {
-    // The only pass that overrides all three attachment defaults: the skybox
-    // pass already rendered into this swapchain image, so its contents are
-    // LOADED (not cleared) out of eColorAttachmentOptimal (not eUndefined) and
-    // handed to the presentation engine.
+    // Loads the skybox pass's output instead of clearing it, then hands it to presentation.
     const vk::AttachmentDescription color_attachment = buildAttachmentDescription(
       vulkanSwapChain->getSwapChainFormat(),
       vk::ImageLayout::ePresentSrcKHR,
@@ -172,10 +164,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), nullptr);
 
-    // common/RenderPassHelper.hpp's buildExternalColorDependency: this pass no
-    // longer owns a depth attachment, so all that remains to order is this
-    // frame's colour load against the skybox pass's colour write into the
-    // same swapchain image.
+    // Colour only: this pass has no depth to order.
     const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDependency() };
 
     std::array<vk::AttachmentDescription, 1> render_pass_attachments = { color_attachment };
@@ -192,8 +181,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build
-    // time. Run from the repo root (per AGENTS.md).
+    // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/post/";
 
     std::string const post_vert_spv = "post.vs_main.spv";

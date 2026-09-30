@@ -1,16 +1,6 @@
 #requires -Version 7.0
 
-# Guards CMakePresets.json against dangling references.
-#
-# Removing a configure preset that a build/test/package preset still points at
-# makes CMake reject the ENTIRE file ("Invalid configurePreset"), so every
-# preset breaks at once - not just the one that was removed. That happened in
-# July 2026 when a package preset (windows-clang-release-wix) turned out to be
-# the only consumer of a configure preset that looked unused, because a grep
-# for references had excluded CMakePresets.json itself.
-#
-# NOTE: written for Pester 3.4.0 (the version installed here) - no BeforeAll
-# outside Describe, and the dash-less assertion syntax.
+# A dangling configurePreset makes CMake reject the whole file. Pester 3.4.0: no BeforeAll outside Describe, dash-less Should.
 
 Describe 'CMakePresets.json integrity' {
 
@@ -51,9 +41,7 @@ Describe 'CMakePresets.json integrity' {
     }
 
     It 'keeps configurations testable via test presets' {
-        # Not every preset needs one, but the ratio matters: the file once had
-        # 26 configure presets and exactly ONE test preset, so most
-        # configurations could be built but never `ctest --preset`ed.
+        # Not every preset needs one, but most configurations must be ctest --preset-able.
         $testTargets = @($presets.testPresets | ForEach-Object { $_.configurePreset })
         $testTargets.Count | Should BeGreaterThan 3
     }
@@ -82,10 +70,7 @@ Describe 'CMakePresets.json integrity' {
         $presetsByName[$preset.name] = $preset
     }
 
-    # Build-Windows.config.psd1 maps Build-Windows.ps1 -Configurations names to
-    # a configure preset and a build directory; the two files must agree, or
-    # `Build-Windows-Container.ps1` builds into a tree `ctest --preset` never
-    # finds (or two configurations silently collide in one directory).
+    # Build-Windows.config.psd1 must agree with the presets, or builds land where ctest --preset never looks.
     $configPath = Join-Path $repoRoot 'scripts\windows\Build-Windows.config.psd1'
     $buildConfig = Import-PowerShellDataFile -Path $configPath
     $configurations = $buildConfig.Build.Configurations
@@ -129,10 +114,7 @@ Describe 'CMakePresets.json integrity' {
     }
 
     It 'gives every Windows configure preset a unique binaryDir' {
-        # x64-Clang-Windows-Release (the WiX package preset's configure preset)
-        # and x64-ClangCL-Windows-RelWithDebInfo are the one deliberate
-        # exception - both stay on build_release/. Name them explicitly so a
-        # third preset sharing a directory still fails this test.
+        # The one deliberate shared build_release/ pair, named so a third sharer still fails.
         $allowedSharedDir = "`${sourceDir}/build_release/"
         $allowedSharers = @('x64-Clang-Windows-Release', 'x64-ClangCL-Windows-RelWithDebInfo')
 

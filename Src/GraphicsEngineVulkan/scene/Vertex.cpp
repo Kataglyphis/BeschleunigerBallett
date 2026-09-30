@@ -12,10 +12,7 @@ module kataglyphis.vulkan.vertex;
 
 namespace vertex {
 
-// Indices are trusted to already address existing vertices - that
-// validation is the caller's contract (ObjLoader.cpp's face_valid guard,
-// GltfLoader.cpp's emitTri guard), not this function's. An out-of-range
-// index here is an unchecked std::span subscript: an out-of-bounds write.
+// The loaders validate indices; an out-of-range one here is an unchecked out-of-bounds write.
 void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
 {
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
@@ -24,8 +21,7 @@ void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int
         Vertex &v2 = vertices[indices[i + 2]];
 
         const glm::vec3 faceNormal = glm::cross(v1.position - v0.position, v2.position - v0.position);
-        // Degenerate triangle (zero area): leave the existing normal rather
-        // than emit a NaN from normalizing a zero vector.
+        // Zero-area triangle: keep the old normal instead of normalizing a zero vector to NaN.
         if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
         const glm::vec3 n = glm::normalize(faceNormal);
         v0.normal = n;
@@ -72,25 +68,12 @@ auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescrip
     return attribute_describtions;
 }
 
-// Per-vertex tangent frame from triangle UV gradients (Lengyel's method),
-// ported from the Rust renderer's compute_tangents
-// (third_party/OxidANT/.../gltf_loader.rs). Accumulates
-// BOTH tangent and bitangent per vertex across every triangle in
-// indices[firstIndex..], then Gram-Schmidt-orthogonalizes against the
-// (already final) vertex normal and stores the handedness sign
-// sign(dot(cross(N, T), accumulatedBitangent)) in .w - the glTF convention the
-// shading pass will reconstruct the bitangent from. Not full MikkTSpace: a
-// vertex shared by UV islands of opposite handedness gets one averaged frame
-// rather than being split at the seam.
+// Lengyel tangents with glTF handedness in .w; not MikkTSpace, so a mirrored UV seam gets one averaged frame.
 void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
 {
     if (firstIndex + 2 >= indices.size()) { return; }
 
-    // GltfLoader::processPrimitive calls this once per primitive over the
-    // growing global vertex array, so a vertices.size()-sized accumulator
-    // pair is re-allocated and re-zeroed per primitive: quadratic in
-    // primitive count. Scan the referenced corners first and size the
-    // accumulators to just that contiguous range instead.
+    // Size accumulators to the referenced range: called per primitive over the growing global array, full size is quadratic.
     unsigned int minCorner = indices[firstIndex];
     unsigned int maxCorner = indices[firstIndex];
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
@@ -117,9 +100,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         const glm::vec2 d2 = v2.texture_coords - v0.texture_coords;
 
         const float det = (d1.x * d2.y) - (d2.x * d1.y);
-        // Degenerate UV mapping (zero-area UV triangle): contribute nothing
-        // rather than divide by (near-)zero, which would seed the accumulator
-        // with NaN/Inf that survives normalization below.
+        // Zero-area UV triangle: skip it, or its NaN/Inf would survive normalization.
         if (glm::abs(det) < 1e-8F) { continue; }
         const float invDet = 1.0F / det;
         const glm::vec3 tangent = ((e1 * d2.y) - (e2 * d1.y)) * invDet;
@@ -131,13 +112,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         }
     }
 
-    // The loop below visits each corner once per incident triangle - the
-    // visitation order - but the write it performs is per-vertex, keyed only
-    // on accumTangent/accumBitangent/normal, none of which depend on which
-    // triangle we arrived from. A vertex of average valence ~6 in a closed
-    // triangle mesh would otherwise redo the same Gram-Schmidt, normalize and
-    // cross six times and write the same result six times; `finalized` makes
-    // the write happen once.
+    // A vertex's frame depends only on its accumulators, so `finalized` computes it once, not once per incident triangle.
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
         for (unsigned int corner : { indices[i + 0], indices[i + 1], indices[i + 2] }) {
             const std::size_t slot = corner - minCorner;
@@ -153,9 +128,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
             if (glm::dot(t, t) > 1e-12F) {
                 t = glm::normalize(t);
             } else {
-                // Degenerate UVs: nothing survived Gram-Schmidt. Fall back to
-                // an arbitrary axis orthogonal to the normal rather than
-                // produce a NaN.
+                // Nothing survived Gram-Schmidt: any axis orthogonal to the normal beats a NaN.
                 glm::vec3 fallback = glm::cross(n, glm::vec3(0.0F, 1.0F, 0.0F));
                 if (glm::dot(fallback, fallback) <= 1e-12F) { fallback = glm::cross(n, glm::vec3(1.0F, 0.0F, 0.0F)); }
                 t = glm::normalize(fallback);

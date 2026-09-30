@@ -1,6 +1,4 @@
-// Pins align_up's rounding contract and that it is a genuine constexpr
-// function (a namespace-scope static_assert only compiles if the compiler
-// can evaluate the call at compile time).
+// The namespace-scope static_assert only compiles if align_up is genuinely constexpr.
 
 #include <gtest/gtest.h>
 

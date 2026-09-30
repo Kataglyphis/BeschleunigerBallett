@@ -1,8 +1,4 @@
-// Pins ExtensionSupport's contract: name lookups compare the full,
-// null-terminated string, not a prefix. VulkanInstance.cpp once had
-// `strcmp(...) != 0 != 0`, which parses as `(strcmp != 0) != 0` and always
-// evaluated true - the same "one rule, N hand-rolled copies" bug this helper
-// replaces every copy of.
+// Name lookups must compare the full null-terminated string, never a prefix.
 
 #include <array>
 #include <cstdio>

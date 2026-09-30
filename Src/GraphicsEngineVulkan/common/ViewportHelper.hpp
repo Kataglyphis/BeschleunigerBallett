@@ -4,13 +4,7 @@
 
 namespace Kataglyphis {
 
-// Every raster pass in this engine renders to the full extent of its target
-// with an unflipped y axis and the standard [0, 1] depth range - there is no
-// pass that needs a partial viewport, a flipped y, or a non-default depth
-// range. A pass that DOES need one of those must build the vk::Viewport /
-// vk::Rect2D inline and say why, rather than growing this helper new
-// parameters - that is what would eventually let a flipped viewport or a
-// depth slice silently sneak into every other call site.
+// Full extent, unflipped y, [0, 1] depth; a pass needing anything else builds its own and says why.
 constexpr vk::Viewport fullExtentViewport(vk::Extent2D extent)
 {
     return vk::Viewport{ 0.0F,

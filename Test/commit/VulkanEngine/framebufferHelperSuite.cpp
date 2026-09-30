@@ -1,12 +1,3 @@
-// Direct unit coverage for common/FramebufferHelper.hpp's
-// buildFramebufferCreateInfo - the helper that replaced five hand-written
-// vk::FramebufferCreateInfo blocks across Rasterizer, PostStage,
-// DeferredRasterizer, SkyBox and CascadedShadowMap.
-//
-// SkyBox's original call site hard-coded attachmentCount = 2 instead of
-// deriving it from the span it was handed - AttachmentCountIsDerivedFromTheSpan
-// below is the regression test for exactly that bug.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -21,9 +12,7 @@ using Kataglyphis::destroyFramebuffer;
 using Kataglyphis::destroyFramebuffers;
 
 namespace {
-// vk::ImageView/vk::RenderPass's default constructors are not constexpr in
-// this vulkan-hpp version - the nullptr_t constructor is, so it stands in for
-// "no real handle" wherever a constant expression is required below.
+// Default handle constructors are not constexpr in this vulkan-hpp; the nullptr_t one is.
 constexpr std::array<vk::ImageView, 3> kThreeViews{ vk::ImageView(nullptr), vk::ImageView(nullptr),
     vk::ImageView(nullptr) };
 }// namespace

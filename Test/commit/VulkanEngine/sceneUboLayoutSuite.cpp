@@ -1,12 +1,4 @@
-// SceneUBO's host/shader layout contract: hand-mirrored in
-// Resources/ShadersSlang/common/scene_types.slang (struct SceneUBO). Slang
-// compiles ConstantBuffer<SceneUBO> as std140 (emitted type SceneUBO_std140),
-// where a vec4 has base alignment 16; glm's plain (non-aligned) vec4 gives
-// the host struct no such padding by default, so cascadeSplits and every
-// member after it drift unless the host struct pads explicitly. If any
-// expectation below fails at runtime, that is a REAL C++/Slang layout
-// finding - investigate against the .slang twin and report it, do not adjust
-// a number to make the test pass.
+// Slang lays SceneUBO out std140 but glm's vec4 is unaligned, so the host must pad; never adjust the numbers.
 
 #include <gtest/gtest.h>
 

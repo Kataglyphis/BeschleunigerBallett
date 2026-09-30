@@ -1,6 +1,4 @@
-// Pins supportsMipmapGeneration's contract: vkCmdBlitImage with
-// VK_FILTER_LINEAR needs SAMPLED_IMAGE_FILTER_LINEAR, BLIT_SRC and BLIT_DST
-// all present on optimalTilingFeatures, not just the filter bit.
+// A linear blit needs FILTER_LINEAR, BLIT_SRC and BLIT_DST on optimalTilingFeatures, not just the filter bit.
 
 #include <gtest/gtest.h>
 
@@ -68,9 +66,7 @@ TEST(FormatHelperUnit, TransitionAspectAddsStencilOnlyForCombinedFormats)
 
 TEST(FormatHelperUnit, ThePreferredDepthFormatIsStencilFree)
 {
-    // Head of chooseDepthFormat's preference list: on every device that
-    // supports it, depthStencilTransitionAspect is a no-op (eDepth only) and
-    // the combined-format fallbacks are the only inputs it actually changes.
+    // chooseDepthFormat's first choice, so the stencil aspect only matters for the combined fallbacks.
     EXPECT_FALSE(Kataglyphis::formatHasStencil(vk::Format::eD32Sfloat));
 }
 

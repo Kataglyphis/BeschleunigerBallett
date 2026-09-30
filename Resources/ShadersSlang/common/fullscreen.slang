@@ -1,12 +1,4 @@
-// Shared fullscreen-triangle vertex utility. Both renderers generate a
-// single fullscreen triangle from the vertex index (no vertex buffer) with
-// the same math: x = (vid/2)*4-1, y = (vid%2)*4-1. Centralising it removes
-// the duplicated `vs_main` boilerplate and guarantees identical UV math.
-//
-// Usage in an entry point:
-//   import fullscreen;
-//   [shader("vertex")]
-//   VsOut vs_main(uint vid : SV_VertexID) { return fullscreen_vs(vid); }
+// Fullscreen triangle from the vertex index alone, shared so both renderers get identical UV math.
 
 struct FullscreenVsOut
 {
@@ -14,8 +6,7 @@ struct FullscreenVsOut
     float2 uv : TEXCOORD0;
 };
 
-// Generate a fullscreen triangle from the vertex index. UV origin is
-// top-left (y flipped) to match texture sampling conventions.
+// UV origin is top-left (y flipped) to match texture sampling.
 FullscreenVsOut fullscreen_vs(uint vid)
 {
     FullscreenVsOut o;

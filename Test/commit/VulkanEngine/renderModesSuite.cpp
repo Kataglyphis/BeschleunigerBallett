@@ -39,9 +39,7 @@ void run_frames(Kataglyphis::Frontend::Window *window,
   int frame_count,
   const std::string &mode_label)
 {
-    // The model parses on a worker thread now, so the first frames of a fresh
-    // renderer show an empty scene. Every mode below is meant to be exercised
-    // against real geometry.
+    // The model parses on a worker thread, so the first frames show an empty scene.
     Kataglyphis::TestSupport::waitForModelLoad(renderer, [&] {
         glfwPollEvents();
         gui->render();
@@ -65,8 +63,6 @@ void run_frames(Kataglyphis::Frontend::Window *window,
 
 } // namespace
 
-// Drives every render configuration selectable in the ImGui overlay
-// (Rasterizer Forward/Deferred, Raytracing, Path tracing) through real frames.
 TEST(Integration, RenderModesSelectableInGui)
 {
     if (!glfw_reports_vulkan_support()) {

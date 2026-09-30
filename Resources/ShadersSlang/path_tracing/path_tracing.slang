@@ -5,15 +5,7 @@ import material_fetch;
 import material_rules;
 import material_textures;
 
-// Path tracing compute kernel using ray query (GL_EXT_ray_query).
-// Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
-// has no ray query).
-//
-// Uses Slang T* pointers (PhysicalStorageBuffer) for buffer device
-// addresses, RayQuery for ray traversal, next-event estimation toward the
-// directional light (Lambertian 1/pi, terminate-on-first-hit shadow rays),
-// Russian roulette from the 4th bounce, and RNG (pcg) for stochastic
-// sampling and temporal accumulation (running-mean history image).
+// Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/path-tracing.md.
 
 struct PushConstantPathTracing
 {
@@ -27,11 +19,7 @@ struct PushConstantPathTracing
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-// objectDescription (OBJECT_DESCRIPTION_BINDING) comes from material_fetch.slang.
-// textures/textureSamplers (TEXTURES_BINDING, SAMPLER_BINDING) come from
-// material_textures.slang, imported directly here (Slang does not
-// re-export a plain `import` transitively) and also by alpha_test.slang,
-// shared with raytrace.rahit.slang's alpha test.
+// material_textures is imported directly: Slang does not re-export a plain `import` transitively.
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 [vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
@@ -64,18 +52,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     int numSamples = int(pc_ray.samples_per_pixel);
     int maxBounces = int(pc_ray.max_bounces);
     float3 summedColor = float3(0.0);
-    // Furnace debug mode (KATAGLYPHIS_PT_FURNACE): clearColor.w set forces
-    // every hit's albedo to 1 and the environment to a uniform clearColor.rgb
-    // radiance, so an unbiased estimator must converge every pixel to exactly
-    // that radiance regardless of geometry.
+    // Furnace mode (KATAGLYPHIS_PT_FURNACE): albedo 1 and a uniform sky, so every pixel converges to clearColor.rgb.
     bool furnace = pc_ray.clearColor.w > 0.5;
 
     for (int sampleIdx = 0; sampleIdx < numSamples; sampleIdx++)
     {
-        // Jitter within the pixel's unit square (a box filter) instead of
-        // always sampling the exact centre: this is what makes
-        // samples_per_pixel and the temporal running mean anti-alias
-        // geometric edges rather than just denoise a point-sampled image.
+        // Jitter within the pixel so accumulation anti-aliases edges instead of only denoising.
         float2 pixelCenter = float2(tid.xy) + float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState));
         float2 uv = pixelCenter / float2(resolution);
         float2 cs = uv * 2.0 - 1.0;
@@ -84,19 +66,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         float3 rayOrigin = cameraOrigin.xyz;
         float3 rayDirection = normalize(mul(globalUBO.inv_view, float4(normalize(target.xyz), 0)).xyz);
 
-        // Throughput: the product of every bounce's albedo (and RR
-        // reweighting) applied so far. Radiance: the running estimate this
-        // sample contributes, accumulated at every NEE hit and sky miss.
         float3 throughput = float3(1.0);
         float3 radiance = float3(0.0);
 
         for (int bounce = 0; bounce < maxBounces; bounce++)
         {
-            // Russian roulette from the fourth segment on: terminate
-            // low-throughput paths with probability (1 - survival) and
-            // reweight survivors by 1/survival, keeping the estimator
-            // unbiased while skipping bounces that would contribute almost
-            // nothing.
+            // Russian roulette from the fourth segment; the 1/survival reweight keeps the estimator unbiased.
             if (bounce >= 3)
             {
                 float survival = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);
@@ -114,16 +89,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
             rayQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
-            // Proceed() performs one traversal step and must be looped until
-            // it returns false (GL_EXT_ray_query: rayQueryProceedEXT) — a
-            // single call can leave traversal incomplete, so
-            // CommittedStatus() and the committed-hit accessors below would
-            // read undefined state.
-            //
-            // Deliberately not forced opaque: a ray query has no any-hit
-            // stage, so glTF MASK cut-outs are alpha-tested here in the
-            // candidate loop instead - CommitNonOpaqueTriangleHit() only for
-            // candidates that pass, which is what implements the discard.
+            // Loop Proceed() to completion; with no any-hit stage, MASK cut-outs are alpha-tested per candidate here.
             while (rayQuery.Proceed())
             {
                 if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
@@ -139,10 +105,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
             {
-                // Ray hit the sky. A deliberate soft gradient environment
-                // (RTIOW-style) scaled well below the directional light so
-                // the NEE term below dominates the look, or the uniform
-                // furnace radiance in furnace mode.
+                // Sky kept well below the directional light so the NEE term dominates the look.
                 float3 skyRadiance;
                 if (furnace)
                 {
@@ -157,23 +120,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 break;
             }
 
-            // Bug fixed here (was "KNOWN ISSUE, unresolved" - see BACKLOG.md),
-            // device-lost repro NOT yet re-run to confirm: this block used to
-            // resolve every hit to instance 0's *first* mesh, because it read
-            // only CommittedInstanceIndex() with no geometry term (unlike the
-            // candidate loops above, which already add
-            // CandidateGeometryIndex()). On any multi-mesh model, a hit
-            // against mesh N>0 fetched mesh 0's vertex/index/material
-            // buffers via fetch_object_description(), then indexed
-            // indices->i[primitiveID] against a primitive count that
-            // belonged to a different (usually smaller) mesh - an
-            // out-of-bounds buffer-device-address read. That would explain
-            // why only the vertex-consuming variant faulted: dead-code
-            // elimination dropped the OOB load whenever nothing downstream
-            // consumed v0/v1/v2, so the material-fetched .color path (which
-            // never reads Vertices*) never faulted. See
-            // raytracing/raytrace.rchit.slang's identical
-            // InstanceID() + GeometryIndex() shape.
+            // The geometry index is required: without it a multi-mesh hit reads mesh 0's buffers out of bounds.
             uint objIndex = rayQuery.CommittedInstanceID() + rayQuery.CommittedGeometryIndex();
             float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
             float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
@@ -197,11 +144,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3 hitWorldPosition = mul(objToWorld, float4(objectPos, 1.0));
 
             float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-            // Inverse-transpose = row-multiply worldToObject (mul(v, M), not
-            // mul(M, v)); see raytrace.rchit.slang for the same rule.
+            // Inverse-transpose = row-multiply worldToObject: mul(v, M), not mul(M, v).
             float3 hitWorldNormal = normalize(mul(normalHit, (float3x3)worldToObject));
-            // Flip the normal so it points against the ray direction
-            // (GLSL faceforward(N, I, N)).
+            // faceforward: the normal must oppose the ray.
             if (dot(hitWorldNormal, rayDirection) > 0.0)
             {
                 hitWorldNormal = -hitWorldNormal;
@@ -213,20 +158,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             ObjMaterial material = fetch_material(obj, primitiveID);
 
-            // Shading normal for the NEE lighting term below (nDotL): the
-            // geometric hitWorldNormal itself stays unperturbed, since it also
-            // drives the ray-offset (self-intersection guard) and the bounce
-            // hemisphere sampling, and perturbing those would couple the
-            // normal map into path geometry rather than just shading.
+            // Normal map only affects NEE shading; the geometric normal still drives ray offset and bounce sampling.
             float3 shadingNormal = hitWorldNormal;
             if (material.normalTextureID >= 0)
             {
                 float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
-                // float3x4 is 3 rows x 4 cols; mul(float3x4, float4) = float3.
-                // Same "surface direction, not a normal" rule as
-                // raytracing/raytrace.rchit.slang - transforms with objToWorld
-                // directly, not the inverse-transpose worldToObject the normal
-                // above uses.
+                // A tangent is a surface direction: objToWorld, not the inverse-transpose.
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
                 // Explicit LOD: see the base-colour sample below for why.
                 shadingNormal = resolved_normal_lod0(hitWorldNormal, float4(worldTangent, tangentHit.w), obj, material, texCoords);
@@ -235,10 +172,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3 hitColor;
             if (furnace)
             {
-                // Furnace mode must keep forcing albedo to exactly 1, or
-                // PathTracingPassesTheWhiteFurnaceTest's "converges to
-                // exactly the environment radiance" invariant breaks - so
-                // the vertex-colour multiply below is skipped here.
+                // Exactly 1, or PathTracingPassesTheWhiteFurnaceTest's convergence invariant breaks.
                 hitColor = float3(1.0);
             }
             else
@@ -246,10 +180,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 if (material.textureID >= 0)
                 {
                     int textureId = resolve_texture_slot(obj, material);
-                    // Explicit LOD: this compute kernel has no fragment
-                    // derivatives, so an implicit-LOD .Sample() fails SPIR-V
-                    // validation. See rchit_main's base-colour sample comment
-                    // in raytracing/raytrace.rchit.slang.
+                    // Explicit LOD: compute has no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
                     hitColor = base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
                 }
                 else
@@ -260,19 +191,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
                 hitColor *= vertexColor.rgb;
 
-                // glTF metallic-roughness texture: this Lambertian-only path
-                // tracer has no specular BRDF and, unlike the other three
-                // shading paths, never consumed ObjMaterial::metallic at all -
-                // so there is no "existing metallic local" here to feed. Gated
-                // strictly on the texture (not the metallic FACTOR alone) to
-                // keep every pre-existing scene bit-unchanged, matching the
-                // other three shading paths' "no MR texture -> today's
-                // factors" contract. Uses common/material_rules.slang's
-                // material_metallic_roughness() - the same binding-free
-                // module the other three shading paths call - so this kernel
-                // no longer has to duplicate the B-channel = metallic
-                // swizzle; only the metallic half (.x) is used, since this
-                // path has no roughness term.
+                // Gated on the texture, not the factor: this Lambertian kernel uses only the metallic half.
                 if (material.metallicRoughnessTextureID >= 0)
                 {
                     // Explicit LOD: see the base-colour sample above for why.
@@ -281,24 +200,14 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 }
             }
 
-            // KHR_materials_unlit: the raster reading is "return base colour
-            // before any lighting" - the path-tracing equivalent is to skip
-            // NEE and hemisphere scattering entirely and terminate the path
-            // here, contributing only the (throughput-attenuated) base
-            // colour. Furnace mode stays gated out, same reason as emissive
-            // below: hitColor is already forced to 1.0 there and an early
-            // terminator would change how many bounces contribute, breaking
-            // the "converges to exactly the environment radiance" invariant.
+            // KHR_materials_unlit ends the path here; not in furnace mode, where it would break convergence.
             if (!furnace && material.unlit != 0)
             {
                 radiance += throughput * hitColor;
                 break;
             }
 
-            // Emissive is surface-emitted radiance, added at the hit before
-            // throughput absorbs this bounce's albedo - furnace mode stays
-            // gated out, or a furnace emitter would break the "converges to
-            // exactly the environment radiance" invariant.
+            // Emission is added before throughput absorbs this albedo; never in furnace mode.
             if (!furnace)
             {
                 // Explicit LOD: see the base-colour sample above for why.
@@ -308,23 +217,15 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // Apply color absorption.
             throughput *= hitColor;
 
-            // Start the next ray at the hit position, offset slightly along
-            // the normal to guard against self-intersection.
+            // Offset along the normal against self-intersection.
             rayOrigin = hitWorldPosition + 0.0001 * hitWorldNormal;
 
-            // Next-event estimation toward the directional light: one
-            // shadow ray per bounce. The light is a delta direction,
-            // unreachable by the diffuse bounce ray, so this does not
-            // double-count with the sky term on miss.
+            // NEE cannot double-count with the sky term: the delta light is unreachable by a bounce ray.
             float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
             float nDotL = dot(shadingNormal, lightDir);
             if (nDotL > 0.0)
             {
-                // Deliberately not forced opaque, same reason as the bounce
-                // query above. RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH still
-                // ends the search at the first *committed* hit - a rejected
-                // (masked-out) candidate keeps traversal going instead of
-                // ending the search on a hit that should not count.
+                // Not forced opaque: the search ends at the first committed hit, so masked-out candidates are skipped.
                 RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
                 RayDesc shadowRay;
                 shadowRay.Origin = rayOrigin;
@@ -350,11 +251,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 }
                 if (shadowQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
                 {
-                    // The Lambertian BRDF is albedo/pi; the throughput
-                    // already carries the albedo, so NEE must carry the
-                    // 1/pi. The bounce direction below needs no such factor:
-                    // cosine-weighted sampling of a Lambertian cancels both
-                    // the pi and the cosine exactly.
+                    // NEE carries the Lambertian 1/pi; cosine-weighted bounce sampling cancels it.
                     const float INV_PI = 0.31830988;
                     float3 lightColor = sceneUBO.dirLight.color.rgb;
                     float lightIntensity = sceneUBO.dirLight.color.w;
@@ -362,25 +259,18 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 }
             }
 
-            // Cosine-weighted-ish hemisphere bounce direction (Ray Tracing
-            // in One Weekend 8.5: a random point on the unit sphere centered
-            // at the normal tip).
+            // Cosine-weighted bounce: a random unit-sphere point around the normal tip (RTIOW 8.5).
             float theta = 6.2831853 * stepAndOutputRNGFloat(rngState);
             float u = 2.0 * stepAndOutputRNGFloat(rngState) - 1.0;
             float r = sqrt(max(1.0 - u * u, 0.0));
             float3 newDirection = hitWorldNormal + float3(r * cos(theta), r * sin(theta), u);
 
-            // RTIOW 9.4: if the random unit vector lands (numerically) on
-            // -normal, the sum degenerates to a near-zero direction. Fall
-            // back to the normal.
+            // RTIOW 9.4: a vector landing on -normal degenerates to zero length.
             if (dot(newDirection, newDirection) < 1e-8)
             {
                 newDirection = hitWorldNormal;
             }
-            // hitWorldNormal + unitVector has length in [0, 2], not 1 -
-            // normalize before it becomes rayDirection, because TMin, TMax
-            // and the miss-gradient's skyT are all measured in units of
-            // rayDirection's length.
+            // TMin, TMax and skyT assume a unit rayDirection.
             rayDirection = normalize(newDirection);
         }
 

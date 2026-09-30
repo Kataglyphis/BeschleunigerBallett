@@ -1,8 +1,3 @@
-// Direct unit coverage for common/SceneUboMarshal.hpp - the pure per-frame
-// GUI->UBO maths extracted from VulkanRenderer::updateUniforms, which
-// otherwise ran 76 lines deep on every frame with nothing able to reach it
-// from a test.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -176,9 +171,7 @@ TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
     EXPECT_GE(degenerate.z, kMinCloudMeshExtent);
     EXPECT_GE(degenerate.w, kMinCloudDensityMultiplier);
 
-    // This is the quantity clouds_main's inv_model_to_world diagonal (built
-    // from cloud.radius, in clouds.slang) divides by; it must be strictly
-    // positive for every component even from an all-zero input.
+    // clouds.slang divides by this, so it must stay positive even from an all-zero input.
     EXPECT_GT(degenerate.x * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.y * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.z * degenerate.w * 10.0F, 0.0F);

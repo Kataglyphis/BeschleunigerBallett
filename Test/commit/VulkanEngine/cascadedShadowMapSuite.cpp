@@ -1,11 +1,4 @@
-// CPU-only unit tests for the cascaded shadow map maths.
-//
-// These exist because the CSM code had NO test coverage at all, and a bug that
-// disabled shadows completely - the shadow pass transformed casters by a
-// hard-coded identity matrix while the forward pass used the scene's (a scale
-// of 60) - lived undetected until it was found by hand. Nothing here needs a
-// GPU: computeCascadeData() and makeShadowPush() are free functions precisely
-// so they can be exercised without a Vulkan device.
+// CPU-only tests for the cascaded shadow map maths; the functions under test are free so they need no device.
 
 #include <gtest/gtest.h>
 
@@ -104,8 +97,7 @@ TEST(CascadedShadowMapUnit, SplitDepthsIncreaseAndEndAtFarPlane)
         previous = cascades[i].splitDepth;
     }
 
-    // The last cascade has to reach the far plane, or geometry between the last
-    // split and the far plane is silently unshadowed.
+    // Short of the far plane, geometry past the last split is silently unshadowed.
     EXPECT_NEAR(cascades.back().splitDepth, kFar, 1e-3F);
 }
 
@@ -117,10 +109,7 @@ TEST(CascadedShadowMapUnit, MatricesAreFiniteAndNonDegenerate)
     }
 }
 
-// THE substantive one: a cascade's light-space box must actually contain the
-// slice of camera frustum it is responsible for. If it does not, fragments
-// project outside the shadow map and are treated as lit - which is exactly how
-// this system failed before (measured: ~5% of fragments landed inside the map).
+// A fragment outside its cascade's box projects off the shadow map and is treated as lit.
 TEST(CascadedShadowMapUnit, EachCascadeCoversItsOwnFrustumSlice)
 {
     const std::vector<CascadeData> cascades = default_cascades();
@@ -136,11 +125,7 @@ TEST(CascadedShadowMapUnit, EachCascadeCoversItsOwnFrustumSlice)
             ASSERT_GT(std::abs(clip.w), 1e-6F);
             const glm::vec3 ndc = glm::vec3(clip) / clip.w;
 
-            // The ortho box is fitted to exactly these corners, so they land ON
-            // the boundary by construction and float error puts them a hair
-            // outside (measured 1.00000024). The invariant is containment, not
-            // strict interiority - allow an epsilon, but keep it tight enough
-            // that a genuinely mis-sized cascade still fails.
+            // The box is fitted to these corners, so float error puts them a hair outside; a mis-sized box still fails.
             constexpr float kEdge = 1e-4F;
             EXPECT_GE(ndc.x, -1.0F - kEdge) << "cascade " << i << " x out of range";
             EXPECT_LE(ndc.x, 1.0F + kEdge) << "cascade " << i << " x out of range";
@@ -155,9 +140,7 @@ TEST(CascadedShadowMapUnit, EachCascadeCoversItsOwnFrustumSlice)
     }
 }
 
-// The split scheme. shadowDistance decouples "how far do we cast shadows"
-// from "how far can the camera see" - fitting cascades to a 150-unit far
-// plane for a scene that ends at 36 spends most of the shadow map on nothing.
+// shadowDistance decouples shadow range from view range, so cascades are not spent on empty far-plane space.
 TEST(CascadedShadowMapUnit, ShadowDistanceClampsTheCascadeRange)
 {
     constexpr float kShadowDistance = 60.0F;
@@ -166,8 +149,7 @@ TEST(CascadedShadowMapUnit, ShadowDistanceClampsTheCascadeRange)
     const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
 
     ASSERT_EQ(cascades.size(), kCascades);
-    // The last cascade must end exactly on the shadow distance: short of it
-    // leaves a band that samples nothing and renders unshadowed.
+    // Ending short of the shadow distance leaves a band that renders unshadowed.
     EXPECT_NEAR(cascades.back().splitDepth, kShadowDistance, 1e-3F);
     for (const CascadeData &cascade : cascades) { EXPECT_LE(cascade.splitDepth, kShadowDistance + 1e-3F); }
 }
@@ -184,8 +166,7 @@ TEST(CascadedShadowMapUnit, ShadowDistanceBeyondTheFarPlaneIsClampedToIt)
 
 TEST(CascadedShadowMapUnit, ZeroShadowDistanceFallsBackToTheFarPlane)
 {
-    // The documented escape hatch, and what every existing caller relied on
-    // before shadowDistance existed.
+    // shadowDistance 0 is the documented escape hatch: cascades span the whole far plane.
     const std::vector<CascadeData> cascades = computeCascadeData(kCascades, default_params());
 
     ASSERT_EQ(cascades.size(), kCascades);
@@ -206,12 +187,7 @@ TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
     }
 }
 
-// Raising lambda pulls the splits toward the camera. This is the property
-// that makes near geometry crisp - and the same property that STARVES a
-// subject framed from a distance, which measurement showed and intuition did
-// not: at lambda 0.85 the debug scene's subject falls into the last cascade
-// and its texel density gets 3x worse than uniform. The default is 0.0 for
-// that reason; this test exists so raising it is a deliberate act.
+// Higher lambda starves a distant subject of texels, which is why the default is 0.0.
 TEST(CascadedShadowMapUnit, HigherLambdaPullsSplitsTowardTheCamera)
 {
     auto low_params = default_params();
@@ -255,13 +231,7 @@ TEST(CascadedShadowMapUnit, OutOfRangeLambdaIsClamped)
     }
 }
 
-// The point of the whole exercise, asserted rather than claimed in a comment.
-//
-// A cascade's light-space box is fitted with glm::ortho, whose first row
-// scales world X by 2/(right-left). The view part is a rigid transform, so the
-// length of the composed matrix's first row recovers that scale, and the box
-// width falls out as 2/|row0|. Divided by the shadow map resolution it is
-// world units per texel - what actually decides whether an edge is crisp.
+// The view part is rigid, so box width is 2/|row0| of viewProj; over the resolution that is world units per texel.
 TEST(CascadedShadowMapUnit, ShadowDistanceImprovesTexelDensityOverTheSubject)
 {
     constexpr float kShadowMapRes = 2048.0F;
@@ -286,9 +256,7 @@ TEST(CascadedShadowMapUnit, ShadowDistanceImprovesTexelDensityOverTheSubject)
 
     auto far_plane_params = default_params();
     far_plane_params.splitLambda = 0.0F;
-    // The lambda here must match GUISceneSharedVars::cascade_split_lambda, or
-    // this measures a configuration nobody runs. It is 0 for a measured
-    // reason - see the table in CascadedShadowMap.cpp.
+    // Must match GUISceneSharedVars::cascade_split_lambda, or this measures a configuration nobody runs.
     auto shadow_distance_params = default_params();
     shadow_distance_params.shadowDistance = 60.0F;
     shadow_distance_params.splitLambda = 0.0F;
@@ -304,8 +272,7 @@ TEST(CascadedShadowMapUnit, ShadowDistanceImprovesTexelDensityOverTheSubject)
 
 TEST(CascadedShadowMapUnit, DegenerateLightDirectionDoesNotProduceGarbage)
 {
-    // A zero light vector must fall back to a sane direction rather than
-    // normalising to NaN and poisoning every matrix.
+    // Normalising a zero vector gives NaN, which would poison every matrix.
     auto params = default_params();
     params.lightDir = glm::vec3(0.0F);
     const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
@@ -325,8 +292,7 @@ TEST(CascadedShadowMapUnit, CascadesRespondToLightDirection)
     const std::vector<CascadeData> from_the_side = computeCascadeData(kCascades, from_the_side_params);
 
     ASSERT_EQ(from_above.size(), from_the_side.size());
-    // Moving the sun must move the light-space matrices; if it does not, the
-    // light direction is not reaching the cascade computation at all.
+    // Identical matrices mean the light direction never reaches the cascade computation.
     bool any_difference = false;
     for (size_t i = 0; i < from_above.size(); ++i) {
         if (from_above[i].viewProjMatrix != from_the_side[i].viewProjMatrix) { any_difference = true; }
@@ -334,11 +300,7 @@ TEST(CascadedShadowMapUnit, CascadesRespondToLightDirection)
     EXPECT_TRUE(any_difference) << "cascade matrices ignore the light direction";
 }
 
-// Regression guard for the bug that disabled shadows entirely: the shadow pass
-// must transform casters by the scene's model matrix. It previously hard-coded
-// glm::mat4(1.0f), so with the scene's scale of 60 the caster was rendered at
-// 1/60 size, the depth map stayed at its 1.0 clear value, and nothing was ever
-// occluded.
+// An identity model matrix here leaves the depth map at its clear value, so nothing is ever occluded.
 TEST(CascadedShadowMapUnit, ShadowPushCarriesTheSceneModelMatrix)
 {
     const glm::mat4 scene_model = glm::scale(glm::mat4(1.0F), glm::vec3(60.0F));
@@ -350,12 +312,7 @@ TEST(CascadedShadowMapUnit, ShadowPushCarriesTheSceneModelMatrix)
     EXPECT_EQ(push.cascadeIndex, 2U);
 }
 
-// Regression guard: the no-shared-set fallback used to bind the light matrices
-// set at set 0, against a pipeline layout (CascadedShadowMap::buildGraphicsPipeline's
-// setLayouts) that says set 0 is the shared render set and set 1 is light
-// matrices - so the vertex shader's set 1 read was never bound. The light
-// matrices set must land at set index 1 in both cases; only firstSet/setCount
-// change.
+// The pipeline layout puts light matrices at set 1, so both paths must bind them there.
 TEST(CascadedShadowMapUnit, ShadowSetBindingKeepsLightMatricesAtSetOne)
 {
     EXPECT_EQ(shadowSetBinding(true), (ShadowSetBinding{ 0, 2 }));
@@ -363,9 +320,7 @@ TEST(CascadedShadowMapUnit, ShadowSetBindingKeepsLightMatricesAtSetOne)
 }
 
 namespace {
-// Texel-space coordinate of a world point under one cascade's matrix: NDC
-// scaled so one shadow-map texel is exactly 1.0. Whole-texel motion of the
-// box shows up here as integer deltas.
+// NDC scaled so one shadow-map texel is 1.0: whole-texel box motion shows up as integer deltas.
 glm::vec2 texel_space(const CascadeData &cascade, const glm::vec3 &world, uint32_t resolution)
 {
     const glm::vec4 clip = cascade.viewProjMatrix * glm::vec4(world, 1.0F);
@@ -382,12 +337,7 @@ glm::mat4 translated_view(const glm::vec3 &offset)
 
 TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotion)
 {
-    // The shimmer bug: refitting the ortho box to exact frustum corners every
-    // frame means sub-texel camera motion moves every shadow edge by a
-    // sub-texel amount, and edges crawl. Stabilized cascades may only move
-    // the box in WHOLE texel increments, so a static edge stays on the same
-    // texels. Assert exactly that: for a fixed world point, the texel-space
-    // delta between two sub-texel camera positions must be (near-)integer.
+    // Stabilized boxes move only in whole texels, or sub-texel camera motion makes shadow edges crawl.
     constexpr uint32_t kResolution = 2048;
     const glm::vec3 tiny_offset(0.0137F, 0.0F, 0.0F);
     const glm::vec3 probe(0.0F, 1.0F, 10.0F);
@@ -406,9 +356,7 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotio
     EXPECT_NEAR(delta.x, std::round(delta.x), 5e-2F) << "x moved by a fractional texel: " << delta.x;
     EXPECT_NEAR(delta.y, std::round(delta.y), 5e-2F) << "y moved by a fractional texel: " << delta.y;
 
-    // Control - the LEGACY path (no resolution) must show the crawl this
-    // feature removes, or the assertions above prove nothing: the same camera
-    // pair must produce a fractional shift on at least one axis.
+    // Control: without the legacy path's fractional shift the assertions above prove nothing.
     auto legacy_params_a = default_params();
     legacy_params_a.cameraView = translated_view({});
     auto legacy_params_b = default_params();
@@ -425,17 +373,7 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotio
 
 TEST(CascadedShadowMapUnit, StabilizedCascadesStayTexelAlignedOverLongCameraTravel)
 {
-    // The off-by-2/resolution bug: texel_world was computed from the
-    // UNPADDED radius, but the box that is actually projected is
-    // 2*half_extent wide (half_extent = radius + texel_world), so the true
-    // texel size is texel_world * (1 + 2/resolution), not texel_world.
-    // Snapping the center by k grid steps then moves a fixed world point by
-    // only k/(1+2/resolution) texels - short of an integer by ~2k/resolution
-    // texels. That error is invisible for the sub-texel offset used above
-    // (k is 0 or 1), so probe a camera translation of hundreds of grid steps
-    // instead, which accumulates the drift to well over the 5e-2 tolerance
-    // unless the fix (deriving texel_world from the padded half_extent) is in
-    // place.
+    // texel_world must come from the padded half_extent; the error only accumulates over hundreds of grid steps.
     constexpr uint32_t kResolution = 2048;
     const glm::vec3 long_offset(3.0F, 0.0F, 0.0F);
     const glm::vec3 probe(0.0F, 1.0F, 10.0F);
@@ -457,11 +395,7 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesStayTexelAlignedOverLongCameraTrav
 
 TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
 {
-    // The other half of the shimmer: the tight-fit box RESIZES as the camera
-    // turns, so the world-size of a texel breathes. The stabilized box is
-    // sized from the slice's bounding radius, which depends only on
-    // fov/aspect/splits - so the ortho scales must be bit-for-bit stable
-    // across translation AND rotation of the camera.
+    // The box is sized from the slice's bounding radius, so camera motion must not make texel size breathe.
     constexpr uint32_t kResolution = 2048;
     const glm::mat4 view_a = translated_view({});
     const glm::mat4 view_b =
@@ -478,8 +412,7 @@ TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
     const auto cascades_b = computeCascadeData(kCascades, params_b);
 
     for (uint32_t i = 0; i < kCascades; ++i) {
-        // viewProj = ortho * rotation; row norms of the upper 3x3 recover the
-        // ortho scales (1/half_extent).
+        // viewProj = ortho * rotation, so upper-3x3 row norms recover the ortho scales.
         const auto row_norm = [](const glm::mat4 &m, int row) {
             return glm::length(glm::vec3(m[0][row], m[1][row], m[2][row]));
         };
@@ -490,13 +423,7 @@ TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
     }
 }
 
-// clampCascadeCount is the fix for VUID-VkSubpassDescription2-viewMask-06706 /
-// VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697: the CSM multiview
-// render pass sets viewMask = (1 << numCascades) - 1, so a cascade count whose
-// top bit exceeds the device's maxMultiviewViewCount is a non-conformant
-// render pass. Both the startup init and handleShadowResolutionChange route
-// through this function so device conformance no longer relies on
-// MAX_CASCADES happening to be small enough for whatever GPU is present.
+// viewMask spans every cascade: exceeding maxMultiviewViewCount breaks VUID-VkSubpassDescription2-viewMask-06706.
 TEST(CascadedShadowMapUnit, ClampCascadeCountRespectsBothLimits)
 {
     EXPECT_EQ(clampCascadeCount(3U, 3U, 8U), 3U) << "neither limit is binding";
@@ -507,19 +434,14 @@ TEST(CascadedShadowMapUnit, ClampCascadeCountRespectsBothLimits)
 
 TEST(CascadedShadowMapUnit, ClampCascadeCountFloorsToOne)
 {
-    // A device reporting a limit of 0 is not a case any real device produces
-    // (the Vulkan spec floors maxMultiviewViewCount at 6), but the function
-    // must never return a count of 0 - that is not a renderable state - so
-    // pin the floor explicitly rather than relying on it never being hit.
+    // No real device reports 0, but a cascade count of 0 is not renderable, so pin the floor.
     EXPECT_EQ(clampCascadeCount(3U, 3U, 0U), 1U);
     EXPECT_EQ(clampCascadeCount(0U, 3U, 8U), 1U) << "a requested count of 0 must still floor to 1";
 }
 
 TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)
 {
-    // Stability must not cost coverage: every slice corner still lands inside
-    // its cascade's box (the one-texel pad exists precisely because snapping
-    // can shift the center by up to a texel).
+    // Snapping shifts the center by up to a texel; the one-texel pad must keep every slice corner covered.
     constexpr uint32_t kResolution = 2048;
     auto params = default_params();
     params.shadowMapResolution = kResolution;
@@ -545,17 +467,11 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)
     }
 }
 
-// computeCascadeDataInto is what the per-frame path (CascadedShadowMap::
-// updateCascades) calls, so that path allocates nothing; computeCascadeData is
-// now a wrapper over it that only exists for callers happy to allocate (this
-// suite, Test/perf/perfSuite.cpp). The refactor is only value-neutral if the
-// two agree BIT for bit - not "close enough" - so compare exactly. A drift here
-// means the frame path and every test above it are measuring different maths.
+// The frame path calls the Into overload while these tests call the wrapper, so the two must agree bit for bit.
 TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoAgreesWithTheAllocatingOverload)
 {
     constexpr uint32_t kResolution = 2048;
-    // Both branches of the function: the legacy tight-fit path (resolution 0)
-    // and the stabilized texel-snapped one.
+    // Resolution 0 is the tight-fit branch, non-zero the texel-snapped one.
     for (const uint32_t resolution : { 0U, kResolution }) {
         auto params = default_params();
         params.shadowMapResolution = resolution;
@@ -581,11 +497,7 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoAgreesWithTheAllocatingOverloa
 
 TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
 {
-    // Silently clamping to out.size() would hand the caller a well-formed but
-    // PARTLY STALE cascade set - exactly the failure the mapped-UBO comment in
-    // updateCascades records (matrices left over from init, so the shadow map
-    // is rendered from a viewpoint the lighting pass does not sample with).
-    // Refusing outright means the caller sees unchanged sentinel data.
+    // Clamping to out.size() would hand back a partly stale cascade set, so a short buffer is refused untouched.
     constexpr float kSentinelSplit = -12345.0F;
     std::array<CascadeData, kCascades - 1> too_small{};
     for (CascadeData &cascade : too_small) {
@@ -600,8 +512,7 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
         EXPECT_EQ(cascade.viewProjMatrix, glm::mat4(7.0F)) << "an undersized buffer must be left completely untouched";
     }
 
-    // An exactly-sized buffer is of course written, and a LARGER one only has
-    // its first numCascades entries touched.
+    // A larger buffer only has its first numCascades entries touched.
     std::array<CascadeData, kCascades + 1> oversized{};
     oversized[kCascades].splitDepth = kSentinelSplit;
     computeCascadeDataInto(oversized, kCascades, default_params());
@@ -613,10 +524,7 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
 
 TEST(CascadedShadowMapUnit, DefaultFitParamsMatchTheRetiredTrailingDefaults)
 {
-    // Pins the values that used to live as trailing default arguments on
-    // computeCascadeData/computeCascadeDataInto, so a later edit to the struct
-    // cannot silently move one of them. splitLambda's default tracks
-    // GUISceneSharedVars::cascade_split_lambda (0.0F, the measured choice).
+    // splitLambda's default must track GUISceneSharedVars::cascade_split_lambda.
     const CascadeFitParams params{};
     EXPECT_EQ(params.shadowDistance, 0.0F);
     EXPECT_EQ(params.splitLambda, 0.0F);

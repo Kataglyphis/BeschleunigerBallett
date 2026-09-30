@@ -37,8 +37,7 @@ Allocator::Allocator(const vk::Device &device,
   bool enableBufferDeviceAddress)
 {
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
-    // VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT requires the
-    // bufferDeviceAddress feature to be enabled on the logical device.
+    // The BDA flag requires the bufferDeviceAddress feature on the logical device.
     if (enableBufferDeviceAddress) { allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT; }
     allocatorCreateInfo.vulkanApiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;
     allocatorCreateInfo.physicalDevice = static_cast<VkPhysicalDevice>(physicalDevice);

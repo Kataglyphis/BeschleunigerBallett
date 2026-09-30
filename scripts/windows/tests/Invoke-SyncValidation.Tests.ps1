@@ -1,14 +1,6 @@
 #requires -Version 7.0
 
-# Pester coverage for scripts/windows/Invoke-SyncValidation.ps1's pass/fail
-# contract. Invokes the actual script as a child process against a canned
-# log fixture via -LogFixturePath, so it exercises the real hazard-scanning
-# and exit-code logic without needing a GPU or a built commitTestSuite.exe -
-# the GoldenRender/Integration suites the script normally drives only run on
-# a host with a GPU (see docs/gpu-golden-testing.md).
-#
-# NOTE: written for Pester 3.4.0 (the version installed here) - dash-less
-# assertion syntax (`Should Be 0`, never Pester 5's `Should -Be 0`).
+# -LogFixturePath exercises the real exit-code logic without a GPU. Pester 3.4.0: `Should Be`, not `Should -Be`.
 
 Describe 'Invoke-SyncValidation' {
 

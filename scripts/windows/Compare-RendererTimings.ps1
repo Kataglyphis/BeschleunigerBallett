@@ -1,54 +1,21 @@
 #requires -Version 7.0
-# Runs both renderers headlessly and prints their per-pass GPU timings side by
-# side - the first piece of the cross-renderer comparison harness.
-#
-# Sources:
-#   C++/Vulkan: KATAGLYPHIS_GPU_TIMING_JSON export, produced by driving the
-#               golden harness for a deterministic frame count.
-#   Rust/WebGPU: the dump_gpu_timings example.
-#
-# Both write the same schema, so one parser reads both. Pass names only
-# partially overlap (the pipelines genuinely differ - the C++ engine has
-# Clouds/Sky, the Rust renderer has Ssao/Bloom/Histogram); the table aligns
-# by name and leaves the other column empty rather than pretending the
-# renderers are structurally identical.
-#
-# SAME scene, SAME resolution: the C++ golden harness renders the bundled
-# Dinosaurs OBJ at 1200x768; this script converts that OBJ to glTF (the Rust
-# renderer's format) via the obj2gltf example and times the Rust renderer on
-# the converted scene at the same 1200x768. The conversion is data-exact -
-# 166563 positions / 894174 indices on both sides, matching the C++ loader's
-# own log line. Remaining honest differences: the pipelines are structurally
-# different (Clouds/Sky vs Ssao/Bloom/Histogram), the camera framing differs,
-# and the conversion currently carries no textures - so treat per-pass numbers
-# as comparable workloads, not as a shader-for-shader benchmark.
+# Per-pass GPU timings of both renderers on the same scene: comparable workloads, not a shader-for-shader benchmark.
 
 [CmdletBinding()]
 param(
 
     [string]$RepoRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-timings'),
-    # Source files the expected-pass lists are derived from (see
-    # Get-ExpectedPassNames below). Overridable so tests can point these at
-    # fixture files instead of the real sources.
+    # Overridable so tests can point the expected-pass sources at fixtures.
     [string]$CppPassSourcePath = (Join-Path $RepoRoot 'Src\GraphicsEngineVulkan\renderer\GUIRendererSharedVars.ixx'),
     [string]$RustPassSourcePath = (Join-Path $RepoRoot 'third_party\OxidANT\crates\webgpu_renderer\src\render\gpu_timing.rs'),
-    # Expected C++/Vulkan pass names. Defaults to every name in
-    # GPU_TIMED_PASS_EXPORT_NAMES (all required - the C++ engine always
-    # records all five). Left unset so the derived default (below) applies;
-    # pass explicitly to pin a subset.
+    # Unset derives every GPU_TIMED_PASS_EXPORT_NAMES entry; pass explicitly to pin a subset.
     [string[]]$CppExpectedPasses,
-    # Expected Rust/WebGPU pass names. Defaults to every TimedPass except
-    # OcclusionCull, which dump_gpu_timings only emits when occlusion culling
-    # is enabled - see the -Optional argument on the Rust Assert-PassesExist
-    # call below. Left unset so the derived default (below) applies.
+    # Unset derives every TimedPass but OcclusionCull, emitted only with occlusion culling on.
     [string[]]$RustExpectedPasses,
-    # When set, skips GPU-dependent steps and checks only JSON schema / pass
-    # names from previously-produced files (useful in CI with no GPU).
+    # Checks previously produced JSON only, for CI without a GPU.
     [switch]$ValidationOnly,
-    # Prints the derived expected-pass lists as JSON and exits without
-    # running either renderer. Exists so tests can exercise
-    # Get-ExpectedPassNames without a GPU or build products.
+    # Prints the derived lists and exits, so tests need no GPU or build products.
     [switch]$PrintExpectedPasses
 )
 
@@ -56,10 +23,7 @@ $ErrorActionPreference = 'Stop'
 $exitCode = 0
 
 function Get-ExpectedPassNames {
-    # Parses the pass-name list out of the actual source of truth rather than
-    # relying on a hand-maintained mirror, so the two can no longer drift
-    # silently (that already happened once: this script's own $RustExpectedPasses
-    # named a 'Post' pass the Rust renderer has never had).
+    # Parsed from the sources, never mirrored by hand, so the list cannot drift.
     param(
         [Parameter(Mandatory)] [ValidateSet('Cpp', 'Rust')] [string]$Engine,
         [Parameter(Mandatory)] [string]$Path
@@ -72,10 +36,7 @@ function Get-ExpectedPassNames {
 
     $names = switch ($Engine) {
         'Cpp' {
-            # GUIRendererSharedVars.ixx: either the legacy
-            # `GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = { "Name", ... };`
-            # or the std::array form
-            # `GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({ "Name", ... });`.
+            # Accepts both the C array and the std::to_array<const char *>({ ... }) form.
             $m = [regex]::Match($content,
               'GPU_TIMED_PASS_EXPORT_NAMES\s*(?:\[[A-Za-z_]+\])?\s*=\s*(?:std::to_array<[^>]*>\s*)?\(?\{([^}]*)\}\)?')
             if (-not $m.Success) {
@@ -95,8 +56,7 @@ function Get-ExpectedPassNames {
 
     $names = @($names)
     if ($names.Count -eq 0) {
-        # A silently-empty expected list turns the whole gate off - that is
-        # the exact failure mode this function exists to prevent.
+        # An empty list would silently turn the whole gate off.
         throw "Get-ExpectedPassNames: parsed zero pass names from $Path - the expected-pass gate would silently disable itself."
     }
 
@@ -157,9 +117,7 @@ function Assert-PassesExist {
     }
 }
 
-# ---------------------------------------------------------------------------
 # Phase 1: C++/Vulkan
-# ---------------------------------------------------------------------------
 $suite = Join-Path $RepoRoot 'build-clangcl-debug\commitTestSuite.exe'
 if (-not (Test-Path $suite)) {
     if ($ValidationOnly) {
@@ -193,9 +151,7 @@ if (Test-Path $cppJson) {
     $exitCode = 1
 }
 
-# ---------------------------------------------------------------------------
 # Phase 2: Rust/WebGPU
-# ---------------------------------------------------------------------------
 $dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
 $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
 
@@ -230,9 +186,7 @@ if (Test-Path $rustJson) {
     $exitCode = 1
 }
 
-# ---------------------------------------------------------------------------
-# Phase 3: Side-by-side table
-# ---------------------------------------------------------------------------
+# Phase 3: side-by-side table
 if ((Test-Path $cppJson) -and (Test-Path $rustJson)) {
     $cpp = Get-Content $cppJson -Raw | ConvertFrom-Json
     $rust = Get-Content $rustJson -Raw | ConvertFrom-Json

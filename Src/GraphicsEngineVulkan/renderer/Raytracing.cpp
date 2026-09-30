@@ -67,8 +67,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     miss_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
       static_cast<VkDevice>(logical_device), reinterpret_cast<VkBufferDeviceAddressInfo *>(&bufferDeviceAI));
     miss_region.stride = handle_size_aligned;
-    // Two miss records live in this region: index 0 (primary miss) and index 1
-    // (shadow miss, see raytrace.rchit.slang's shadow TraceRay).
+    // Two miss records: 0 primary, 1 shadow (raytrace.rchit.slang's shadow TraceRay).
     miss_region.size = 2 * handle_size_aligned;
 
     bufferDeviceAI.buffer = hitShaderBindingTableBuffer.getBuffer();
@@ -86,10 +85,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
-    // eUndefined: the rgen shader writes every pixel of renderImage, so its
-    // previous contents (whether the raster pass ran this frame or was
-    // skipped because RT owns the frame) are discarded, not read. eUndefined
-    // is the only oldLayout valid in both cases.
+    // eUndefined: rgen overwrites every pixel, whether or not the raster pass ran this frame.
     const vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
       renderImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
 
@@ -127,9 +123,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
 {
-    // Idempotent: safe to call again after an explicit cleanUp (the destructor
-    // is only a safety net for the forgotten path). Also covers the case where
-    // init() was never called (no hardware raytracing support).
+    // Idempotent, and a no-op when init() never ran (no hardware ray tracing).
     if (!device) { return; }
 
     shaderBindingTableBuffer.cleanUp();
@@ -155,8 +149,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
-    // Slang-emitted SPIR-V: compiled by Build-SlangShaders.ps1 at build time.
-    // Run from the repo root (per AGENTS.md).
+    // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/raytracing/";
 
     std::string const raygen_spv = "raytrace.rgen.rgen_main.spv";
@@ -186,9 +179,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     shader_groups.push_back(buildGeneralShaderGroup(eRaygen));
     shader_groups.push_back(buildGeneralShaderGroup(eMiss));
     shader_groups.push_back(buildGeneralShaderGroup(eMiss2));
-    // Any-hit joins the existing triangles-hit group rather than adding a
-    // group: the SBT's hit region stays one record (see createSBT/recordCommands,
-    // which size hit_region for a single handle).
+    // Any-hit joins the triangles-hit group, keeping the SBT hit region at one record.
     shader_groups.push_back(buildTrianglesHitGroup(eClosestHit, eAnyHit));
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { pc_ranges };
@@ -256,11 +247,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
     const vk::MemoryAllocateFlags memoryAllocateFlags = vk::MemoryAllocateFlagBits::eDeviceAddress;
 
-    // The blob returned by getRayTracingShaderGroupHandlesKHR is packed at
-    // handle_size; the SBT device records below must each start at a
-    // handle_size_aligned offset. These strides differ whenever the device's
-    // shaderGroupHandleAlignment is larger than shaderGroupHandleSize, so the
-    // two are kept as distinct constants rather than collapsed into one.
+    // Handles arrive packed at handle_size but records start at handle_size_aligned; the two can differ.
     raygenShaderBindingTableBuffer.create(
       device, handle_size_aligned, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
@@ -294,11 +281,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recreateSBT()
 {
-    // Shader group handles are only valid for the pipeline that produced
-    // them, so the SBT buffers must be released before createSBT() re-reads
-    // them from the pipeline recreated by shaderHotReload. VulkanBuffer::create
-    // does not release a prior allocation, so skipping these cleanups would
-    // leak three buffers on every hot reload.
+    // Handles belong to the old pipeline, and VulkanBuffer::create does not free a prior allocation.
     raygenShaderBindingTableBuffer.cleanUp();
     missShaderBindingTableBuffer.cleanUp();
     hitShaderBindingTableBuffer.cleanUp();

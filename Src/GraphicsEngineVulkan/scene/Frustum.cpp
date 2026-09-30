@@ -9,11 +9,7 @@ module kataglyphis.vulkan.frustum;
 namespace Kataglyphis {
 
 namespace {
-/// Normalising is not required for a sign test, but it is required for the
-/// distances to mean anything and it keeps the epsilon in `isVisible`
-/// scale-independent. A degenerate row (zero-length normal) is left alone
-/// rather than producing NaN - a NaN plane would make every comparison false
-/// and cull the entire scene.
+/// Keeps isVisible's epsilon scale-independent; a zero-length normal is left as is, since NaN would cull everything.
 glm::vec4 normalizePlane(const glm::vec4 &plane)
 {
     const float length = glm::length(glm::vec3(plane));
@@ -24,9 +20,7 @@ glm::vec4 normalizePlane(const glm::vec4 &plane)
 
 FrustumPlanes extractFrustumPlanes(const glm::mat4 &m)
 {
-    // Gribb-Hartmann: each plane is a sum or difference of the w row and one
-    // other row of the view-projection matrix. GLM is column-major, so m[c][r]
-    // is column c, row r - the rows we need are m[0..3][k].
+    // Gribb-Hartmann; GLM is column-major, so row k is m[0..3][k].
     const glm::vec4 row0{ m[0][0], m[1][0], m[2][0], m[3][0] };
     const glm::vec4 row1{ m[0][1], m[1][1], m[2][1], m[3][1] };
     const glm::vec4 row2{ m[0][2], m[1][2], m[2][2], m[3][2] };
@@ -37,25 +31,14 @@ FrustumPlanes extractFrustumPlanes(const glm::mat4 &m)
     planes[1] = normalizePlane(row3 - row0);// right
     planes[2] = normalizePlane(row3 + row1);// bottom
     planes[3] = normalizePlane(row3 - row1);// top
-    // Near uses row2 alone, NOT the OpenGL row3 + row2: this engine builds
-    // projections with GLM_FORCE_DEPTH_ZERO_TO_ONE, so the near condition is
-    // clip.z >= 0 rather than clip.z >= -clip.w.
-    //
-    // Worked through for near=0.1, far=100: row2 alone puts the plane at view
-    // z = -0.1 (exactly the near plane); row3 + row2 puts it at -0.05. The
-    // OpenGL form is therefore too PERMISSIVE here, not wrong-sided - it
-    // treats the sliver between the camera and the near plane as visible and
-    // costs a few extra draws. It does not admit geometry behind the viewer,
-    // and the unit tests cannot tell the two apart. Use the accurate one
-    // anyway; the point of a culling plane is to mean what it says.
+    // Near is row2 alone, not OpenGL's row3 + row2: GLM_FORCE_DEPTH_ZERO_TO_ONE makes it clip.z >= 0.
     planes[4] = normalizePlane(row2);// near
     planes[5] = normalizePlane(row3 - row2);// far
     return planes;
 }
 
 namespace {
-/// Shared body of the visibility tests. `skipPlane` lets the shadow-caster
-/// variant drop the near plane without duplicating the p-vertex logic.
+/// `skipPlane` lets the shadow-caster variant drop the near plane.
 bool visibleAgainstPlanes(const FrustumPlanes &planes, const AABB &box, int skipPlane)
 {
     if (!box.isValid()) { return true; }
@@ -96,11 +79,7 @@ AABB transformAABB(const glm::mat4 &model, const AABB &box)
 {
     if (!box.isValid()) { return box; }
 
-    // Arvo's center/extent form: a third of the eight-corner walk's
-    // arithmetic for a provably identical result. Requires `model` to be
-    // AFFINE (bottom row [0 0 0 1]) - every caller supplies a model matrix
-    // (Model/Mesh), never a projection, which would need the per-corner
-    // homogeneous divide the eight-corner walk performed implicitly.
+    // Arvo's center/extent form; valid only for an affine `model`, never a projection.
     const glm::vec3 center = 0.5F * (box.min + box.max);
     const glm::vec3 extents = 0.5F * (box.max - box.min);
 

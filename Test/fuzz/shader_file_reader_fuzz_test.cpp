@@ -1,30 +1,6 @@
-// Fuzzes the file reader every shader load goes through.
-//
-// ShaderHelper builds a path and calls
-// Kataglyphis::Shared::readBinaryFile(); the bytes become a VkShaderModule
-// with no further validation. Two things therefore matter, and only one of
-// them is about crashing:
-//
-//   - a hostile or malformed PATH must not crash or hang;
-//   - the CONTENT must come back byte-exact. SPIR-V is binary: it contains
-//     embedded NULs and arbitrary byte values, so a reader that opens in text
-//     mode, stops at a NUL, or rewrites CRLF would silently hand a truncated
-//     or mangled module to the driver. That corrupts shaders without ever
-//     raising an error, which is the failure this repo has already paid for
-//     once via stale SPIR-V.
-//
-// The round-trip property is the point. A "does not crash" fuzz test over a
-// reader that quietly truncates would pass forever.
+// Shader bytes reach VkShaderModule unvalidated, so the round trip must be byte-exact, not merely crash-free.
 
-// These two abseil headers MUST come before fuzztest.h. FuzzTest at main
-// friend-declares absl::random_internal::{DistributionCaller, MockHelpers}
-// in fuzzing_bit_gen.h without including them, and abseil LTS 20260526 no
-// longer provides them transitively through bit_gen_ref.h. The fuzztest_*
-// library targets get the same fix as a force-include flag
-// (third_party/CMakeLists.txt); OUR targets cannot, because a force-include
-// flag flows into the synthesized C++20 module BMI compiles of imported
-// engine modules, which have no abseil include path. An ordinary include in
-// the source is invisible to module synthesis.
+// Must precede fuzztest.h, which friend-declares them unincluded; a force-include would break module BMI synthesis.
 #include "absl/random/internal/distribution_caller.h"// IWYU pragma: keep
 #include "absl/random/internal/mock_helpers.h"// IWYU pragma: keep
 
@@ -42,10 +18,7 @@ import kataglyphis.shared.util.file_reader;
 
 namespace {
 
-// Reading a path that may be malformed, absent, hostile or simply strange
-// must return empty rather than crash. readTextFile/readBinaryFile guard with
-// fileExists, so the interesting inputs are the ones that make path
-// construction itself misbehave.
+// The readers guard with fileExists, so the interesting inputs break path construction itself.
 void ReadingArbitraryPathsNeverCrashes(const std::string &path)
 {
     // Beyond this only the OS path limit is under test, not our logic.
@@ -72,10 +45,7 @@ FUZZ_TEST(ShaderFileReaderFuzz, ReadingArbitraryPathsNeverCrashes)
     std::string("con"),// reserved device name on Windows
     std::string(".") });
 
-// The property that actually protects shader loading: whatever bytes are on
-// disk come back identical. Embedded NULs, 0x1a (historic EOF), and CR/LF
-// pairs are all present in real SPIR-V and are exactly what a text-mode read
-// would damage.
+// Real SPIR-V holds NULs, 0x1a and CR/LF pairs, exactly what a text-mode read would damage.
 void ReadingAFileReturnsItsBytesExactly(const std::vector<uint8_t> &contents)
 {
     if (contents.size() > 1u << 16) { return; }
@@ -96,8 +66,7 @@ void ReadingAFileReturnsItsBytesExactly(const std::vector<uint8_t> &contents)
 
     const std::vector<char> read_back = Kataglyphis::Shared::readBinaryFile(path.string());
 
-    // Byte count first: a truncation at the first NUL shows up here, and the
-    // message is far clearer than a mismatch deep in the comparison.
+    // Size first: a NUL truncation reads far clearer here than deep in the comparison.
     ASSERT_EQ(read_back.size(), contents.size())
       << "readCharSequence returned " << read_back.size() << " of " << contents.size()
       << " bytes - a shader read this way would be silently truncated";

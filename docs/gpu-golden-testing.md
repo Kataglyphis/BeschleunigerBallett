@@ -139,7 +139,7 @@ engine has anything to load (see
 
 This is the single home for these instrument cautions;
 `docs/cpp-renderer-improvements.md` and `docs/path-tracing.md` link here.
-The suite's own comments document the expensive mistakes; heed them:
+The expensive mistakes, which the suite's one-line comments point back to:
 
 - **Captures are tonemapped**, and the **ImGui overlay is composited into
   them**. The opaque ImGui panel covers the LEFT ~70% of the 1200x768 test

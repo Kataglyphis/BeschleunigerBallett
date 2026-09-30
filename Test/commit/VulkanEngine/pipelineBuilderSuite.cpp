@@ -1,16 +1,4 @@
-// Direct unit coverage for vulkan_base/PipelineBuilder's buildState() /
-// linkGraphicsPipelineCreateInfo() split - the one builder AGENTS.md mandates
-// was, until now, the only one of ten graphics/pipeline helpers in this
-// engine with no CPU coverage, because build() fused pure assembly with the
-// vk::Device call. buildState() reproduces every field build() would have
-// set with no device anywhere; linkGraphicsPipelineCreateInfo() wires the
-// top-level create-info the same way build() did.
-//
-// Each *CallSite test below re-creates one of the six real call sites
-// (Rasterizer, DeferredRasterizer geometry + lighting, PostStage,
-// CascadedShadowMap, SkyBox) and pins the fields that distinguish it from
-// the defaults - the same "re-create every call site" shape
-// renderPassHelperSuite.cpp and pipelineLayoutHelperSuite.cpp use.
+// buildState() assembles everything build() sets without a device; each *CallSite test re-creates a real caller.
 
 #include <gtest/gtest.h>
 
@@ -113,8 +101,7 @@ TEST(PipelineBuilderUnit, EmptyVertexInputCarriesNullPointers)
 
 TEST(PipelineBuilderUnit, MatchesForwardRasterizerCallSite)
 {
-    // Rasterizer.cpp: alpha blending on, per-draw dynamic cull mode for
-    // doubleSided glTF meshes, everything else default.
+    // Rasterizer.cpp: dynamic cull mode serves doubleSided glTF meshes.
     const GraphicsPipelineState state =
       PipelineBuilder().setAlphaBlending(true).setDynamicCullMode(true).buildState();
 
@@ -127,8 +114,7 @@ TEST(PipelineBuilderUnit, MatchesForwardRasterizerCallSite)
 
 TEST(PipelineBuilderUnit, MatchesDeferredGeometryCallSite)
 {
-    // DeferredRasterizer.cpp geometry pipeline: three colour attachments
-    // (albedo/normal/... G-buffer) plus per-draw dynamic cull mode.
+    // DeferredRasterizer.cpp geometry pipeline: three G-buffer attachments.
     const GraphicsPipelineState state =
       PipelineBuilder().setColorAttachmentCount(3).setDynamicCullMode(true).buildState();
 
@@ -140,8 +126,7 @@ TEST(PipelineBuilderUnit, MatchesDeferredGeometryCallSite)
 
 TEST(PipelineBuilderUnit, MatchesDeferredLightingCallSite)
 {
-    // DeferredRasterizer.cpp lighting pipeline: empty vertex-less fullscreen
-    // triangle, no culling, depth test/write both off.
+    // DeferredRasterizer.cpp lighting pipeline: a vertex-less fullscreen triangle.
     const GraphicsPipelineState state = PipelineBuilder()
                                            .setVertexInput({}, {})
                                            .setCullMode(vk::CullModeFlagBits::eNone)
@@ -157,8 +142,7 @@ TEST(PipelineBuilderUnit, MatchesDeferredLightingCallSite)
 
 TEST(PipelineBuilderUnit, MatchesPostStageCallSite)
 {
-    // PostStage.cpp: no culling (fullscreen triangle), alpha blending on
-    // (tonemapped result composited over the swapchain), eLessOrEqual depth.
+    // PostStage.cpp: blending composites the tonemapped result over the swapchain.
     const GraphicsPipelineState state = PipelineBuilder()
                                            .setCullMode(vk::CullModeFlagBits::eNone)
                                            .setAlphaBlending(true)
@@ -172,9 +156,7 @@ TEST(PipelineBuilderUnit, MatchesPostStageCallSite)
 
 TEST(PipelineBuilderUnit, MatchesCascadedShadowMapCallSite)
 {
-    // CascadedShadowMap.cpp: culling MUST be off (see PipelineBuilder.cpp's
-    // comment on the projection Y-flip reversing winding), depth clamp
-    // follows the device feature flag, no colour blend state at all.
+    // CascadedShadowMap.cpp: culling must be off, since the cascade projections lack the Y flip.
     const GraphicsPipelineState clamp_on = PipelineBuilder()
                                              .setCullMode(vk::CullModeFlagBits::eNone)
                                              .setDepthClamp(true)
@@ -198,8 +180,7 @@ TEST(PipelineBuilderUnit, MatchesCascadedShadowMapCallSite)
 
 TEST(PipelineBuilderUnit, MatchesSkyBoxCallSite)
 {
-    // SkyBox.cpp: renders behind everything at the far plane, so depth test
-    // and write are both off with eAlways, and no culling on the cube mesh.
+    // SkyBox.cpp: drawn behind everything, so no depth test or write.
     const GraphicsPipelineState state = PipelineBuilder()
                                            .setCullMode(vk::CullModeFlagBits::eNone)
                                            .setDepthTest(false)

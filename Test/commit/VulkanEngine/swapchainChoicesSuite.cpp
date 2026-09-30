@@ -1,6 +1,3 @@
-// Pins the pure swapchain-selection logic extracted out of VulkanSwapChain so
-// it can run without a device/surface at all.
-
 #include <gtest/gtest.h>
 
 #include "vulkan_base/SwapchainChoices.hpp"

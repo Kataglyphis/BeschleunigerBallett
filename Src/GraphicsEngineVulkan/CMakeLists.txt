@@ -38,16 +38,12 @@ configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE
 set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
 list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
-# =============================================================================
-# VulkanEngineCore - STATIC Library (compiled ONCE, reused by exe and tests)
-# STATIC library handles C++20 module propagation better than OBJECT
-# =============================================================================
+# VulkanEngineCore: STATIC, which propagates C++20 modules better than OBJECT
 add_library(VulkanEngineCore STATIC)
 
 kataglyphis_set_module_scan(VulkanEngineCore)
 
-# GLM must match Vulkan's clip conventions in EVERY translation unit doing
-# projection math (previously only App.cpp defined these).
+# PUBLIC: every translation unit doing projection math needs Vulkan's clip conventions.
 target_compile_definitions(VulkanEngineCore PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS)
 
 if(RUST_FEATURES)
@@ -127,15 +123,7 @@ if(RUST_FEATURES)
   target_link_libraries(VulkanEngineCore PUBLIC oxidant oxidant_bridge)
 endif()
 
-# Enable ASan in Debug mode on Linux (applied to the library so tests benefit).
-# Gated OFF when ThreadSanitizer is requested: -fsanitize=address and
-# -fsanitize=thread are mutually exclusive, and this otherwise-unconditional
-# ASan collided with the linux-debug-tsan-clang preset (TSan reaches the engine
-# via myproject_options), failing the whole TSan build with "invalid argument
-# '-fsanitize=address' not allowed with '-fsanitize=thread'" - which blocked
-# every pipeline step after it. The ASan and plain-debug lanes are unchanged;
-# only the TSan case drops this ASan so TSan stands alone. Frame pointers stay
-# on for all debug builds (both sanitizers want them).
+# Linux Debug ASan, except under TSan: -fsanitize=address and -fsanitize=thread are mutually exclusive.
 set(_kat_dbg_linux "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>")
 set(_kat_dbg_linux_asan
     "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>,$<NOT:$<BOOL:${myproject_ENABLE_SANITIZER_THREAD}>>>")
@@ -143,9 +131,7 @@ target_compile_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsaniti
                                                $<${_kat_dbg_linux}:-fno-omit-frame-pointer>)
 target_link_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>)
 
-# =============================================================================
-# GraphicsEngine - Main Executable (uses VulkanEngineCore static library)
-# =============================================================================
+# GraphicsEngine executable
 add_executable(${PROJECT_NAME})
 
 kataglyphis_set_module_scan(${PROJECT_NAME})
@@ -156,8 +142,7 @@ target_sources(
           # IMGUI object library - excluded from static analysis
           $<TARGET_OBJECTS:IMGUI>)
 
-# Link VulkanEngineCore - modules with PUBLIC FILE_SET CXX_MODULES should propagate to consumers
-# In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
+# Since CMake 3.28 the PUBLIC CXX_MODULES file set makes the modules importable here.
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
 
 

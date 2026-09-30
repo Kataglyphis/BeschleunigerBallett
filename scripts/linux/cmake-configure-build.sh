@@ -1,19 +1,12 @@
 #!/usr/bin/env bash
-# cmake-configure-build.sh - project wrapper around ANTfrastructure's generic
-# CMake build driver. Everything reusable (arg parsing, cargo/ccache/sccache
-# writability fallbacks, Vulkan env, parallelism, configure+build) lives in
-# ANTfrastructure's linux/scripts/lib/cmake-build.sh; only this project's defaults
-# and its Slang pre-build step live here.
+# cmake-configure-build.sh - this project's defaults and Slang pre-build over ANTfrastructure's lib/cmake-build.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# lib/common.sh sources lib/antfrastructure.sh, so antfrastructure_source is already
-# defined. It resolves against ANTFRASTRUCTURE_DIR - which the hand-rolled
-# "${SCRIPT_DIR}/../../third_party/ANTfrastructure/..." literal this replaces could
-# not honour - and fails naming the probed path AND the fix.
+# Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/cmake-build.sh
 
 CMAKE_BUILD_DEFAULT_PRESET="linux-debug-clang"
@@ -23,15 +16,7 @@ CMAKE_BUILD_DEFAULT_MB_PER_JOB="4000"  # 4GB RAM per parallel job
 CMAKE_BUILD_PREBUILD_LABEL="Slang shader precompilation"
 CMAKE_BUILD_USAGE_INTRO="Configures and builds BeschleunigerBallett inside the Linux container image."
 
-# Compile Slang shaders to SPIR-V (C++) and WGSL (Rust). Runs for ALL builds
-# (not just Release) because the C++ code loads Slang-emitted SPIR-V at
-# runtime via File I/O, not embedded — the .spv files must exist on disk.
-# See docs/shader-sharing.md.
-#
-# A failure here is fatal (cmake-build.sh default). This call used to end in
-# `|| warn "Slang shader precompilation failed"`, which hid a real failure and
-# left CI with a green build and no SPIR-V at all. Use
-# --allow-prebuild-failure if a build genuinely has to continue without shaders.
+# Every config needs the .spv on disk (loaded at runtime), so a failure is fatal; see docs/shader-sharing.md.
 cmake_build_prebuild_hook() {
   bash "${SCRIPT_DIR}/compile-slang-shaders.sh"
 }

@@ -8,10 +8,7 @@ endif()
 
 include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 
-# Only the test sources - NOT the VulkanEngine sources
-# CONFIGURE_DEPENDS: build trees now persist between container builds
-# (see docs/container-build-caching.md), so without it a NEW test file is
-# silently never compiled - CMake would not re-run the glob.
+# Build trees persist between container builds, so without CONFIGURE_DEPENDS a new test file never compiles.
 file(GLOB RENDERER_COMPILE_TEST_FILTER CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
@@ -30,8 +27,7 @@ kataglyphis_configure_common_test_target(${COMPILE_TEST_SUITE})
 target_sources(${COMPILE_TEST_SUITE} PRIVATE ${RENDERER_COMPILE_TEST_FILTER})
 kataglyphis_add_imgui_test_sources(${COMPILE_TEST_SUITE})
 
-# Link against VulkanEngineCore static library
-# This brings in all necessary libraries, includes, and module BMIs
+# VulkanEngineCore brings the libraries, includes and module BMIs.
 target_link_libraries(${COMPILE_TEST_SUITE} PRIVATE VulkanEngineCore gtest_main gtest)
 
 kataglyphis_enable_windows_vulkan_delay_load(${COMPILE_TEST_SUITE})

@@ -12,8 +12,7 @@ namespace Kataglyphis {
 
 enum class GpuSelectionMode : std::uint8_t { Auto, Dedicated, Integrated };
 
-// Device type strictly dominates: operator<=> compares typeRank first, so no
-// amount of capability can let a lower device type outrank a higher one.
+// typeRank compares first, so no capability lets a lower device type outrank a higher one.
 struct PhysicalDeviceScore {
     int typeRank;// 4 discrete, 3 integrated, 2 virtual, 1 cpu, 0 other
     uint32_t capability;// maxImageDimension2D, tie-break only
@@ -61,20 +60,13 @@ inline auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties,
     }
 }
 
-// The extension exposes two independent bits and a device may support
-// only computeDerivativeGroupLinear. Requesting the quads bit on such a
-// device makes vkCreateDevice fail with VK_ERROR_FEATURE_NOT_PRESENT -
-// the engine does not start at all, rather than degrading.
+// A device may support only the linear bit; requesting quads there fails vkCreateDevice outright.
 constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
 {
     return extensionPresent && quadsSupported == VK_TRUE;
 }
 
-// VUID-VkSamplerCreateInfo-anisotropyEnable-01071: maxAnisotropy must not
-// exceed the device's maxSamplerAnisotropy limit when anisotropy is enabled.
-// 16x is the ceiling we ask for rather than the device limit itself -
-// requesting the raw limit would silently change texture quality per GPU,
-// while diminishing returns above 16x make that not worth it.
+// Clamped per VUID-VkSamplerCreateInfo-anisotropyEnable-01071; a fixed 16x keeps texture quality equal across GPUs.
 constexpr float resolveMaxAnisotropy(bool anisotropyEnabled, float deviceLimit)
 {
     return anisotropyEnabled ? std::clamp(16.0F, 1.0F, deviceLimit) : 1.0F;

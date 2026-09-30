@@ -1,5 +1,4 @@
-# setting all project filters
-# ---- PROJECT FILTER  --- BEGIN
+# Project filters
 kataglyphis_append_prefixed_files(
   GUI_FILTER
   "${PROJECT_SRC_DIR}gui/"

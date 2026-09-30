@@ -1,6 +1,3 @@
-// Pins the pure physical-device ranking logic extracted out of VulkanDevice
-// so it can run without an actual Vulkan instance/device.
-
 #include <gtest/gtest.h>
 
 #include "vulkan_base/PhysicalDeviceChoices.hpp"

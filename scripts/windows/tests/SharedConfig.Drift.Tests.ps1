@@ -1,30 +1,6 @@
 #requires -Version 7.0
 
-# Guards this repo's copies of the shared tool configs against drift.
-#
-# THIS SUITE IS THE MIRROR, NOT THE GATE. The every-push gate is the Bash twin,
-# `sync-shared-config.sh --repo-root . --check`, which the hub's lint aggregator
-# runs as one of its six gates from .github/workflows/lint-gates.yml - always-on
-# and with no paths-ignore, so it sees every push including docs-only ones. This
-# file runs in windows-x64.yml's `pester-tests` job, which is opt-in per commit via
-# [build-win]; what it proves is that the PowerShell sync half
-# (Sync-SharedConfig.ps1) agrees with the Bash half about the same seven assets.
-# Do not read a green Windows lane as the drift check having run on this push,
-# and do not "fix" the opt-in by moving this suite: two runners grading the same
-# seven files on every push is a minute spent to learn nothing.
-#
-# .clang-format, .clang-tidy, gcovr.cfg and .pre-commit-config.yaml are owned by
-# ANTfrastructure (shared/config/). They are COPIED here rather than referenced
-# because clang-format, clang-tidy and pre-commit find their config by walking
-# UP from the file being processed - a config inside the submodule is never
-# found, and deleting the local copy would silently stop format-on-save in every
-# editor while CI kept passing. See shared/config/README.md upstream.
-#
-# So the copies stay and this makes drift impossible instead of unnoticed:
-# edit upstream, then re-run the sync script with -Write.
-#
-# NOTE: written for Pester 3.4.0 (what the Windows lane pins) - no BeforeAll
-# outside Describe, and the dash-less assertion syntax.
+# The PowerShell mirror of the lint-gates drift check, not the gate itself; see shared/config/README.md upstream. Pester 3.4.0.
 
 Describe 'Shared tool config' {
 
@@ -32,8 +8,7 @@ Describe 'Shared tool config' {
     $syncScript = Join-Path $repoRoot 'third_party\ANTfrastructure\shared\config\Sync-SharedConfig.ps1'
 
     It 'has the ANTfrastructure sync script available' {
-        # A missing script means the submodule is not checked out; without this
-        # the next test would "pass" by never running the check.
+        # Without this, a missing submodule makes the next test pass by never running.
         Test-Path $syncScript | Should Be $true
     }
 

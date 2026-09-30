@@ -1,37 +1,19 @@
 name: Windows x64 · build + test
 
-# The Windows x64 lane: a thin caller of ANTfrastructure's container-ci-windows.yml
-# since 2026-09-26 (the family's hub reusable lanes), like windows-arm64-cross.yml.
-# The container half is scripts/windows/Invoke-WindowsLane.ps1, which a local
-# container run executes too: Build-Windows.ps1 (clangcl-debug + clangcl-release),
-# the CPU-only suites, every fuzz target's seeds, and the renderer timing and pixel
-# comparisons. BuildIntegrity's Windows-list tests read their lists from that
-# script now, not from this file. The product lands in dist/windows-x64, with its
-# DLL closure, and uploads as one artifact.
-#
-# NO CONTAINER IMAGE IS NAMED HERE: the hub's prepare-windows-container-host
-# carries the tag from versions.env, which verify_ci_image_refs.py holds it to.
+# The container half is scripts/windows/Invoke-WindowsLane.ps1, which a local container run executes too.
 
 on:
   push:
     branches: [main, develop]
-    # Docs-only commits must not spend a 2-3h build, and - with the
-    # cancel-in-progress concurrency below - must not supersede an in-flight
-    # code run either. A backlog edit is not a reason to retest the engine.
+    # A docs-only commit must neither spend a build nor cancel an in-flight code run.
     paths-ignore:
       - '**.md'
       - 'docs/**'
   pull_request:
     branches: [main, develop]
-  # Same escape hatch as linux-x64.yml: lets a run be requested against the
-  # branch tip without inventing a commit. No `[build-win]` opt-in any more
-  # (owner decision 2026-09-24): every platform lane runs on every push and PR.
   workflow_dispatch:
 
-# Cancel superseded runs on develop and PRs so the tip's verdict arrives without
-# queueing behind stale runs - without this every push spawns a full parallel
-# 2-3h run and they serialise. main is exempt: its runs deploy/release and must
-# not be interrupted mid-flight.
+# main is exempt from cancellation: its runs deploy and release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -46,9 +28,7 @@ jobs:
     with:
       target-arch: amd64
       build-script: scripts/windows/Invoke-WindowsLane.ps1
-      # A self-hosted runner with a real adapter sets the repository/environment
-      # variable KATAGLYPHIS_CI_HAS_GPU to '1', which drops -ValidationOnly from the
-      # renderer comparisons; a hosted runner leaves it empty.
+      # A self-hosted GPU runner sets KATAGLYPHIS_CI_HAS_GPU=1, dropping -ValidationOnly from the renderer comparisons.
       container-env: |
         KATAGLYPHIS_CI_HAS_GPU=${{ vars.KATAGLYPHIS_CI_HAS_GPU }}
       artifact-name: BeschleunigerBallett-windows-x64
@@ -57,8 +37,7 @@ jobs:
       timeout-minutes: 240
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
-      # The signing certificate comes over WebDAV and signs the MSIX. Each value is
-      # masked and reaches the container through an --env-file, never an argument.
+      # Masked, and passed to the container through an --env-file, never an argument.
       CONTAINER_SECRET_ENV: |
         WEBDAV_HOSTNAME=${{ secrets.WEBDAV_HOSTNAME }}
         WEBDAV_USERNAME=${{ secrets.WEBDAV_USERNAME }}
@@ -66,28 +45,18 @@ jobs:
         REMOTE_BASE_PATH=${{ secrets.REMOTE_BASE_PATH }}
         MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}
 
-  # CPU-only, container-free: the PowerShell module Pester suites (this repo's
-  # scripts/windows/tests, written for Pester 3.4 syntax — pinned install, the
-  # runner's default Pester 5 cannot parse them). Cheap gate for the module
-  # moves to ANTfrastructure: every module must still resolve and behave.
   pester-tests:
     runs-on: windows-2025
     permissions:
       contents: read
     steps:
-      # `submodules: true` is top-level only (NOT recursive) - exactly what these
-      # suites need: they resolve their modules and shared config out of the
-      # ANTfrastructure submodule, so that one working tree must be present, and
-      # none of the nested ones are read.
+      # Top-level only: the suites read nothing from the nested submodules.
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
           submodules: true
 
-      # Pinned version, not the runner's default: these suites are written in
-      # Pester 3.4's dash-less assertion syntax (`Should Be 0`), which the
-      # Pester 5 on the runner cannot parse. The install/run/report mechanics
-      # are generic and live in ANTfrastructure.
+      # The suites use Pester 3.4's dash-less `Should Be`, which the runner's Pester 5 cannot parse.
       - name: Run Pester suites (pinned 3.4.0)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@develop
         with:

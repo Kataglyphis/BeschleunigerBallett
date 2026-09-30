@@ -1,10 +1,4 @@
-// assignTextureOffsets stamps texture_offset onto object_descriptions, which
-// holds one entry per MESH flattened across models (Scene::add_model). The
-// old create_object_description_buffer loop was bounded by getModelCount()
-// and indexed descriptions[modelIndex], silently conflating "one description
-// per mesh" with "one description per model" - a multi-mesh model followed by
-// a second model shifted every offset by one slot. These pin the fix on the
-// CPU, no device required.
+// object_descriptions holds one entry per mesh, not per model, flattened across models.
 
 #include <gtest/gtest.h>
 
@@ -20,8 +14,7 @@ using Kataglyphis::planFlattenedTextureSlots;
 
 TEST(ObjectDescriptionOffsets, EveryMeshOfAModelSharesThatModelsOffset)
 {
-    // model 0: 3 meshes, 5 textures. model 1: 1 mesh, 2 textures.
-    // descriptions are [m0.mesh0, m0.mesh1, m0.mesh2, m1.mesh0].
+    // Descriptions are [m0.mesh0, m0.mesh1, m0.mesh2, m1.mesh0].
     std::vector<ObjectDescription> descriptions(4);
     const std::vector<uint32_t> meshCountPerModel{ 3, 1 };
     const std::vector<uint32_t> textureCountPerModel{ 5, 2 };
@@ -72,9 +65,6 @@ TEST(ObjectDescriptionOffsets, MeshBaseOffsetsHandleEmptyAndSingleMeshModels)
 
 TEST(ObjectDescriptionOffsets, MeshBaseOffsetsAgreeWithAssignTextureOffsets)
 {
-    // For the same meshCountPerModel, the offset of model m equals the index
-    // of its first description in the flattened vector assignTextureOffsets
-    // stamps - the contract, asserted directly.
     const std::vector<uint32_t> meshCountPerModel{ 2, 1, 3 };
     const std::vector<uint32_t> textureCountPerModel{ 5, 2, 3 };
 
@@ -114,9 +104,7 @@ TEST(ObjectDescriptionOffsets, PlanVisitsEveryModelsTexturesInModelOrder)
 
 TEST(ObjectDescriptionOffsets, PlanAgreesWithAssignTextureOffsets)
 {
-    // Mirrors the invariant assignTextureOffsets relies on: the first slot
-    // belonging to model m in the flattened plan must sit at the same offset
-    // assignTextureOffsets stamps onto that model's meshes.
+    // assignTextureOffsets relies on each model's first planned slot matching its stamped offset.
     const std::vector<uint32_t> meshCountPerModel{ 1, 1, 1 };
     const std::vector<uint32_t> textureCountPerModel{ 5, 2, 3 };
 
@@ -169,8 +157,7 @@ TEST(ObjectDescriptionOffsets, NoTexturesProducesAnEmptyPlan)
 
 TEST(ObjectDescriptionOffsets, MoreMeshesThanDescriptionsDoesNotOverrun)
 {
-    // meshCountPerModel claims 5 meshes but only 2 descriptions exist - the
-    // path ASan would catch if the loop kept writing past the end.
+    // More meshes claimed than descriptions exist; ASan catches a write past the end.
     std::vector<ObjectDescription> descriptions(2);
     const std::vector<uint32_t> meshCountPerModel{ 5 };
     const std::vector<uint32_t> textureCountPerModel{ 3 };

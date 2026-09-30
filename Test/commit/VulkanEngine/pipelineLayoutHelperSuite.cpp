@@ -1,13 +1,3 @@
-// Direct unit coverage for common/PipelineLayoutHelper.hpp's
-// buildPipelineLayoutCreateInfo - the helper that replaced nine hand-written
-// vk::PipelineLayoutCreateInfo blocks across Clouds, Raytracing, SkyBox,
-// Rasterizer, PathTracing, PostStage, CascadedShadowMap and
-// DeferredRasterizer (geometry and lighting).
-//
-// SkyBox's original call site hard-coded setLayoutCount = 2 instead of
-// deriving it from the span it was handed - SetLayoutCountIsDerivedFromTheSpan
-// below is the regression test for exactly that bug.
-
 #include <gtest/gtest.h>
 
 #include <array>
@@ -19,11 +9,7 @@
 using Kataglyphis::buildPipelineLayoutCreateInfo;
 
 namespace {
-// vk::DescriptorSetLayout/vk::PushConstantRange's default constructors are
-// not constexpr in this vulkan-hpp version - the nullptr_t constructor is,
-// so it stands in for "no real handle" wherever a constant expression is
-// required below (the same stand-in framebufferHelperSuite.cpp's anonymous
-// namespace fixtures use).
+// Default handle constructors are not constexpr in this vulkan-hpp; the nullptr_t one is.
 constexpr std::array<vk::DescriptorSetLayout, 2> kTwoLayouts{ vk::DescriptorSetLayout(nullptr),
     vk::DescriptorSetLayout(nullptr) };
 constexpr std::array<vk::DescriptorSetLayout, 3> kThreeLayouts{ vk::DescriptorSetLayout(nullptr),

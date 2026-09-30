@@ -1,9 +1,3 @@
-// vertex::computeTangents, exercised directly with hand-built triangles - no
-// Vulkan device and no glTF/OBJ document needed. gltfParseSuite.cpp covers the
-// loader-integration half (authored TANGENT pass-through, generated tangents
-// on a real asset); this file pins the maths itself: UV-gradient direction,
-// unit length, orthogonality to the normal, and mirrored-UV handedness.
-
 #include <gtest/gtest.h>
 
 #include <cmath>
@@ -20,10 +14,7 @@ import kataglyphis.vulkan.vertex;
 
 namespace {
 
-// A unit quad in the XY plane (two triangles sharing the diagonal), UVs
-// running along +U/+V in step with position - the simplest chart with no
-// mirroring. `flipU` negates the U axis of one corner's UV to build the
-// mirrored-chart fixture the handedness test needs.
+// UVs follow position, so the chart is unmirrored unless flipU negates one corner's U.
 std::vector<Vertex> unitQuadVertices(bool flipU = false)
 {
     const glm::vec3 normal(0.0F, 0.0F, 1.0F);
@@ -42,10 +33,7 @@ const std::vector<unsigned int> kQuadIndices = { 0U, 1U, 2U, 0U, 2U, 3U };
 
 TEST(VertexUnit, UnitQuadTangentFollowsUvGradient)
 {
-    // UVs run along +U in lockstep with +X, so the generated tangent must
-    // point along +X (the quad's U direction), be unit length, sit
-    // perpendicular to the normal, and carry a right-handed (+1) sign - the
-    // quad's chart is not mirrored.
+    // U runs with +X on an unmirrored chart, so the tangent is +X with w = +1.
     std::vector<Vertex> vertices = unitQuadVertices();
     vertex::computeTangents(vertices, kQuadIndices);
 
@@ -61,10 +49,7 @@ TEST(VertexUnit, UnitQuadTangentFollowsUvGradient)
 
 TEST(VertexUnit, TangentIsUnitAndOrthogonalOnNonAxisAlignedFixtures)
 {
-    // Suzanne/cube-shaped fixtures are not part of this commit test tree, so
-    // the general "unit length + orthogonal to normal" invariant is pinned on
-    // synthetic corners whose normal is NOT axis-aligned, closing the gap an
-    // axis-aligned-only quad would leave.
+    // A non-axis-aligned normal closes the gap an axis-aligned quad leaves.
     const glm::vec3 normal = glm::normalize(glm::vec3(1.0F, 1.0F, 1.0F));
     std::vector<Vertex> vertices;
     vertices.emplace_back(glm::vec3(0.0F, 0.0F, 1.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
@@ -83,8 +68,7 @@ TEST(VertexUnit, TangentIsUnitAndOrthogonalOnNonAxisAlignedFixtures)
 
 TEST(VertexUnit, MirroredUvQuadProducesNegativeHandedness)
 {
-    // Same quad, but its UV chart is mirrored across U - the geometric
-    // bitangent no longer agrees with cross(N, T), so w must flip to -1.
+    // Mirrored across U, the bitangent disagrees with cross(N, T), so w flips to -1.
     std::vector<Vertex> mirrored = unitQuadVertices(/*flipU=*/true);
     vertex::computeTangents(mirrored, kQuadIndices);
 
@@ -93,9 +77,7 @@ TEST(VertexUnit, MirroredUvQuadProducesNegativeHandedness)
 
 TEST(VertexUnit, DegenerateUvFallsBackToAnAxisOrthogonalToTheNormalNotNan)
 {
-    // Every corner shares the exact same UV: the UV-gradient determinant is
-    // zero, so Gram-Schmidt has nothing to project. The fallback must still
-    // produce a finite, unit-length, normal-orthogonal tangent - never NaN.
+    // Identical UVs zero the gradient determinant; the fallback must still avoid NaN.
     const glm::vec3 normal(0.0F, 0.0F, 1.0F);
     std::vector<Vertex> vertices;
     vertices.emplace_back(glm::vec3(0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.5F, 0.5F));
@@ -114,15 +96,7 @@ TEST(VertexUnit, DegenerateUvFallsBackToAnAxisOrthogonalToTheNormalNotNan)
 
 TEST(VertexUnit, TangentBasisMapsAFlatSampleToTheGeometricNormal)
 {
-    // Regression fixture for the apply_normal_map() operand-order bug (see
-    // common/normal_map.slang): a flat normal-map texel (nTs == (0, 0, 1),
-    // "no perturbation") must map back to the geometric normal exactly. This
-    // pins *why* BuildIntegrity.NormalMappingIsAppliedByEveryShadingPath's
-    // text-match on "mul(nTs, float3x3(" is the correct operand order, by
-    // computing both candidate expressions directly (mirroring slang's
-    // row-built float3x3(t, b, n) semantics: mul(v, M) = v.x*t + v.y*b +
-    // v.z*n, mul(M, v) = (dot(t, v), dot(b, v), dot(n, v))) rather than
-    // trusting a glm::mat3 constructor to reproduce them.
+    // Proves normal_map.slang's mul(nTs, M) order maps a flat texel to n, computed by hand, not via glm::mat3.
     const glm::vec3 n(0.0F, 1.0F, 0.0F);
     const glm::vec3 t(1.0F, 0.0F, 0.0F);
     const float w = 1.0F;
@@ -140,21 +114,14 @@ TEST(VertexUnit, TangentBasisMapsAFlatSampleToTheGeometricNormal)
 
 TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)
 {
-    // Two disjoint quads in one vertex array, mirroring GltfLoader's
-    // per-primitive call shape (each primitive's corners are contiguous, but
-    // later primitives sit at growing offsets into the shared vertex array).
-    // Calling computeTangents with firstIndex pointing at the second quad
-    // must not touch the first quad's vertices at all - the invariant the
-    // range-scoped accumulator sizing in computeTangents can break if the
-    // corner offset is computed wrong.
+    // GltfLoader's per-primitive calls: a wrong corner offset in the range-scoped accumulators touches the first quad.
     const glm::vec4 sentinel(-1.0F, -2.0F, -3.0F, -4.0F);
     std::vector<Vertex> vertices = unitQuadVertices();
     for (Vertex &v : vertices) { v.tangent = sentinel; }
     for (Vertex &v : unitQuadVertices()) { vertices.push_back(v); }
 
     const std::vector<unsigned int> indices = {
-        // First quad (untouched): included in the array but not in the
-        // range passed to computeTangents.
+        // First quad: in the array but outside the range.
         0U, 1U, 2U, 0U, 2U, 3U,
         // Second quad, offset by 4 - the range computeTangents must act on.
         4U, 5U, 6U, 4U, 6U, 7U
@@ -183,12 +150,7 @@ TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)
 
 TEST(VertexUnit, SharedVertexTangentIsIndependentOfIncidenceCount)
 {
-    // A hexagonal fan: the centre vertex (index 0) is shared by all six
-    // triangles. computeTangents' finalize loop used to revisit and rewrite
-    // that vertex once per incident triangle; this pins that visiting it six
-    // times or once yields the exact same value, by comparing against the
-    // tangent/bitangent accumulation computeTangents itself performs,
-    // finalized here exactly once.
+    // The fan centre is shared by six triangles, and finalizing it once must equal finalizing it six times.
     const glm::vec3 normal(0.0F, 0.0F, 1.0F);
     std::vector<Vertex> vertices;
     vertices.emplace_back(glm::vec3(0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
@@ -244,10 +206,7 @@ TEST(VertexUnit, SharedVertexTangentIsIndependentOfIncidenceCount)
 
 TEST(VertexUnit, TangentParticipatesInEqualityAndHash)
 {
-    // Vertex::operator== and its std::hash specialization must both include
-    // tangent - two vertices identical except for tangent must compare
-    // unequal and (with high probability) hash differently, the same
-    // contract color already carries.
+    // operator== and std::hash must both include tangent, as they do color.
     const glm::vec3 pos(1.0F, 2.0F, 3.0F);
     const glm::vec3 normal(0.0F, 1.0F, 0.0F);
     const glm::vec4 color(1.0F);

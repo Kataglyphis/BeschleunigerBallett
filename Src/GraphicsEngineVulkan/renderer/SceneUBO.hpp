@@ -1,5 +1,4 @@
-// Host-side mirror of the scene UBO. Its layout is pinned against the
-// Slang redeclaration by BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv.
+// Host mirror of the scene UBO; BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv pins its layout.
 #pragma once
 #include "common/HostDeviceGlmAliases.hpp"
 #include "common/host_device_shared_vars.hpp"
@@ -21,13 +20,7 @@ struct SceneUBO
     float cascadedShadowIntensity;
     uint numCascades;
 
-    // Slang compiles ConstantBuffer<SceneUBO> as std140 (emitted type
-    // SceneUBO_std140), where a vec4 has base alignment 16, so cascadeSplits
-    // starts at byte 48 on the GPU. glm's plain (non-aligned) vec4 gives the
-    // host struct no such padding, so this member must be explicit here.
-    // See SceneUboLayoutUnit and
-    // `spirv-dis Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv`
-    // to re-derive these offsets.
+    // std140 aligns cascadeSplits to byte 48 on the GPU; glm's vec4 does not, so the pad is explicit.
     uint _pad_std140_0;
 
     // Cascaded shadow maps
@@ -36,13 +29,11 @@ struct SceneUBO
       "cascadeSplits is a single vec4 - a fourth-plus cascade would write past its end");
     mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
 
-    // Camera - packed by SceneUboMarshal.hpp's fillSceneUboCamera. Both .w
-    // components are 1.0F filler; no shader reads either past .xyz.
+    // Camera: both .w are filler (SceneUboMarshal.hpp).
     vec4 view_dir;
     vec4 cam_pos;
     
-    // Clouds - packed by SceneUboMarshal.hpp's fillSceneUboClouds, which documents
-    // what lands in each component.
+    // Clouds: see docs/clouds.md § UBO packing.
     vec4 cloudLightMarch;
     vec4 cloudMeshScale;
     vec4 cloudMeshOffset;

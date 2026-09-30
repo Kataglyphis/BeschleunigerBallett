@@ -1,7 +1,3 @@
-// CPU-only tests for GpuTimingSubsystem::GpuPassAverage, the rolling-window
-// mean that smooths per-pass GPU milliseconds for the GUI. It is a pure
-// struct with no device dependency, so it is testable without a GPU.
-
 #include <cstring>
 
 #include <gtest/gtest.h>
@@ -41,17 +37,12 @@ TEST(GpuTimingUnit, ResetClearsHistory)
     average.reset();
     EXPECT_EQ(average.count, 0U);
 
-    // A fresh sample after reset must not be blended with the pre-reset
-    // history - a struct that never evicts would report 10.0 forever even
-    // after reset() and this single sample.
+    // A struct that never evicts would still blend in the pre-reset history.
     const float mean = average.add(20.0F);
     EXPECT_FLOAT_EQ(mean, 20.0F);
 }
 
-// Covers the tables in GUIRendererSharedVars.ixx that
-// GPU_TIMED_PASS_COUNT/GpuTimedPass::Count/GpuTimings::pass_ms all derive
-// from - a zero-filled or mismatched table compiles fine but produces a
-// nullptr pass name or a 0.000 ms reading that silently means "no sample".
+// A zero-filled or mismatched pass table compiles fine but yields a null name or a silent 0.000 ms.
 TEST(GpuTimingTablesUnit, EveryPassHasBothADisplayAndAnExportName)
 {
     for (int i = 0; i < FrontendShared::GPU_TIMED_PASS_COUNT; i++) {
