@@ -593,10 +593,11 @@ render (~32 FPS ImGui overlay).
   tests", `windows-scripts.yml` until 2026-09-24), so a break there is caught
   without waiting on this repo's 2-3 h Windows lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows
-  container and run for real on the host GPU. Linux x64 CI's `clang-tests` job
-  runs them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
-  minus five tests that miss their thresholds there and one too slow for a runner;
-  arm64 runs only `Integration.VulkanEngine` (its llvmpipe SEGVs under ASan). Procedure, cwd requirement,
+  container and run for real on the host GPU. Linux CI's `clang-tests` job (x64
+  and arm64) runs them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
+  minus five tests that miss their thresholds there and one too slow for a runner.
+  `--virtual-display` also pins `LP_NATIVE_VECTOR_WIDTH=256`: at arm64's
+  native 128 bits Mesa 26.0 lavapipe's BVH build corrupts memory. Procedure, cwd requirement,
   the llvmpipe exclusions and the golden-writing cautions are in
   [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
   Known trap: over an RDP session the swapchain reports zero images and every
@@ -746,7 +747,7 @@ Reading pipeline status from a shell (`gh`):
 
 `linux-x64.yml` and `linux-arm64.yml` both call `reusable-linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a hardware GPU: the
-Linux x64 `clang-tests` job runs the golden suites on llvmpipe (a CPU Vulkan device,
+Linux `clang-tests` job (both arches) runs the golden suites on llvmpipe (a CPU Vulkan device,
 [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), and synchronization
 validation stays host-only.
 

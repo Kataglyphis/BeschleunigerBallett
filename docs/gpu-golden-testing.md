@@ -18,7 +18,7 @@ prove a render/device refactor is behaviour-preserving.
 
 Since 2026-09-29 the family Linux image ships lavapipe/llvmpipe, a CPU Vulkan
 device with ray tracing, and `Xvfb`. The Linux `clang-tests` job
-(`reusable-linux.yml`) therefore runs the GPU suites for real on x64:
+(`reusable-linux.yml`, x64 and arm64) therefore runs the GPU suites for real:
 `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
 `glfwInit()` finds an X server and nothing skips. Locally, the same:
 
@@ -37,13 +37,18 @@ What that does not cover:
 - **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a runner.** It
   passes on llvmpipe (266 s on 32 cores) but hit ctest's 1500 s timeout on a
   4-vCPU GitHub runner (run 36627716804), so CI excludes it as well.
-- **arm64 creates surfaces but draws nothing yet.** Since the republished
-  `:latest` (2026-09-30, hub CON41) the arm64 loader has its X11/Wayland surface
-  extensions and `Integration.VulkanEngine` passes there, but every test that
-  draws dies with an ASan SEGV inside llvmpipe's JIT code (run 36746313937), so
-  the arm64 job excludes `GoldenRender.*` and
-  `Integration.RenderModesSelectableInGui` (`BACKLOG.md`, "GPU suites on arm64
-  llvmpipe").
+- **`--virtual-display` sets `LP_NATIVE_VECTOR_WIDTH=256`** (unless already
+  set). Mesa 26.0's lavapipe builds acceleration structures with a radix sort
+  whose shaders are compiled for 8-lane subgroups
+  (`lvp_acceleration_structure.c`, `subgroup_size_log2 = 3`), but llvmpipe's
+  subgroup is `native vector width / 32` lanes: 8 on an AVX2 host, 4 on arm64's
+  128-bit NEON. At 4 lanes the scatter pass (`rs_scatter_smem`) writes through
+  wild per-lane addresses and every test that builds a BVH SEGVs inside
+  llvmpipe's JIT code (arm64 run 36746313937; on x64,
+  `LP_NATIVE_VECTOR_WIDTH=128` reproduces it). 256 is x64's default already and
+  on arm64 LLVM splits each vector into two NEON registers. Mesa main replaced
+  the radix sort with a merge sort (`ebcfbe60`, 2026-08-22), so the pin can go
+  once the image's Mesa carries that.
 - **Only that one job runs them.** They cost ~20 minutes of llvmpipe on a
   32-core host; the ASan, TSan and gcc jobs keep excluding them.
 - **The Windows container still has no Vulkan device**, so there they skip or

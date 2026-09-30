@@ -18,6 +18,8 @@ CTEST_RUN_USAGE_INTRO="Runs the BeschleunigerBallett test suite inside the Linux
 # Xvfb lets the GPU suites render on llvmpipe; xvfb-run hangs as PID 1, hence a child, not exec.
 if [[ "${1:-}" == "--virtual-display" ]]; then
   shift
+  # Mesa 26.0 lavapipe's BVH radix sort assumes 8-lane subgroups; 128-bit hosts (arm64) get 4 and it scribbles memory.
+  export LP_NATIVE_VECTOR_WIDTH="${LP_NATIVE_VECTOR_WIDTH:-256}"
   xvfb-run -a -s "-screen 0 1920x1080x24" bash "${BASH_SOURCE[0]}" "$@"
   exit 0
 fi
