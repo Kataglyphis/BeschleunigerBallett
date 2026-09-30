@@ -419,8 +419,8 @@ cleanUp+recreate pair at the four scene-changed sites.
 ## CI and release gaps
 
 - [b] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
-  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux `clang-tests`
-  job (arm64 too since 2026-09-30) runs `GoldenRender.*`/`Integration.*` on the image's llvmpipe under Xvfb
+  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux x64 `clang-tests`
+  job runs `GoldenRender.*`/`Integration.*` on the image's llvmpipe under Xvfb
   (hub CON19/CON37; `docs/gpu-golden-testing.md`). Measured that day on the
   published amd64 `:latest` (`e1bc35af`), linux-debug-clang, 32-core host:
   34 of 39 pass their assertions (1188 s of test time, the GUI input sweep alone
@@ -448,10 +448,27 @@ cleanUp+recreate pair at the four scene-changed sites.
   path-tracing ones taking 150-385 s each), so CI excludes it for time, not
   correctness.
 
-  arm64 runs the same suites with the same exclusions since 2026-09-30. Until
-  then its image's Vulkan loader exposed no X11/Wayland surface extension and
-  every GPU test aborted in surface creation (run 36615897603); the republished
-  `:latest` (hub CON41, arm64 child `4446422d`) carries WSI.
+- [b] **GPU suites on arm64 llvmpipe: every rendering test SEGVs in llvmpipe's
+  JIT code under ASan** (S, **blocked on an arm64 reproduction**). The
+  republished `:latest` (2026-09-30, hub CON41, arm64 child `4446422d`) gave the
+  arm64 loader its X11/Wayland surface extensions, so surfaces work now:
+  `Integration.VulkanEngine` (window, surface, llvmpipe device, renderer, no
+  draw) passes on the arm64 runner, where run 36615897603 aborted it in surface
+  creation. Everything that draws does not: run 36746313937 (8fd478b3, arm64
+  `clang-tests`, the linux-debug-clang build with ASan+UBSan) failed 32 of 33
+  GPU tests, each in 1-12 s with `AddressSanitizer: SEGV on unknown address` at
+  a pc in no module (llvmpipe's JIT-compiled shader code) on a thread
+  `libvulkan_lvp.so` created during `vkCreateDevice`; READ and WRITE faults
+  both, never a threshold. The same tests pass on x64 llvmpipe with the same
+  build. So the arm64 job runs `Integration.VulkanEngine` and excludes
+  `GoldenRender.*` and `Integration.RenderModesSelectableInGui`.
+
+  Suspect, not proven: AArch64 JIT code reaching an ASan interceptor that lives
+  in the PIE executable (static ASan runtime), terabytes from the shared-library
+  region the JIT memory sits in. Unblock by reproducing on arm64 (QEMU did not
+  reproduce with `vkcube` plus the ASan runtime preloaded) and trying
+  `-shared-libasan` or a non-ASan build on the arm64 runner; drop the arm64 arm
+  of the exclusion expression in `reusable-linux.yml` once they draw.
 
 - **Latent: a `VulkanEngineCore` global constructor faults in a headless
   process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some
