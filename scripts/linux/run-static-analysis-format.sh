@@ -76,10 +76,6 @@ run_format_and_tidy() {
 
   warn "Disabling for internal bug of clang-tidy..."
   CODE_QUALITY_CLANG_TIDY_ARGS=(-checks=-modernize-use-scoped-lock)
-  # LibTooling misses the image's clang++.cfg (it looks beside the /usr/bin symlink) and would pick distro GCC headers.
-  if [[ -n "${GCC_PREFIX:-}" && -d "${GCC_PREFIX}" ]]; then
-    CODE_QUALITY_CLANG_TIDY_ARGS+=("--extra-arg=--gcc-toolchain=${GCC_PREFIX}")
-  fi
   CODE_QUALITY_CLANG_TIDY_FIX="${CLANG_TIDY_FIX}"
 
   if [[ ${#clang_tidy_files[@]} -gt 0 ]]; then

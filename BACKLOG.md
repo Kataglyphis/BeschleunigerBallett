@@ -323,6 +323,16 @@ unconditional control capture before its output is believed.
 - **clang-tidy cannot see C++23 module TUs** (module BMIs reference the
   container layout). Either run tidy inside the container, or accept that
   coverage is limited to the non-module surface.
+- **clang-tidy 23.1.1 segfaults on `buildIntegritySuite.cpp`** (found
+  2026-09-30, unsized). `run-static-analysis-format.sh --only-format` in the
+  amd64 `:latest` stops at file 73 of 108 with exit 139: LLVM's dataflow
+  `transfer()` crashes inside `bugprone-unchecked-optional-access` on the
+  `reinit_span->first` access (`Test/commit/VulkanEngine/buildIntegritySuite.cpp`
+  ~line 3455). Identical with and without the retired `--gcc-toolchain`
+  extra-arg, so it is the tool, not the toolchain. The other 35 files tidy
+  normally when run one by one, and #73 does with that check disabled. Options:
+  a `NOLINT` on the line, disabling the check for `Test/`, or waiting for an LLVM
+  fix; no CI job runs clang-tidy, so nothing is red.
 
 ### Deep code-review pass (2026-07-23)
 

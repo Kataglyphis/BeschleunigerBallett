@@ -339,10 +339,10 @@ a silent `|| warn` once left CI green with no SPIR-V at all).
 **Nothing injects `--gcc-toolchain` any more** (retired 2026-09-29, hub CON37).
 In the family image a bare `clang`/`clang++` selects the image's GCC through the
 `<triple>-clang{,++}.cfg` beside the compiler, and the image's `LD_LIBRARY_PATH`
-carries that GCC's runtime. The one exception is clang-tidy: LibTooling looks
-for the `.cfg` beside the compile DB's `/usr/bin/clang++` symlink, finds none
-and picks the distro GCC, so `run-static-analysis-format.sh` hands it
-`--extra-arg=--gcc-toolchain=${GCC_PREFIX}` inside the image.
+carries that GCC's runtime. clang-tidy included: since the 2026-09-30
+`:latest` (hub CON39) a cfg pair sits beside the `/usr/bin` links as well, so
+LibTooling, which looks beside the compile DB's `/usr/bin/clang++`, selects
+`/opt/gcc-16.2.0` too and `run-static-analysis-format.sh` passes it nothing.
 
 ### Running the Linux build locally (Rancher Desktop)
 
