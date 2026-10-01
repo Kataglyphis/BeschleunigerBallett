@@ -94,7 +94,20 @@ system rather than textual `#include`:
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, used
   by both renderers' cloud/procedural passes.
 - `common/fullscreen.slang` — the shared fullscreen-triangle vertex trick
-  (`vid/2*4-1`), used by every fullscreen pass on both sides.
+  (`vid/2*4-1`), used by every fullscreen pass on both sides. Its `uv` is
+  the one per-target difference in the shared code: uv (0,0) is always the
+  target's top-left texel, but clip-space y = -1 is the top row in Vulkan and
+  the bottom row in WebGPU, so `fullscreen_vs` picks the V formula with
+  `__target_switch` (`spirv`: `v = (y + 1) / 2`; every other target:
+  `v = 1 - (y + 1) / 2`). The WGSL emit is byte-identical to the single
+  formula it replaced. `fullscreen_uv_to_ndc` is its exact inverse, switched
+  the same way, for the passes that reconstruct a position from the uv
+  (`deferred.slang` on SPIR-V, `ssao.slang` on WGSL);
+  `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping` fails on a
+  hand-written copy of either direction. Getting this wrong mirrors the
+  frame about its horizontal centre line, which a vertically symmetric test
+  scene cannot see — `GoldenRender.WorldUpIsScreenUp` (C++) and
+  `world_up_is_screen_up` (OxidANT `tests/headless.rs`) pin it.
 - `common/material_fetch.slang` — the `objectDescription` binding and the
   `fetch_object_description`/`fetch_material` lookups built on it. Shared
   only within the spirv target, across the raster (`rasterizer.slang`,

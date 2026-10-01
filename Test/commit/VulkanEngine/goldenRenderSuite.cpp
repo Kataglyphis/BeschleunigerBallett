@@ -821,6 +821,78 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
       << "Deferred diverges from forward per-pixel; the paths no longer shade alike.";
 }
 
+// The pixels shadows darken by more than 15 luma levels; acne alone stays under that.
+static std::vector<bool> shadow_mask(const std::vector<uint8_t> &unshadowed, const std::vector<uint8_t> &shadowed)
+{
+    std::vector<bool> mask(unshadowed.size() / 4U);
+    for (size_t pixel = 0; pixel < mask.size(); ++pixel) {
+        mask[pixel] = luminance_of(unshadowed, pixel) - luminance_of(shadowed, pixel) > 15.0;
+    }
+    return mask;
+}
+
+static double mask_iou(const std::vector<bool> &a, const std::vector<bool> &b, uint32_t w, uint32_t h, bool flip_b)
+{
+    size_t both = 0;
+    size_t either = 0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            const bool in_a = a[static_cast<size_t>(y) * w + x];
+            const bool in_b = b[static_cast<size_t>(flip_b ? h - 1U - y : y) * w + x];
+            both += (in_a && in_b) ? 1U : 0U;
+            either += (in_a || in_b) ? 1U : 0U;
+        }
+    }
+    return either > 0U ? static_cast<double>(both) / static_cast<double>(either) : 0.0;
+}
+
+// Deferred rebuilds world positions from the fullscreen uv; a mirrored rebuild puts its shadows in the other half.
+TEST(GoldenRender, DeferredShadowsLandWhereForwardShadowsLand)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const float default_intensity = scene_vars.cascaded_shadow_intensity;
+    const auto mask_for = [&](RasterizationMode mode) {
+        renderer_vars.rasterizationMode = mode;
+        scene_vars.cascaded_shadow_intensity = 0.0F;
+        harness.render_frames(SETTLE_FRAMES);
+        const std::vector<uint8_t> unshadowed = harness.capture_frame(width, height);
+        scene_vars.cascaded_shadow_intensity = default_intensity;
+        harness.render_frames(SETTLE_FRAMES);
+        const std::vector<uint8_t> shadowed = harness.capture_frame(width, height);
+        return shadow_mask(unshadowed, shadowed);
+    };
+    const std::vector<bool> forward = mask_for(RasterizationMode::Forward);
+    const std::vector<bool> deferred = mask_for(RasterizationMode::Deferred);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(forward.size(), static_cast<size_t>(width) * height);
+    ASSERT_EQ(deferred.size(), forward.size());
+
+    const double forward_coverage =
+      static_cast<double>(std::count(forward.begin(), forward.end(), true)) / static_cast<double>(forward.size());
+    const double iou = mask_iou(deferred, forward, width, height, false);
+    const double iou_flipped = mask_iou(deferred, forward, width, height, true);
+    GTEST_LOG_(INFO) << "forward shadow coverage " << forward_coverage << ", deferred-vs-forward IoU " << iou
+                     << ", against the flipped forward mask " << iou_flipped;
+
+    ASSERT_GT(forward_coverage, 0.01) << "forward casts no measurable shadow - the comparison would be vacuous";
+    ASSERT_LT(forward_coverage, 0.5) << "forward darkens most of the frame - not a shadow";
+    EXPECT_GT(iou, 0.5) << "deferred shadows do not land where forward's do";
+    EXPECT_GT(iou, iou_flipped + 0.25) << "deferred shadows match forward's vertical mirror at least as well";
+}
+
 // x = 5 frames the card at 78-92% of the width, inside card_crop; the mask cards' 2.5 straddles the panel edge.
 static glm::mat4 panel_free_card_placement()
 {
@@ -899,6 +971,98 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
     EXPECT_GT(*emissive_mean, *metallic_mean + MARGIN)
       << "The emissive card's own region is not meaningfully brighter than the non-emissive control; "
          "material.emission is likely not reaching this shading path.";
+}
+
+// Mean row of the pixels at x >= 68% where `after` moves any channel more than 12 levels from `before`.
+static std::optional<double> changed_centroid_row(
+  const std::vector<uint8_t> &before, const std::vector<uint8_t> &after, uint32_t w, uint32_t h, size_t &count)
+{
+    double row_sum = 0.0;
+    count = 0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = (w * 68U) / 100U; x < w; ++x) {
+            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+            for (size_t c = 0; c < 3U; ++c) {
+                if (std::abs(static_cast<int>(after[base + c]) - static_cast<int>(before[base + c])) > 12) {
+                    row_sum += static_cast<double>(y);
+                    ++count;
+                    break;
+                }
+            }
+        }
+    }
+    return count > 200U ? std::optional<double>(row_sum / static_cast<double>(count)) : std::nullopt;
+}
+
+// The camera aims at y = 4 where the red/green cards stand: y = 6.5 belongs in the upper half, 1.5 in the lower.
+TEST(GoldenRender, WorldUpIsScreenUp)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    struct Mode
+    {
+        const char *name;
+        bool raytracing;
+        RasterizationMode raster;
+    };
+    std::vector<Mode> modes{ { "forward", false, RasterizationMode::Forward },
+        { "deferred", false, RasterizationMode::Deferred } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back({ "raytracing", true, RasterizationMode::Forward });
+    }
+
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+    // A card's shadow on the ground would pull its changed-pixel centroid down.
+    harness.gui->getGuiSceneSharedVars().shadows_enabled = false;
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture_all = [&] {
+        std::vector<std::vector<uint8_t>> frames;
+        for (const Mode &mode : modes) {
+            auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+            renderer_vars.raytracing = mode.raytracing;
+            renderer_vars.pathTracing = false;
+            renderer_vars.rasterizationMode = mode.raster;
+            harness.render_frames(SETTLE_FRAMES);
+            frames.push_back(harness.capture_frame(width, height));
+        }
+        return frames;
+    };
+    const auto add_card = [&](float y) {
+        const glm::mat4 placement = glm::translate(glm::mat4(1.0F), glm::vec3(5.0F, y, 15.0F))
+                                    * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+        return harness.renderer->addModel(TWO_PRIMITIVE_MODEL, placement).has_value();
+    };
+
+    const auto base = capture_all();
+    ASSERT_TRUE(add_card(6.5F)) << "adding the high card failed";
+    const auto high = capture_all();
+    ASSERT_TRUE(add_card(1.5F)) << "adding the low card failed";
+    const auto low = capture_all();
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    const double half = static_cast<double>(height) / 2.0;
+    for (size_t i = 0; i < modes.size(); ++i) {
+        ASSERT_FALSE(base[i].empty() || high[i].empty() || low[i].empty()) << modes[i].name;
+        size_t high_count = 0;
+        size_t low_count = 0;
+        const auto high_row = changed_centroid_row(base[i], high[i], width, height, high_count);
+        const auto low_row = changed_centroid_row(high[i], low[i], width, height, low_count);
+        GTEST_LOG_(INFO) << modes[i].name << ": high card " << high_count << " px at mean row "
+                         << high_row.value_or(-1.0) << ", low card " << low_count << " px at mean row "
+                         << low_row.value_or(-1.0) << " of " << height;
+        ASSERT_TRUE(high_row.has_value() && low_row.has_value())
+          << modes[i].name << ": a card did not brighten the right of the frame - framing changed";
+        EXPECT_LT(*high_row, half) << modes[i].name << ": the card above the aim point is in the lower half";
+        EXPECT_GT(*low_row, half) << modes[i].name << ": the card below the aim point is in the upper half";
+    }
 }
 
 // An 8-bit UNORM G-buffer clips emission to 1.0; the debug scene, since the rig's sky diverges on its own.

@@ -857,6 +857,11 @@ got no test signal until the submodule was pushed separately.
   (gitignored, written on graceful shutdown only).
 - Slang emits `"main"` as the SPIR-V entry point name (not the Slang function
   name), so all `pName` values in pipeline creation use `"main"`.
+- Clip-space y is down in Vulkan and up in WebGPU, so a fullscreen pass takes
+  its uv from `fullscreen_vs` and inverts it with `fullscreen_uv_to_ndc`
+  (`common/fullscreen.slang`, switched per target), never by hand: a copy
+  mirrors one renderer, and a vertically symmetric scene hides it.
+  [`docs/shader-sharing.md`](docs/shader-sharing.md).
 - Model-loading architecture (the two loaders, the async parse/upload split,
   the multi-mesh flow): [`docs/model-loading.md`](docs/model-loading.md).
 - Per-unit verification pattern (container build -> direct test exe ->

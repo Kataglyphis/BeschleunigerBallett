@@ -453,23 +453,43 @@ cleanUp+recreate pair at the four scene-changed sites.
   right, `spirv-dis` puts `cascadeSplits` at 48 and the matrices at 64.
   Noticed on the way, not fixed: with shadows at intensity 1 the lit ground
   loses up to 8/255 in acne rings and the slab's grazing front face 4-7%
-  (the `calc_cascaded_shadow` bias), and the frame is vertically mirrored
-  (entry below).
+  (the `calc_cascaded_shadow` bias), and the frame was vertically mirrored
+  (entry below, fixed).
 
-- [b] **The C++ renderer presents the 3D scene upside down** (L, **owner
-  decision**: the fix reframes every golden). `fullscreen_vs`
-  (`common/fullscreen.slang`) sets `uv.y = 1 - (y + 1) / 2`, which is right for
-  WebGPU, whose NDC +y is up, and mirrored for Vulkan, whose NDC y = -1 is the
-  top row. `post.slang` composites the scene through it, so the swapchain shows
-  the HDR target flipped while ImGui, drawn afterwards, stays upright. Measured
-  2026-10-01 on the RTX 2080 and in the `55665161` tree alike: raising the mask
-  card from `MASK_Y=4` to `8` moves it from the frame's centre to its bottom,
-  and the shadow rig shows its near ground at the top and the skybox below.
-  SSAO's `view_pos_at` mirrors V on its own (`1.0 - uv.y * 2.0`), and the
-  "vertical mirror in the deferred lighting pass" entry is likely the same
-  convention, so a fix must give Vulkan its own V, revisit every shader that
-  reconstructs a position from that UV, keep the WGSL output as it is, and
-  re-measure every crop-based golden (they assume today's framing).
+- [x] **The C++ renderer presents the 3D scene upside down** (L, fixed
+  2026-10-01, owner-approved). Every C++ producer writes its target upright
+  (`projection[1][1] *= -1`, and the raygen, path-tracing and clouds kernels
+  invert that same projection from texel row 0 = NDC y -1); only the
+  composite flipped it. `fullscreen_vs` computed `v = 1 - (y + 1) / 2`, which
+  is WebGPU's convention (clip +y up) and Vulkan's mirror image, and
+  `post.slang` sampled the HDR target through it; the skybox, drawn straight
+  into the swapchain, stayed upright behind the flipped scene, and so did
+  ImGui. The deferred lighting pass's own copy of that vertex shader was the
+  second instance: its `uv * 2 - 1` reconstructed every world position about
+  the horizontal centre line (the 2026-08-02 entries below). Fix:
+  `common/fullscreen.slang` picks V with `__target_switch` (`spirv`:
+  `(y + 1) / 2`) and gains the inverse `fullscreen_uv_to_ndc`; deferred and
+  SSAO call it; the WGSL emit of every fullscreen pass is byte-identical, and
+  `ssao.wgsl` only gains the helper (OxidANT). Pinned by
+  `GoldenRender.WorldUpIsScreenUp` (forward, deferred, ray tracing: a card
+  at y 6.5 lands at mean row 175 of 768 on the RTX 2080, one at 1.5 at row
+  584; HEAD's shaders put them at 592 and 183),
+  `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand` (IoU 0.98, 0.43
+  against the flipped mask; 0.27 with only the deferred inverse mirrored),
+  `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping`, and OxidANT's
+  `world_up_is_screen_up`. No existing golden needed a new crop or
+  threshold: all 40 pass on the 2080 and on llvmpipe with the frame upright
+  (`docs/shader-sharing.md`, `fullscreen.slang`).
+
+- **Disabling shadows leaves the cascade shadow map in `UNDEFINED` while the
+  raster pass still samples it** (unsized, found 2026-10-01). With
+  `shadows_enabled = false` every draw reports `VUID-vkCmdDraw-None-09600`:
+  the depth array (all three layers) is expected in
+  `SHADER_READ_ONLY_OPTIMAL` but was never transitioned. Seen on the RTX 2080
+  in `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` and whenever a
+  test turns shadows off before the shadow pass has run once. No pixel
+  changes (the shadow term is skipped), so no golden catches it; the fix is a
+  one-time transition (or a skipped pass that still transitions).
 
 - **Drop `LP_NATIVE_VECTOR_WIDTH=256` from `run-ctest.sh --virtual-display`
   once the image's Mesa has no radix sort** (S, found 2026-09-30). Mesa 26.0.8
@@ -3962,7 +3982,18 @@ is gitignored.
 
 ### C++ Vulkan engine
 
-- [b] **(L) Fix the vertical mirror in the deferred lighting pass's world-position reconstruction, and make the forward/deferred parity oracle able to tell the two paths apart** — deferred shadows are sampled from the mirrored half of the frame, and the test that should have caught it currently claims the two paths agree to 0.2/255.
+- [x] **(L) Fix the vertical mirror in the deferred lighting pass's world-position reconstruction, and make the forward/deferred parity oracle able to tell the two paths apart** — deferred shadows are sampled from the mirrored half of the frame, and the test that should have caught it currently claims the two paths agree to 0.2/255.
+
+  **DONE 2026-10-01** with the upside-down composite entry (CI and release
+  gaps): `lighting_vs_main` returns `fullscreen_vs`, and `clipPos` comes from
+  `fullscreen_uv_to_ndc`. The new oracle is
+  `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand` (RTX 2080: IoU
+  0.98, 0.43 against the vertically flipped forward mask, 0.27 with only the
+  deferred inverse mirrored). The contradiction below was a wrong premise:
+  the C++ forward path is `rasterizer.slang`, not the WGSL `forward.slang`,
+  and its terms are deferred's (`brdf_direct`, cascade shadow, emission), so
+  0.21/255 is honest. The mirrored build still scored 0.33 there, which is
+  why the parity test alone could not catch it; its limit stays 1.0.
 
   **BLOCKED 2026-08-02:** Step 1 requires measuring
   `GoldenRender.DeferredMatchesForwardRoughly`'s current mean-abs-diff on the
@@ -4056,7 +4087,14 @@ is gitignored.
   comparing forward against forward — treat a suspiciously small diff as
   evidence of that failure mode recurring, not as good news.
 
-- [b] **(S) (refactor) Give the fullscreen uv↔NDC round trip one definition, and pin it** — `deferred.slang` re-declares `fullscreen.slang`'s vertex output and vertex shader verbatim, which is how its inverse drifted.
+- [x] **(S) (refactor) Give the fullscreen uv↔NDC round trip one definition, and pin it** — `deferred.slang` re-declares `fullscreen.slang`'s vertex output and vertex shader verbatim, which is how its inverse drifted.
+
+  **DONE 2026-10-01**: `fullscreen_uv_to_ndc` sits beside `fullscreen_vs`,
+  both per target (`__target_switch`, since Vulkan and WebGPU disagree on clip
+  y); deferred and SSAO call it, and
+  `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping` fails on a copy of
+  either direction in any `fullscreen` importer. Not pixel-neutral, by
+  design: it landed together with the mirror fixes.
 
   **BLOCKED 2026-08-02:** This task's own **Context** says to do it "after task 2
   [the deferred-mirror fix] and not concurrently — both edit `deferred.slang`",

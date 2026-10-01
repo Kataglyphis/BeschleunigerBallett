@@ -3104,6 +3104,50 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
       << joinViolations(violations);
 }
 
+// The fullscreen uv's y differs per target, so a hand-written copy of either direction mirrors one renderer.
+TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    // Texel-to-NDC in compute and ray-generation shaders is legitimate, so only fullscreen_vs importers are held to it.
+    static const std::vector<std::string> kCopies{ "(y + 1.0) * 0.5", "uv * 2.0 - 1.0", "uv.y * 2.0" };
+
+    std::vector<std::string> violations;
+    int importers = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/") || relative_path == "common/fullscreen.slang") { continue; }
+
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        const bool imports_fullscreen = std::ranges::any_of(
+          *lines, [](const std::string &line) { return strip_line_comment(line).starts_with("import fullscreen;"); });
+        if (!imports_fullscreen) { continue; }
+        ++importers;
+
+        int line_number = 0;
+        for (const auto &raw_line : *lines) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw_line);
+            for (const auto &copy : kCopies) {
+                if (line.find(copy) != std::string::npos) {
+                    violations.push_back(relative_path + ':' + std::to_string(line_number) + ": " + copy);
+                }
+            }
+        }
+    }
+
+    EXPECT_GE(importers, 5) << "fewer fullscreen.slang importers than expected - did the import syntax change?";
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " fullscreen uv mapping copies - call fullscreen_vs / fullscreen_uv_to_ndc: "
+                                    << joinViolations(violations);
+}
+
 // One shared-set [vk::binding(...)] declaration and the scene_types.slang constant it must name.
 struct SharedDescriptorBinding
 {

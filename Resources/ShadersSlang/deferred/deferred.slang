@@ -7,6 +7,7 @@ import cascaded_shadow;
 import push_constants;
 import raster_geometry;
 import material_textures;
+import fullscreen;
 
 // Deferred geometry pass (writes the G-buffer) and lighting pass.
 
@@ -88,30 +89,19 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
 [[vk::binding(GBUFFER_MATERIAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_MATERIAL_BINDING)]] SubpassInput<float4> inMaterial;
 [[vk::binding(GBUFFER_DEPTH_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_DEPTH_BINDING)]] SubpassInput<float4> inDepth;
 
-struct LightingVsOut
-{
-    float4 svPosition : SV_Position;
-    float2 uv : TEXCOORD0;
-};
-
 [shader("vertex")]
-LightingVsOut lighting_vs_main(uint vid : SV_VertexID)
+FullscreenVsOut lighting_vs_main(uint vid : SV_VertexID)
 {
-    LightingVsOut o;
-    float x = float(vid / 2) * 4.0 - 1.0;
-    float y = float(vid % 2) * 4.0 - 1.0;
-    o.svPosition = float4(x, y, 0.0, 1.0);
-    o.uv = float2((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5);
-    return o;
+    return fullscreen_vs(vid);
 }
 
 [shader("fragment")]
-float4 lighting_fs_main(LightingVsOut In) : SV_Target
+float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
 {
     float depth = inDepth.SubpassLoad().r;
     if (depth >= 1.0) discard;
 
-    float4 clipPos = float4(In.uv * 2.0 - 1.0, depth, 1.0);
+    float4 clipPos = float4(fullscreen_uv_to_ndc(In.uv), depth, 1.0);
     float4 worldPos = mul(globalUBO_lighting.inv_view, mul(globalUBO_lighting.inv_projection, clipPos));
     worldPos /= worldPos.w;
 

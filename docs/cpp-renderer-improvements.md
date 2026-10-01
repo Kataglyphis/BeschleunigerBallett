@@ -3,9 +3,9 @@
 Working log of the "fix all" pass over `Src/GraphicsEngineVulkan`, driven by
 a three-way analysis (architecture/complexity, testing, performance). Each
 unit ships only after: container debug build green, the full commit suite
-(72 tests at campaign start, 694 as of 2026-08-06), and a
+(72 tests at campaign start, 697 as of 2026-10-01), and a
 validation-layer-clean runtime check where rendering changed.
-<!-- commit-suite-test-count: 694 -->
+<!-- commit-suite-test-count: 697 -->
 
 ## Shipped
 

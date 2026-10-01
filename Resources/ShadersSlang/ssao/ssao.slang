@@ -37,7 +37,7 @@ float load_depth(float2 uv)
 
 float3 view_pos_at(float2 uv, float depth)
 {
-    float4 ndc = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
+    float4 ndc = float4(fullscreen_uv_to_ndc(uv), depth, 1.0);
     float4 v = mul(u.inv_proj, ndc);
     return v.xyz / v.w;
 }
