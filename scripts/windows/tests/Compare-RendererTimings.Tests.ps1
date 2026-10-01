@@ -162,4 +162,18 @@ impl TimedPass {
     & pwsh @scriptArgs | Out-Null
     $LASTEXITCODE | Should Not Be 0
   }
+
+  It 'exits 2 under -ValidationOnly when neither JSON exists, so an empty run never reads as a pass' {
+    $outDir = Join-Path $script:tmpDir 'validation-empty'
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+    $scriptArgs = @(
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
+      '-ValidationOnly', '-OutDir', $outDir, '-RepoRoot', $script:tmpDir,
+      '-CppPassSourcePath', $script:cppFixturePath,
+      '-RustPassSourcePath', $script:rustFixturePath
+    )
+    & pwsh @scriptArgs | Out-Null
+    $LASTEXITCODE | Should Be 2
+  }
 }

@@ -18,6 +18,8 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 # The image's CARGO_HOME is root-owned; pin a writable one so registry writes never race the guard's write-probe.
 export CARGO_HOME="${CARGO_HOME:-/tmp/cargo-home}"
 mkdir -p "${CARGO_HOME}"
+# The GPU tests find the image's lavapipe; at arm64's native 128 bits its subgroups are 4 lanes, see run-ctest.sh.
+export LP_NATIVE_VECTOR_WIDTH="${LP_NATIVE_VECTOR_WIDTH:-256}"
 
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
 

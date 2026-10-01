@@ -565,10 +565,14 @@ render (~32 FPS ImGui overlay).
   Host `ctest` cannot read a container-generated CMake tree — invoke the test
   executable directly instead (`.\build-clangcl-debug\commitTestSuite.exe`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
-  `Build-Windows.ps1` without `-SkipPerfTests`. `scripts/windows/Compare-PerfBaseline.ps1`,
+  `Build-Windows.ps1` without `-SkipPerfTests`. The Windows x64 lane runs it itself, as a
+  functional gate like Linux's: every benchmark must run, and one that reports
+  `error_occurred` (a model it cannot find) fails the lane; timings are never gated.
+  `scripts/windows/Compare-PerfBaseline.ps1`,
   `Compare-RendererPixels.ps1` and `Compare-RendererTimings.ps1` are local-only
   comparison tools (the Windows x64 lane's `Invoke-WindowsLane.ps1` runs the two
-  renderer comparisons in validation-only mode — the runners have no GPU;
+  renderer comparisons in validation-only mode, where both exit 2 when they found
+  nothing to check: a warning on a GPU-less runner, never a pass;
   `Compare-PerfBaseline.ps1` is not in CI at all).
 - PowerShell module tests: Pester suites under `scripts/windows/tests/`
   (Pester 3.4 syntax; the `pester-tests` job of `.github/workflows/windows-x64.yml`
@@ -675,10 +679,10 @@ riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit th
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
+| Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
 | Linux riscv64 (cross build on amd64, Debug ctest under QEMU minus the GPU suites; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
-| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
@@ -719,9 +723,10 @@ job are the hub's:
 
 **The Windows x64 lane is a thin caller too** (2026-09-26, the family's hub reusable
 lanes). `windows-x64.yml` names `scripts/windows/Invoke-WindowsLane.ps1`, which a local
-container run executes too: `Build-Windows.ps1 -Configurations clangcl-debug,clangcl-release`,
-the CPU-only suites (the GPU suites excluded by name), every fuzz target's seed corpus
-(ten minutes each, where the old step had one 20-minute limit), and the renderer
+container run executes too: `Build-Windows.ps1 -Configurations clangcl-debug,clangcl-profile,clangcl-release`,
+the CPU-only suites (the GPU suites excluded by name), `compileTestSuite.exe`, the perf suite
+(`perfTestSuite.exe` from the repo root, as ctest's `perf_suite_runs`), every fuzz target's seed
+corpus (ten minutes each, where the old step had one 20-minute limit), and the renderer
 timing and pixel comparisons. Every check after the build runs, and the lane fails if any
 did. The WebDAV credentials and `MSIX_CERT_PASSWORD` reach the container through the hub's
 `CONTAINER_SECRET_ENV` secret, as an `--env-file`, and `Build-Windows.ps1` reads them from the
@@ -767,13 +772,12 @@ runs ctest. binfmt executes the riscv64 binaries, so gtest discovery and ctest n
 emulator wrapper. The mechanism is the hub's:
 [`riscv64-cross-test-lanes.md`](third_party/ANTfrastructure/docs/riscv64-cross-test-lanes.md).
 
-- **What runs:** 655 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
+- **What runs:** 657 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
   GLFW and Rust renderer bridge. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **What does not:** the `Integration.` and `GoldenRender.` suites (no GPU under QEMU, and
   riscv64 lavapipe has the 4-lane subgroups that SEGV acceleration-structure builds until
-  the image's `LP_NATIVE_VECTOR_WIDTH=256`, hub CON44), plus the source-reading
-  `BuildIntegrity.CompiledShadersAreNotOlder`: the same filter as the sanitizer jobs.
+  the image's `LP_NATIVE_VECTOR_WIDTH=256`, hub CON44).
   No ASan, UBSan, TSan or coverage: the cross clang has no riscv64 compiler-rt. That is
   also why `VulkanEngineCore`'s hard-wired Linux Debug `-fsanitize=address` skips a
   cross build (`CMAKE_CROSSCOMPILING`), and the fuzz targets, which need ASan, skip
@@ -859,9 +863,10 @@ at the repo root hold what was over the line when the flag went on —
 so does a frozen row whose offender is gone. `doc-links` has no freeze file by
 design, so its findings are fixed, never frozen.
 
-The `ubuntu-26.04` leg of the Linux lane also runs the Rust renderer crate's
+Both Linux legs (x64 and arm64, since 2026-10-01) also run the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
-kataglyphis_webgpu_renderer`) in its own `rust` job of `reusable-linux.yml`. Before
+kataglyphis_webgpu_renderer`) in their own `rust` job of `reusable-linux.yml`; its GPU tests
+find the image's lavapipe, so the script pins `LP_NATIVE_VECTOR_WIDTH=256` like `run-ctest.sh`. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree

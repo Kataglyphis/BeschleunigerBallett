@@ -141,9 +141,11 @@ if ((-not $ValidationOnly) -and (Test-Path $suite)) {
     }
 }
 
+$checked = 0
 if (Test-Path $cppJson) {
     $cpp = Get-Content $cppJson -Raw | ConvertFrom-Json
     Assert-PassesExist -Label 'C++/Vulkan' -JsonObj $cpp -Expected $CppExpectedPasses -Optional @('Tonemap')
+    $checked++
 } elseif ($ValidationOnly) {
     Write-Host "WARN: C++ JSON not found at $cppJson - skipping validation." -ForegroundColor Yellow
 } else {
@@ -179,6 +181,7 @@ if ((-not $ValidationOnly) -and (Test-Path $suite)) {
 if (Test-Path $rustJson) {
     $rust = Get-Content $rustJson -Raw | ConvertFrom-Json
     Assert-PassesExist -Label 'Rust/WebGPU' -JsonObj $rust -Expected $RustExpectedPasses -Optional @('OcclusionCull')
+    $checked++
 } elseif ($ValidationOnly) {
     Write-Host "WARN: Rust JSON not found at $rustJson - skipping validation." -ForegroundColor Yellow
 } else {
@@ -209,6 +212,14 @@ if ((Test-Path $cppJson) -and (Test-Path $rustJson)) {
     Write-Host ("frames: C++ {0} ({1}), Rust {2} ({3})" -f `
         $cpp.frames_measured, ($cpp.timestamps_supported ? 'timestamps' : 'NO timestamps'), `
         $rust.frames_measured, ($rust.timestamps_supported ? 'timestamps' : 'NO timestamps'))
+}
+
+# Like Compare-RendererPixels.ps1: a run that validated no JSON is exit 2, never a pass.
+if ($exitCode -eq 0 -and $checked -eq 0) {
+    Write-Host ''
+    Write-Host 'No timing JSON was produced or found - nothing was checked.' -ForegroundColor Red
+    Write-Host '=== GPU TIMING COMPARISON: NOTHING CHECKED (exit code 2) ===' -ForegroundColor Red
+    exit 2
 }
 
 Write-Host ''

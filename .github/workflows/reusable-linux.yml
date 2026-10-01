@@ -88,7 +88,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh --virtual-display
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^BuildIntegrity\.CompiledShadersAreNotOlder|^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
+            --ctest-exclude "^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
           log-file: output.log
 
   # AddressSanitizer + UBSan and the fuzz seeds, which SEGV without project-wide ASan (Test/fuzz/CMakeLists.txt)
@@ -170,7 +170,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh
             --build-dir "build-asan-clang"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
+            --ctest-exclude "^(Integration|GoldenRender)\."
           log-file: output-asan.log
 
   # ThreadSanitizer
@@ -226,7 +226,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh
             --build-dir "build-tsan"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder"
+            --ctest-exclude "^(Integration|GoldenRender)\."
           log-file: output-tsan.log
 
   # Coverage: builds its own tree, since build-coverage-llvm.sh runs compileTestSuite
@@ -378,10 +378,9 @@ jobs:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-  # Rust renderer tests: the only place the crate's tests run; x64 only
+  # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches
   rust:
     name: Rust renderer tests
-    if: ${{ inputs.runner == 'ubuntu-26.04' }}
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Prepare host
@@ -469,7 +468,7 @@ jobs:
             bash ./scripts/linux/run-ctest.sh
             --build-dir "${{ env.BUILD_DIR }}"
             --build-type "${{ env.BUILD_TYPE }}"
-            --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder"
+            --ctest-exclude "^(Integration|GoldenRender)\\."
           log-file: output.log
 
       # No fuzz step: Test/fuzz/CMakeLists.txt builds its targets under clang only.

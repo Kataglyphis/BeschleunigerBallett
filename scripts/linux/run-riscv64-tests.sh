@@ -11,8 +11,8 @@ antfrastructure_source linux/scripts/lib/cmake-build.sh
 antfrastructure_source linux/scripts/lib/ctest-run.sh
 
 BUILD_DIR="build-riscv64"
-# Integration and GoldenRender need a GPU; the rest is the sanitizer lanes' filter. See AGENTS.md § The riscv64 lane
-CTEST_EXCLUDE_RISCV64='^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder'
+# Integration and GoldenRender need a GPU; see AGENTS.md § The riscv64 lane
+CTEST_EXCLUDE_RISCV64='^(Integration|GoldenRender)\.'
 
 riscv64_cross_env
 # The x86_64 setup-env this hook sources would undo riscv64_cross_env's Vulkan paths.

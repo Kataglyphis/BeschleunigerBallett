@@ -375,7 +375,7 @@ try {
         Copy-Item -LiteralPath $suite -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $suite -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
         # repoRoot() walks up to the first Resources/ShadersSlang, so the suite finds the shaders and models staged here.
-        foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
+        foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest','Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Recurse -Force
         }
         Copy-Item -LiteralPath (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Invoke-StagedTests.ps1') -Destination $tests

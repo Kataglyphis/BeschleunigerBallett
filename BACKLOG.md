@@ -429,7 +429,7 @@ cleanUp+recreate pair at the four scene-changed sites.
 ## CI and release gaps
 
 - [ ] **The riscv64 lane runs no GPU suite** (M, owner decision 2026-10-01, hub CON48).
-  `linux-riscv64.yml` cross-builds on amd64 and runs 655 of 699 Debug tests under QEMU;
+  `linux-riscv64.yml` cross-builds on amd64 and runs 657 of 699 Debug tests under QEMU;
   `Integration.` and `GoldenRender.` are filtered out. riscv64 lavapipe runs under QEMU
   (OxidANT's renderer suite passed on it), but its 4-lane subgroups SEGV every
   acceleration-structure build until the image sets `LP_NATIVE_VECTOR_WIDTH=256` (hub
