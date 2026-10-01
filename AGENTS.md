@@ -677,7 +677,7 @@ The four platform lanes still skip a docs-only commit through `paths-ignore`:
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
-| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's

@@ -38,6 +38,7 @@ jobs:
         -SkipTidy
         -SkipTests
         -SkipPerfTests
+        -StageTests
       artifact-name: BeschleunigerBallett-windows-arm64
       artifact-dir: dist/windows-arm64
       # The engine and the VC++ runtime at the least.
@@ -52,5 +53,9 @@ jobs:
         Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
         $env:PATH = "$(Join-Path $env:RUNNER_TEMP $rt);$env:PATH"
         ./bundle/bin/GraphicsEngine.exe --version
+      # The commit suite, built in Release for arm64 (-StageTests) and run natively; its filter is in tests.json (hub CON43).
+      test-artifact-dir: dist/windows-arm64-tests
+      test-command: |
+        & ./Invoke-StagedTests.ps1
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}

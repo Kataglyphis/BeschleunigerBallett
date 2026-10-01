@@ -21,7 +21,9 @@ param(
   [string]$RemoteBasePath,
   [string]$LocalAssetsFolder,
   # amd64 (x64) or arm64, empty takes the image's; see third_party/ANTfrastructure/docs/windows-cross-builds.md
-  [string]$TargetArch = ''
+  [string]$TargetArch = '',
+  # Release also builds the commit suite and stages it in dist\windows-<arch>-tests for the arm64 run job (hub CON43).
+  [switch]$StageTests
 )
 
 $ErrorActionPreference = 'Stop'
@@ -320,7 +322,8 @@ try {
       } else {
         Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Release'
         Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release' `
-          -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
+          -ConfigureExtraArgs (@(if ($StageTests) { '-DBUILD_TESTING=ON', '-DKATAGLYPHIS_RELEASE_COMMIT_TESTS=ON' }) +
+            @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan))
       }
 
       # Packaging runs even with -SkipBuild.
@@ -360,6 +363,29 @@ try {
       $installers | Copy-Item -Destination $packages
       Write-BuildLog -Context $context -Message "Portable bundle $bundle; DLL closure: $(@($copied | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
     } | Out-Null
+
+    # Beside the product, not in it: the run job downloads both, and the hub grades this tree with the same arch gate.
+    if ($StageTests) {
+      Invoke-BuildStep -Context $context -StepName "Stage tests ($TargetArch)" -Critical -Script {
+        $tests = "$distArch-tests"
+        if (Test-Path $tests) { Remove-BuildRoot -Context $context -Path $tests | Out-Null }
+        New-Item -ItemType Directory -Force -Path $tests | Out-Null
+        $suite = Join-Path $buildPathClangRelease 'commitTestSuite.exe'
+        if (-not (Test-Path -LiteralPath $suite -PathType Leaf)) { throw "The Release build made no $suite; KATAGLYPHIS_RELEASE_COMMIT_TESTS did not take" }
+        Copy-Item -LiteralPath $suite -Destination $tests
+        $closure = @(Copy-PeImportClosure -Path $suite -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
+        # repoRoot() walks up to the first Resources/ShadersSlang, so the suite finds the shaders and models staged here.
+        foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
+          Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Recurse -Force
+        }
+        Copy-Item -LiteralPath (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Invoke-StagedTests.ps1') -Destination $tests
+        # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
+        $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment'
+        ConvertTo-Json -InputObject @(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") }) |
+          Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
+        Write-BuildLog -Context $context -Message "Staged commitTestSuite.exe in $tests with $($closure.Count) closure DLL(s): $(@($closure | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
+      } | Out-Null
+    }
   }
 
   # MSIX: staging is this script's; the hub's Invoke-MsixPackage packs, asserts the output and signs with the root *.pfx.

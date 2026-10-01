@@ -78,6 +78,9 @@ add_subdirectory(third_party)
 
 add_subdirectory(Src)
 
+# The arm64 cross lane builds Release only, and its windows-11-arm job is the only place an arm64 test can run.
+option(KATAGLYPHIS_RELEASE_COMMIT_TESTS "Also build the commit suite in Release (the arm64 cross lane)" OFF)
+
 if(BUILD_TESTING)
   include(CTest)
   enable_testing()
@@ -91,6 +94,9 @@ if(BUILD_TESTING)
   elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     add_subdirectory(Test/perf)
     message(STATUS "Building test suite: perf (RelWithDebInfo)")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Release" AND KATAGLYPHIS_RELEASE_COMMIT_TESTS)
+    add_subdirectory(Test/commit)
+    message(STATUS "Building test suite: commit (Release, KATAGLYPHIS_RELEASE_COMMIT_TESTS)")
   else()
     message(
       STATUS
