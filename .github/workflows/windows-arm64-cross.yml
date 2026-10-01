@@ -28,12 +28,12 @@ jobs:
     with:
       target-arch: arm64
       build-script: scripts/windows/Build-Windows.ps1
-      # Format, tidy, tests and benchmarks run on the x64 lane; this amd64 host cannot run arm64.
+      # Format and tidy run on the x64 lane; the Release commit suite and the Profile perf suite are staged for windows-11-arm.
       build-args: |
         -TargetArch
         arm64
         -Configurations
-        clangcl-release
+        clangcl-release,clangcl-profile
         -SkipFormat
         -SkipTidy
         -SkipTests
@@ -53,9 +53,44 @@ jobs:
         Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
         $env:PATH = "$(Join-Path $env:RUNNER_TEMP $rt);$env:PATH"
         ./bundle/bin/GraphicsEngine.exe --version
-      # The commit suite, built in Release for arm64 (-StageTests) and run natively; its filter is in tests.json (hub CON43).
+      # The commit suite (Release) and the perf suite (Profile), run natively; filter and list in tests.json (hub CON43).
       test-artifact-dir: dist/windows-arm64-tests
       test-command: |
         & ./Invoke-StagedTests.ps1
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+
+  # GPU suites on lavapipe plus the source checks: its own job, as the hub's run job stops at 30 minutes.
+  gpu-suites:
+    name: GPU suites + source checks (arm64, lavapipe)
+    needs: cross
+    runs-on: windows-11-arm
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    steps:
+      # Top-level submodules: IMGUI's fonts, the hub's modules, OxidANT's checked-in WGSL for the source checks.
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+
+      - name: Download the tests
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: BeschleunigerBallett-windows-arm64-tests
+          path: dist/windows-arm64-tests
+
+      # Compiled from this commit in the cross job, so they are newer than its sources, as BuildIntegrity checks.
+      - name: Place the compiled shaders
+        shell: pwsh
+        run: |
+          Copy-Item -Recurse -Force dist/windows-arm64-tests/Resources/ShadersSlang/build Resources/ShadersSlang/build
+          Get-ChildItem -Recurse -File Resources/ShadersSlang/build | ForEach-Object { $_.LastWriteTime = Get-Date }
+
+      - name: Run them natively
+        shell: pwsh
+        run: >-
+          ./scripts/windows/Invoke-LavapipeTests.ps1
+          -Suite dist/windows-arm64-tests/commitTestSuite.exe
+          -Filter 'GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment:-GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice'

@@ -33,7 +33,10 @@ jobs:
         KATAGLYPHIS_CI_HAS_GPU=${{ vars.KATAGLYPHIS_CI_HAS_GPU }}
       artifact-name: BeschleunigerBallett-windows-x64
       artifact-dir: dist/windows-x64
-      # The last green runs of the hand-rolled lane took 2-3 hours.
+      # The GPU suites on lavapipe: the image ships no software Vulkan device (hub CON25), the runner host can take one.
+      host-command: |
+        ./scripts/windows/Invoke-LavapipeTests.ps1 -Suite dist/windows-x64-tests/commitTestSuite.exe
+      # Build and container tests ~1.5 h, then about an hour of lavapipe on the runner's 4 vCPUs.
       timeout-minutes: 240
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}

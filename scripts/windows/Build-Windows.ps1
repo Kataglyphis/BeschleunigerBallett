@@ -123,13 +123,14 @@ $presetClangRelease = $buildConfigurationSpecs['clangcl-release']['Preset']
 
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
-# Cross is clangcl-release only: Debug needs an aarch64 ASan runtime, Profile runs benchmarks, MSVC pins x64.
+# Debug needs an aarch64 ASan runtime, MSVC pins x64, and Profile's benchmarks cannot run here, so they wait for -StageTests.
 if ($isCross) {
-  $notCross = @($selectedConfigurations | Where-Object { $_ -ne 'clangcl-release' })
+  $notCross = @($selectedConfigurations | Where-Object { $_ -ne 'clangcl-release' -and -not ($_ -eq 'clangcl-profile' -and $SkipPerfTests) })
   if ($notCross.Count -gt 0) {
-    throw "-TargetArch $TargetArch builds clangcl-release only, not $($notCross -join ', ') (third_party/ANTfrastructure/docs/windows-cross-builds.md)."
+    throw "-TargetArch $TargetArch builds clangcl-release, and clangcl-profile with -SkipPerfTests, not $($notCross -join ', ') (third_party/ANTfrastructure/docs/windows-cross-builds.md)."
   }
   $buildPathClangRelease = "$buildPathClangRelease-$TargetArch"
+  $buildPathClangProfile = "$buildPathClangProfile-$TargetArch"
 }
 # The product both Windows lanes upload: dist\windows-<x64|arm64>, named as a package names its arch.
 $distArch = Join-Path $workspacePath "dist\windows-$packageArch"
@@ -290,7 +291,8 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clangcl-profile' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
-      Invoke-ConfiguredBuild -BuildPath $buildPathClangProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo'
+      Invoke-ConfiguredBuild -BuildPath $buildPathClangProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' `
+        -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
     } | Out-Null
 
     if (-not $SkipPerfTests) {
@@ -372,18 +374,30 @@ try {
         New-Item -ItemType Directory -Force -Path $tests | Out-Null
         $suite = Join-Path $buildPathClangRelease 'commitTestSuite.exe'
         if (-not (Test-Path -LiteralPath $suite -PathType Leaf)) { throw "The Release build made no $suite; KATAGLYPHIS_RELEASE_COMMIT_TESTS did not take" }
-        Copy-Item -LiteralPath $suite -Destination $tests
-        $closure = @(Copy-PeImportClosure -Path $suite -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
-        # repoRoot() walks up to the first Resources/ShadersSlang, so the suite finds the shaders and models staged here.
-        foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest','Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
+        $staged = @($suite)
+        # The perf suite rides along when clangcl-profile was built; it exits non-zero when a benchmark cannot run.
+        if (Test-ConfigurationSelected -Name 'clangcl-profile' -SelectedConfigurations $selectedConfigurations) {
+          $perf = Join-Path $buildPathClangProfile 'perfTestSuite.exe'
+          if (-not (Test-Path -LiteralPath $perf -PathType Leaf)) { throw "The Profile build made no $perf" }
+          $staged += $perf
+        }
+        Copy-Item -LiteralPath $staged -Destination $tests
+        $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
+        # repoRoot() walks up to the first Resources/ShadersSlang, so the suites find the shaders and models staged here.
+        foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Recurse -Force
+        }
+        # The two loose models the perf suite parses.
+        foreach ($rel in 'Resources\Models\plane.obj', 'Resources\Models\plane.mtl', 'Resources\Models\suzanne.obj', 'Resources\Models\suzanne.mtl') {
+          Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Force
         }
         Copy-Item -LiteralPath (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Invoke-StagedTests.ps1') -Destination $tests
         # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
         $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment'
-        ConvertTo-Json -InputObject @(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") }) |
-          Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
-        Write-BuildLog -Context $context -Message "Staged commitTestSuite.exe in $tests with $($closure.Count) closure DLL(s): $(@($closure | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
+        $manifest = @(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
+        if ($staged.Count -gt 1) { $manifest += @{ exe = 'perfTestSuite.exe'; kind = 'exitcode'; args = @('--benchmark_min_time=0.05s') } }
+        ConvertTo-Json -InputObject $manifest | Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
+        Write-BuildLog -Context $context -Message "Staged $(@($staged | ForEach-Object { Split-Path $_ -Leaf }) -join ', ') in $tests with $($closure.Count) closure DLL(s): $(@($closure | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
       } | Out-Null
     }
   }

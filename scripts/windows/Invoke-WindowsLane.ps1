@@ -5,7 +5,8 @@
 .DESCRIPTION
   Builds clangcl-debug, clangcl-profile and clangcl-release, then runs the CPU suites, the compile suite,
   the perf suite, fuzz seed corpora and renderer comparisons; every check runs and the lane fails if any
-  did. Secrets arrive as environment.
+  did. Secrets arrive as environment. The GPU suites run after it, on the runner host, from the Release
+  suite -StageTests leaves in dist\windows-x64-tests (windows-x64.yml's host-command).
 #>
 [CmdletBinding()]
 param()
@@ -20,11 +21,11 @@ $failed = [System.Collections.Generic.List[string]]::new()
 
 # -SkipPerfTests: the perf suite runs below, where a missing executable fails instead of skipping.
 $buildArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'Build-Windows.ps1'),
-  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests')
+  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests', '-StageTests')
 & pwsh @buildArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "::error::Build-Windows.ps1 exited $LASTEXITCODE"; exit 1 }
 
-# Excluded by name: a GPU-less runner still has the Vulkan loader and aborts creating a device. BuildIntegrity parses this.
+# Excluded by name: the image has a Vulkan loader but no device, so these abort; the host step runs them. BuildIntegrity parses this.
 $gpuOnlySuites = @(
   'GoldenRender.*'
   'Integration.*'

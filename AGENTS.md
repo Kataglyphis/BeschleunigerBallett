@@ -599,7 +599,13 @@ render (~32 FPS ImGui overlay).
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows
   container and run for real on the host GPU. Linux CI's `clang-tests` job (x64
   and arm64) runs them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
-  minus the GUI input sweep, which is too slow for a runner.
+  minus the GUI input sweep, which is too slow for a runner. Windows CI runs them
+  on lavapipe too, on the runner rather than in the image (which ships no software
+  Vulkan device, hub CON25): `scripts/windows/Invoke-LavapipeTests.ps1` fetches a
+  pinned, SHA256-checked lavapipe and Khronos loader for the host's arch, registers
+  the ICD in HKLM (an elevated loader ignores `VK_DRIVER_FILES`) and runs each test in
+  its own process from the repo root, as ctest does. x64 runs it on the runner host
+  after the container build, arm64 on `windows-11-arm`; a skip fails the run.
   `--virtual-display` also pins `LP_NATIVE_VECTOR_WIDTH=256`: at arm64's
   native 128 bits Mesa 26.0 lavapipe's BVH build corrupts memory. A Linux host
   with an NVIDIA GPU runs the same suites in the image through CDI, but an ASan
@@ -679,10 +685,10 @@ riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit th
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
+| Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
 | Linux riscv64 (cross build on amd64, Debug ctest under QEMU minus the GPU suites; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
-| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
+| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43, plus the Profile perf suite; the `gpu-suites` job runs those two on lavapipe from a checkout) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
@@ -699,12 +705,14 @@ arm64 image's GCC prints no multiarch triplet, so CMake never searches
 CON8) and reaches this lane with the next Linux `:latest`.
 
 **The Windows ARM64 lane cross-builds, then runs** (owner decision 2026-09-25).
-`Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release` runs in the
+`Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release,clangcl-profile` runs in the
 family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build it:
 
 - refuses every other configuration: Debug links an x64-only ASan runtime and
-  runs FuzzTest's grammar generator at build time, Profile runs benchmarks, and the
-  MSVC presets pin x64;
+  runs FuzzTest's grammar generator at build time, and the MSVC presets pin x64.
+  clangcl-profile builds only with `-SkipPerfTests` (its benchmarks cannot run on
+  the amd64 host), into `build-clangcl-profile-arm64`, for `-StageTests` to stage
+  `perfTestSuite.exe`;
 - configures with the hub's `Get-CrossConfigureArgs -Corrosion -Vulkan`, so
   Corrosion targets aarch64 and FindVulkan takes `Lib-ARM64/vulkan-1.lib` instead
   of the pointer-size x64 `Lib`;
@@ -712,6 +720,12 @@ family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build i
 - writes `dist/windows-arm64`: the portable bundle (the install tree plus its DLL
   closure), the `aarch64` MSI and ZIP, and the arm64 MSIX (manifest token
   `__MSIX_ARCH__`).
+
+On `windows-11-arm` the commit suite runs whole, in two halves. The hub's run job
+runs `tests.json` (the CPU suites, plus `perfTestSuite.exe` as an `exitcode` entry);
+this repo's `gpu-suites` job checks the repo out, puts the staged shaders in it and runs
+the GPU suites on lavapipe plus the source-reading `BuildIntegrity.*` checks through
+`Invoke-LavapipeTests.ps1`, its own job because the hub's stops at 30 minutes.
 
 The hub's `Hardening.cmake` links `/CETCOMPAT` on x64 only. The run job borrows the
 Khronos loader from LunarG's arm64 runtime, pinned by hash, and calls
@@ -728,7 +742,9 @@ the CPU-only suites (the GPU suites excluded by name), `compileTestSuite.exe`, t
 (`perfTestSuite.exe` from the repo root, as ctest's `perf_suite_runs`), every fuzz target's seed
 corpus (ten minutes each, where the old step had one 20-minute limit), and the renderer
 timing and pixel comparisons. Every check after the build runs, and the lane fails if any
-did. The WebDAV credentials and `MSIX_CERT_PASSWORD` reach the container through the hub's
+did. `-StageTests` leaves the Release commit suite in `dist/windows-x64-tests`, and the hub's
+`host-command` runs its GPU suites on lavapipe on the runner host after the container exits
+(`Invoke-LavapipeTests.ps1`, about an hour on 4 vCPUs). The WebDAV credentials and `MSIX_CERT_PASSWORD` reach the container through the hub's
 `CONTAINER_SECRET_ENV` secret, as an `--env-file`, and `Build-Windows.ps1` reads them from the
 environment; `KATAGLYPHIS_CI_HAS_GPU` comes from the repository variable through
 `container-env`. The product is `dist/windows-x64`, as arm64's is `dist/windows-arm64`: the
@@ -757,8 +773,8 @@ Reading pipeline status from a shell (`gh`):
 `linux-x64.yml` and `linux-arm64.yml` both call `reusable-linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a hardware GPU: the
 Linux `clang-tests` job (both arches) runs the golden suites on llvmpipe (a CPU Vulkan device,
-[`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), and synchronization
-validation stays host-only.
+[`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), both Windows lanes on lavapipe on
+the runner, and synchronization validation stays host-only.
 
 ### The riscv64 lane
 

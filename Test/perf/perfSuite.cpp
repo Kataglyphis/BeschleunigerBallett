@@ -6,6 +6,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <random>
 #include <span>
@@ -29,6 +30,15 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.vertex;
 
 namespace {
+
+// SkipWithError alone still exits 0, so main() counts it: a benchmark that cannot run fails the suite.
+std::atomic<int> skipped_with_error{ 0 };
+
+void skipWithError(benchmark::State &state, const char *reason)
+{
+    ++skipped_with_error;
+    state.SkipWithError(reason);
+}
 
 // Camera: runs once per frame from the input handler, so regressions show up as input latency.
 
@@ -201,7 +211,7 @@ std::string find_model(const char *name)
 void parse_and_walk(const std::string &path, benchmark::State &state)
 {
     if (path.empty()) {
-        state.SkipWithError("model not found (run from the repo root)");
+        skipWithError(state, "model not found (run from the repo root)");
         return;
     }
 
@@ -210,7 +220,7 @@ void parse_and_walk(const std::string &path, benchmark::State &state)
         tinyobj::ObjReaderConfig config;
         config.triangulate = true;
         if (!reader.ParseFromFile(path, config)) {
-            state.SkipWithError("failed to parse model");
+            skipWithError(state, "failed to parse model");
             return;
         }
 
@@ -245,7 +255,7 @@ BENCHMARK(BM_ObjParse_Suzanne)->Unit(benchmark::kMillisecond);
 void parse_and_walk_gltf(const std::string &path, benchmark::State &state)
 {
     if (path.empty()) {
-        state.SkipWithError("gltf model not found (run from the repo root)");
+        skipWithError(state, "gltf model not found (run from the repo root)");
         return;
     }
 
@@ -253,12 +263,12 @@ void parse_and_walk_gltf(const std::string &path, benchmark::State &state)
         cgltf_options options{};
         cgltf_data *data = nullptr;
         if (cgltf_parse_file(&options, path.c_str(), &data) != cgltf_result_success) {
-            state.SkipWithError("failed to parse gltf model");
+            skipWithError(state, "failed to parse gltf model");
             return;
         }
         if (cgltf_load_buffers(&options, data, path.c_str()) != cgltf_result_success) {
             cgltf_free(data);
-            state.SkipWithError("failed to load gltf buffers");
+            skipWithError(state, "failed to load gltf buffers");
             return;
         }
 
@@ -460,4 +470,13 @@ BENCHMARK(BM_TransformAABB)->Arg(64)->Arg(512);
 
 }// namespace
 
-BENCHMARK_MAIN();
+// BENCHMARK_MAIN's body, returning non-zero when any benchmark skipped with an error.
+int main(int argc, char **argv)
+{
+    benchmark::MaybeReenterWithoutASLR(argc, argv);
+    benchmark::Initialize(&argc, argv);
+    if (benchmark::ReportUnrecognizedArguments(argc, argv)) { return 1; }
+    benchmark::RunSpecifiedBenchmarks();
+    benchmark::Shutdown();
+    return skipped_with_error.load() == 0 ? 0 : 1;
+}

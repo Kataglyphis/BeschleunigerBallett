@@ -46,13 +46,43 @@ What that does not cover:
   on arm64 LLVM splits each vector into two NEON registers. Mesa main replaced
   the radix sort with a merge sort (`ebcfbe60`, 2026-08-22), so the pin can go
   once the image's Mesa carries that.
-- **Only that one job runs them.** They cost ~20 minutes of llvmpipe on a
-  32-core host; the ASan, TSan and gcc jobs keep excluding them.
-- **The Windows container still has no Vulkan device**, so there they skip or
-  are excluded (`$gpuOnlySuites`), as above.
+- **Only that one Linux job runs them.** They cost ~20 minutes of llvmpipe on a
+  32-core host (~55 on a 4-vCPU runner); the ASan, TSan and gcc jobs keep
+  excluding them.
+- **The Windows container still has no Vulkan device**, so there they are
+  excluded (`$gpuOnlySuites`); the runner runs them instead, below.
 - A software rasterizer is not the RX 9070 XT. A pass on llvmpipe is a strong
   behavioural signal, not a substitute for the host loop below after a
   render/device change.
+
+## Windows CI runs them on lavapipe
+
+Both Windows lanes run the same suites on Mesa's lavapipe, outside the image:
+the family Windows image ships no software Vulkan device (hub CON25), and a
+hosted runner takes one in a minute. `scripts/windows/Invoke-LavapipeTests.ps1`
+does it for either arch:
+
+- **What it installs.** lavapipe from
+  [mmozeiko/build-mesa](https://github.com/mmozeiko/build-mesa) 26.2.3 (the one
+  build that ships an arm64 lavapipe; mesa-dist-win has x86 and x64 only) and the
+  Khronos loader from LunarG's 1.4.357.0 runtime components, both pinned by
+  SHA256. `vulkan-1.dll` goes beside the suite, so no System32 copy wins.
+- **How the loader finds it.** `VK_DRIVER_FILES` names the ICD, but the loader
+  ignores it in an elevated process, which a hosted runner's is; so it is also
+  registered under `HKLM\SOFTWARE\Khronos\Vulkan\Drivers`.
+  `VK_LOADER_DRIVERS_SELECT` keeps any other driver out, and `vulkaninfo
+  --summary` must list llvmpipe before a test runs.
+- **How it runs them.** Each test in its own process, from the repo root, with
+  ctest's 1500 s limit, as ctest does on Linux; the GUI input sweep stays out for
+  time. Any failure, any skip or no pass fails the step: a skip here is a test
+  that did not run.
+- **Which build.** The Release commit suite that `Build-Windows.ps1 -StageTests`
+  stages, on both arches: a clean host has no validation layers for the Debug one,
+  and arm64 cross-builds Release only. x64 runs it on the runner host after the
+  container build (`windows-x64.yml`'s `host-command`); arm64 in the `gpu-suites`
+  job on `windows-11-arm`, from a checkout, which also runs the source-reading
+  `BuildIntegrity.*` checks the staged tree lacks. `LP_NATIVE_VECTOR_WIDTH=256`
+  as on Linux.
 
 `commitTestSuite` carries its own LeakSanitizer suppression for libX11
 (`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `glfwInit()` on X11 leaks

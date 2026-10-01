@@ -428,6 +428,34 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## CI and release gaps
 
+- [ ] **Every test on every arch lane** (owner goal 2026-10-01; what is left of it).
+  Landed 2026-10-01: the shader-mtime `BuildIntegrity` checks run on every Linux and the
+  riscv64 ctest; Linux arm64 runs the Rust renderer tests; Windows x64 runs
+  `compileTestSuite`, builds `clangcl-profile` and runs the perf suite; Windows arm64 stages
+  `Dinosaurs` (four `ObjParseUnit` tests stopped skipping) and the Profile perf suite;
+  `perfTestSuite` exits 1 when a benchmark skips with an error, so every lane's perf run is a
+  functional gate; both Windows lanes run the GPU suites on lavapipe on the runner, and
+  arm64 the source-reading `BuildIntegrity.*` checks too (`docs/gpu-golden-testing.md`).
+  Still not everywhere, each for a reason:
+  - **Windows arm64 fuzz targets** (M-L, blocked on the cross build). FuzzTest's
+    `json_grammar` runs `grammar_domain_code_generator`, an arm64 binary in this build, at
+    build time, which the amd64 host cannot execute; and the targets are wired for Debug
+    clang-cl fuzzing mode with ASan, which arm64 has no runtime for. A Release, ASan-free
+    unit-mode build would need `json_grammar` out of `ALL` (nothing here links it) and
+    `Test/fuzz/CMakeLists.txt`'s gates relaxed for it, as AccelerANTgine's riscv64 lane
+    does with QEMU running the generator (this repo's riscv64 lane skips its fuzz targets too).
+  - **riscv64 GPU suites**: the entry below.
+  - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
+    (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.
+  - **The GUI input sweep** stays out of every CI lane for time (`docs/gpu-golden-testing.md`).
+  - **Windows runs the GPU suites in Release**, without the validation layers the Linux
+    Debug run has: a clean runner has none. Staging the image's `VkLayer_khronos_validation`
+    and registering it under `HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers` would let x64 run
+    the Debug suite.
+  - By design, not gaps: TSan and coverage are Linux-only (clang-cl has no TSan, the
+    image no profile runtime), the Pester suites test Windows scripts on Windows x64, and
+    `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
+
 - [ ] **The riscv64 lane runs no GPU suite** (M, owner decision 2026-10-01, hub CON48).
   `linux-riscv64.yml` cross-builds on amd64 and runs 657 of 699 Debug tests under QEMU;
   `Integration.` and `GoldenRender.` are filtered out. riscv64 lavapipe runs under QEMU

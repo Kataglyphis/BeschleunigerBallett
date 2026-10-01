@@ -106,6 +106,7 @@ If Doxygen XML is available, the Sphinx build automatically includes the generat
 - `scripts/linux/build-coverage-gcovr.sh` and `scripts/linux/build-coverage-llvm.sh` generate coverage reports
 - `scripts/linux/run-perf-suite.sh` runs performance-oriented checks
 - `scripts/windows/Build-Windows.ps1` can orchestrate formatting, tidy, builds, tests, and packaging
+- CI runs the commit suite on every arch lane (riscv64 still without the GPU suites); with no GPU on any runner, the GPU suites render on a CPU Vulkan device (llvmpipe on Linux, lavapipe on the Windows runners, `scripts/windows/Invoke-LavapipeTests.ps1`). What each lane runs and what it leaves out: [AGENTS.md § What CI runs](AGENTS.md#what-ci-runs-and-what-it-does-not)
 
 ## Dependency Updates
 
