@@ -606,7 +606,7 @@ render (~32 FPS ImGui overlay).
   the ICD in HKLM (an elevated loader ignores `VK_DRIVER_FILES`) and runs each test in
   its own process from the repo root, as ctest does. x64 runs it on the runner host
   after the container build, arm64 on `windows-11-arm`; a skip fails the run.
-  `--virtual-display` also pins `LP_NATIVE_VECTOR_WIDTH=256`: at arm64's
+  The image sets `LP_NATIVE_VECTOR_WIDTH=256` (hub CON44): at arm64's
   native 128 bits Mesa 26.0 lavapipe's BVH build corrupts memory. A Linux host
   with an NVIDIA GPU runs the same suites in the image through CDI, but an ASan
   build needs `ASAN_OPTIONS=protect_shadow_gap=0` there, or `vkCreateDevice`
@@ -882,7 +882,7 @@ design, so its findings are fixed, never frozen.
 Both Linux legs (x64 and arm64, since 2026-10-01) also run the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
 kataglyphis_webgpu_renderer`) in their own `rust` job of `reusable-linux.yml`; its GPU tests
-find the image's lavapipe, so the script pins `LP_NATIVE_VECTOR_WIDTH=256` like `run-ctest.sh`. Before
+find the image's lavapipe, which runs 8-lane subgroups through the image's `LP_NATIVE_VECTOR_WIDTH=256`. Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree

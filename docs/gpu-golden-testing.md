@@ -34,8 +34,8 @@ What that does not cover:
   it. It is the only exclusion: the five goldens once excluded here failed on
   an RTX 2080 too, because their oracles were wrong, and were fixed
   (`BACKLOG.md`, "GPU suites on llvmpipe").
-- **`--virtual-display` sets `LP_NATIVE_VECTOR_WIDTH=256`** (unless already
-  set). Mesa 26.0's lavapipe builds acceleration structures with a radix sort
+- **The image sets `LP_NATIVE_VECTOR_WIDTH=256`** (hub CON44, `:latest` of
+  2026-10-01; `--virtual-display` pinned it here before that). Mesa 26.0's lavapipe builds acceleration structures with a radix sort
   whose shaders are compiled for 8-lane subgroups
   (`lvp_acceleration_structure.c`, `subgroup_size_log2 = 3`), but llvmpipe's
   subgroup is `native vector width / 32` lanes: 8 on an AVX2 host, 4 on arm64's
@@ -44,8 +44,9 @@ What that does not cover:
   llvmpipe's JIT code (arm64 run 36746313937; on x64,
   `LP_NATIVE_VECTOR_WIDTH=128` reproduces it). 256 is x64's default already and
   on arm64 LLVM splits each vector into two NEON registers. Mesa main replaced
-  the radix sort with a merge sort (`ebcfbe60`, 2026-08-22), so the pin can go
-  once the image's Mesa carries that.
+  the radix sort with a merge sort (`ebcfbe60`, 2026-08-22), so the hub drops
+  its `ENV` once the image's Mesa carries that. The Windows lavapipe run
+  (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
 - **Only that one Linux job runs them.** They cost ~20 minutes of llvmpipe on a
   32-core host (~55 on a 4-vCPU runner); the ASan, TSan and gcc jobs keep
   excluding them.
