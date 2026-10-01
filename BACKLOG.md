@@ -428,35 +428,48 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## CI and release gaps
 
-- [b] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
-  (S, **blocked on a host-GPU run**). Since 2026-09-29 the Linux `clang-tests`
-  job (arm64 too since 2026-09-30) runs `GoldenRender.*`/`Integration.*` on the image's llvmpipe under Xvfb
-  (hub CON19/CON37; `docs/gpu-golden-testing.md`). Measured that day on the
-  published amd64 `:latest` (`e1bc35af`), linux-debug-clang, 32-core host:
-  34 of 39 pass their assertions (1188 s of test time, the GUI input sweep alone
-  266 s; `DumpsFrameToPng` is disabled). The five below fail and are excluded by
-  name in `reusable-linux.yml`:
+- [x] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
+  (S, settled 2026-10-01 on an RTX 2080). None of the five was an llvmpipe
+  difference: all five failed identically on the RTX 2080 (NVIDIA 595.58.03,
+  CDI into `:latest-amd64`, `docs/gpu-golden-testing.md`), and none was a
+  renderer regression either. Four oracles were written during the
+  August "RDP" outage (really a FrameSync bug, entry below) and never ran
+  on a GPU; the fifth was calibrated on a renderer that read the cascade
+  matrices 4 bytes off. Each is fixed and red-proven on the 2080, and the
+  `reusable-linux.yml` exclusion now names only the GUI sweep:
 
-  | Test | Assertion | llvmpipe |
-  | --- | --- | --- |
-  | `ShadowsMoveWhenTheLightRotates` | moved fraction > 0.5 | 0.339 (64142 of a 189154-px union) |
-  | `EmissiveMaterialBrightensTheFrame` | emissive > metallic + 10 | 181.24 vs 181.13 |
-  | `MaskCardDiscardsCutoutTexelsInRaytracing` | changed fraction < 0.35 | 0.501 |
-  | `PathTracedMaskCardShowsItsCutout` | changed fraction > 0.15 | 0.090 |
-  | `AddedModelAppearsInPathTracing` | crop detail > 0.07 | 0.058 |
+  | Test | Root cause | Before (2080 / llvmpipe) | After (2080 / llvmpipe) | Red proof (2080) |
+  | --- | --- | --- | --- | --- |
+  | `ShadowsMoveWhenTheLightRotates` | gate 0.5 calibrated before `6bed9866` padded `SceneUBO` to std140; with correct matrices this rig's two shadows overlap on screen | 0.370 / 0.339 | gate 0.15: 0.370 / 0.339 | shadow pass pinned to direction A: 0.011 |
+  | `EmissiveMaterialBrightensTheFrame` | the card sat at x 60-75%, `card_crop` starts at 74%: it measured sky | 181.16 vs 181.05 / 181.24 vs 181.13 | card at x = 5, mean over the card: 232 vs 174 / 232 vs 174 | emission dropped from `rasterizer.slang`: 40 vs 174 |
+  | `MaskCardDiscardsCutoutTexelsInRaytracing` | gate 0.35 below a working checkerboard (the forward twin reads the same 0.479) | 0.479 / 0.501 | gate 0.70: 0.479 / 0.501 | primary ray `RAY_FLAG_FORCE_OPAQUE`: 0.941 |
+  | `PathTracedMaskCardShowsItsCutout` | "after" had 3 frames of history: PT noise widened the bbox | 0.100 / 0.090 | both captures 63 frames, gate 0.49: 0.346 / 0.355 | ray query forced opaque: 0.627 |
+  | `AddedModelAppearsInPathTracing` | its box (x >= 71%) held a sliver of the card | 0.063 / 0.058 | card at x = 5, plus a before-the-add control, gate 0.15: 0.037 -> 0.328 / 0.017 -> 0.407 | the control is the missing-rebuild case |
 
-  Unblock: run the five on the RX 9070 XT host. Where they pass there, the
-  difference is llvmpipe (rasterization rules, RT traversal, clamping) and the
-  test wants a device-independent assertion; where they fail there too, it is a
-  regression. Either way, drop the name from the exclusion once it passes on
-  llvmpipe. The emissive pair reading identical is the most suspicious: its
-  deferred twin (`EmissiveStrengthSurvivesTheDeferredGBuffer`) passes.
+  The full 39-test GPU suite on the 2080 (debug, ASan) showed no other
+  difference from llvmpipe: the same five failed, everything else passed,
+  and the GUI sweep takes 12 s there. Bisect of the shadow test (`92f9972d`
+  good on the 2080 at 99.998% disjoint, `6bed9866` first bad): the pad is
+  right, `spirv-dis` puts `cascadeSplits` at 48 and the matrices at 64.
+  Noticed on the way, not fixed: with shadows at intensity 1 the lit ground
+  loses up to 8/255 in acne rings and the slab's grazing front face 4-7%
+  (the `calc_cascaded_shadow` bias), and the frame is vertically mirrored
+  (entry below).
 
-  A sixth, `GuiInputSweepNeverCrashesOrLosesTheDevice`, passes on llvmpipe
-  (266 s locally) but ran into ctest's 1500 s timeout on the 4-vCPU x64 runner
-  (run 36627716804, where all 32 other GPU tests that finished passed, the
-  path-tracing ones taking 150-385 s each), so CI excludes it for time, not
-  correctness.
+- [b] **The C++ renderer presents the 3D scene upside down** (L, **owner
+  decision**: the fix reframes every golden). `fullscreen_vs`
+  (`common/fullscreen.slang`) sets `uv.y = 1 - (y + 1) / 2`, which is right for
+  WebGPU, whose NDC +y is up, and mirrored for Vulkan, whose NDC y = -1 is the
+  top row. `post.slang` composites the scene through it, so the swapchain shows
+  the HDR target flipped while ImGui, drawn afterwards, stays upright. Measured
+  2026-10-01 on the RTX 2080 and in the `55665161` tree alike: raising the mask
+  card from `MASK_Y=4` to `8` moves it from the frame's centre to its bottom,
+  and the shadow rig shows its near ground at the top and the skybox below.
+  SSAO's `view_pos_at` mirrors V on its own (`1.0 - uv.y * 2.0`), and the
+  "vertical mirror in the deferred lighting pass" entry is likely the same
+  convention, so a fix must give Vulkan its own V, revisit every shader that
+  reconstructs a position from that UV, keep the WGSL output as it is, and
+  re-measure every crop-based golden (they assume today's framing).
 
 - **Drop `LP_NATIVE_VECTOR_WIDTH=256` from `run-ctest.sh --virtual-display`
   once the image's Mesa has no radix sort** (S, found 2026-09-30). Mesa 26.0.8
@@ -8454,8 +8467,15 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
 
 ## 2026-08-02 batch II — findings from the Stevedore + Rancher verification pass
 
-- [b] **Host GPU golden verification is unusable over RDP** (M, **blocked on
-  a console/physical login**) — re-confirmed 2026-08-02: 28 of 30
+- [x] **Host GPU golden verification is unusable over RDP** — closed
+  2026-10-01: the zero-frame symptom below was a code bug, not the session.
+  `62e56684` (2026-08-01) made `FrameSync::create` call `cleanUp()` after
+  sizing, which zeroed `frame_sync_count`; `5c71d795` (2026-08-02 19:43) fixed
+  it. Every commit between them logs "No synchronization frames available" on
+  Linux with an RTX 2080 and no RDP involved, and draws once that one-line
+  ordering is patched in. The paragraph below is the original, wrong
+  diagnosis.
+  Original entry (M, blocked on a console/physical login) — re-confirmed 2026-08-02: 28 of 30
   `GoldenRender.*` fail from the repo root on the RX 9070 XT, every frame
   logging "No synchronization frames available; skipping draw frame"
   (`VulkanRenderer.cpp:443`) because `createSynchronization()` (`:1470`)

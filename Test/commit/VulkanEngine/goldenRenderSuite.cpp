@@ -642,7 +642,7 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    // -51 degrees about Y is mid-band of a measured sweep; nearby angles push the shadow out of the crop.
+    // -51 degrees about Y keeps both shadows on the ground; the band mostly slides in depth, so the masks overlap.
     const glm::vec3 direction_a(scene_vars.directional_light_direction[0],
       scene_vars.directional_light_direction[1],
       scene_vars.directional_light_direction[2]);
@@ -739,8 +739,8 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
                      << mask_union << ", symmetric difference " << symmetric_difference << " ("
                      << (moved_fraction * 100.0) << "% of union)";
 
-    // Measured, not tuned: a correct renderer moves nearly all of it, a pinned direction almost none.
-    constexpr double MOVED_FRACTION_THRESHOLD = 0.5;
+    // 2026-10-01: RTX 2080 0.370, llvmpipe 0.339; 0.011 with the shadow pass pinned to direction A.
+    constexpr double MOVED_FRACTION_THRESHOLD = 0.15;
     EXPECT_GT(moved_fraction, MOVED_FRACTION_THRESHOLD)
       << "Only " << (moved_fraction * 100.0)
       << "% of the shadowed-pixel union differs between the two light directions; the shadow does not appear to "
@@ -821,16 +821,22 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
       << "Deferred diverges from forward per-pixel; the paths no longer shade alike.";
 }
 
-// At the origin a card sits behind the ImGui panel; this moves it into card_crop's GUI-free region.
-static glm::mat4 emissive_card_placement()
+// x = 5 frames the card at 78-92% of the width, inside card_crop; the mask cards' 2.5 straddles the panel edge.
+static glm::mat4 panel_free_card_placement()
 {
     const auto env_f = [](const char *name, float fallback) {
         const char *value = std::getenv(name);
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     return glm::translate(glm::mat4(1.0F),
-             glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+             glm::vec3(env_f("CARD_X", 5.0F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
            * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+}
+
+// The inside of the card panel_free_card_placement frames, so a mean measures the card and not the sky around it.
+static Crop panel_free_card_box(uint32_t w, uint32_t h)
+{
+    return Crop{(w * 80U) / 100U, (w * 90U) / 100U, (h * 42U) / 100U, (h * 58U) / 100U};
 }
 
 // The build-integrity check only sees material.emission as text; this proves it actually brightens pixels.
@@ -845,7 +851,7 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
         SKIP_WITHOUT_FRAME_CAPTURE(probe);
     }
 
-    const glm::mat4 placement = emissive_card_placement();
+    const glm::mat4 placement = panel_free_card_placement();
 
     // One harness per card: addModel only adds, so a swap would measure both cards.
     const auto capture_card_mean = [&placement](const char *card_model, const char *label) {
@@ -878,7 +884,7 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
             ADD_FAILURE() << label << " card capture returned no pixels.";
             return std::optional<double>();
         }
-        return std::optional<double>(mean_luminance_in_crop(frame, width, height, card_crop(width, height)));
+        return std::optional<double>(mean_luminance_in_crop(frame, width, height, panel_free_card_box(width, height)));
     };
 
     const std::optional<double> emissive_mean = capture_card_mean(EMISSIVE_CARD_MODEL, "emissive");
@@ -888,7 +894,7 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
 
     GTEST_LOG_(INFO) << "card-region mean luminance: emissive " << *emissive_mean << ", metallic " << *metallic_mean;
 
-    // Measured on this rig; re-measure if the rig, placement or camera changes.
+    // RTX 2080, 2026-10-01: emissive 232 vs metallic 174, and 40 vs 174 with emission dropped from rasterizer.slang.
     constexpr double MARGIN = 10.0;
     EXPECT_GT(*emissive_mean, *metallic_mean + MARGIN)
       << "The emissive card's own region is not meaningfully brighter than the non-emissive control; "
@@ -912,7 +918,7 @@ TEST(GoldenRender, EmissiveStrengthSurvivesTheDeferredGBuffer)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    const auto added = harness.renderer->addModel(EMISSIVE_STRENGTH_CARD_MODEL, emissive_card_placement());
+    const auto added = harness.renderer->addModel(EMISSIVE_STRENGTH_CARD_MODEL, panel_free_card_placement());
     ASSERT_TRUE(added.has_value()) << "adding the emissive-strength card failed";
     harness.render_frames(SETTLE_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
@@ -1891,13 +1897,14 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
     GTEST_LOG_(INFO) << "RT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
                      << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
 
-    EXPECT_LT(changed_fraction, 0.35)
+    // RTX 2080, 2026-10-01: 0.479 with any-hit discarding, 0.941 with the primary ray forced opaque.
+    EXPECT_LT(changed_fraction, 0.70)
       << "the card footprint changed too fully in RT - cut-out texels are NOT being discarded";
     EXPECT_GT(changed_fraction, 0.15)
       << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
-// A ray query has no any-hit stage; the threshold is borrowed from the RT twin, never measured here.
+// A ray query has no any-hit stage, so path_tracing.slang alpha-tests each candidate itself.
 TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
 {
     SKIP_WITHOUT_GPU();
@@ -1913,7 +1920,8 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    harness.render_frames(WARMUP_FRAMES);
+    // Both captures get the same accumulated history, or PT noise alone changes pixels across the card's band.
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + 60);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
     // A: the base scene, before the card is added.
@@ -1933,7 +1941,7 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
-    harness.render_frames(SETTLE_FRAMES);
+    harness.render_frames(SETTLE_FRAMES + 60);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     // B: with the card.
@@ -2000,7 +2008,8 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
     GTEST_LOG_(INFO) << "PT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
                      << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
 
-    EXPECT_LT(changed_fraction, 0.35)
+    // RTX 2080, 2026-10-01: 0.346 with the ray query's alpha test, 0.627 with the query forced opaque.
+    EXPECT_LT(changed_fraction, 0.49)
       << "the card footprint changed too fully in PT - cut-out texels are NOT being discarded";
     EXPECT_GT(changed_fraction, 0.15)
       << "the changed pixels are too sparse to be the checkerboard - check framing";
@@ -2241,27 +2250,24 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    harness.render_frames(WARMUP_FRAMES);
+    // The control gets the same accumulated history as the capture after the add, so noise reads alike in both.
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + 60);
 
-    const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
-    };
-    const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
-      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
-    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, placement);
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, panel_free_card_placement());
     ASSERT_TRUE(added.has_value()) << "adding the card failed";
     // The AS rebuild resets history; deepen it so noise does not swamp the detail.
     harness.render_frames(SETTLE_FRAMES);
     harness.render_frames(60);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
-    uint32_t width = 0;
-    uint32_t height = 0;
     const std::vector<uint8_t> frame = harness.capture_frame(width, height);
     ASSERT_FALSE(frame.empty());
+    ASSERT_EQ(frame.size(), before.size());
 
     if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
         const std::string base = dump;
@@ -2269,13 +2275,16 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
           (base + "-ptadd.png").c_str(), int(width), int(height), 4, frame.data(), static_cast<int>(width) * 4);
     }
 
-    // The card's known screen box for the shared placement (GUI-free upper-right).
-    const Crop box{(width * 71U) / 100U, (width * 98U) / 100U, (height * 40U) / 100U, (height * 61U) / 100U};
+    const Crop box = panel_free_card_box(width, height);
+    const double detail_before = detail_fraction(before, width, height, box);
     const double detail = detail_fraction(frame, width, height, box);
-    GTEST_LOG_(INFO) << "added-model PT crop-detail-fraction " << detail;
+    GTEST_LOG_(INFO) << "added-model PT card-box detail fraction: before the add " << detail_before << ", after "
+                     << detail;
 
-    // Measured between the rebuilt AS and a missing rebuild.
-    EXPECT_GT(detail, 0.07)
+    // Before the add stands in for a missing AS rebuild. RTX 2080, 2026-10-01: 0.037 before, 0.328 after.
+    constexpr double DETAIL_THRESHOLD = 0.15;
+    EXPECT_LT(detail_before, DETAIL_THRESHOLD) << "the card box already has detail without the card - check framing";
+    EXPECT_GT(detail, DETAIL_THRESHOLD)
       << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
 }
 

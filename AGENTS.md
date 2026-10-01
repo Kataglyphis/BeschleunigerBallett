@@ -595,14 +595,17 @@ render (~32 FPS ImGui overlay).
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows
   container and run for real on the host GPU. Linux CI's `clang-tests` job (x64
   and arm64) runs them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
-  minus five tests that miss their thresholds there and one too slow for a runner.
+  minus the GUI input sweep, which is too slow for a runner.
   `--virtual-display` also pins `LP_NATIVE_VECTOR_WIDTH=256`: at arm64's
-  native 128 bits Mesa 26.0 lavapipe's BVH build corrupts memory. Procedure, cwd requirement,
-  the llvmpipe exclusions and the golden-writing cautions are in
+  native 128 bits Mesa 26.0 lavapipe's BVH build corrupts memory. A Linux host
+  with an NVIDIA GPU runs the same suites in the image through CDI, but an ASan
+  build needs `ASAN_OPTIONS=protect_shadow_gap=0` there, or `vkCreateDevice`
+  fails with -3 as soon as ray tracing is enabled. Procedure, cwd requirement,
+  the NVIDIA recipe and the golden-writing cautions are in
   [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
-  Known trap: over an RDP session the swapchain reports zero images and every
-  golden fails with "No synchronization frames available" — that is the
-  session, not a renderer regression (see `BACKLOG.md`).
+  "No synchronization frames available" on every golden was a FrameSync bug
+  (`62e56684`..`5c71d795`, August 2026), not the RDP session it was blamed on;
+  a commit in that range needs `5c71d795` before any golden can draw.
 - **Synchronization validation** catches missing/incorrect barriers that no
   pixel oracle can see (it found 10 real WRITE-AFTER-WRITE hazards in July
   2026). Run it after touching render passes, barriers, or frames-in-flight:
