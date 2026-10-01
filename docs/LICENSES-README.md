@@ -55,9 +55,9 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 | Projekt | URL | Pin | Lizenz (laut Lizenzdatei) | Geprüfte Datei |
 |---|---|---|---|---|
 | abseil-cpp | https://github.com/abseil/abseil-cpp | 20260526.0 (`ABSL_TAG`) | Apache-2.0 | `build-clangcl-profile/_deps/abseil-cpp-src/LICENSE` |
-| googletest (nur `BUILD_TESTING`) | https://github.com/google/googletest | 56efe398 (URL-Pin) | BSD-3-Clause-Lizenztext (Copyright Google Inc.) | `build-clangcl-profile/_deps/googletest-src/LICENSE` |
+| googletest (nur `BUILD_TESTING`) | https://github.com/google/googletest | v1.18.0 (Tag-Archiv) | BSD-3-Clause-Lizenztext (Copyright Google Inc.) | `build-clangcl-profile/_deps/googletest-src/LICENSE` |
 | Microsoft GSL | https://github.com/microsoft/GSL | v4.2.1 | MIT | `build-clangcl-profile/_deps/gsl-src/LICENSE` |
-| Corrosion (nur `RUST_FEATURES`, Build-Tool) | https://github.com/corrosion-rs/corrosion | master | MIT | `build-clangcl-profile/_deps/corrosion-src/LICENSE` |
+| Corrosion (nur `RUST_FEATURES`, Build-Tool) | https://github.com/corrosion-rs/corrosion | c4786e7a (Commit; v0.6.1 fehlen spätere Fixes) | MIT | `build-clangcl-profile/_deps/corrosion-src/LICENSE` |
 | ANTLR4 C++ Runtime (transitiv via FuzzTest) | https://github.com/antlr/antlr4 | von FuzzTest gepinnt | BSD-3-Clause-Lizenztext (The ANTLR Project) | `build-linux-local/_deps/antlr_cpp-src/LICENSE.txt` |
 | RE2 (transitiv via FuzzTest) | https://github.com/google/re2 | von FuzzTest gepinnt | BSD-3-Clause-Lizenztext (The RE2 Authors) | `build-linux-local/_deps/re2-src/LICENSE` |
 

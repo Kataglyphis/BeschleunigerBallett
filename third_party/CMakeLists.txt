@@ -232,8 +232,7 @@ endif()
 
 if(BUILD_TESTING)
   # include google test to project
-  FetchContent_Declare(googletest
-                       URL https://github.com/google/googletest/archive/56efe3983185e3f37e43415d1afa97e3860f187f.zip)
+  FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.18.0.zip)
 
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   _myproject_force_cache_bool(gtest_force_shared_crt ON "")
@@ -399,10 +398,11 @@ if(RUST_FEATURES)
         CACHE FILEPATH "Cargo wrapper used to retry transient Windows file-lock failures" FORCE)
   endif()
 
+  # A commit, not v0.6.1: that tag lacks the CARGO_HOME and cxxbridge-cmd fixes; move to the first tag after it.
   FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG master)
+    GIT_TAG c4786e7ae2d5ade784aca29448df362c874ed04e)
   FetchContent_MakeAvailable(Corrosion)
 
   _myproject_find_or_install_cxxbridge(CXXBRIDGE)

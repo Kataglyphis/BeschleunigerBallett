@@ -6,7 +6,9 @@
     "The manager bumps a gitlink to the tip of the branch named in .gitmodules, falling back to the remote's DEFAULT branch when none is named. Every submodule here names its branch explicitly; third_party/FUZZTEST names its frozen release_<date> line, and the packageRule below holds a line change to dashboard approval.",
     "Actions: the preset's helpers:pinGitHubActionDigests will propose digest pins for the third-party actions this repo references by tag (actions/checkout@v7.0.1, actions/upload-artifact@v7.0.1, codecov/codecov-action@v7.0.0), while a preset rule explicitly leaves the six Kataglyphis/ANTfrastructure composite actions and its three reusable workflows at @develop for the upstream-first change flow.",
     "Unlike the three sibling consumers, this repo has never carried a .github/dependabot.yml, so adopting the preset is a pure addition here - there is no hand-over to sequence and nothing to delete afterwards.",
-    "Renovate resolves `github>Kataglyphis/ANTfrastructure` from ANTfrastructure's DEFAULT BRANCH, not from the pin in third_party/ANTfrastructure, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ANTfrastructure's linux/scripts/renovate-local.sh reads exactly it."
+    "Renovate resolves `github>Kataglyphis/ANTfrastructure` from ANTfrastructure's DEFAULT BRANCH, not from the pin in third_party/ANTfrastructure, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ANTfrastructure's linux/scripts/renovate-local.sh reads exactly it.",
+    "The CMake pins in third_party/CMakeLists.txt are read by the PRESET's customManagers since 2026-10-01 (hub CON46), so the one manager below is for .gitmodules only: a second CMake manager here would report every pin twice, and `renovate-local.sh --apply` refuses a pin reported twice. abseil-cpp (ABSL_TAG, versioning=loose for its LTS dates) and microsoft/GSL are read through the `# renovate:` annotation above each; googletest through its release-tag archive URL. Corrosion is pinned to a commit because v0.6.1 lacks fixes this build needs, so nothing tracks it until the next tag.",
+    "Keep the ABSL_TAG comment above the pin in mind when taking a bump: the tag must stay >= the one FUZZTEST pins in third_party/FUZZTEST/cmake/BuildDependencies.cmake. Moving abseil UP is always safe for that constraint; moving it down is not."
   ],
   "extends": [
     "github>Kataglyphis/ANTfrastructure"
@@ -28,23 +30,6 @@
     }
   ],
   "customManagers": [
-    {
-      "customType": "regex",
-      "description": [
-        "third_party/CMakeLists.txt pulls four dependencies with FetchContent, and Renovate has NO manager that reads CMake -- abseil-cpp, googletest, microsoft/GSL and Corrosion have never had an update proposed by anything, by the App or by renovate-local.sh.",
-        "Two of them carry a real version and are annotated directly above their pin. ABSL_TAG uses abseil's LTS format (20260526.0), which is not semver -- the default parser cannot order it, hence versioning=loose in the annotation. GSL is plain semver and needs no override, which is why the versioning group is optional and one manager serves both shapes.",
-        "The other two are deliberately NOT annotated, and that is the finding rather than an omission. googletest is pinned to an archive of commit 56efe398, a digest and not a version. Corrosion is pinned to `master`: that is not a version at all, so this build is not reproducible from its sources, and pinning it is an owner decision this manager must not paper over.",
-        "Keep the ABSL_TAG comment above the pin in mind when taking a bump: the tag must stay >= the one FUZZTEST pins in third_party/FUZZTEST/cmake/BuildDependencies.cmake. Moving abseil UP is always safe for that constraint; moving it down is not.",
-        "The file pattern uses character classes rather than escapes, because the delimiters of a Renovate regex string are slashes and an inner one would end it early."
-      ],
-      "managerFilePatterns": [
-        "/^third_party[/]CMakeLists[.]txt$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*\\nset\\([A-Z_]+_TAG (?<currentValue>[^)\\s]+)\\)",
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)(?: versioning=(?<versioning>\\S+))?\\s*\\n\\s*GIT_TAG \"?(?<currentValue>[^)\"\\s]+)\"?"
-      ]
-    },
     {
       "customType": "regex",
       "description": [
