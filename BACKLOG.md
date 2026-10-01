@@ -428,6 +428,13 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## CI and release gaps
 
+- [ ] **The riscv64 lane runs no GPU suite** (M, owner decision 2026-10-01, hub CON48).
+  `linux-riscv64.yml` cross-builds on amd64 and runs 655 of 699 Debug tests under QEMU;
+  `Integration.` and `GoldenRender.` are filtered out. riscv64 lavapipe runs under QEMU
+  (OxidANT's renderer suite passed on it), but its 4-lane subgroups SEGV every
+  acceleration-structure build until the image sets `LP_NATIVE_VECTOR_WIDTH=256` (hub
+  CON44). After that image ships: measure the GPU suites under QEMU locally, and turn them
+  on if they fit the job.
 - [x] **GPU suites on llvmpipe: five GoldenRender tests miss their thresholds**
   (S, settled 2026-10-01 on an RTX 2080). None of the five was an llvmpipe
   difference: all five failed identically on the RTX 2080 (NVIDIA 595.58.03,

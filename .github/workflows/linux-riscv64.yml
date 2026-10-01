@@ -1,0 +1,39 @@
+# riscv64: cross-built on amd64, ctest runs under QEMU without the GPU suites (AGENTS.md § The riscv64 lane).
+name: Linux riscv64 · cross build + test
+
+on:
+  push:
+    branches: [main, develop]
+    # A docs-only commit must neither spend a build nor cancel an in-flight code run.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+# main is exempt from cancellation: its runs deploy and release.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-riscv64:
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-riscv64.yml@develop
+    # No timeout-minutes: GitHub rejects it on a job that calls a reusable workflow.
+    permissions:
+      contents: read
+      # compiler-cache-save deletes its key's older entries.
+      actions: write
+    with:
+      script: bash -lc 'bash ./scripts/linux/run-riscv64-tests.sh'
+      container-args: -e CARGO_HOME=/tmp/cargo-home
+      cache-lane: riscv64-clang-debug
+      cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
+      cache-env: 'SCCACHE_CACHE_SIZE=1500M'
+      timeout-minutes: 120
+    secrets:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}

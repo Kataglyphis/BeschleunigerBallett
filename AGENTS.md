@@ -667,8 +667,8 @@ them from the templates after an upstream change; never edit them here.
 
 Every lane runs on every push/PR to `main`/`develop`. The `[build-win]` and
 `[build-arm]` commit-message opt-ins are gone (owner decision 2026-09-24: Linux
-x64, Linux arm64 and Windows x64 always run; Windows arm64 joined on 2026-09-25).
-The four platform lanes still skip a docs-only commit through `paths-ignore`:
+x64, Linux arm64 and Windows x64 always run; Windows arm64 joined on 2026-09-25, Linux
+riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit through `paths-ignore`:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
@@ -677,6 +677,7 @@ The four platform lanes still skip a docs-only commit through `paths-ignore`:
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows x64 (clang-cl container build of `clangcl-debug` + `clangcl-release`, CPU tests, fuzz seeds, renderer comparisons, packaging; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU minus the GPU suites; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
 | Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
@@ -734,7 +735,7 @@ not the workflow. The job's check-run name moved with it, to
 `Build, test, package (x64) / build (amd64)`.
 
 Workflow files follow the fleet naming convention (owner decision 2026-09-24):
-kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`,
+kebab-case, one file per platform + arch (`linux-x64.yml`, `linux-arm64.yml`, `linux-riscv64.yml`,
 `windows-x64.yml`, `windows-arm64-cross.yml`), repo-local reusables as `reusable-<platform>.yml`, and
 display names `<Platform> <Arch> · <what>`. The job ids are unchanged, so the
 check-run names a branch protection rule matches did not move; badge and
@@ -742,7 +743,7 @@ check-run names a branch protection rule matches did not move; badge and
 
 To re-run a lane at the branch tip without a commit (a fix to a docs path the
 filter skips, say), use `workflow_dispatch` on `linux-x64.yml`,
-`windows-x64.yml` or `windows-arm64-cross.yml` (`linux-arm64.yml` has none). The
+`linux-riscv64.yml`, `windows-x64.yml` or `windows-arm64-cross.yml` (`linux-arm64.yml` has none). The
 hub's trigger rules, including the opt-in markers other repos still use:
 [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md).
 Reading pipeline status from a shell (`gh`):
@@ -753,6 +754,32 @@ to the x86 lane applies to ARM automatically. No CI lane has a hardware GPU: the
 Linux `clang-tests` job (both arches) runs the golden suites on llvmpipe (a CPU Vulkan device,
 [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), and synchronization
 validation stays host-only.
+
+### The riscv64 lane
+
+**Cross-built on amd64, tested under QEMU** (owner decision 2026-10-01, hub CON48): an
+emulated riscv64 build is 20-30x slower than native and would not fit a 6 h job.
+`linux-riscv64.yml` is one `uses:` onto the hub's `container-ci-riscv64.yml`; its
+container half, `scripts/linux/run-riscv64-tests.sh`, calls the hub's `riscv64_cross_env`,
+precompiles the Slang shaders on the host, builds the `linux-riscv64-cross` preset (Debug,
+`$env{RISCV64_CMAKE_TOOLCHAIN_FILE}`, `Rust_CARGO_TARGET=riscv64gc-unknown-linux-gnu`) and
+runs ctest. binfmt executes the riscv64 binaries, so gtest discovery and ctest need no
+emulator wrapper. The mechanism is the hub's:
+[`riscv64-cross-test-lanes.md`](third_party/ANTfrastructure/docs/riscv64-cross-test-lanes.md).
+
+- **What runs:** 655 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
+  GLFW and Rust renderer bridge. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
+- **What does not:** the `Integration.` and `GoldenRender.` suites (no GPU under QEMU, and
+  riscv64 lavapipe has the 4-lane subgroups that SEGV acceleration-structure builds until
+  the image's `LP_NATIVE_VECTOR_WIDTH=256`, hub CON44), plus the source-reading
+  `BuildIntegrity.CompiledShadersAreNotOlder`: the same filter as the sanitizer jobs.
+  No ASan, UBSan, TSan or coverage: the cross clang has no riscv64 compiler-rt. That is
+  also why `VulkanEngineCore`'s hard-wired Linux Debug `-fsanitize=address` skips a
+  cross build (`CMAKE_CROSSCOMPILING`), and the fuzz targets, which need ASan, skip
+  themselves. No cargo suite: OxidANT's own riscv64 lane tests that crate.
+- **The Vulkan hook is switched off there.** `source_vulkan_env` would source the
+  x86_64 SDK's `setup-env.sh` and undo `riscv64_cross_env`'s `/opt/vulkan/active` paths.
 
 ### The job bodies are ANTfrastructure's, resolved at `@develop`
 

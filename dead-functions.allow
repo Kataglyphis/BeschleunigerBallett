@@ -12,6 +12,7 @@
 #   linux/scripts/lib/app-runner.sh:201   app_runner_env_hook
 # Deleting one silently drops a build or launch step with nothing to fail.
 scripts/linux/cmake-configure-build.sh	cmake_build_prebuild_hook
+scripts/linux/run-riscv64-tests.sh	cmake_build_prebuild_hook
 scripts/linux/run-debug.sh	app_runner_env_hook
 scripts/linux/run-debug.sh	app_runner_post_vulkan_hook
 scripts/linux/run-release.sh	app_runner_env_hook

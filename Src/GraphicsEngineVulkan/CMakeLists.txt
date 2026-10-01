@@ -123,10 +123,11 @@ if(RUST_FEATURES)
   target_link_libraries(VulkanEngineCore PUBLIC oxidant oxidant_bridge)
 endif()
 
-# Linux Debug ASan, except under TSan: -fsanitize=address and -fsanitize=thread are mutually exclusive.
+# Linux Debug ASan, except under TSan (mutually exclusive) and cross builds (no target ASan runtime).
 set(_kat_dbg_linux "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>")
 set(_kat_dbg_linux_asan
-    "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>,$<NOT:$<BOOL:${myproject_ENABLE_SANITIZER_THREAD}>>>")
+    "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>,$<NOT:$<BOOL:${myproject_ENABLE_SANITIZER_THREAD}>>,$<NOT:$<BOOL:${CMAKE_CROSSCOMPILING}>>>"
+)
 target_compile_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>
                                                $<${_kat_dbg_linux}:-fno-omit-frame-pointer>)
 target_link_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>)
