@@ -32,6 +32,8 @@ export class Camera
     void set_far_plane(float far_plane);
     void set_fov(float fov);
     void set_camera_position(glm::vec3 new_camera_position);
+    // Degrees, as the controller keeps them; front, right and up follow.
+    void set_orientation(float yaw, float pitch);
 
     ~Camera();
 

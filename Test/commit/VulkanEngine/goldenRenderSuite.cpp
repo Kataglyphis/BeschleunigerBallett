@@ -71,9 +71,47 @@ bool glfw_reports_vulkan_support()
     return supports_vulkan;
 }
 
+// Pick a scene for what it measures: the debug skeleton's thin bones leave most PCF taps unoccluded.
+class ScopedModelOverride
+{
+  public:
+    explicit ScopedModelOverride(const char *relative_path) { set(relative_path); }
+    ScopedModelOverride(const ScopedModelOverride &) = delete;
+    ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
+    ~ScopedModelOverride() { set(""); }
+
+  private:
+    static void set(const char *value)
+    {
+#ifdef _WIN32
+        std::ignore = _putenv_s("KATAGLYPHIS_MODEL_OVERRIDE", value);
+#else
+        if (*value == '\0') {
+            std::ignore = unsetenv("KATAGLYPHIS_MODEL_OVERRIDE");
+        } else {
+            std::ignore = setenv("KATAGLYPHIS_MODEL_OVERRIDE", value, 1);
+        }
+#endif
+    }
+};
+
+// The goldens were calibrated on the Debug app's scene and framing, so the harness pins both, whatever the build type.
+constexpr const char *GOLDEN_SCENE_MODEL = "Models/Dinosaurs/dinosaurs.obj";
+
+void frame_golden_view(Camera &camera)
+{
+    camera.set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    camera.set_orientation(-90.0F, -10.0F);
+    camera.set_near_plane(0.1F);
+    camera.set_far_plane(150.0F);
+    camera.set_fov(45.0F);
+}
+
 // Tears the engine down in the same order as the other integration suites.
 struct EngineHarness
 {
+    // Only when the test picked no scene of its own; ScopedModelOverride clears the variable on exit.
+    std::optional<ScopedModelOverride> golden_scene;
     std::unique_ptr<Kataglyphis::Frontend::Window> window;
     std::unique_ptr<Kataglyphis::Scene> scene;
     std::unique_ptr<Kataglyphis::Frontend::GUI> gui;
@@ -85,6 +123,10 @@ struct EngineHarness
         scene(std::make_unique<Kataglyphis::Scene>()),
         gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())), camera(std::make_unique<Camera>())
     {
+        if (const char *chosen = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); chosen == nullptr || *chosen == '\0') {
+            golden_scene.emplace(GOLDEN_SCENE_MODEL);
+        }
+        frame_golden_view(*camera);
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
     }
@@ -203,30 +245,6 @@ size_t distinct_luminance_buckets(const std::vector<uint8_t> &rgba)
     }
     return static_cast<size_t>(std::count(seen.begin(), seen.end(), true));
 }
-
-// Pick a scene for what it measures: the debug skeleton's thin bones leave most PCF taps unoccluded.
-class ScopedModelOverride
-{
-  public:
-    explicit ScopedModelOverride(const char *relative_path) { set(relative_path); }
-    ScopedModelOverride(const ScopedModelOverride &) = delete;
-    ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
-    ~ScopedModelOverride() { set(""); }
-
-  private:
-    static void set(const char *value)
-    {
-#ifdef _WIN32
-        std::ignore = _putenv_s("KATAGLYPHIS_MODEL_OVERRIDE", value);
-#else
-        if (*value == '\0') {
-            std::ignore = unsetenv("KATAGLYPHIS_MODEL_OVERRIDE");
-        } else {
-            std::ignore = setenv("KATAGLYPHIS_MODEL_OVERRIDE", value, 1);
-        }
-#endif
-    }
-};
 
 // A solid box floating over a ground plane, built for shadow measurement.
 constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";

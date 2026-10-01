@@ -82,8 +82,18 @@ does it for either arch:
   and arm64 cross-builds Release only. x64 runs it on the runner host after the
   container build (`windows-x64.yml`'s `host-command`); arm64 in the `gpu-suites`
   job on `windows-11-arm`, from a checkout, which also runs the source-reading
-  `BuildIntegrity.*` checks the staged tree lacks. `LP_NATIVE_VECTOR_WIDTH=256`
-  as on Linux.
+  `BuildIntegrity.*` checks the staged tree lacks. The script sets
+  `LP_NATIVE_VECTOR_WIDTH=256` itself, which on Linux the image does.
+- **Release frames the same view.** A Release app opens on crytek-sponza from
+  inside, a Debug one on Dinosaurs from (0, 6, 26) (`Camera.cpp`,
+  `SceneConfig.cpp`), and the goldens were calibrated on the latter; the first
+  Release run failed 14 of 40 on framing alone (cards out of view, 13 of 373
+  meshes "visible"). So `EngineHarness` pins that scene, unless the test picked
+  its own, and that camera, whatever the build type.
+- **The runner's desktop must hold the window.** Windows clamps a new window to
+  the desktop, and `windows-11-arm`'s is 1024x768, which shrank the 1200x768
+  frame to 1004x749; the script switches a CI runner's display mode to fit
+  (`ChangeDisplaySettings`), and never a workstation's.
 
 `commitTestSuite` carries its own LeakSanitizer suppression for libX11
 (`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `glfwInit()` on X11 leaks

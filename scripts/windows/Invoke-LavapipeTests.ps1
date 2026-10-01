@@ -107,13 +107,45 @@ Register-Lavapipe -Icd $tools.Icd
 # Beside the suite, so it wins over any vulkan-1.dll the image put in System32.
 Copy-Item -LiteralPath (Join-Path $tools.LoaderDir 'vulkan-1.dll') -Destination (Split-Path $suitePath) -Force
 
-# GLFW keeps a window inside the desktop, and the goldens open 1200x768; a hosted runner's desktop starts at 1024x768.
-Add-Type -AssemblyName System.Windows.Forms
-$bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-if (($bounds.Width -lt 1280 -or $bounds.Height -lt 900) -and (Get-Command Set-DisplayResolution -ErrorAction SilentlyContinue)) {
-  try { Set-DisplayResolution -Width 1920 -Height 1080 -Force } catch { Write-Warning "Set-DisplayResolution: $($_.Exception.Message)" }
+# Windows clamps a new window to the desktop, and the goldens frame a 1200x768 view; a hosted runner's desktop is 1024x768.
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class KataglyphisDesktop {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+  struct DevMode {
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string DeviceName;
+    public short SpecVersion, DriverVersion, Size, DriverExtra;
+    public int Fields, PositionX, PositionY, Orientation, FixedOutput;
+    public short Color, Duplex, YResolution, TTOption, Collate;
+    [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string FormName;
+    public short LogPixels;
+    public int BitsPerPel, PelsWidth, PelsHeight, DisplayFlags, DisplayFrequency, IcmMethod, IcmIntent, MediaType, DitherType, Reserved1, Reserved2, PanningWidth, PanningHeight;
+  }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool EnumDisplaySettings(string device, int mode, ref DevMode devMode);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int ChangeDisplaySettings(ref DevMode devMode, int flags);
+  [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+  static KataglyphisDesktop() { SetProcessDPIAware(); }
+  public static string Current() { return GetSystemMetrics(0) + "x" + GetSystemMetrics(1); }
+  public static bool Fits(int width, int height) { return GetSystemMetrics(0) >= width && GetSystemMetrics(1) >= height; }
+  public static int Resize(int width, int height) {
+    var mode = new DevMode();
+    mode.Size = (short)Marshal.SizeOf(typeof(DevMode));
+    if (!EnumDisplaySettings(null, -1, ref mode)) { return -100; }
+    mode.PelsWidth = width;
+    mode.PelsHeight = height;
+    mode.Fields = 0x80000 | 0x100000;
+    return ChangeDisplaySettings(ref mode, 0);
+  }
 }
-Write-Host "desktop: $([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Size)"
+'@
+Write-Host "desktop: $([KataglyphisDesktop]::Current())"
+# Only on a CI runner: on a workstation this would change the owner's display mode.
+foreach ($size in @(1920, 1080), @(1600, 900), @(1280, 1024)) {
+  if ($env:GITHUB_ACTIONS -ne 'true' -or [KataglyphisDesktop]::Fits(1280, 900)) { break }
+  Write-Host "ChangeDisplaySettings $($size -join 'x'): $([KataglyphisDesktop]::Resize($size[0], $size[1])) -> $([KataglyphisDesktop]::Current())"
+}
+if (-not [KataglyphisDesktop]::Fits(1280, 900)) { Write-Warning "the desktop stays $([KataglyphisDesktop]::Current()); windows will be clamped and framing-sensitive goldens may fail" }
 
 $summary = @(& (Join-Path $tools.LoaderDir 'vulkaninfo.exe') --summary 2>&1 | ForEach-Object { "$_" })
 $summary | Write-Host

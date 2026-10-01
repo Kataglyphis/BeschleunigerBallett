@@ -88,6 +88,13 @@ void Camera::set_fov(float fov) { camera_state.fov = fov; }
 
 void Camera::set_camera_position(glm::vec3 new_camera_position) { camera_state.position = new_camera_position; }
 
+void Camera::set_orientation(float yaw, float pitch)
+{
+    camera_state.yaw = yaw;
+    camera_state.pitch = pitch;
+    update();
+}
+
 auto Camera::calculate_viewmatrix() -> glm::mat4
 {
     // very necessary for further calc
