@@ -1,4 +1,4 @@
-name: Windows arm64 · cross build + run
+name: Windows arm64 · cross build + test
 
 # Release only: see third_party/ANTfrastructure/docs/windows-cross-builds.md.
 
