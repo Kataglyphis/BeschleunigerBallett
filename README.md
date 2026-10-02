@@ -19,6 +19,7 @@ see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.d
 
 [![Linux arm64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-arm64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-arm64.yml)
 [![Linux x64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-x64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-x64.yml)
+[![Linux riscv64 · cross build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-riscv64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/linux-riscv64.yml)
 [![Windows x64 · build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-x64.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-x64.yml)
 [![Windows arm64 · cross build + test](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-arm64-cross.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/windows-arm64-cross.yml)
 [![Lint gates](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/lint-gates.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/BeschleunigerBallett/actions/workflows/lint-gates.yml)
