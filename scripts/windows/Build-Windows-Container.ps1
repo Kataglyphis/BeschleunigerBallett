@@ -64,7 +64,7 @@ $buildCommand = {
     'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', (Join-Path $WorkspacePath 'scripts\windows\Build-Windows.ps1'),
     '-Configurations', $Configurations,
-    '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
+    '-SkipPerfTests', '-SkipMsix'
   )
   if (-not $RunTests) { $psArgs += '-SkipTests' }
   if ($ParallelJobs -gt 0) { $psArgs += @('-ParallelJobs', "$ParallelJobs") }

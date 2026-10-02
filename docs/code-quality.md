@@ -50,14 +50,17 @@ Linux equivalent: `scripts/linux/run-static-analysis-format.sh`.
 .\scripts\windows\Build-Windows.ps1 -Configurations 'clangcl-debug' -SkipFormat -SkipTidy
 ```
 
-**Caveat worth knowing:** `scripts/windows/Build-Windows-Container.ps1`
-hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so containerized
-builds never run clang-tidy — but they always run the clang-format check (only
-`-SkipTidy` is hard-coded; the container script has no `-SkipFormat` to
-forward). Host `Build-Windows.ps1` accepts `-SkipFormat`. That is why tidy drift
-accumulates even when every build is green — and format drift accumulates too,
-for the reason upstream calls "the failure mode to watch for": the clang-format
-check that does run reports its deviating count but never fails the build on it.
+**Caveat worth knowing:** containerized builds run clang-tidy again since
+2026-10-01: neither `scripts/windows/Build-Windows-Container.ps1` nor the Windows
+x64 lane's `Invoke-WindowsLane.ps1` passes `-SkipTidy` any more, because the
+image's clang-tidy (LLVM 23.1.1) reads a clang-cl C++23 BMI (hub CON10). It still
+covers only the TUs that import no `kataglyphis` module: the hub's
+`Invoke-ClangTidyFixStep` skips the rest (upstream trap 2, below), and
+`.clang-tidy` sets no `WarningsAsErrors`, so a finding is logged, never fatal;
+only a TU tidy cannot parse fails the step. The clang-format check always runs
+too (the container script has no `-SkipFormat` to forward; host
+`Build-Windows.ps1` accepts it), and it has the failure mode upstream warns of:
+it reports its deviating count but never fails the build on it.
 
 ## Known state (2026-09-29)
 

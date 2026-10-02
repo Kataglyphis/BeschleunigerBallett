@@ -317,12 +317,14 @@ unconditional control capture before its output is believed.
   enormous commit that will collide with anything in flight, so it wants a
   deliberate moment (right after a merge point) plus a
   `.git-blame-ignore-revs` entry. Alternative: format-on-touch only, and let
-  the drift shrink over time. **Owner decision, not an agent's.** `-SkipTidy`
-  is still passed unconditionally in container builds, so clang-tidy remains
-  uncovered (and cannot see module TUs anyway - see below).
-- **clang-tidy cannot see C++23 module TUs** (module BMIs reference the
-  container layout). Either run tidy inside the container, or accept that
-  coverage is limited to the non-module surface.
+  the drift shrink over time. **Owner decision, not an agent's.** Container
+  builds run clang-tidy again since 2026-10-01 (hub CON10), but it only logs
+  findings: `.clang-tidy` sets no `WarningsAsErrors`.
+- **clang-tidy still skips the module TUs** (S, hub). The image's clang-tidy reads
+  a clang-cl C++23 BMI (hub CON10, proven 2026-10-01), but the hub's
+  `Invoke-ClangTidyFixStep` still skips every TU that imports a `kataglyphis`
+  module, so tidy sees 12 of the 44 `.cpp` files under `Src/`. Lifting that skip
+  is a hub change; then measure how long the full set takes on a 4-vCPU runner.
 - **clang-tidy 23.1.1 segfaults on `buildIntegritySuite.cpp`** (found
   2026-09-30, unsized). `run-static-analysis-format.sh --only-format` in the
   amd64 `:latest` stops at file 73 of 108 with exit 139: LLVM's dataflow
@@ -435,15 +437,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   `Dinosaurs` (four `ObjParseUnit` tests stopped skipping) and the Profile perf suite;
   `perfTestSuite` exits 1 when a benchmark skips with an error, so every lane's perf run is a
   functional gate; both Windows lanes run the GPU suites on lavapipe on the runner, and
-  arm64 the source-reading `BuildIntegrity.*` checks too (`docs/gpu-golden-testing.md`).
+  arm64 the source-reading `BuildIntegrity.*` checks, the Release fuzz targets (FuzzTest
+  unit mode, `KATAGLYPHIS_RELEASE_FUZZ_TESTS`) and the Profile perf suite
+  (`docs/gpu-golden-testing.md`).
   Still not everywhere, each for a reason:
-  - **Windows arm64 fuzz targets** (M-L, blocked on the cross build). FuzzTest's
-    `json_grammar` runs `grammar_domain_code_generator`, an arm64 binary in this build, at
-    build time, which the amd64 host cannot execute; and the targets are wired for Debug
-    clang-cl fuzzing mode with ASan, which arm64 has no runtime for. A Release, ASan-free
-    unit-mode build would need `json_grammar` out of `ALL` (nothing here links it) and
-    `Test/fuzz/CMakeLists.txt`'s gates relaxed for it, as AccelerANTgine's riscv64 lane
-    does with QEMU running the generator (this repo's riscv64 lane skips its fuzz targets too).
   - **riscv64 GPU suites**: the entry below.
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.
@@ -452,8 +449,9 @@ cleanUp+recreate pair at the four scene-changed sites.
     Debug run has: a clean runner has none. Staging the image's `VkLayer_khronos_validation`
     and registering it under `HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers` would let x64 run
     the Debug suite.
-  - By design, not gaps: TSan and coverage are Linux-only (clang-cl has no TSan, the
-    image no profile runtime), the Pester suites test Windows scripts on Windows x64, and
+  - By design, not gaps: TSan is Linux-only (clang-cl has none) and coverage is
+    *measured* on Linux only (no Windows step reads the `.profraw` files), the
+    Pester suites test Windows scripts on Windows x64, and
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
 
 - [ ] **The riscv64 lane runs no GPU suite** (M, owner decision 2026-10-01, hub CON48).

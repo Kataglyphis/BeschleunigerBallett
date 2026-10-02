@@ -201,15 +201,15 @@ Linux ones). The plain-Clang
 2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
 stays: the `windows-clang-release-wix` package preset builds on it.
 
-**Coverage is OFF for every ClangCL preset** (`myproject_ENABLE_COVERAGE` in
-`x64-ClangCL-Windows-Base`, 2026-09-24). The image compiles with its patched LLVM,
-which ships no `clang_rt.profile` (ANTfrastructure's `Build-LlvmFromSource.ps1`
-builds it with `COMPILER_RT_BUILD_PROFILE=OFF`: the profile runtime does not
-compile under clang-cl). With coverage on, the option's default, configure
-stopped at `Coverage was requested, but the clang-cl profile runtime is missing`
-(run 36042436962). No Windows step consumed coverage; the Linux lanes' coverage
-job is where it is measured. Turn it back on once the image ships that runtime
-(ANTfrastructure backlog CON9).
+**Coverage is ON again for the ClangCL Debug presets** (`myproject_ENABLE_COVERAGE`
+in `x64-ClangCL-Windows-Base`, 2026-10-01, hub CON9). From 2026-09-24 it was OFF: the
+image's patched LLVM shipped no `clang_rt.profile`, and configure stopped at
+`Coverage was requested, but the clang-cl profile runtime is missing` (run
+36042436962). The `:winamd64` of 2026-09-30 carries
+`clang_rt.profile-x86_64.lib`. Profile keeps it OFF (`x64-ClangCL-Windows-RelWithDebInfo-Base`,
+so benchmarks stay uninstrumented) and Release never instruments
+(`myproject_enable_coverage`). No Windows step reads the `.profraw` files; the
+Linux lanes' coverage job is where coverage is measured.
 
 **No `find`/`count`/`remove` on a defaulted-`==` struct under ClangCL.** The
 image's MSVC STL 14.51 takes its vectorized path for any type clang calls
@@ -637,7 +637,8 @@ when no adapter is present rather than fail. Ideas worth picking up live in
 
 **Formatting and static analysis.** clang-format/clang-tidy/cmake-format
 commands, the host gotchas, the container-build behavior (clang-format always
-runs; clang-tidy never does), and the suggested cadence live in
+runs, and clang-tidy too since hub CON10, over the TUs that import no module), and the
+suggested cadence live in
 [`docs/code-quality.md`](docs/code-quality.md).
 
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast

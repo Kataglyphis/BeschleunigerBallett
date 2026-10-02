@@ -1,7 +1,8 @@
-if(NOT
-   CMAKE_BUILD_TYPE
-   STREQUAL
-   "Debug")
+# Release only for the arm64 cross lane: FuzzTest unit mode, ASan nowhere, so abseil and the targets still agree.
+set(_kataglyphis_fuzz_unit_mode OFF)
+if(CMAKE_BUILD_TYPE STREQUAL "Release" AND KATAGLYPHIS_RELEASE_FUZZ_TESTS)
+  set(_kataglyphis_fuzz_unit_mode ON)
+elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
   message(STATUS "Skipping fuzz tests: build type is '${CMAKE_BUILD_TYPE}', requires Debug.")
   return()
 endif()
@@ -11,8 +12,8 @@ if(NOT CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   return()
 endif()
 
-if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)))
-  message(STATUS "Skipping fuzz tests: supported on Linux Clang and Windows clang-cl fuzzing mode.")
+if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (WIN32 AND MSVC AND (KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE OR _kataglyphis_fuzz_unit_mode))))
+  message(STATUS "Skipping fuzz tests: supported on Linux Clang and Windows clang-cl fuzzing or unit mode.")
   return()
 endif()
 
@@ -35,6 +36,13 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
 
   # Without module scanning clang reports: module 'kataglyphis.vulkan.*' not found.
   set_target_properties(${fuzz_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+
+  # Unit mode instruments nothing: coverage needs FuzzTest's fuzzing runtime, and ADDRESS_SANITIZER flips abseil's layout.
+  if(_kataglyphis_fuzz_unit_mode)
+    target_compile_definitions(${fuzz_target} PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+    link_fuzztest(${fuzz_target})
+    return()
+  endif()
 
   if(MSVC)
     target_link_libraries(${fuzz_target} PRIVATE kataglyphis_fuzztest_windows_asan)

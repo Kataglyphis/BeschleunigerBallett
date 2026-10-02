@@ -344,7 +344,7 @@
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
-				"myproject_ENABLE_COVERAGE": "OFF"
+				"myproject_ENABLE_COVERAGE": "ON"
 			},
 			"condition": {
 				"type": "equals",

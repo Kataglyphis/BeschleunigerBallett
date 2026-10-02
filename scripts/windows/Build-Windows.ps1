@@ -325,6 +325,8 @@ try {
         Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Release'
         Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release' `
           -ConfigureExtraArgs (@(if ($StageTests) { '-DBUILD_TESTING=ON', '-DKATAGLYPHIS_RELEASE_COMMIT_TESTS=ON' }) +
+            # A cross build has no Debug fuzz targets, so the Release one builds them in FuzzTest unit mode.
+            @(if ($StageTests -and $isCross) { '-DKATAGLYPHIS_RELEASE_FUZZ_TESTS=ON' }) +
             @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan))
       }
 
@@ -374,12 +376,23 @@ try {
         New-Item -ItemType Directory -Force -Path $tests | Out-Null
         $suite = Join-Path $buildPathClangRelease 'commitTestSuite.exe'
         if (-not (Test-Path -LiteralPath $suite -PathType Leaf)) { throw "The Release build made no $suite; KATAGLYPHIS_RELEASE_COMMIT_TESTS did not take" }
+        # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
+        $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment'
+        $manifest = [System.Collections.Generic.List[object]]::new()
+        $manifest.Add(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
         $staged = @($suite)
         # The perf suite rides along when clangcl-profile was built; it exits non-zero when a benchmark cannot run.
         if (Test-ConfigurationSelected -Name 'clangcl-profile' -SelectedConfigurations $selectedConfigurations) {
           $perf = Join-Path $buildPathClangProfile 'perfTestSuite.exe'
           if (-not (Test-Path -LiteralPath $perf -PathType Leaf)) { throw "The Profile build made no $perf" }
           $staged += $perf
+          $manifest.Add(@{ exe = 'perfTestSuite.exe'; kind = 'exitcode'; args = @('--benchmark_min_time=0.05s') })
+        }
+        if ($isCross) {
+          $fuzz = @(Get-ChildItem -LiteralPath $buildPathClangRelease -Filter '*_fuzz_test.exe' -File | ForEach-Object FullName)
+          if ($fuzz.Count -eq 0) { throw "The Release build made no *_fuzz_test.exe; KATAGLYPHIS_RELEASE_FUZZ_TESTS did not take" }
+          $staged += $fuzz
+          foreach ($target in $fuzz) { $manifest.Add(@{ exe = (Split-Path $target -Leaf); kind = 'gtest' }) }
         }
         Copy-Item -LiteralPath $staged -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
@@ -392,11 +405,7 @@ try {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Force
         }
         Copy-Item -LiteralPath (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Invoke-StagedTests.ps1') -Destination $tests
-        # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
-        $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment'
-        $manifest = @(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
-        if ($staged.Count -gt 1) { $manifest += @{ exe = 'perfTestSuite.exe'; kind = 'exitcode'; args = @('--benchmark_min_time=0.05s') } }
-        ConvertTo-Json -InputObject $manifest | Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
+        ConvertTo-Json -InputObject @($manifest) | Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
         Write-BuildLog -Context $context -Message "Staged $(@($staged | ForEach-Object { Split-Path $_ -Leaf }) -join ', ') in $tests with $($closure.Count) closure DLL(s): $(@($closure | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
       } | Out-Null
     }

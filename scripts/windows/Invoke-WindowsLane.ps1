@@ -21,7 +21,7 @@ $failed = [System.Collections.Generic.List[string]]::new()
 
 # -SkipPerfTests: the perf suite runs below, where a missing executable fails instead of skipping.
 $buildArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'Build-Windows.ps1'),
-  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests', '-StageTests')
+  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipFormat', '-SkipTests', '-SkipPerfTests', '-StageTests')
 & pwsh @buildArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "::error::Build-Windows.ps1 exited $LASTEXITCODE"; exit 1 }
 

@@ -252,18 +252,33 @@ endif()
 
 add_subdirectory(GOOGLE_BENCHMARK)
 
+# The arm64 cross lane's Release build runs the fuzz targets in FuzzTest unit mode, with ASan nowhere.
+set(_MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE OFF)
+if(MSVC
+   AND KATAGLYPHIS_RELEASE_FUZZ_TESTS
+   AND CMAKE_BUILD_TYPE STREQUAL "Release")
+  set(_MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE ON)
+endif()
+
 if(BUILD_TESTING
-   AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
-   AND NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
+   AND ((NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo") AND NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
+        OR _MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE))
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
-     AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR _MYPROJECT_WINDOWS_FUZZTEST_ASAN))
+     AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"
+          OR _MYPROJECT_WINDOWS_FUZZTEST_ASAN
+          OR _MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE))
     set(RE2_INSTALL OFF)
     _myproject_force_cache_bool(ANTLR_BUILD_CPP_TESTS OFF "Disable vendored ANTLR runtime tests.")
 
     message("Adding Fuzztest")
 
     add_subdirectory(FUZZTEST)
+
+    # json_grammar runs a target-arch generator at build time, which a cross build's host cannot; nothing here links it.
+    if(CMAKE_CROSSCOMPILING AND TARGET json_grammar)
+      set_target_properties(json_grammar PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
 
     # FuzzTest at main (ad66c13) does not compile against the abseil LTS it
     # itself pins (20260526.0): fuzzing_bit_gen.h friend-declares
@@ -334,6 +349,10 @@ if(BUILD_TESTING
         target_link_libraries(re2 PRIVATE kataglyphis_fuzztest_windows_asan)
       endif()
 
+      foreach(_antlr_target IN ITEMS antlr4_static antlr4_shared)
+        _myproject_configure_windows_antlr_target("${_antlr_target}")
+      endforeach()
+    elseif(_MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE)
       foreach(_antlr_target IN ITEMS antlr4_static antlr4_shared)
         _myproject_configure_windows_antlr_target("${_antlr_target}")
       endforeach()

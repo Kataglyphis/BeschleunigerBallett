@@ -80,6 +80,7 @@ add_subdirectory(Src)
 
 # The arm64 cross lane builds Release only, and its windows-11-arm job is the only place an arm64 test can run.
 option(KATAGLYPHIS_RELEASE_COMMIT_TESTS "Also build the commit suite in Release (the arm64 cross lane)" OFF)
+option(KATAGLYPHIS_RELEASE_FUZZ_TESTS "With it, the fuzz targets too, in FuzzTest unit mode without ASan (Windows)" OFF)
 
 if(BUILD_TESTING)
   include(CTest)
@@ -97,6 +98,9 @@ if(BUILD_TESTING)
   elseif(CMAKE_BUILD_TYPE STREQUAL "Release" AND KATAGLYPHIS_RELEASE_COMMIT_TESTS)
     add_subdirectory(Test/commit)
     message(STATUS "Building test suite: commit (Release, KATAGLYPHIS_RELEASE_COMMIT_TESTS)")
+    if(KATAGLYPHIS_RELEASE_FUZZ_TESTS)
+      add_subdirectory(Test/fuzz)
+    endif()
   else()
     message(
       STATUS
