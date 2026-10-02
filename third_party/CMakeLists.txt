@@ -273,7 +273,15 @@ if(BUILD_TESTING
 
     message("Adding Fuzztest")
 
-    add_subdirectory(FUZZTEST)
+    # EXCLUDE_FROM_ALL also drops its install rules (ANTLR's names a runtime nobody builds) from the packaged tree.
+    add_subdirectory(FUZZTEST EXCLUDE_FROM_ALL)
+
+    # ANTLR's install rule reads LICENSE.txt two levels above its source (a monorepo-layout assumption) - stage it at the build root.
+    if(EXISTS "${CMAKE_BINARY_DIR}/_deps/antlr_cpp-src/LICENSE.txt"
+       AND NOT EXISTS "${CMAKE_BINARY_DIR}/LICENSE.txt")
+      file(COPY_FILE "${CMAKE_BINARY_DIR}/_deps/antlr_cpp-src/LICENSE.txt"
+           "${CMAKE_BINARY_DIR}/LICENSE.txt")
+    endif()
 
     # json_grammar runs a target-arch generator at build time, which a cross build's host cannot; nothing here links it.
     if(CMAKE_CROSSCOMPILING AND TARGET json_grammar)
