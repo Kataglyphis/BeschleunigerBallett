@@ -470,6 +470,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   acceleration-structure build until the image sets `LP_NATIVE_VECTOR_WIDTH=256` (hub
   CON44). After that image ships: measure the GPU suites under QEMU locally, and turn them
   on if they fit the job.
+- **A one-off `histogram` SEGV in the Rust renderer tests on Linux arm64** (2026-10-02).
+  The `kataglyphis_webgpu_renderer` histogram binary died with SIGSEGV after 6 of 9 tests
+  on the arm64 runner's lavapipe (run 37008638434); the job passed on re-run and it has not
+  recurred. Recorded so a recurrence starts from this line, not from zero.
 - **Disabling shadows leaves the cascade shadow map in `UNDEFINED` while the
   raster pass still samples it** (unsized, found 2026-10-01). With
   `shadows_enabled = false` every draw reports `VUID-vkCmdDraw-None-09600`:
