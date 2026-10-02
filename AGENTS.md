@@ -201,15 +201,18 @@ Linux ones). The plain-Clang
 2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
 stays: the `windows-clang-release-wix` package preset builds on it.
 
-**Coverage is ON again for the ClangCL Debug presets** (`myproject_ENABLE_COVERAGE`
-in `x64-ClangCL-Windows-Base`, 2026-10-01, hub CON9). From 2026-09-24 it was OFF: the
-image's patched LLVM shipped no `clang_rt.profile`, and configure stopped at
-`Coverage was requested, but the clang-cl profile runtime is missing` (run
-36042436962). The `:winamd64` of 2026-09-30 carries
-`clang_rt.profile-x86_64.lib`. Profile keeps it OFF (`x64-ClangCL-Windows-RelWithDebInfo-Base`,
-so benchmarks stay uninstrumented) and Release never instruments
-(`myproject_enable_coverage`). No Windows step reads the `.profraw` files; the
-Linux lanes' coverage job is where coverage is measured.
+**Coverage stays OFF for the ClangCL presets** (`myproject_ENABLE_COVERAGE` in
+`x64-ClangCL-Windows-Base`). It was switched ON on 2026-10-01 (hub CON9: the image
+ships `clang_rt.profile`), and the Debug suite then died at process exit in the
+profile writer: with ASan active the profile runtime comes from Microsoft's ASan
+DLL, `initializeValueProfRuntimeRecord` dereferences a bad pointer
+(`InstrProfilingValue.c:327`), and `commitTestSuite.exe`/`compileTestSuite.exe`
+exited 1 after all 654 tests had passed (run 36997000491). No Windows step reads
+the `.profraw` files; the Linux lanes' coverage job is where coverage is measured.
+Revisit when the profile runtime matches the compiler or value profiling can be
+turned off. Profile keeps it OFF (`x64-ClangCL-Windows-RelWithDebInfo-Base`, so
+benchmarks stay uninstrumented) and Release never instruments
+(`myproject_enable_coverage`).
 
 **No `find`/`count`/`remove` on a defaulted-`==` struct under ClangCL.** The
 image's MSVC STL 14.51 takes its vectorized path for any type clang calls

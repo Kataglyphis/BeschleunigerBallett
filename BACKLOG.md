@@ -325,6 +325,15 @@ unconditional control capture before its output is believed.
   `Invoke-ClangTidyFixStep` still skips every TU that imports a `kataglyphis`
   module, so tidy sees 12 of the 44 `.cpp` files under `Src/`. Lifting that skip
   is a hub change; then measure how long the full set takes on a 4-vCPU runner.
+- **clang-cl coverage crashes the Debug suite at exit** (found 2026-10-02, S).
+  `myproject_ENABLE_COVERAGE=ON` on `x64-ClangCL-Windows-Base` (hub CON9) builds
+  and all 654 tests pass, then the process dies in the profile writer: with ASan
+  active the profile runtime comes from Microsoft's ASan DLL, and
+  `initializeValueProfRuntimeRecord` dereferences a bad pointer
+  (`InstrProfilingValue.c:327`), so `commitTestSuite.exe` and
+  `compileTestSuite.exe` exit 1 (run 36997000491). Coverage is OFF again; no
+  Windows step reads `.profraw`. Revisit when the runtime matches the compiler or
+  value profiling can be turned off.
 - **clang-tidy 23.1.1 segfaults on `buildIntegritySuite.cpp`** (found
   2026-09-30, unsized). `run-static-analysis-format.sh --only-format` in the
   amd64 `:latest` stops at file 73 of 108 with exit 139: LLVM's dataflow
