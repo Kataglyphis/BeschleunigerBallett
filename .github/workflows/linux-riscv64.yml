@@ -1,4 +1,4 @@
-# riscv64: cross-built on amd64, ctest runs under QEMU without the GPU suites (AGENTS.md § The riscv64 lane).
+# riscv64: cross-built on amd64; the CPU suite under QEMU, then the GPU suites serially behind the fp16 shim (enabled by the owner 2026-10-03, AGENTS.md § The riscv64 lane).
 name: Linux riscv64 · cross build + test
 
 on:
@@ -34,6 +34,6 @@ jobs:
       cache-lane: riscv64-clang-debug
       cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
       cache-env: 'SCCACHE_CACHE_SIZE=1500M'
-      timeout-minutes: 120
+      timeout-minutes: 360
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}

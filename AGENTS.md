@@ -691,7 +691,7 @@ riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit th
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
-| Linux riscv64 (cross build on amd64, Debug ctest under QEMU minus the GPU suites; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suite first, then the GPU suites serially behind the fp16 shim; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
 | Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43, plus the Profile perf suite; the `gpu-suites` job runs those two on lavapipe from a checkout) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` |
 
 The top two are their own workflows rather than jobs inside the build lanes,
@@ -795,9 +795,14 @@ emulator wrapper. The mechanism is the hub's:
 - **What runs:** 657 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
   GLFW and Rust renderer bridge. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
-- **What does not:** the `Integration.` and `GoldenRender.` suites (no GPU under QEMU, and
-  riscv64 lavapipe has the 4-lane subgroups that SEGV acceleration-structure builds until
-  the image's `LP_NATIVE_VECTOR_WIDTH=256`, hub CON44).
+- **The GPU suites carry a shim since 2026-10-03.** `Integration.` and `GoldenRender.`
+  run AFTER the CPU suite, serially (`-j1`), under `xvfb-run` with the
+  `libkata_fp16_helpers.so` `LD_PRELOAD` built from `scripts/riscv64/fp16_helpers.c`
+  (cross gcc; riscv64 glibc lacks the fp16 conversion helpers llvmpipe's ORC JIT calls).
+  Measured with the shim: 35/40 pass, and the five 90-min-cap misses were `-j8`
+  contention - at `-j1` a heavy PathTracing test took 23 min, so the serial run fits the
+  workflow's raised 360-minute job. `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice`
+  stays excluded, and `RISCV64_GPU_TESTS=0` skips the whole arm.
   No ASan, UBSan, TSan or coverage: the cross clang has no riscv64 compiler-rt. That is
   also why `VulkanEngineCore`'s hard-wired Linux Debug `-fsanitize=address` skips a
   cross build (`CMAKE_CROSSCOMPILING`), and the fuzz targets, which need ASan, skip
