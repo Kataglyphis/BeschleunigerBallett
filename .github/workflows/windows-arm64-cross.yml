@@ -1,7 +1,6 @@
 name: Windows arm64 · cross build + test
 
-# Release, Profile and the ASan (Debug) suite: the aarch64 ASan runtime ships since 2026-10-03, so the lane builds it too.
-# See third_party/ANTfrastructure/docs/windows-cross-builds.md.
+# Release, Profile and the ASan (Debug) suite: the aarch64 ASan runtime ships since 2026-10-03; see third_party/ANTfrastructure/docs/windows-cross-builds.md.
 
 on:
   push:
