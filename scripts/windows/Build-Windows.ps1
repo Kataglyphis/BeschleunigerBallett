@@ -123,14 +123,15 @@ $presetClangRelease = $buildConfigurationSpecs['clangcl-release']['Preset']
 
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
-# Debug needs an aarch64 ASan runtime, MSVC pins x64, and Profile's benchmarks cannot run here, so they wait for -StageTests.
+# Cross builds clangcl-release, clangcl-debug (its ASan runtime exists for aarch64 since 2026-10-03) and clangcl-profile with -SkipPerfTests; MSVC pins x64.
 if ($isCross) {
-  $notCross = @($selectedConfigurations | Where-Object { $_ -ne 'clangcl-release' -and -not ($_ -eq 'clangcl-profile' -and $SkipPerfTests) })
+  $notCross = @($selectedConfigurations | Where-Object { $_ -notin 'clangcl-release', 'clangcl-debug' -and -not ($_ -eq 'clangcl-profile' -and $SkipPerfTests) })
   if ($notCross.Count -gt 0) {
-    throw "-TargetArch $TargetArch builds clangcl-release, and clangcl-profile with -SkipPerfTests, not $($notCross -join ', ') (third_party/ANTfrastructure/docs/windows-cross-builds.md)."
+    throw "-TargetArch $TargetArch builds clangcl-release, clangcl-debug, and clangcl-profile with -SkipPerfTests, not $($notCross -join ', ') (third_party/ANTfrastructure/docs/windows-cross-builds.md)."
   }
   $buildPathClangRelease = "$buildPathClangRelease-$TargetArch"
   $buildPathClangProfile = "$buildPathClangProfile-$TargetArch"
+  $buildPathClangDebug = "$buildPathClangDebug-$TargetArch"
 }
 # The product both Windows lanes upload: dist\windows-<x64|arm64>, named as a package names its arch.
 $distArch = Join-Path $workspacePath "dist\windows-$packageArch"
@@ -273,7 +274,8 @@ try {
   if (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
       Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Debug'
-      Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug'
+      Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug' `
+        -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
     } | Out-Null
 
     if (-not $SkipTidy) {
@@ -282,7 +284,8 @@ try {
       } | Out-Null
     }
 
-    if (-not $SkipTests) {
+    # A cross build stages the instrumented suite for the arm64 runner instead: the container cannot execute it.
+    if (-not $SkipTests -and -not $isCross) {
       Invoke-BuildStep -Context $context -StepName 'Test: Clang Debug' -Critical -Script {
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangDebug -Configuration 'Debug' -RuntimeFlavor 'Clang'
       } | Out-Null
@@ -396,6 +399,14 @@ try {
         }
         Copy-Item -LiteralPath $staged -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
+        # The Debug (ASan) suite cannot run in the container on a cross build; it rides along, runtime DLLs beside it (the runner has no redist).
+        if (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations) {
+          $asanSuite = Join-Path $buildPathClangDebug 'commitTestSuite.exe'
+          if (-not (Test-Path -LiteralPath $asanSuite -PathType Leaf)) { throw "The Debug build made no $asanSuite" }
+          Copy-Item -LiteralPath $asanSuite -Destination (Join-Path $tests 'commitTestSuite-debug.exe')
+          $manifest.Add(@{ exe = 'commitTestSuite-debug.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
+          & (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Copy-Arm64VsRuntime.ps1') -InstallDir $tests -Flat
+        }
         # repoRoot() walks up to the first Resources/ShadersSlang, so the suites find the shaders and models staged here.
         foreach ($rel in 'Resources\ShadersSlang\build', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza') {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Recurse -Force

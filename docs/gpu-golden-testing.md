@@ -78,8 +78,9 @@ does it for either arch:
   time. Any failure, any skip or no pass fails the step: a skip here is a test
   that did not run.
 - **Which build.** The Release commit suite that `Build-Windows.ps1 -StageTests`
-  stages, on both arches: a clean host has no validation layers for the Debug one,
-  and arm64 cross-builds Release only. x64 runs it on the runner host after the
+  stages, on both arches: a clean host has no validation layers for the Debug one, so the
+  arm64 lane's Debug (ASan) suite skips the same GPU suites and runs beside it since
+  2026-10-03. x64 runs it on the runner host after the
   container build (`windows-x64.yml`'s `host-command`); arm64 in the `gpu-suites`
   job on `windows-11-arm`, from a checkout, which also runs the source-reading
   `BuildIntegrity.*` checks the staged tree lacks. The script sets

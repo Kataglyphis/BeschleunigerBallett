@@ -1,6 +1,7 @@
 name: Windows arm64 · cross build + test
 
-# Release only: see third_party/ANTfrastructure/docs/windows-cross-builds.md.
+# Release, Profile and the ASan (Debug) suite: the aarch64 ASan runtime ships since 2026-10-03, so the lane builds it too.
+# See third_party/ANTfrastructure/docs/windows-cross-builds.md.
 
 on:
   push:
@@ -28,12 +29,12 @@ jobs:
     with:
       target-arch: arm64
       build-script: scripts/windows/Build-Windows.ps1
-      # Format and tidy run on the x64 lane; the Release commit suite and the Profile perf suite are staged for windows-11-arm.
+      # Format and tidy run on the x64 lane; the Release commit suite, the Debug (ASan) suite and the Profile perf suite are staged for windows-11-arm.
       build-args: |
         -TargetArch
         arm64
         -Configurations
-        clangcl-release,clangcl-profile
+        clangcl-release,clangcl-profile,clangcl-debug
         -SkipFormat
         -SkipTidy
         -SkipTests
@@ -53,9 +54,15 @@ jobs:
         Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
         $env:PATH = "$(Join-Path $env:RUNNER_TEMP $rt);$env:PATH"
         ./bundle/bin/GraphicsEngine.exe --version
-      # The commit suite (Release) and the perf suite (Profile), run natively; filter and list in tests.json (hub CON43).
+      # The commit suite (Release), the ASan suite (Debug, /MDd) and the perf suite (Profile), run natively; filter and list in tests.json (hub CON43).
       test-artifact-dir: dist/windows-arm64-tests
       test-command: |
+        # A Debug (/MDd) ASan suite needs the runner's own debug CRT and ucrtbased.dll: neither is redistributable, so neither travels.
+        $crt = @(Get-ChildItem 'C:\Program Files*\Microsoft Visual Studio\*\*\VC\Redist\MSVC\*\debug_nonredist\arm64\Microsoft.VC*.DebugCRT' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($crt.Count -eq 0) { throw 'no arm64 debug CRT under the runner VS; the staged ASan suite is a /MDd build' }
+        $ucrt = @(Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin\*\arm64\ucrt\ucrtbased.dll' -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($ucrt.Count -eq 0) { throw 'no arm64 ucrtbased.dll under the Windows SDK' }
+        $env:PATH = "$($crt[0].FullName);$($ucrt[0].DirectoryName);$env:PATH"
         & ./Invoke-StagedTests.ps1
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
