@@ -40,7 +40,7 @@ fi
 # Every path in the arm is absolute: after ctest_run_main the shell sits inside
 # ${BUILD_DIR}, so a relative GPU path doubled (/workspace/build-riscv64/build-riscv64)
 # and the first attempt ran its GPU ctest with "No tests were found" as a green exit.
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TEST_DIR="${REPO_ROOT}/${BUILD_DIR}"
 GPU_SHIM_DIR="${TEST_DIR}/fp16-shim"
 test -d "${TEST_DIR}" || { err "[gpu] no ${TEST_DIR} - refusing a silent green"; exit 1; }
