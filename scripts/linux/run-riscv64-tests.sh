@@ -37,12 +37,19 @@ if [ "${RISCV64_GPU_TESTS:-1}" = "0" ]; then
   info "[gpu] RISCV64_GPU_TESTS=0 - skipping ${CTEST_GPU_FILTER} suites"
   exit 0
 fi
-GPU_SHIM_DIR="${BUILD_DIR}/fp16-shim"
+# Every path in the arm is absolute: after ctest_run_main the shell sits inside
+# ${BUILD_DIR}, so a relative GPU path doubled (/workspace/build-riscv64/build-riscv64)
+# and the first attempt ran its GPU ctest with "No tests were found" as a green exit.
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+TEST_DIR="${REPO_ROOT}/${BUILD_DIR}"
+GPU_SHIM_DIR="${TEST_DIR}/fp16-shim"
+test -d "${TEST_DIR}" || { err "[gpu] no ${TEST_DIR} - refusing a silent green"; exit 1; }
 mkdir -p "${GPU_SHIM_DIR}"
 "${RISCV64_CROSS_BIN}/riscv64-linux-gnu-clang" -shared -fPIC -O2 "${SCRIPT_DIR}/../riscv64/fp16_helpers.c" -o "${GPU_SHIM_DIR}/libkata_fp16_helpers.so"
+test -f "${GPU_SHIM_DIR}/libkata_fp16_helpers.so" || { err "[gpu] the shim did not build - refusing an unshimmed run"; exit 1; }
 info "[gpu] building the fp16 shim for the Integration/GoldenRender suites"
 xvfb-run -a -s "-screen 0 1920x1080x24" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \
-  ctest --test-dir "${BUILD_DIR}" -C Debug -j1 \
+  ctest --test-dir "${TEST_DIR}" -C Debug -j1 \
     -R "${CTEST_GPU_FILTER}" -E "${CTEST_GPU_EXCLUDE}" \
     --output-on-failure --timeout "${CTEST_GPU_TIMEOUT}"
