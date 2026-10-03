@@ -41,6 +41,8 @@ jobs:
         -StageTests
       artifact-name: BeschleunigerBallett-windows-arm64
       artifact-dir: dist/windows-arm64
+      # The device gate over the runtime bundle this lane builds against: packed in the build job, run on windows-11-arm.
+      bundle-artifact-name: BeschleunigerBallett-windows-arm64-bundle
       # The engine and the VC++ runtime at the least.
       arch-gate-min-inspected: 2
       # The GPU-less runner lacks vulkan-1.dll, so CI borrows LunarG's pinned loader; the bundle never ships it.

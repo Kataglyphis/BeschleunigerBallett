@@ -729,7 +729,9 @@ On `windows-11-arm` the commit suite runs whole, in two halves. The hub's run jo
 runs `tests.json` (the CPU suites, plus `perfTestSuite.exe` as an `exitcode` entry);
 this repo's `gpu-suites` job checks the repo out, puts the staged shaders in it and runs
 the GPU suites on lavapipe plus the source-reading `BuildIntegrity.*` checks through
-`Invoke-LavapipeTests.ps1`, its own job because the hub's stops at 30 minutes.
+`Invoke-LavapipeTests.ps1`, its own job because the hub's stops at 30 minutes. The lane also
+sets `bundle-artifact-name`, so the hub packs the image's runtime bundle and a third job gates
+it with `Test-Arm64Bundle.ps1` on `windows-11-arm` - the bundle's device half, per push.
 
 The hub's `Hardening.cmake` links `/CETCOMPAT` on x64 only. The run job borrows the
 Khronos loader from LunarG's arm64 runtime, pinned by hash, and calls
