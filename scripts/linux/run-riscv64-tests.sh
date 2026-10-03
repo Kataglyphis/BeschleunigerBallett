@@ -39,7 +39,7 @@ if [ "${RISCV64_GPU_TESTS:-1}" = "0" ]; then
 fi
 GPU_SHIM_DIR="${BUILD_DIR}/fp16-shim"
 mkdir -p "${GPU_SHIM_DIR}"
-"${CC}" -shared -fPIC -O2 "${SCRIPT_DIR}/../riscv64/fp16_helpers.c" -o "${GPU_SHIM_DIR}/libkata_fp16_helpers.so"
+"${RISCV64_CROSS_BIN}/riscv64-linux-gnu-clang" -shared -fPIC -O2 "${SCRIPT_DIR}/../riscv64/fp16_helpers.c" -o "${GPU_SHIM_DIR}/libkata_fp16_helpers.so"
 info "[gpu] building the fp16 shim for the Integration/GoldenRender suites"
 xvfb-run -a -s "-screen 0 1920x1080x24" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \
