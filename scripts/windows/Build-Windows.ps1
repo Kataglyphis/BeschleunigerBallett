@@ -400,7 +400,7 @@ try {
         Copy-Item -LiteralPath $staged -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
         # The Debug (ASan) suite cannot run in the container on a cross build; it rides along, runtime DLLs beside it (the runner has no redist).
-        if (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations) {
+        if ($isCross -and (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations)) {
           $asanSuite = Join-Path $buildPathClangDebug 'commitTestSuite.exe'
           if (-not (Test-Path -LiteralPath $asanSuite -PathType Leaf)) { throw "The Debug build made no $asanSuite" }
           Copy-Item -LiteralPath $asanSuite -Destination (Join-Path $tests 'commitTestSuite-debug.exe')
