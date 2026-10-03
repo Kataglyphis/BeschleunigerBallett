@@ -465,11 +465,17 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 - [ ] **The riscv64 lane runs no GPU suite** (M, owner decision 2026-10-01, hub CON48).
   `linux-riscv64.yml` cross-builds on amd64 and runs 657 of 699 Debug tests under QEMU;
-  `Integration.` and `GoldenRender.` are filtered out. riscv64 lavapipe runs under QEMU
-  (OxidANT's renderer suite passed on it), but its 4-lane subgroups SEGV every
-  acceleration-structure build until the image sets `LP_NATIVE_VECTOR_WIDTH=256` (hub
-  CON44). After that image ships: measure the GPU suites under QEMU locally, and turn them
-  on if they fit the job.
+  `Integration.` and `GoldenRender.` are filtered out. **Measured locally on 2026-10-03**
+  (the fp16 shim over QEMU, the shipped `:latest-amd64` with CON44's 8-lane lavapipe,
+  `-R '^(Integration|GoldenRender)\.' -E GuiInputSweep -j8 --timeout 5400`): **35 of 40
+  PASS**, 1 Not Run (the disabled `DumpsFrameToPng`), and 5 PathTracing tests hit the
+  5400-s cap with NO real failure - their passing siblings sit at 4300-5200 s under
+  emulation, so the misses are budget, not correctness (`~/rv/out/gpu-shim.log`).
+  A single-path retry at `-j1 --timeout 14400` is measuring the uncapped runtime.
+  Fit review: the suite needs at least ~6-9 h wall under QEMU - above one 6-h CI job,
+  so "turn them on" needs a design (raise caps + split suites across jobs, or a
+  shard-split owner decision); the local measurement is the data either way.
+
 - **A one-off `histogram` SEGV in the Rust renderer tests on Linux arm64** (2026-10-02).
   The `kataglyphis_webgpu_renderer` histogram binary died with SIGSEGV after 6 of 9 tests
   on the arm64 runner's lavapipe (run 37008638434); the job passed on re-run and it has not
