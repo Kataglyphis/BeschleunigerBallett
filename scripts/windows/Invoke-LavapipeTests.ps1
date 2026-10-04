@@ -24,63 +24,11 @@ Set-StrictMode -Version Latest
 # Exit codes are read below; a failing test must be counted, not thrown.
 $PSNativeCommandUseErrorActionPreference = $false
 
-. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-Import-BuildModule @('WindowsScripts.Shared')
-
-# One Mesa for both arches (mmozeiko/build-mesa, the only lavapipe built for arm64 Windows) and LunarG's loader beside it.
-$pins = @{
-  AMD64 = @{
-    Driver = 'https://github.com/mmozeiko/build-mesa/releases/download/26.2.3/mesa-lavapipe-x64-26.2.3.7z'
-    DriverSha256 = '316831c064a4b627d63bec066822b01b139bb13a009cbcf8fd4a745ca21e83d0'
-    Icd = 'lvp_icd.x86_64.json'
-    Loader = 'https://sdk.lunarg.com/sdk/download/1.4.357.0/windows/VulkanRT-X64-1.4.357.0-Components.zip'
-    LoaderSha256 = 'a14672efed15aafc7f5a16572d35cd3a3416eadf670aeee3cdf50ee32d5fbf83'
-    LoaderDir = 'VulkanRT-X64-1.4.357.0-Components\x64'
-  }
-  ARM64 = @{
-    Driver = 'https://github.com/mmozeiko/build-mesa/releases/download/26.2.3/mesa-lavapipe-arm64-26.2.3.7z'
-    DriverSha256 = '1aa5f0454c1f9d47f1f15a001e7f2a0da01774cfe4b8e1f00c21478de6cd1529'
-    Icd = 'lvp_icd.aarch64.json'
-    Loader = 'https://sdk.lunarg.com/sdk/download/1.4.357.0/warm/VulkanRT-ARM64-1.4.357.0-Components.zip'
-    LoaderSha256 = '0a51a619525e0c7a156125c4f80c4f591c494cef9ff59dc4481735779a9a280c'
-    LoaderDir = 'VulkanRT-ARM64-1.4.357.0-Components'
-  }
-}
-$pin = $pins[$env:PROCESSOR_ARCHITECTURE]
-if (-not $pin) { throw "no lavapipe pin for $env:PROCESSOR_ARCHITECTURE" }
+# The pins, the downloads and the ICD registration have one owner: the hub's host provisioner.
+$installer = Join-Path $RepoRoot 'third_party\ANTfrastructure\windows\scripts\host\Install-LavapipeHost.ps1'
+if (-not (Test-Path -LiteralPath $installer)) { throw "Required script not found: $installer (run: git submodule update --init --recursive third_party/ANTfrastructure)" }
+$tools = & $installer -ToolDir $ToolDir
 $suitePath = (Resolve-Path -LiteralPath $Suite).Path
-
-function Install-Lavapipe {
-  # Downloads and unpacks both pins; returns the ICD manifest and the loader directory.
-  $lavapipeDir = Join-Path $ToolDir 'lavapipe'
-  $archive = Join-Path $ToolDir (Split-Path $pin.Driver -Leaf)
-  Invoke-DownloadWithRetry -Url $pin.Driver -DestinationPath $archive -ExpectedSha256 $pin.DriverSha256 -Description 'lavapipe'
-  $sevenZip = @((Get-Command 7z -ErrorAction SilentlyContinue | ForEach-Object Source), "$env:ProgramFiles\7-Zip\7z.exe") |
-    Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
-  if (-not $sevenZip) { throw '7-Zip is needed to unpack lavapipe, and neither 7z on PATH nor Program Files\7-Zip has it' }
-  & $sevenZip x -y "-o$lavapipeDir" $archive | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "7-Zip exited $LASTEXITCODE unpacking $archive" }
-
-  $zip = Join-Path $ToolDir (Split-Path $pin.Loader -Leaf)
-  Invoke-DownloadWithRetry -Url $pin.Loader -DestinationPath $zip -ExpectedSha256 $pin.LoaderSha256 -Description 'Vulkan loader' -ExpectSignature PK
-  Expand-Archive -LiteralPath $zip -DestinationPath $ToolDir -Force
-  return @{ Icd = (Join-Path $lavapipeDir $pin.Icd); LoaderDir = (Join-Path $ToolDir $pin.LoaderDir) }
-}
-
-function Register-Lavapipe([string]$Icd) {
-  # The loader ignores VK_DRIVER_FILES in an elevated process, which a hosted runner is; HKLM is what it reads then.
-  $env:VK_DRIVER_FILES = $Icd
-  $env:VK_LOADER_DRIVERS_SELECT = '*lvp_icd*'
-  if (Test-Elevated) {
-    $key = 'HKLM:\SOFTWARE\Khronos\Vulkan\Drivers'
-    if (-not (Test-Path -LiteralPath $key)) { New-Item -Path $key -Force | Out-Null }
-    New-ItemProperty -LiteralPath $key -Name $Icd -Value 0 -PropertyType DWord -Force | Out-Null
-    # A crashing test must fail now, not wait out the timeout behind a WER dialog nobody clicks.
-    New-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting' -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
-  }
-  # The BVH sort needs 8-lane subgroups; arm64's native 128 bits give 4 (docs/gpu-golden-testing.md).
-  $env:LP_NATIVE_VECTOR_WIDTH = $env:LP_NATIVE_VECTOR_WIDTH ?? '256'
-}
 
 function Get-TestName([string[]]$Listing) {
   # --gtest_list_tests prints "Suite." then indented names; DISABLED_ tests are listed but never run.
@@ -102,8 +50,6 @@ function Get-TestOutcome([string]$Json, [int]$ExitCode) {
   return 'passed'
 }
 
-$tools = Install-Lavapipe
-Register-Lavapipe -Icd $tools.Icd
 # Beside the suite, so it wins over any vulkan-1.dll the image put in System32.
 Copy-Item -LiteralPath (Join-Path $tools.LoaderDir 'vulkan-1.dll') -Destination (Split-Path $suitePath) -Force
 
