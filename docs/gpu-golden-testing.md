@@ -60,8 +60,8 @@ What that does not cover:
 ## Windows CI runs them on lavapipe
 
 Both Windows lanes run the same suites on Mesa's lavapipe, outside the image:
-the family Windows image ships no software Vulkan device (hub CON25), and a
-hosted runner takes one in a minute. `scripts/windows/Invoke-LavapipeTests.ps1`
+the hub image carries its own device since 2026-10-04 (CON50), but a host-run
+  suite needs the host's ICD, and a hosted runner takes one in a minute. `scripts/windows/Invoke-LavapipeTests.ps1`
 does it for either arch:
 
 - **What it installs.** lavapipe from
