@@ -27,25 +27,11 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+# The container plumbing has one owner: the hub's Invoke-RepoContainerBuild.ps1.
+$runner = Join-Path $repoRoot 'third_party\ANTfrastructure\windows\scripts\build\Invoke-RepoContainerBuild.ps1'
+if (-not (Test-Path -LiteralPath $runner)) { throw "Required script not found: $runner (run: git submodule update --init --recursive third_party/ANTfrastructure)" }
 
-# Preflight: fail before any container starts if the build modules cannot be resolved.
-. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-$null = Resolve-BuildModulePath -Name 'WindowsBuild.Common'
-
-# Must load before its first use (Resolve-DockerExe below).
-Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
-
-# Explicit: Reuse's nested import is module-private, and the tag must follow versions.env.
-Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerImage.Common') -Force -Global
-if (-not $Image) {
-  $Image = Get-CiImageReference -Windows
-}
-
-$docker = Resolve-DockerExe -Override $DockerExe
-Write-Host "Using docker: $docker"
-Write-Host "Image: $Image"
 Write-Host "Configurations: $Configurations"
-
 $configurationList = @($Configurations -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 # Build directories, as named by the shared Build-Windows configuration model.
@@ -71,35 +57,15 @@ $buildCommand = {
   return $psArgs
 }.GetNewClosure()
 
-$cacheEnv = Get-SccacheContainerEnv
-# Build trees are streamed in for incremental builds; this tells the image not to wipe them.
-$cacheEnv['KATAGLYPHIS_KEEP_BUILD_ROOT'] = '1'
-
-$build = @{
-  DockerExe     = $docker
-  Image         = $Image
-  ContainerName = 'bb-build-persistent'
-  RepoRoot      = $repoRoot
-  BuildCommand  = $buildCommand
-  IsolationArgs = (Get-ContainerIsolationArgs -Isolation $Isolation -CpuCount $CpuCount -MemoryGb $MemoryGb)
-  CacheEnv      = $cacheEnv
-  KeepDirs      = @('logs', 'sccache-local')
-
-  # bsdtar matches at every depth, so only names unique to the root may be listed ('./build_*' hit third_party/FUZZTEST/build_defs).
-  InboundExclude = @('.git', './logs', './build-*',
-    './third_party/OxidANT/target')
-
-  IncrementalDirs    = $buildDirs
-  # cxxbridge output nests past the Windows path limit inside the container.
-  IncrementalExclude = @('cargo')
-
-  OutputDirs      = (@('logs') + $buildDirs)
-  VerifyDirs      = $buildDirs
-  OutboundExclude = @('*/CMakeFiles', '*/_deps', '*/cargo', '*.obj', '*.lib', '*.ilk', '*.pcm', '*/corrosion')
-
-  UseBindMount   = $UseBindMount
-  FreshContainer = $FreshContainer
-}
-$null = Invoke-ContainerBuild @build
+# bsdtar matches at every depth, so only names unique to the root may be listed ('./build_*' hit third_party/FUZZTEST/build_defs).
+& $runner -RepoRoot $repoRoot -ContainerName 'bb-build-persistent' -BuildCommand $buildCommand `
+  -Image $Image -DockerExe $DockerExe -Isolation $Isolation -CpuCount $CpuCount -MemoryGb $MemoryGb `
+  -KeepDirs @('logs', 'sccache-local') `
+  -InboundExclude @('.git', './logs', './build-*', './third_party/OxidANT/target') `
+  -IncrementalDirs $buildDirs -IncrementalExclude @('cargo') `
+  -OutputDirs (@('logs') + $buildDirs) -VerifyDirs $buildDirs `
+  -OutboundExclude @('*/CMakeFiles', '*/_deps', '*/cargo', '*.obj', '*.lib', '*.ilk', '*.pcm', '*/corrosion') `
+  -CacheEnv @{ KATAGLYPHIS_KEEP_BUILD_ROOT = '1' } `
+  -UseBindMount:$UseBindMount -FreshContainer:$FreshContainer
 
 Write-Host 'Container build finished successfully.'
