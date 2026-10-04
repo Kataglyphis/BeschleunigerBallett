@@ -85,8 +85,8 @@ $build = @{
   CacheEnv      = $cacheEnv
   KeepDirs      = @('logs', 'sccache-local')
 
-  # bsdtar matches at every depth: './build' would drop third_party/ANTinfrastructure/windows/scripts/build.
-  InboundExclude = @('.git', './logs', './build-*', './build_*',
+  # bsdtar matches at every depth, so only names unique to the root may be listed ('./build_*' hit third_party/FUZZTEST/build_defs).
+  InboundExclude = @('.git', './logs', './build-*',
     './third_party/OxidANT/target')
 
   IncrementalDirs    = $buildDirs
