@@ -85,8 +85,8 @@ $build = @{
   CacheEnv      = $cacheEnv
   KeepDirs      = @('logs', 'sccache-local')
 
-  # Anchored: bsdtar matches bare patterns at every depth; a streamed-in host cargo target wedges later transfers.
-  InboundExclude = @('.git', './logs', './build', './build-*', './build_*',
+  # bsdtar matches at every depth: './build' would drop third_party/ANTinfrastructure/windows/scripts/build.
+  InboundExclude = @('.git', './logs', './build-*', './build_*',
     './third_party/OxidANT/target')
 
   IncrementalDirs    = $buildDirs
