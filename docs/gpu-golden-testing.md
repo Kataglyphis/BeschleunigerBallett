@@ -50,8 +50,9 @@ What that does not cover:
 - **Only that one Linux job runs them.** They cost ~20 minutes of llvmpipe on a
   32-core host (~55 on a 4-vCPU runner); the ASan, TSan and gcc jobs keep
   excluding them.
-- **The Windows container still has no Vulkan device**, so there they are
-  excluded (`$gpuOnlySuites`); the runner runs them instead, below.
+- **The Windows container run excludes them** (`$gpuOnlySuites`) - the runner runs
+  them instead, below - although the hub image carries lavapipe since 2026-10-04
+  (CON50) and its own smoke proves the device.
 - A software rasterizer is not the RX 9070 XT. A pass on llvmpipe is a strong
   behavioural signal, not a substitute for the host loop below after a
   render/device change.

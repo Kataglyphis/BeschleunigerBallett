@@ -8806,7 +8806,8 @@ cached `device->supportsSamplerAnisotropy()`. Underneath both:
 `VulkanDevice.cpp:669` makes `device_features.samplerAnisotropy` a hard
 device-**suitability** requirement, so the engine refuses to run at all on a
 device without it — which is exactly the class of software Vulkan device
-(lavapipe) that could give the golden suites a CI home, and which also makes
+(lavapipe) that could give the golden suites a CI home (done 2026-10-04: the
+  Windows lanes run them on lavapipe, `docs/gpu-golden-testing.md`), and which also makes
 the `aniso ? 16.0F : 1.0F` fallbacks unreachable dead branches today.
 
 **Fifth, five `ObjMaterial` members are uploaded per material and read by no

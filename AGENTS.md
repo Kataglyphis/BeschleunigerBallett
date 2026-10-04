@@ -603,8 +603,9 @@ render (~32 FPS ImGui overlay).
   container and run for real on the host GPU. Linux CI's `clang-tests` job (x64
   and arm64) runs them on the image's llvmpipe under Xvfb (`run-ctest.sh --virtual-display`),
   minus the GUI input sweep, which is too slow for a runner. Windows CI runs them
-  on lavapipe too, on the runner rather than in the image (which ships no software
-  Vulkan device, hub CON25): `scripts/windows/Invoke-LavapipeTests.ps1` fetches a
+  on lavapipe too, on the runner rather than in the image (the hub image carries its own
+    device since 2026-10-04, CON50, but a host-run suite needs the host's ICD):
+    `scripts/windows/Invoke-LavapipeTests.ps1` fetches a
   pinned, SHA256-checked lavapipe and Khronos loader for the host's arch, registers
   the ICD in HKLM (an elevated loader ignores `VK_DRIVER_FILES`) and runs each test in
   its own process from the repo root, as ctest does. x64 runs it on the runner host

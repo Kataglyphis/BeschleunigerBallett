@@ -33,7 +33,7 @@ jobs:
         KATAGLYPHIS_CI_HAS_GPU=${{ vars.KATAGLYPHIS_CI_HAS_GPU }}
       artifact-name: BeschleunigerBallett-windows-x64
       artifact-dir: dist/windows-x64
-      # The GPU suites on lavapipe: the image ships no software Vulkan device (hub CON25), the runner host can take one.
+      # The GPU suites on lavapipe: the host takes one (the hub image ships its own since CON50, but these run outside the container).
       host-command: |
         ./scripts/windows/Invoke-LavapipeTests.ps1 -Suite dist/windows-x64-tests/commitTestSuite.exe
       # Build and container tests ~1.5 h, then about an hour of lavapipe on the runner's 4 vCPUs.
