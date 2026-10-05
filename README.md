@@ -61,6 +61,10 @@ BeschleunigerBallett is a renderer and graphics-engine playground used to explor
 
 ## Quick Start
 
+Search the tree with [ripgrep](https://github.com/BurntSushi/ripgrep) (`rg`):
+`winget install --id BurntSushi.ripgrep.MSVC -e --scope user` on Windows,
+`apt install ripgrep` on Linux.
+
 ### Clone
 
 ```bash

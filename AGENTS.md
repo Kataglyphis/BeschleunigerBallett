@@ -86,6 +86,7 @@ orientation and link — upstream's own instruction to consumers,
 | Which repo a piece of knowledge belongs in — the *"would this still be true in a different project?"* split, with worked examples | [`INDEX.md` § Where does a piece of knowledge belong?](third_party/ANTfrastructure/docs/INDEX.md#where-does-a-piece-of-knowledge-belong) |
 | The full topic → owning-document index for the whole family | [`INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md) |
 | Code comments: one line, only the why; API docs short; gated | [the hub rule, Comments](third_party/ANTfrastructure/AGENTS.md#comments-one-line-only-the-why) |
+| Searching the tree: `rg`, not `grep -r` | [the hub rule, Searching](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/AGENTS.md#searching-the-tree-ripgrep-rg) |
 | Wiring another project to any of this: the loop, both container flows, launchers, CI actions | [`adopting-in-a-new-project.md`](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md) |
 | The one file a consumer must own itself, and why (`Resolve-BuildModule.ps1`) | [adopting § 1](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#1-the-one-file-that-cannot-live-here) |
 | Agentic loop: architecture, engines, config keys, prompt composition | [adopting § 4](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#4-the-agentic-loop), [`windows-agentic-loop.md`](third_party/ANTfrastructure/docs/windows-agentic-loop.md) |
