@@ -105,8 +105,7 @@ $layerJson = Join-Path $layerDir 'VkLayer_khronos_validation.json'
 $validating = Test-Path -LiteralPath $layerJson
 $layerKey = $null
 if ($validating) {
-  # An elevated loader (the CI runner) ignores VK_ADD_LAYER_PATH ("Validation layers requested, but not available!"),
-  # so the layer is registered where the loader always looks, HKLM when elevated, and removed after the run.
+  # An elevated loader ignores VK_ADD_LAYER_PATH, so the run registers the layer (docs/gpu-golden-testing.md).
   $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
   $elevated = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
   $layerKey = if ($elevated) { 'HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' } else { 'HKCU:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' }
