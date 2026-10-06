@@ -650,10 +650,11 @@ cleanUp+recreate pair at the four scene-changed sites.
 - **No host LLVM** (checked 2026-09-25: `C:\Program Files\LLVM` is gone; it
   used to be installed but not on `PATH`) — `docs/code-quality.md` has the
   commands, which need a host `clang-tidy.exe` installed first.
-- **`Invoke-ClangClDebug.ps1` (`run-clangcl-debug.ps1` until 2026-09-06) sets
-  `VK_LAYER_PATH = ''`**, which crashes the app at startup with `0xC0000409`.
-  Launch with `VK_LAYER_PATH` at the installed SDK's `Bin`
-  (`C:\VulkanSDK\1.4.357.0\Bin` on this host as of 2026-09-25).
+- ~~**`Invoke-ClangClDebug.ps1` sets `VK_LAYER_PATH = ''`**~~ - **fixed 2026-10-06.** It cleared
+  the variable before every launch, and its after-crash fix-up only helped a next run that
+  cleared it again. It now resolves the layer directory first: a `VK_LAYER_PATH` holding
+  `VkLayer_khronos_validation.json`, else `$env:VULKAN_SDK\Bin`, else the newest
+  `C:\VulkanSDK\*\Bin`. It warns before launching when none has it.
 - **Swapchain screenshots read black while the desktop session is
   locked**, with no error — a capture path that silently lies. Always
   take a control capture of a known-good app before believing a black
@@ -667,9 +668,9 @@ cleanUp+recreate pair at the four scene-changed sites.
   (`wcifs teardown lock`); a stale container makes it look like a build is
   still running. Compare the newest `logs/windows/build-summary-*.json`
   timestamp against container start before assuming.
-- `scripts/windows/Build-Windows-Container.ps1` takes `-Configurations`,
-  not `-Preset`; passing the wrong one silently builds **all three** default
-  configurations (`clangcl-debug,clangcl-profile,clangcl-release`).
+- ~~`Build-Windows-Container.ps1 -Preset` silently built all three configurations~~ -
+  **fixed 2026-10-06**: a plain `param()` took the unknown `-Preset` into `$args`. The script
+  is `[CmdletBinding()]` now, so an unknown parameter fails binding before anything starts.
 - ~~A source file deleted on the host keeps building inside the reusable
   container~~ — **done** (`37a7fdbf`, 2026-07-24). Reproduced 2026-07-19: added
   a probe test, built (it ran), deleted the file, rebuilt — the test still

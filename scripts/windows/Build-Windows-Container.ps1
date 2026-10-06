@@ -1,6 +1,8 @@
 #requires -Version 7.0
 # Builds in the ANTfrastructure Windows image; see third_party/ANTfrastructure/docs/windows-container-build-performance.md
 
+# Advanced, so an unknown parameter fails binding: a plain param() took -Preset into $args and built all three configurations.
+[CmdletBinding()]
 param(
 
   # Comma-separated Build-Windows.ps1 configurations to build.

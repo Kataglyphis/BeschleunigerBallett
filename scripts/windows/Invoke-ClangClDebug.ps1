@@ -24,6 +24,20 @@ Import-BuildModule @('WindowsScripts.Shared', 'WindowsBuild.Common', 'WindowsCMa
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
+
+# The Debug build requests VK_LAYER_KHRONOS_validation and aborts without it: a VK_LAYER_PATH holding it wins, then the SDK.
+function Resolve-ValidationLayerDirectory {
+    $candidates = @($env:VK_LAYER_PATH, $(if ($env:VULKAN_SDK) { Join-Path $env:VULKAN_SDK 'Bin' }))
+    if (Test-Path -LiteralPath 'C:\VulkanSDK') {
+        $byVersion = { $version = $null; if ([version]::TryParse($_.Name, [ref]$version)) { $version } else { [version]'0.0' } }
+        $candidates += @(Get-ChildItem -LiteralPath 'C:\VulkanSDK' -Directory | Sort-Object $byVersion -Descending |
+                ForEach-Object { Join-Path $_.FullName 'Bin' })
+    }
+    foreach ($dir in $candidates) {
+        if ($dir -and (Test-Path -LiteralPath (Join-Path $dir 'VkLayer_khronos_validation.json'))) { return $dir }
+    }
+    return $null
+}
 $FuzzDir = $DebugDir
 
 # -Required throws naming the missing tool here, not later on a $null path.
@@ -116,7 +130,14 @@ try {
         $env:VK_ICD_FILENAMES = $proprietaryDriver
     }
 
-    $env:VK_LAYER_PATH = ''
+    # Clearing VK_LAYER_PATH used to hide the SDK's layer, so every launch crashed and "run again" could not help.
+    $layerDir = Resolve-ValidationLayerDirectory
+    if ($layerDir) {
+        $env:VK_LAYER_PATH = $layerDir
+        Write-BuildLog -Context $context -Message "Validation layer: $layerDir"
+    } else {
+        Write-BuildLogWarning -Context $context -Message 'No VkLayer_khronos_validation.json in VK_LAYER_PATH, VULKAN_SDK\Bin or C:\VulkanSDK\*\Bin; the Debug build will abort at instance creation (install the SDK: winget install KhronosGroup.VulkanSDK).'
+    }
     $env:VK_INSTANCE_LAYERS = ''
 
     # Unlike the test runs: silences GUI/driver global-init and RTL-allocator noise.
@@ -129,24 +150,7 @@ try {
 
         $exitCode = $LASTEXITCODE
         if ($exitCode -eq -1073740791) {
-            Write-Error "Vulkan validation layers are missing or VulkanSDK is not installed. Install it with 'winget install VulkanSDK'."
-
-            $vulkanSdkRoot = $null
-            if (Test-Path 'C:\VulkanSDK') {
-                $vulkanSdkRoot = (Get-ChildItem -Path 'C:\VulkanSDK' -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
-            }
-
-            if ($null -ne $vulkanSdkRoot -and (Test-Path $vulkanSdkRoot)) {
-                $env:VULKAN_SDK = $vulkanSdkRoot
-                $vulkanBin = Join-Path $vulkanSdkRoot 'Bin'
-                $vulkanLib = Join-Path $vulkanSdkRoot 'Lib'
-                Add-DirectoryToPath $vulkanLib
-                Add-DirectoryToPath $vulkanBin
-                $env:VK_LAYER_PATH = $vulkanBin
-                Write-BuildLog -Context $context -Message 'VulkanSDK environment variables were updated. Run the script again.'
-            } else {
-                Write-BuildLogWarning -Context $context -Message 'VulkanSDK could not be detected automatically. Install it and run the script again.'
-            }
+            Write-Error "The app aborted at startup (0xC0000409), as when the validation layers are missing; VK_LAYER_PATH was '$env:VK_LAYER_PATH'."
         } elseif ($exitCode -ne 0) {
             Write-BuildLogWarning -Context $context -Message "Process failed with exit code $exitCode"
         }
