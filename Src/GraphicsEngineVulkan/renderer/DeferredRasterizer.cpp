@@ -196,18 +196,28 @@ void DeferredRasterizer::createRenderPass()
     // Geometry Subpass -> Lighting Subpass
     dependencies[1].srcSubpass = 0;
     dependencies[1].dstSubpass = 1;
-    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+    // Early tests too: depth's loadOp clear writes there, before this subpass boundary moves it to a read layout.
+    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests
+                                   | vk::PipelineStageFlagBits::eLateFragmentTests;
+    // Attachments 1-4 store in subpass 1, after the transition this orders: sync validation saw a WAW without it.
+    dependencies[1].dstStageMask =
+      vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eColorAttachmentOutput
+      | vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
     dependencies[1].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[1].dstAccessMask = vk::AccessFlagBits::eInputAttachmentRead;
+    dependencies[1].dstAccessMask = vk::AccessFlagBits::eInputAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
+                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
     // Lighting Subpass -> External
     dependencies[2].srcSubpass = 1;
     dependencies[2].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[2].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    // Depth's store in subpass 1 must precede the final transition back to its attachment layout.
+    dependencies[2].srcStageMask =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests;
     dependencies[2].dstStageMask = vk::PipelineStageFlagBits::eBottomOfPipe;
-    dependencies[2].srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
+    dependencies[2].srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
+                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[2].dstAccessMask = vk::AccessFlagBits::eMemoryRead;
     dependencies[2].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 

@@ -122,9 +122,11 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
     for (size_t i = 0; i < scene->getModelCount(); i++) {
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
 
+        // The next model's build writes the same scratch buffer, so a read-only dst scope left a WAW (sync validation).
         vk::MemoryBarrier barrier;
         barrier.srcAccessMask = vk::AccessFlagBits::eAccelerationStructureWriteKHR;
-        barrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureReadKHR;
+        barrier.dstAccessMask =
+          vk::AccessFlagBits::eAccelerationStructureReadKHR | vk::AccessFlagBits::eAccelerationStructureWriteKHR;
 
         command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
           vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,

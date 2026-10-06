@@ -15,7 +15,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | Running the engine / seeing pixels | `scripts/windows/Invoke-ClangCl*.ps1` from the **repo root** — see [Running on the Host](#running-on-the-host-windows) |
 | Changing a shader | Edit `Resources/ShadersSlang/*.slang` + `shader-manifest.json`, run `Build-SlangShaders.ps1`, run one golden. No C++ rebuild. [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) |
 | Adding or changing a test | `Test/commit/VulkanEngine/` (CPU + GPU golden), `Test/fuzz/`, `Test/perf/`. Always in scope — see [Testing](#testing) |
-| Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Invoke-SyncValidation.ps1` — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
+| Touching render passes, barriers, frames-in-flight | Golden suites on the host GPU **and** `Invoke-SyncValidation.ps1` (Linux CI runs sync validation on llvmpipe) — [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) |
 | Refactoring the renderer / device path | The per-unit verification loop in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md); log the change in [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) |
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
@@ -628,8 +628,9 @@ render (~32 FPS ImGui overlay).
   pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
   ```
   It exits non-zero when the run log contains `SYNC-HAZARD`, and with the test
-  executable's own code when the run itself fails. Deliberately not in
-  CI (needs a GPU) — details in
+  executable's own code when the run itself fails. Linux CI runs sync validation
+  on llvmpipe since 2026-10-06 (`run-ctest.sh --virtual-display`); this script is the
+  host-GPU and Windows run — details in
   [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
 
 **Adding tests is always in scope.** You do not need permission to improve

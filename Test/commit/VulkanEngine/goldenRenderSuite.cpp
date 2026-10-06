@@ -617,10 +617,11 @@ TEST(GoldenRender, ShadowsOffFromTheFirstFrameLeaveTheCascadeArraySampleable)
 {
     SKIP_WITHOUT_GPU();
 
-    ScopedValidationErrorCounter validation_errors;
     EngineHarness harness;
     harness.useForwardRaster();
     harness.gui->getGuiSceneSharedVars().shadows_enabled = false;
+    // After the harness: the arm64 runner's PowerVR ICD logs loader errors while devices are enumerated.
+    ScopedValidationErrorCounter validation_errors;
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost with shadows off.";
 
@@ -2485,6 +2486,52 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     EXPECT_LT(detail_before, DETAIL_THRESHOLD) << "the card box already has detail without the card - check framing";
     EXPECT_GT(detail, DETAIL_THRESHOLD)
       << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
+}
+
+// The layer reads it at instance creation, so one harness gets sync validation whatever the lane's settings say.
+class ScopedSyncValidation
+{
+  public:
+    ScopedSyncValidation() { set("1"); }
+    ScopedSyncValidation(const ScopedSyncValidation &) = delete;
+    ScopedSyncValidation &operator=(const ScopedSyncValidation &) = delete;
+    ~ScopedSyncValidation() { set(""); }
+
+  private:
+    static void set(const char *value)
+    {
+#ifdef _WIN32
+        std::ignore = _putenv_s("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", value);
+#else
+        if (*value == '\0') {
+            std::ignore = unsetenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC");
+        } else {
+            std::ignore = setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", value, 1);
+        }
+#endif
+    }
+};
+
+// Both wrote without a barrier before: the deferred pass's G-buffer stores and back-to-back BLAS builds on one scratch.
+TEST(GoldenRender, DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedSyncValidation sync_validation;
+    EngineHarness harness;
+    harness.useForwardRaster().rasterizationMode = RasterizationMode::Deferred;
+    // From the first frame: the layer reports one message id ten times, then goes quiet, so warmup would spend them.
+    ScopedValidationErrorCounter validation_errors;
+    harness.render_frames(WARMUP_FRAMES);
+    // A second model rebuilds every BLAS in one command buffer through one scratch buffer.
+    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, panel_free_card_placement());
+    ASSERT_TRUE(added.has_value()) << "adding the second model failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost in the deferred path.";
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "synchronization validation logged an error - SYNC-HAZARD-WRITE-AFTER-WRITE if a deferred G-buffer store "
+         "or a BLAS build's scratch write lost its barrier (DeferredRasterizer.cpp, ASManager.cpp)";
 }
 
 // Drivers tolerate a descriptor on the destroyed TLAS, so validation errors are the primary oracle.

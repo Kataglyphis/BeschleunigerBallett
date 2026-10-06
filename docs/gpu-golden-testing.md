@@ -197,7 +197,7 @@ feature, an image transition, or the loader upload path:
    counts below, which `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
    pins against the suite source.
 
-<!-- golden-counts: defined=41 runnable=40 integration=2 total=42 excluded=3 -->
+<!-- golden-counts: defined=42 runnable=41 integration=2 total=43 excluded=3 -->
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
@@ -218,6 +218,12 @@ This is the single home for these instrument cautions;
 `docs/cpp-renderer-improvements.md` and `docs/path-tracing.md` link here.
 The expensive mistakes, which the suite's one-line comments point back to:
 
+- **A validation counter must start before the frames it judges.** The layer reports one
+  message id ten times, then goes quiet (its `duplicate_message_limit`), and every
+  sync hazard shares one id. A `ScopedValidationErrorCounter` made after the warmup
+  frames counted nothing while the log held hazards. Make it after the `EngineHarness`,
+  though: on the arm64 runner the loader logs a PowerVR ICD's enumeration failure as an
+  error while the harness creates the instance.
 - **Captures are tonemapped**, and the **ImGui overlay is composited into
   them**. The opaque ImGui panel covers the LEFT ~70% of the 1200x768 test
   frame — the panel-free right edge (x >= 0.72w) is the scene. A pixel
@@ -252,11 +258,27 @@ Vulkan's `khronos_validation.validate_sync` layer setting catches a
 different class of bug that a pixel oracle cannot see: a missing or
 incorrect barrier between two GPU commands that read or write the same
 resource (WRITE-AFTER-WRITE, READ-AFTER-WRITE, WRITE-AFTER-READ). It found
-10 real WRITE-AFTER-WRITE hazards in July 2026. It is expensive (extra
-per-command tracking), which is why it is off by default and not part of
-the debug build's normal validation layers.
+10 real WRITE-AFTER-WRITE hazards in July 2026.
 
-Run it after touching render passes, barriers, or frames-in-flight:
+**Linux CI runs it on every push since 2026-10-06.** `run-ctest.sh --virtual-display`
+sets `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1` for the GPU suites and fails the run when
+ctest's log holds a `SYNC-HAZARD` line, naming the tests that logged one. Most tests
+ignore validation messages, so the log is the only place a hazard shows. On llvmpipe it
+costs about 2%: the 42 GPU tests took 921 s with it and 900 s without, on 32 cores.
+Its first run found two WRITE-AFTER-WRITE classes, both fixed the same day:
+
+- **The deferred render pass** (`DeferredRasterizer.cpp`). The geometry-to-lighting
+  dependency left the G-buffers' store ops, and depth's load-op clear, outside its
+  scopes. The lighting-to-external one left depth's store before the final layout
+  transition.
+- **Back-to-back BLAS builds** (`ASManager.cpp`). One scratch buffer serves every
+  model, and the barrier between builds only made the next one *read*.
+
+`GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards` pins both: it turns sync
+validation on for its own harness, so it holds on any lane with validation layers.
+
+On Windows the GPU suites run in Release, without validation layers, so there it is
+still a manual run after touching render passes, barriers, or frames-in-flight:
 
 ```
 pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
@@ -267,9 +289,7 @@ This builds on the same `commitTestSuite.exe` as above (repo root or
 `scripts/vk_layer_settings.txt` next to it for the duration of the run (the
 Vulkan loader reads `vk_layer_settings.txt` from the CWD or the executable's
 directory - there is no path env var for it), and exits non-zero with a
-per-hazard summary if the run's log contains `SYNC-HAZARD`. Deliberately not
-wired into CI, for the same reason as the golden suites: the GPU is required
-and unavailable there.
+per-hazard summary if the run's log contains `SYNC-HAZARD`.
 
 ## Known issue: path-tracing compute device-lost on the large dinosaur mesh
 

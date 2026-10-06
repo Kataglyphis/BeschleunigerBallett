@@ -232,10 +232,13 @@ that are *not* exercised that way and should be run periodically:
   `khronos_validation.validate_sync = true` via `scripts/vk_layer_settings.txt`,
   copied next to the executable for the run, and exits non-zero on any
   `SYNC-HAZARD` in the log. This found 10 real WRITE-AFTER-WRITE hazards in
-  July 2026; it is still not part of any automated run (needs a GPU), so it
-  needs a deliberate pass after touching render passes, barriers, or
-  frames-in-flight — the script just makes that pass one command instead of
-  a hand-written layer settings file.
+  July 2026. **Automated on Linux since 2026-10-06:** `run-ctest.sh --virtual-display`
+  runs the GPU suites with sync validation on llvmpipe, about 2% slower, and fails on
+  any `SYNC-HAZARD`. The first run found two more classes, in the deferred render
+  pass's dependencies and in back-to-back BLAS builds on one scratch buffer. Both are
+  fixed and pinned by `GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards`
+  (`docs/gpu-golden-testing.md`). The Windows script stays a manual pass, since the
+  Windows GPU suites run in Release without validation layers.
 - **Release build** — the only configuration with logging compiled out and
   validation layers absent; behavioral surprises hide there.
 
