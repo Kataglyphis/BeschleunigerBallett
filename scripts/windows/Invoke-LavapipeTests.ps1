@@ -101,13 +101,19 @@ if (-not ($summary -match 'llvmpipe')) { throw 'vulkaninfo lists no llvmpipe dev
 
 # The Release suite validates only with the layer Build-Windows.ps1 -StageTests puts beside it, sync validation included.
 $layerDir = Join-Path (Split-Path $suitePath) 'vulkan-layers'
-$validating = Test-Path -LiteralPath (Join-Path $layerDir 'VkLayer_khronos_validation.json')
+$layerJson = Join-Path $layerDir 'VkLayer_khronos_validation.json'
+$validating = Test-Path -LiteralPath $layerJson
+$layerKey = $null
 if ($validating) {
-  $env:VK_ADD_LAYER_PATH = $layerDir
+  # An elevated loader (the CI runner) ignores VK_ADD_LAYER_PATH ("Validation layers requested, but not available!"),
+  # so the layer is registered where the loader always looks, HKLM when elevated, and removed after the run.
+  $identity = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+  $elevated = $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  $layerKey = if ($elevated) { 'HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' } else { 'HKCU:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' }
   $env:KATAGLYPHIS_VULKAN_VALIDATION = '1'
   $env:VK_KHRONOS_VALIDATION_VALIDATE_SYNC = '1'
 }
-Write-Host "validation layer: $(if ($validating) { "$layerDir, sync validation on" } else { 'none staged; the suites run unvalidated' })"
+Write-Host "validation layer: $(if ($validating) { "$layerJson (registered under $layerKey), sync validation on" } else { 'none staged; the suites run unvalidated' })"
 
 $listing = @(& $suitePath --gtest_list_tests "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" })
 if ($LASTEXITCODE -ne 0) { $listing | Write-Host; throw "listing the tests exited $LASTEXITCODE" }
@@ -120,6 +126,10 @@ $counts = @{ passed = 0; failed = 0; skipped = 0 }
 $notPassed = [System.Collections.Generic.List[string]]::new()
 Push-Location -LiteralPath $RepoRoot
 try {
+  if ($layerKey) {
+    New-Item -Path $layerKey -Force | Out-Null
+    New-ItemProperty -Path $layerKey -Name $layerJson -PropertyType DWord -Value 0 -Force | Out-Null
+  }
   foreach ($test in $tests) {
     $fileName = ($test -replace '[\\/:*?<>|]', '_') + '.json'
     $json = Join-Path $results $fileName
@@ -151,6 +161,7 @@ try {
     if ($outcome -ne 'passed') { $notPassed.Add("$test $outcome") }
   }
 } finally {
+  if ($layerKey) { Remove-ItemProperty -Path $layerKey -Name $layerJson -ErrorAction SilentlyContinue }
   Pop-Location
 }
 
