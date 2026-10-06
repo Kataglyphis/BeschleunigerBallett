@@ -142,6 +142,8 @@ class CascadedShadowMap
     void createGraphicsPipeline();
     void shaderHotReload();
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled);
+    // With shadows off: the raster pipeline still binds the array, so it must leave UNDEFINED without a pass.
+    void recordSkippedPass(vk::CommandBuffer &commandBuffer);
 
     Kataglyphis::Texture* getShadowMapArray() const { return shadowMapArray.get(); }
     vk::RenderPass getRenderPass() const { return renderPass; }

@@ -889,6 +889,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
             mutable_gui_vars.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
             mutable_gui_vars.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
         } else {
+            dirShadowMap.recordSkippedPass(commandBuffer);
             mutable_gui_vars.visibility.shadow_casters_drawn = 0;
             mutable_gui_vars.visibility.shadow_casters_total = 0;
         }

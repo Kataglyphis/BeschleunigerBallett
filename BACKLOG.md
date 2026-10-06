@@ -462,16 +462,6 @@ cleanUp+recreate pair at the four scene-changed sites.
     Pester suites test Windows scripts on Windows x64, and
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
 
-- **Disabling shadows leaves the cascade shadow map in `UNDEFINED` while the
-  raster pass still samples it** (unsized, found 2026-10-01). With
-  `shadows_enabled = false` every draw reports `VUID-vkCmdDraw-None-09600`:
-  the depth array (all three layers) is expected in
-  `SHADER_READ_ONLY_OPTIMAL` but was never transitioned. Seen on the RTX 2080
-  in `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` and whenever a
-  test turns shadows off before the shadow pass has run once. No pixel
-  changes (the shadow term is skipped), so no golden catches it; the fix is a
-  one-time transition (or a skipped pass that still transitions).
-
 - **Latent: a `VulkanEngineCore` global constructor faults in a headless
   process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some
   engine global ctor null-derefs when it runs without the app's `main()` having

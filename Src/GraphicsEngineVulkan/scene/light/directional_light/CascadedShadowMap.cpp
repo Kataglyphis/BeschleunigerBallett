@@ -15,6 +15,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
@@ -386,5 +387,34 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     castersConsidered = stats.considered;
 
     commandBuffer.endRenderPass();
+}
+
+void CascadedShadowMap::recordSkippedPass(vk::CommandBuffer &commandBuffer)
+{
+    castersDrawn = 0;
+    castersConsidered = 0;
+    if (!shadowMapArray) { return; }
+
+    // The contents are never read (the scene UBO says zero cascades), so UNDEFINED discards nothing that matters.
+    const vk::ImageMemoryBarrier to_sampled = Kataglyphis::buildImageMemoryBarrier(shadowMapArray->getImage(),
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
+      vk::AccessFlags{},
+      vk::AccessFlagBits::eShaderRead,
+      Kataglyphis::depthStencilTransitionAspect(depth_format),
+      0,
+      1,
+      0,
+      numCascades);
+    // The source stage waits out the previous frame's sampling before the transition.
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+      vk::PipelineStageFlagBits::eFragmentShader,
+      vk::DependencyFlags{},
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &to_sampled);
 }
 }

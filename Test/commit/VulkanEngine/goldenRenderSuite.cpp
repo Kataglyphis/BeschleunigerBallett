@@ -612,6 +612,23 @@ TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
       << "shadow caster counters must be zeroed when the shadow pass does not run";
 }
 
+// The raster pass samples the cascade array with shadows off too; a pass that never ran left it UNDEFINED.
+TEST(GoldenRender, ShadowsOffFromTheFirstFrameLeaveTheCascadeArraySampleable)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedValidationErrorCounter validation_errors;
+    EngineHarness harness;
+    harness.useForwardRaster();
+    harness.gui->getGuiSceneSharedVars().shadows_enabled = false;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost with shadows off.";
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "a frame with the shadow pass skipped logged a validation error - VUID-vkCmdDraw-None-09600 "
+         "if the cascade depth array was sampled before anything moved it out of UNDEFINED";
+}
+
 // The default scene's casters all sit inside every cascade, so only a far-off caster makes the flag observable.
 TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
 {

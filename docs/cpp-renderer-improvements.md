@@ -5,7 +5,7 @@ a three-way analysis (architecture/complexity, testing, performance). Each
 unit ships only after: container debug build green, the full commit suite
 (72 tests at campaign start, 697 as of 2026-10-01), and a
 validation-layer-clean runtime check where rendering changed.
-<!-- commit-suite-test-count: 698 -->
+<!-- commit-suite-test-count: 699 -->
 
 ## Shipped
 
