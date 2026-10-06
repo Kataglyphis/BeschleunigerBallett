@@ -128,9 +128,6 @@ been committed to.
   `.clang-format` (measured 2026-09-29; `docs/code-quality.md` "Known state"). Container
   builds log the count without failing. Either one large commit right after a merge point
   plus a `.git-blame-ignore-revs` entry, or format-on-touch only.
-- **The PCF radius slider is 1..20** (`GUI.cpp`), and `cascaded_shadow.slang` loops
-  `(2r+1)^2` taps, up to 1681 per shadowed fragment. With hardware 2x2 comparison filtering
-  the useful range is much smaller, but narrowing a user-facing slider is the owner's call.
 - **`pointShadowMap`** was removed as dead allocation. Re-add it, or the whole omni pass,
   when the point-light shadow feature is built.
 - **Docs placement.** The root `docs/*.md` dev references (roadmaps,
@@ -139,6 +136,13 @@ been committed to.
 
 ## C++ engine ideas
 
+- **A receiver-plane depth bias for the PCF taps.** `cascaded_shadow.slang` compares every
+  tap against the centre texel's depth with one bias, so on a receiver sloped against the
+  light the outer taps shadow it. On the shadow rig, lit surfaces far from any shadow darken
+  from radius 2 (the default: 15 % of them by 3+ levels) and the darkening grows with the
+  radius (docs/gpu-golden-testing.md § The PCF radius bound, measured). Offsetting each
+  tap's reference depth by the receiver's depth slope removes it. The shadow goldens will
+  move, and `DISABLED_PcfRadiusSweepMeasuresTheShadowRig` shows the effect.
 - **Unify the two shadow-bias formulas.** `cascaded_shadow.slang` uses
   `max(0.002 * (1 - N·L), 0.0005)` and `forward.slang` uses
   `clamp(0.002 * (1 - N·L) + 0.0005, 0.0005, 0.004)`, so the renderers disagree at grazing

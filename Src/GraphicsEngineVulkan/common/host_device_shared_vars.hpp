@@ -5,7 +5,8 @@
 
 const int MAX_TEXTURE_COUNT = 128;
 const int MAX_CASCADES = 3;
-const int MAX_PCF_RADIUS = 20;
+// Past 5 a +1 step moves under 2% of near-shadow pixels while taps grow as (2r+1)^2 (docs/gpu-golden-testing.md).
+const int MAX_PCF_RADIUS = 5;
 
 // ----- MAIN RENDER DESCRIPTOR SET ----- START (rasterizer and raytracer)
 #define globalUBO_BINDING 0

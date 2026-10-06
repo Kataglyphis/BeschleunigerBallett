@@ -87,7 +87,7 @@ int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)
 }
 
 static const int MAX_CASCADES = 3;
-static const int MAX_PCF_RADIUS = 20;
+static const int MAX_PCF_RADIUS = 5;
 
 struct DirectionalLightData
 {

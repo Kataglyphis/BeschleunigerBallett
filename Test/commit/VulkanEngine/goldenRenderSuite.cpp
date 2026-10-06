@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -46,6 +47,7 @@ import kataglyphis.vulkan.window;
 
 namespace {
 
+using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::Test::GoldenMetrics::Crop;
@@ -483,6 +485,146 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
         }
     }
     write("-golden-order-delta", golden_delta);
+}
+
+// Disabled: measures what each PCF radius changes on the rig, behind MAX_PCF_RADIUS (docs/gpu-golden-testing.md).
+TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    const auto &timings = harness.gui->getGuiRendererSharedVars().gpuTimings;
+    harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Past GpuPassAverage's 30-frame window, so each radius's pass times are its own.
+    constexpr int TIMED_FRAMES = 35;
+    using Frame = std::vector<uint8_t>;
+    struct Sample
+    {
+        int radius;
+        Frame on;
+        Frame off;
+        double main_ms;
+        double shadow_ms;
+        double wall_ms;
+    };
+    std::vector<Sample> samples;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    for (int radius = 0; radius <= MAX_PCF_RADIUS; ++radius) {
+        scene_vars.pcf_radius = radius;
+        scene_vars.cascaded_shadow_intensity = 1.0F;
+        const auto start = std::chrono::steady_clock::now();
+        harness.render_frames(TIMED_FRAMES);
+        const double wall_ms =
+          std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / TIMED_FRAMES;
+        const double main_ms = timings.pass_ms[static_cast<size_t>(GpuTimedPass::Main)];
+        const double shadow_ms = timings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)];
+        std::vector<uint8_t> on = harness.capture_frame(width, height);
+        // The off frame holds this radius's GUI text, so overlay pixels that move with the slider can be masked.
+        scene_vars.cascaded_shadow_intensity = 0.0F;
+        harness.render_frames(SETTLE_FRAMES);
+        std::vector<uint8_t> off = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost at radius " << radius;
+        samples.push_back({ radius, std::move(on), std::move(off), main_ms, shadow_ms, wall_ms });
+    }
+    ASSERT_GE(samples.size(), 2U);
+
+    // Big kernels darken lit receivers too (one reference depth per tap), so penumbra and lit area are measured apart.
+    const size_t pixel_count = static_cast<size_t>(width) * height;
+    const std::vector<uint8_t> &unshadowed = samples.front().off;
+    const std::vector<uint8_t> &hard = samples.front().on;
+    std::vector<int> shadowed_prefix((static_cast<size_t>(width) + 1U) * (height + 1U), 0);
+    std::vector<bool> noisy(pixel_count, false);
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const size_t pixel = static_cast<size_t>(y) * width + x;
+            for (const Sample &sample : samples) {
+                noisy[pixel] =
+                  noisy[pixel] || std::abs(luminance_of(sample.off, pixel) - luminance_of(unshadowed, pixel)) >= 1.0;
+            }
+            const int shadowed = luminance_of(unshadowed, pixel) - luminance_of(hard, pixel) >= 2.0 ? 1 : 0;
+            const size_t at = (static_cast<size_t>(y) + 1U) * (width + 1U) + x + 1U;
+            shadowed_prefix[at] = shadowed + shadowed_prefix[at - 1U] + shadowed_prefix[at - (width + 1U)]
+                                  - shadowed_prefix[at - (width + 1U) - 1U];
+        }
+    }
+    // Near: within PENUMBRA_PX of the smallest radius's shadow, where softening shows; far: lit pixels beyond it.
+    constexpr uint32_t PENUMBRA_PX = 16U;
+    const auto shadow_within = [&](uint32_t x, uint32_t y) {
+        const size_t x0 = x > PENUMBRA_PX ? x - PENUMBRA_PX : 0U;
+        const size_t y0 = y > PENUMBRA_PX ? y - PENUMBRA_PX : 0U;
+        const size_t x1 = std::min<size_t>(width, x + PENUMBRA_PX + 1U);
+        const size_t y1 = std::min<size_t>(height, y + PENUMBRA_PX + 1U);
+        const auto row = [&](size_t yy) { return yy * (width + 1U); };
+        return shadowed_prefix[row(y1) + x1] - shadowed_prefix[row(y0) + x1] - shadowed_prefix[row(y1) + x0]
+                 + shadowed_prefix[row(y0) + x0]
+               > 0;
+    };
+    std::vector<int> region(pixel_count, 0);
+    size_t near_pixels = 0;
+    size_t far_pixels = 0;
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const size_t pixel = static_cast<size_t>(y) * width + x;
+            if (noisy[pixel]) { continue; }
+            region[pixel] = shadow_within(x, y) ? 1 : 2;
+            ++(region[pixel] == 1 ? near_pixels : far_pixels);
+        }
+    }
+    ASSERT_GT(near_pixels, 0U) << "No shadow at the smallest radius; the sweep measured nothing.";
+    ASSERT_GT(far_pixels, 0U);
+
+    // Mean change and share moving >= 3 levels (0..255 luma); signed_delta: how much darker a is than b.
+    const auto compare = [&](const Frame &a, const Frame &b, int which, bool signed_delta) {
+        double sum = 0.0;
+        size_t moved = 0;
+        size_t count = 0;
+        for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+            if (region[pixel] != which) { continue; }
+            const double raw = luminance_of(b, pixel) - luminance_of(a, pixel);
+            const double delta = signed_delta ? raw : std::abs(raw);
+            sum += delta;
+            if (delta >= 3.0) { ++moved; }
+            ++count;
+        }
+        return std::pair{ sum / static_cast<double>(count), static_cast<double>(moved) / static_cast<double>(count) };
+    };
+
+    std::cout << "[  INFO ] PCF sweep on " << SHADOW_RIG_MODEL << ", " << width << "x" << height << "; near "
+              << near_pixels << " px, far-lit " << far_pixels << " px\n"
+              << "[  INFO ] radius taps | near vs prev: MAD >=3lvl | far-lit darkening: mean >=3lvl | main_ms "
+                 "shadow_ms wall_ms\n";
+    for (size_t i = 0; i < samples.size(); ++i) {
+        const Sample &sample = samples[i];
+        const auto [near_mad, near_moved] =
+          i == 0 ? std::pair{ 0.0, 0.0 } : compare(sample.on, samples[i - 1].on, 1, false);
+        const auto [far_dark, far_moved] = compare(sample.on, unshadowed, 2, true);
+        const int taps = (2 * sample.radius + 1) * (2 * sample.radius + 1);
+        std::cout << "[  INFO ] " << sample.radius << " " << taps << " | " << near_mad << " " << near_moved << " | "
+                  << far_dark << " " << far_moved << " | " << sample.main_ms << " " << sample.shadow_ms << " "
+                  << sample.wall_ms << "\n";
+    }
+
+    if (const char *out_path = std::getenv("KATAGLYPHIS_FRAME_DUMP"); out_path != nullptr) {
+        for (const Sample &sample : samples) {
+            const std::string path = std::string(out_path) + "-pcf" + std::to_string(sample.radius) + ".png";
+            EXPECT_NE(stbi_write_png(path.c_str(),
+                        static_cast<int>(width),
+                        static_cast<int>(height),
+                        4,
+                        sample.on.data(),
+                        static_cast<int>(width) * 4),
+              0)
+              << "Failed to write " << path;
+        }
+    }
 }
 
 // Guards against a shadow map nothing samples; the rig, not the debug scene, is what makes it assertable.

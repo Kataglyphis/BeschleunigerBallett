@@ -184,7 +184,13 @@ void GUI::render()
                     ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, MAX_CASCADES);
                     if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
-                    ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 0, MAX_PCF_RADIUS);
+                    // AlwaysClamp: a Ctrl+click entry past the bound would otherwise stay in the GUI state.
+                    ImGui::SliderInt("PCF radius",
+                      &guiSceneSharedVars.pcf_radius,
+                      0,
+                      MAX_PCF_RADIUS,
+                      "%d",
+                      ImGuiSliderFlags_AlwaysClamp);
                     ImGui::SliderFloat("Shadow intensity", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F);
                     ImGui::SliderFloat(
                       "Shadow distance", &guiSceneSharedVars.shadow_distance, kMinShadowDistance, kMaxShadowDistance);

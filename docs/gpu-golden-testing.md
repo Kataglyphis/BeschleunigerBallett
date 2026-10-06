@@ -192,12 +192,12 @@ feature, an image transition, or the loader upload path:
    8–10 s engine run with stderr captured, grepping the validation output.
 4. All tests passing = the recorded frames are unchanged = the refactor is
    render-equivalent. The baseline is every runnable `GoldenRender` test
-   (every defined test except `DISABLED_DumpsFrameToPng`, which does not run
-   by default) plus every `Integration` test - see the machine-readable
-   counts below, which `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
-   pins against the suite source.
+   (every defined test except the two `DISABLED_` tools, `DumpsFrameToPng` and
+   `PcfRadiusSweepMeasuresTheShadowRig`, which do not run by default) plus every
+   `Integration` test - see the machine-readable counts below, which
+   `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=42 runnable=41 integration=2 total=43 excluded=3 -->
+<!-- golden-counts: defined=43 runnable=41 integration=2 total=43 excluded=3 -->
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
@@ -250,6 +250,57 @@ Effects with no runtime toggle (the tonemap is always on) are hard to isolate
 this way: "compressed vs clipped" is ambiguous without a control, so a robust
 oracle must key on a property the effect uniquely produces (e.g. retained
 variation), not just "brighter" or "darker".
+
+## The PCF radius bound, measured
+
+`MAX_PCF_RADIUS` (the GUI slider's upper bound, and the clamp in both
+`clampPcfRadius` and `cascaded_shadow.slang`) is 5, down from 20 on
+2026-10-06. The default radius stays 2, so no golden moved. The number comes
+from `GoldenRender.DISABLED_PcfRadiusSweepMeasuresTheShadowRig`, which renders
+the shadow rig (`Models/ShadowTest/shadow_rig.obj`, forward raster, shadow
+intensity 1) at every radius from 0 to `MAX_PCF_RADIUS`, 35 frames each, and
+prints a table:
+
+```sh
+xvfb-run -a commitTestSuite --gtest_also_run_disabled_tests \
+  --gtest_filter=GoldenRender.DISABLED_PcfRadiusSweepMeasuresTheShadowRig
+```
+
+`KATAGLYPHIS_FRAME_DUMP=out` also writes `out-pcf<r>.png` per radius. A
+shadows-off capture at each radius masks every pixel the overlay moves (the
+slider text, the FPS digits). The rest of the frame splits in two:
+
+- **near**: within 16 px of the radius-0 shadow, where penumbra softening shows;
+- **far-lit**: everything else, lit at radius 0, which PCF should leave alone.
+
+Measured in `:latest` on llvmpipe, Debug build, 1200x768; two runs agreed within
+half a percentage point:
+
+| Radius | Taps | Near: pixels a +1 step moves >= 3 levels | Near: mean step change (levels) | Far-lit: mean darkening (levels) | Far-lit: darkened >= 3 levels | Main pass (ms) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 | 1 | - | - | 0.00 | 0 % | 4.1 |
+| 1 | 9 | 26.9 % | 2.16 | 0.02 | 0 % | 4.7 |
+| 2 | 25 | 34.3 % | 2.41 | 0.90 | 15.4 % | 5.6 |
+| 3 | 49 | 29.8 % | 1.56 | 1.81 | 39.2 % | 8.1 |
+| 4 | 81 | 22.3 % | 1.07 | 2.44 | 39.3 % | 11.1 |
+| 5 | 121 | 5.3 % | 0.81 | 2.89 | 39.4 % | 15.6 |
+| 6 | 169 | 1.9 % | 0.65 | 3.25 | 39.4 % | 21.0 |
+| 8 | 289 | 1.7 % | 0.38 | 3.76 | 39.5 % | 33.7 |
+| 12 | 625 | 1.3 % | 0.38 | 4.34 | 39.6 % | 72.9 |
+| 16 | 1089 | 1.4 % | 0.20 | 4.66 | 39.6 % | 121.4 |
+| 20 | 1681 | 1.3 % | 0.20 | 4.86 | 39.6 % | 181.4 |
+
+The threshold: a step is visible when it moves at least 2 % of the near pixels
+by 3 or more luminance levels (of 255, about 1.2 %). Radius 5 is the last step
+over it. Every step after it stays at 1.3 to 1.9 % with a mean change of
+0.2 to 0.65 levels, while the Main pass grows from 15.6 ms to 181 ms. Any
+threshold between 2 % and 5 % gives the same bound.
+
+What large radii add is mostly an artifact, not softness. Every tap compares
+against the centre texel's depth with one constant bias, so on a receiver
+sloped against the light the outer taps shadow it. Lit surfaces far from any
+shadow darken from radius 2 on, and the darkening keeps growing with the
+radius. A receiver-plane depth bias would fix it (BACKLOG.md, C++ engine ideas).
 
 ## Synchronization validation
 
