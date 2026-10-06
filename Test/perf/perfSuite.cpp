@@ -16,7 +16,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// Parsers compiled in directly: the engine loaders would drag Vulkan-touching global ctors into this binary.
+// Parsers compiled in directly: the engine loaders would time more than the parse and link ObjLoader's tinyobj too.
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 

@@ -90,7 +90,7 @@ target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 kataglyphis_add_fuzz_test(gltf_parsing_fuzz_test gltf_parsing_fuzz_test.cpp)
 target_link_libraries(gltf_parsing_fuzz_test PRIVATE cgltf)
 
-# Never link VulkanEngineCore: renderer static initializers SEGV in a bare fuzztest main before any test.
+# Never link VulkanEngineCore: its PUBLIC -fsanitize=address would build this TU against uninstrumented abseil.
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
 target_sources(
   scene_config_fuzz_test

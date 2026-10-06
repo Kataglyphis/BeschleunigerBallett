@@ -107,11 +107,10 @@ committed to.
     parse the document, load buffers, walk every POSITION accessor. They drive
     `cgltf` DIRECTLY with a local `CGLTF_IMPLEMENTATION`, exactly as the OBJ
     benchmarks drive tinyobj, and deliberately NOT `GltfLoader::parseCpu`:
-    importing the engine loader would pull `Device`/`Model`/`Texture` (and their
-    Vulkan-touching global ctors) into this headless binary - the same
-    headless-global-ctor hazard that took the fuzzer down - and also re-collides
-    the duplicate `TINYOBJLOADER_IMPLEMENTATION` that only stays benign while
-    `ObjLoader.cpp.o` is never linked in. The `.glb` (inline binary buffer) and
+    importing the engine loader would pull `Device`/`Model`/`Texture` into the
+    timing and re-collide the duplicate `TINYOBJLOADER_IMPLEMENTATION` that only
+    stays benign while `ObjLoader.cpp.o` is never linked in. The `.glb` (inline
+    binary buffer) and
     `.gltf` (base64 data-URI) exercise different `cgltf_load_buffers` decode
     paths. Verified building + running under `linux-profile-GNU` (the CI
     benchmark config); host figures belong in the baseline table below, taken on
@@ -461,16 +460,6 @@ cleanUp+recreate pair at the four scene-changed sites.
     *measured* on Linux only (no Windows step reads the `.profraw` files), the
     Pester suites test Windows scripts on Windows x64, and
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
-
-- **Latent: a `VulkanEngineCore` global constructor faults in a headless
-  process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some
-  engine global ctor null-derefs when it runs without the app's `main()` having
-  initialised GLFW/Vulkan first. The shipping app is fine (its init order holds),
-  and the fuzz fix above stops *linking* it into the fuzzer, so this is not
-  blocking — but a global that assumes app init is a real fragility (it would
-  bite any future headless/tool use of the engine). Worth symbolizing once (build
-  `scene_config_fuzz_test` the old way in the ASan container and run under
-  `llvm-symbolizer`) to name the exact ctor, then either make it lazy or guard it.
 
 - [b] **Windows CI: the `:winamd64` image is 54 GB and exhausts the runner**
   (blocked on the owner building/pushing a slim image)
