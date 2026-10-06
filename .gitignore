@@ -192,3 +192,6 @@ Resources/**/*.obj
 !Resources/Models/sibenik/sibenik.obj
 !Resources/Models/sportsCar/sportsCar.obj
 !Resources/Models/suzanne.obj
+
+# gtest discovery writes CMakeFiles/googletest_discovery_*.json into the tests' working directory, the repo root.
+/CMakeFiles/
