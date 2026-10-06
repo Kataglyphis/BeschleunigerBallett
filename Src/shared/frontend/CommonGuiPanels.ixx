@@ -32,10 +32,11 @@ inline void renderCommonGuiStyleSettings()
 inline void renderCommonKeyBindings()
 {
     if (ImGui::CollapsingHeader("KEY Bindings")) {
-        ImGui::TextUnformatted("WASD for moving Forward, backward and to the side\n"
-                                "QE for rotating\n"
-                                "right mouse button (hold) to look\n"
-                                "ESC to quit");
+        ImGui::TextUnformatted(
+          "WASD for moving Forward, backward and to the side\n"
+          "QE for rotating\n"
+          "right mouse button (hold) to look\n"
+          "ESC to quit");
     }
 }
 
@@ -62,7 +63,8 @@ inline void renderCommonFrameStats()
 // `supported` is false (no timestamp support on the queue family) the panel
 // only shows "unavailable". If the two spans differ in length, the shorter
 // one wins - a caller mismatch truncates rather than reads out of bounds.
-inline void renderGpuTimingsPanel(bool supported, std::span<const float> pass_ms, std::span<const char *const> pass_names)
+inline void
+  renderGpuTimingsPanel(bool supported, std::span<const float> pass_ms, std::span<const char *const> pass_names)
 {
     if (!ImGui::CollapsingHeader("GPU timings")) { return; }
 

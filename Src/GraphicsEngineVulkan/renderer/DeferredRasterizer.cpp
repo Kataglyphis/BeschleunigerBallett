@@ -9,13 +9,13 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
-#include "common/ViewportHelper.hpp"
 #include "common/Utilities.hpp"
+#include "common/ViewportHelper.hpp"
+#include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 module kataglyphis.vulkan.deferred_rasterizer;
 
@@ -55,15 +55,9 @@ void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout
     createPipelines(descriptor_set_layouts);
 }
 
-Kataglyphis::Texture &DeferredRasterizer::getOffscreenTexture(uint32_t index)
-{
-    return *offscreenTextures[index];
-}
+Kataglyphis::Texture &DeferredRasterizer::getOffscreenTexture(uint32_t index) { return *offscreenTextures[index]; }
 
-void DeferredRasterizer::setPushConstant(PushConstantRasterizer push_constant)
-{
-    pushConstant = push_constant;
-}
+void DeferredRasterizer::setPushConstant(PushConstantRasterizer push_constant) { pushConstant = push_constant; }
 
 void DeferredRasterizer::createTextures()
 {
@@ -74,20 +68,30 @@ void DeferredRasterizer::createTextures()
     gBufferMaterials.resize(count);
 
     const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
-    auto createAttachment = [&](std::vector<std::unique_ptr<Texture>>& textures, vk::Format format, vk::ImageUsageFlags usage) {
-        for (uint32_t i = 0; i < count; i++) {
-            auto tex = std::make_unique<Texture>();
-            createColorAttachment(*tex, device, extent, format, usage);
-            textures[i] = std::move(tex);
-        }
-    };
+    auto createAttachment =
+      [&](std::vector<std::unique_ptr<Texture>> &textures, vk::Format format, vk::ImageUsageFlags usage) {
+          for (uint32_t i = 0; i < count; i++) {
+              auto tex = std::make_unique<Texture>();
+              createColorAttachment(*tex, device, extent, format, usage);
+              textures[i] = std::move(tex);
+          }
+      };
 
     // Use specific formats for GBuffer
-    createAttachment(offscreenTextures, FINAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
+    createAttachment(offscreenTextures,
+      FINAL_FORMAT,
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
+        | vk::ImageUsageFlagBits::eTransferDst);
     // No position attachment: the lighting pass reconstructs position from depth, saving an rgba16f target.
-    createAttachment(gBufferNormals, GBUFFER_NORMAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
-    createAttachment(gBufferAlbedos, GBUFFER_ALBEDO_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
-    createAttachment(gBufferMaterials, GBUFFER_MATERIAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferNormals,
+      GBUFFER_NORMAL_FORMAT,
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferAlbedos,
+      GBUFFER_ALBEDO_FORMAT,
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferMaterials,
+      GBUFFER_MATERIAL_FORMAT,
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
 
     // No transition here: the render pass performs the first one from eUndefined.
     depthBufferImage = std::make_unique<Texture>();
@@ -124,19 +128,25 @@ void DeferredRasterizer::cleanUp()
 DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
-{
-    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
-}
+{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextures()
 {
-    for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
+    for (auto &tex : offscreenTextures) {
+        if (tex) tex->cleanUp();
+    }
     offscreenTextures.clear();
-    for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
+    for (auto &tex : gBufferNormals) {
+        if (tex) tex->cleanUp();
+    }
     gBufferNormals.clear();
-    for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
+    for (auto &tex : gBufferAlbedos) {
+        if (tex) tex->cleanUp();
+    }
     gBufferAlbedos.clear();
-    for (auto& tex : gBufferMaterials) { if (tex) tex->cleanUp(); }
+    for (auto &tex : gBufferMaterials) {
+        if (tex) tex->cleanUp();
+    }
     gBufferMaterials.clear();
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
@@ -155,37 +165,38 @@ void DeferredRasterizer::createRenderPass()
 {
     // Reuses createTextures()'s depth_format so the attachment and its image cannot diverge.
     std::array<vk::AttachmentDescription, 5> attachments = {
-        buildAttachmentDescription(FINAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
-        buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
-        buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
-        buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
-        buildAttachmentDescription(depth_format, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
+        buildAttachmentDescription(FINAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 0: Final Output
+        buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 1: Normal
+        buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 2: Albedo
+        buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 3: Material
+        buildAttachmentDescription(depth_format, vk::ImageLayout::eDepthStencilAttachmentOptimal)// 4: Depth
     };
 
     // Subpass 0: Geometry Pass
     std::array<vk::AttachmentReference, 3> geometryColorRefs = {
-        vk::AttachmentReference{1, vk::ImageLayout::eColorAttachmentOptimal}, // Normal
-        vk::AttachmentReference{2, vk::ImageLayout::eColorAttachmentOptimal}, // Albedo
-        vk::AttachmentReference{3, vk::ImageLayout::eColorAttachmentOptimal}  // Material
+        vk::AttachmentReference{ 1, vk::ImageLayout::eColorAttachmentOptimal },// Normal
+        vk::AttachmentReference{ 2, vk::ImageLayout::eColorAttachmentOptimal },// Albedo
+        vk::AttachmentReference{ 3, vk::ImageLayout::eColorAttachmentOptimal }// Material
     };
-    vk::AttachmentReference geometryDepthRef{4, vk::ImageLayout::eDepthStencilAttachmentOptimal};
+    vk::AttachmentReference geometryDepthRef{ 4, vk::ImageLayout::eDepthStencilAttachmentOptimal };
 
     const vk::SubpassDescription geometrySubpass =
       buildSubpassDescription(std::span<const vk::AttachmentReference>(geometryColorRefs), &geometryDepthRef);
 
     // Subpass 1: Lighting Pass
-    vk::AttachmentReference lightingColorRef{0, vk::ImageLayout::eColorAttachmentOptimal};
-    
+    vk::AttachmentReference lightingColorRef{ 0, vk::ImageLayout::eColorAttachmentOptimal };
+
     std::array<vk::AttachmentReference, 4> lightingInputRefs = {
-        vk::AttachmentReference{1, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_NORMAL_BINDING
-        vk::AttachmentReference{2, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_ALBEDO_BINDING
-        vk::AttachmentReference{3, vk::ImageLayout::eShaderReadOnlyOptimal}, // -> GBUFFER_MATERIAL_BINDING
-        vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal}  // -> GBUFFER_DEPTH_BINDING
+        vk::AttachmentReference{ 1, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_NORMAL_BINDING
+        vk::AttachmentReference{ 2, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_ALBEDO_BINDING
+        vk::AttachmentReference{ 3, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_MATERIAL_BINDING
+        vk::AttachmentReference{ 4, vk::ImageLayout::eShaderReadOnlyOptimal }// -> GBUFFER_DEPTH_BINDING
     };
 
-    const vk::SubpassDescription lightingSubpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&lightingColorRef, 1), nullptr,
-      std::span<const vk::AttachmentReference>(lightingInputRefs));
+    const vk::SubpassDescription lightingSubpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(&lightingColorRef, 1),
+        nullptr,
+        std::span<const vk::AttachmentReference>(lightingInputRefs));
 
     // Dependencies
     std::array<vk::SubpassDependency, 3> dependencies;
@@ -204,7 +215,8 @@ void DeferredRasterizer::createRenderPass()
     dependencies[1].dstStageMask =
       vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eColorAttachmentOutput
       | vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[1].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependencies[1].srcAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[1].dstAccessMask = vk::AccessFlagBits::eInputAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
                                     | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
@@ -221,7 +233,7 @@ void DeferredRasterizer::createRenderPass()
     dependencies[2].dstAccessMask = vk::AccessFlagBits::eMemoryRead;
     dependencies[2].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
-    std::array<vk::SubpassDescription, 2> subpasses = {geometrySubpass, lightingSubpass};
+    std::array<vk::SubpassDescription, 2> subpasses = { geometrySubpass, lightingSubpass };
 
     vk::RenderPassCreateInfo const renderPassInfo =
       Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
@@ -236,14 +248,15 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
-    ShaderStagePair geomStages{ device, slang_spv_dir + "deferred.geometry_vs_main.spv",
-        slang_spv_dir + "deferred.geometry_fs_main.spv" };
+    ShaderStagePair geomStages{
+        device, slang_spv_dir + "deferred.geometry_vs_main.spv", slang_spv_dir + "deferred.geometry_fs_main.spv"
+    };
 
     vk::VertexInputBindingDescription bindingDescription;
     bindingDescription.binding = 0;
     bindingDescription.stride = sizeof(Vertex);
     bindingDescription.inputRate = vk::VertexInputRate::eVertex;
-    
+
     std::array<vk::VertexInputAttributeDescription, 5> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
@@ -265,8 +278,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
 
     // Lighting Pipeline (Slang-emitted SPIR-V)
-    ShaderStagePair lightStages{ device, slang_spv_dir + "deferred.lighting_vs_main.spv",
-        slang_spv_dir + "deferred.lighting_fs_main.spv" };
+    ShaderStagePair lightStages{
+        device, slang_spv_dir + "deferred.lighting_vs_main.spv", slang_spv_dir + "deferred.lighting_fs_main.spv"
+    };
 
     vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo = buildPipelineLayoutCreateInfo(descriptorSetLayouts);
 
@@ -276,13 +290,15 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     lightingPipelineLayout = lighting_pipeline_layout_result.value;
 
     PipelineBuilder lightingPipelineBuilder;
-    lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
-                         // Fullscreen triangle from SV_VertexID: no vertex buffer.
-                         .setVertexInput({}, {})
-                         .setCullMode(vk::CullModeFlagBits::eNone)
-                         .setDepthTest(false)
-                         .setDepthWrite(false)
-                         .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
+    lightingPipeline =
+      lightingPipelineBuilder
+        .setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
+        // Fullscreen triangle from SV_VertexID: no vertex buffer.
+        .setVertexInput({}, {})
+        .setCullMode(vk::CullModeFlagBits::eNone)
+        .setDepthTest(false)
+        .setDepthWrite(false)
+        .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
 }
 
 void DeferredRasterizer::createFramebuffer()
@@ -308,19 +324,23 @@ void DeferredRasterizer::createFramebuffer()
 }
 
 
-void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, const std::optional<FrustumPlanes> &cameraFrustum)
+void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
+  uint32_t image_index,
+  Kataglyphis::Scene *scene,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  const std::optional<FrustumPlanes> &cameraFrustum)
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
     std::array<vk::ClearValue, 5> clearValues{};
-    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
-    clearValues[1].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
-    clearValues[2].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
-    clearValues[3].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[4].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    clearValues[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
+    clearValues[1].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
+    clearValues[2].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
+    clearValues[3].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } };
+    clearValues[4].depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 };
 
-    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
-      renderPass, framebuffer[image_index], swap_chain_extent, clearValues);
+    const vk::RenderPassBeginInfo renderPassInfo =
+      Kataglyphis::buildRenderPassBeginInfo(renderPass, framebuffer[image_index], swap_chain_extent, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
@@ -343,16 +363,16 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     commandBuffer.nextSubpass(vk::SubpassContents::eInline);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightingPipeline);
-    
+
     // descriptorSets[1] holds the G-buffer inputs (set 1).
     if (descriptorSets.size() > 1) {
         commandBuffer.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, lightingPipelineLayout, 1, 1, &descriptorSets[1], 0, nullptr);
     }
     commandBuffer.bindDescriptorSets(
-        vk::PipelineBindPoint::eGraphics, lightingPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
+      vk::PipelineBindPoint::eGraphics, lightingPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
 
-    commandBuffer.draw(3, 1, 0, 0); // Fullscreen triangle
+    commandBuffer.draw(3, 1, 0, 0);// Fullscreen triangle
 
     commandBuffer.endRenderPass();
 }

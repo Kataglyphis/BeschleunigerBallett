@@ -94,8 +94,8 @@ TEST(RenderPassHelperUnit, MatchesDeferredGBufferAttachments)
 TEST(RenderPassHelperUnit, MatchesSkyBoxColorAttachmentLeftForThePostStageToLoad)
 {
     // PostStage loads the swapchain image out of exactly the layout SkyBox leaves it in.
-    const vk::AttachmentDescription sky_box = buildAttachmentDescription(
-      vk::Format::eB8G8R8A8Unorm, vk::ImageLayout::eColorAttachmentOptimal);
+    const vk::AttachmentDescription sky_box =
+      buildAttachmentDescription(vk::Format::eB8G8R8A8Unorm, vk::ImageLayout::eColorAttachmentOptimal);
 
     const vk::AttachmentDescription post_stage = buildAttachmentDescription(vk::Format::eB8G8R8A8Unorm,
       vk::ImageLayout::ePresentSrcKHR,

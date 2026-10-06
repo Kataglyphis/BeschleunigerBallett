@@ -54,12 +54,16 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   uint32_t max_bounces)
 {
     // Same queue, so no ownership transfer; eUndefined because the kernel overwrites every pixel.
-    const vk::ImageMemoryBarrier presentToPathTracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
-      vulkanImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
+    const vk::ImageMemoryBarrier presentToPathTracingImageBarrier =
+      Kataglyphis::buildImageMemoryBarrier(vulkanImage.getImage(),
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eGeneral,
+        {},
+        vk::AccessFlagBits::eShaderWrite);
 
     // This frame's raster write and, since the image is not per-frame, the previous frame's post-pass read.
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput
-        | vk::PipelineStageFlagBits::eFragmentShader,
+    commandBuffer.pipelineBarrier(
+      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eFragmentShader,
       vk::PipelineStageFlagBits::eComputeShader,
       vk::DependencyFlags{},
       {},
@@ -67,12 +71,12 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
       { presentToPathTracingImageBarrier });
 
     // The previous frame's dispatch may still be writing the history; a pipeline barrier orders across command buffers.
-    const vk::ImageMemoryBarrier accumulationBarrier = Kataglyphis::buildImageMemoryBarrier(
-      accumulationImage.getImage(),
-      vk::ImageLayout::eGeneral,
-      vk::ImageLayout::eGeneral,
-      vk::AccessFlagBits::eShaderWrite,
-      vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
+    const vk::ImageMemoryBarrier accumulationBarrier =
+      Kataglyphis::buildImageMemoryBarrier(accumulationImage.getImage(),
+        vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eGeneral,
+        vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
 
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
       vk::PipelineStageFlagBits::eComputeShader,
@@ -111,12 +115,12 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
-    const vk::ImageMemoryBarrier pathTracingToPresentImageBarrier = Kataglyphis::buildImageMemoryBarrier(
-      vulkanImage.getImage(),
-      vk::ImageLayout::eGeneral,
-      vk::ImageLayout::eShaderReadOnlyOptimal,
-      vk::AccessFlagBits::eShaderWrite,
-      vk::AccessFlagBits::eShaderRead);
+    const vk::ImageMemoryBarrier pathTracingToPresentImageBarrier =
+      Kataglyphis::buildImageMemoryBarrier(vulkanImage.getImage(),
+        vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlagBits::eShaderRead);
 
     // The consumer is post.slang's fragment shader.
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,

@@ -17,11 +17,11 @@ enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, Cou
 // edit needed to add a pass, and the static_asserts below catch every other
 // table that must stay in step with it.
 inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
-    "Clouds (compute)",
-    "Shadow cascades",
-    "Main (raster/RT)",
-    "Sky",
-    "Post + GUI",
+  "Clouds (compute)",
+  "Shadow cascades",
+  "Main (raster/RT)",
+  "Sky",
+  "Post + GUI",
 });
 inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
@@ -30,17 +30,17 @@ inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAME
 // those may be reworded for the GUI at will, while these are diffed between
 // runs by tooling and must stay stable.
 inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
-    "Clouds",
-    "ShadowCascades",
-    "Main",
-    "Sky",
-    "Post",
+  "Clouds",
+  "ShadowCascades",
+  "Main",
+  "Sky",
+  "Post",
 });
 
 static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(),
   "display and export name tables must stay parallel");
-static_assert(
-  static_cast<int>(GpuTimedPass::Count) == GPU_TIMED_PASS_COUNT, "GpuTimedPass::Count must track the pass name table");
+static_assert(static_cast<int>(GpuTimedPass::Count) == GPU_TIMED_PASS_COUNT,
+  "GpuTimedPass::Count must track the pass name table");
 
 struct GpuTimings
 {

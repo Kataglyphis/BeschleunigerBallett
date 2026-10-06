@@ -78,9 +78,7 @@ class FrameSync
             render_finished_by_image[image] = render_finished_handle;
         }
 
-        for (uint32_t image = 0; image < imageCount; ++image) {
-            images_in_flight_fences[image] = nullptr;
-        }
+        for (uint32_t image = 0; image < imageCount; ++image) { images_in_flight_fences[image] = nullptr; }
 
         current_frame = 0;
     }
@@ -93,8 +91,7 @@ class FrameSync
     {
         cleanUp(logicalDevice);
 
-        frame_sync_count =
-          std::min<uint32_t>(static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), imageCount);
+        frame_sync_count = std::min<uint32_t>(static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), imageCount);
 
         image_available.resize(frame_sync_count);
         render_finished_by_image.resize(imageCount);

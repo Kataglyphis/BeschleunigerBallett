@@ -81,18 +81,18 @@ class DeferredRasterizer
   private:
     unsigned int meshesDrawn{ 0 };
     unsigned int meshesConsidered{ 0 };
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     std::vector<vk::Framebuffer> framebuffer;
-    
+
     // The final color output (offscreen texture, consumed by PostStage)
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
-    
+
     // GBuffer attachments
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferNormals;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferAlbedos;
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials; // Metallic, Roughness, AO
+    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials;// Metallic, Roughness, AO
 
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
     // Resolved once by createTextures(), which init() always runs before
@@ -106,7 +106,7 @@ class DeferredRasterizer
     // Geometry Pass
     vk::Pipeline geometryPipeline{};
     vk::PipelineLayout geometryPipelineLayout{};
-    
+
     // Lighting Pass
     vk::Pipeline lightingPipeline{};
     vk::PipelineLayout lightingPipelineLayout{};

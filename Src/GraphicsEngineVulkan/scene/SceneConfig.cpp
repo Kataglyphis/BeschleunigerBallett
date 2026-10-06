@@ -21,7 +21,7 @@ namespace sceneConfig {
 auto resolveModelPath(const std::string &relativeModelPath) -> std::string
 {
     if (const auto resolved = Kataglyphis::Shared::resolveResourceRelativePath(relativeModelPath);
-        resolved.has_value()) {
+      resolved.has_value()) {
         return resolved->string();
     }
 
@@ -114,11 +114,8 @@ auto getModelFile() -> std::string
     return resolveModelPath(std::string(defaultModelRelativePath()));
 }
 
-// Identity: a large model scale puts the camera inside the geometry and stretches the scene past a cascade's resolution.
-auto getModelMatrix() -> glm::mat4
-{
-    return glm::mat4(1.0F);
-}
+// Identity: a big model scale puts the camera inside the geometry and outgrows a cascade's resolution.
+auto getModelMatrix() -> glm::mat4 { return glm::mat4(1.0F); }
 
 auto getAvailableModelPaths() -> std::span<const std::string>
 {
@@ -138,9 +135,7 @@ auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std:
     // generic_string() on both sides: scanned paths come out backslashed on Windows, the preferred literal does not.
     const std::string preferred = std::filesystem::path(preferredRelativePath).generic_string();
     for (size_t i = 0; i < availablePaths.size(); ++i) {
-        if (std::filesystem::path(availablePaths[i]).generic_string() == preferred) {
-            return static_cast<int>(i);
-        }
+        if (std::filesystem::path(availablePaths[i]).generic_string() == preferred) { return static_cast<int>(i); }
     }
 
     if (!availablePaths.empty()) { return 0; }

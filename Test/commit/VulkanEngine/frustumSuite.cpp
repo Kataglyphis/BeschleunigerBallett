@@ -33,9 +33,7 @@ glm::mat4 default_view_projection()
 }
 
 AABB box_at(const glm::vec3 &centre, float halfExtent)
-{
-    return AABB{ centre - glm::vec3(halfExtent), centre + glm::vec3(halfExtent) };
-}
+{ return AABB{ centre - glm::vec3(halfExtent), centre + glm::vec3(halfExtent) }; }
 
 // Independent eight-corner oracle, so the center/extent form is not checked against itself.
 AABB transform_aabb_via_eight_corners(const glm::mat4 &model, const AABB &box)
@@ -176,8 +174,8 @@ TEST(FrustumUnit, TransformAABBCoversTheRotatedBox)
 TEST(FrustumUnit, TransformAABBHandlesTranslationAndScale)
 {
     const AABB unit{ glm::vec3(-1.0F), glm::vec3(1.0F) };
-    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, 0.0F, -5.0F))
-                            * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    const glm::mat4 model =
+      glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, 0.0F, -5.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
 
     const AABB moved = transformAABB(model, unit);
 

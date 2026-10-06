@@ -114,15 +114,10 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
-{
-    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
-}
+{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers); }
 
 // Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
-void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
-{
-    createFramebuffer();
-}
+void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources() { createFramebuffer(); }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
@@ -150,8 +145,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
 void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 {
     // Loads the skybox pass's output instead of clearing it, then hands it to presentation.
-    const vk::AttachmentDescription color_attachment = buildAttachmentDescription(
-      vulkanSwapChain->getSwapChainFormat(),
+    const vk::AttachmentDescription color_attachment = buildAttachmentDescription(vulkanSwapChain->getSwapChainFormat(),
       vk::ImageLayout::ePresentSrcKHR,
       vk::AttachmentLoadOp::eLoad,
       vk::AttachmentStoreOp::eStore,
@@ -161,8 +155,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     color_attachment_reference.attachment = 0;
     color_attachment_reference.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
-    const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), nullptr);
+    const vk::SubpassDescription subpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), nullptr);
 
     // Colour only: this pass has no depth to order.
     const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDependency() };
@@ -216,8 +210,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
 
         std::array<vk::ImageView, 1> attachments = { swap_chain_image.getImageView() };
 
-        const vk::FramebufferCreateInfo frame_buffer_create_info = Kataglyphis::buildFramebufferCreateInfo(
-          render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
+        const vk::FramebufferCreateInfo frame_buffer_create_info =
+          Kataglyphis::buildFramebufferCreateInfo(render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
 
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
         ASSERT_VULKAN(result.result, "Failed to create framebuffer!");

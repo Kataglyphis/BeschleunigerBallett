@@ -18,9 +18,7 @@ constexpr uint32_t WIDTH = 8;
 constexpr uint32_t HEIGHT = 8;
 
 std::vector<uint8_t> flat_frame(uint8_t level)
-{
-    return std::vector<uint8_t>(static_cast<size_t>(WIDTH) * HEIGHT * 4U, level);
-}
+{ return std::vector<uint8_t>(static_cast<size_t>(WIDTH) * HEIGHT * 4U, level); }
 
 // Alternating columns of black/white, opaque alpha.
 std::vector<uint8_t> checkerboard_frame()
@@ -39,9 +37,9 @@ std::vector<uint8_t> checkerboard_frame()
     return rgba;
 }
 
-Crop full_frame_crop() { return Crop{0U, WIDTH, 0U, HEIGHT}; }
+Crop full_frame_crop() { return Crop{ 0U, WIDTH, 0U, HEIGHT }; }
 
-} // namespace
+}// namespace
 
 TEST(GoldenMetrics, SwungFractionIsZeroForIdenticalFrames)
 {
@@ -80,7 +78,7 @@ TEST(GoldenMetrics, DetailFractionOfASingleColumnCropIsZero)
 {
     // A single-column crop has no right-hand-neighbour pair to compare.
     const std::vector<uint8_t> frame = checkerboard_frame();
-    const Crop single_column{0U, 1U, 0U, HEIGHT};
+    const Crop single_column{ 0U, 1U, 0U, HEIGHT };
     EXPECT_DOUBLE_EQ(detail_fraction(frame, WIDTH, HEIGHT, single_column), 0.0);
 }
 

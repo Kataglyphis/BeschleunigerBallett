@@ -7,13 +7,13 @@
 
 namespace Kataglyphis {
 // Aborts on failure (exceptions are disabled); evaluates val exactly once, as a single statement.
-#define ASSERT_VULKAN(val, error_string) \
-    do { \
+#define ASSERT_VULKAN(val, error_string)                                       \
+    do {                                                                       \
         const vk::Result assert_vulkan_result_ = static_cast<vk::Result>(val); \
-        if (assert_vulkan_result_ != vk::Result::eSuccess) { \
-            spdlog::critical(error_string); \
-            std::abort(); \
-        } \
+        if (assert_vulkan_result_ != vk::Result::eSuccess) {                   \
+            spdlog::critical(error_string);                                    \
+            std::abort();                                                      \
+        }                                                                      \
     } while (false)
 
 // Debug always validates; a Release build when KATAGLYPHIS_VULKAN_VALIDATION is set, as the Windows lavapipe lane does.

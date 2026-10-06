@@ -69,7 +69,8 @@ auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &dev
     return createShaderModuleFromBytes(device, code);
 }
 
-Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,  // DEVICE_SINK_OK: moved into member
+Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device,// DEVICE_SINK_OK: moved into member
+  const std::string &vertexSpvPath,
   const std::string &fragmentSpvPath)
   : device_(std::move(device)), vertexModule_(loadSpirvShaderModule(device_, vertexSpvPath)),
     fragmentModule_(loadSpirvShaderModule(device_, fragmentSpvPath)),
@@ -85,15 +86,19 @@ Kataglyphis::ShaderStagePair::~ShaderStagePair()
     }
 }
 
-auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath,
-  std::span<const vk::DescriptorSetLayout> setLayouts, std::span<const vk::PushConstantRange> pushConstantRanges,
-  const char *layoutErrorMessage, const char *pipelineErrorMessage) -> ComputePipelineHandles
+auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &device,
+  const std::string &spvPath,
+  std::span<const vk::DescriptorSetLayout> setLayouts,
+  std::span<const vk::PushConstantRange> pushConstantRanges,
+  const char *layoutErrorMessage,
+  const char *pipelineErrorMessage) -> ComputePipelineHandles
 {
     vk::ShaderModule shaderModule = loadSpirvShaderModule(device, spvPath);
 
     const vk::PipelineShaderStageCreateInfo stageInfo = buildComputeShaderStageCreateInfo(shaderModule);
 
-    const vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
+    const vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
+      buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
     auto layoutResult = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(layoutResult.result, layoutErrorMessage);

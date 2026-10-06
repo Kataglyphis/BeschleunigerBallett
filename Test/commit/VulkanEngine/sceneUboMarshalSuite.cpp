@@ -286,9 +286,8 @@ TEST(SceneUboMarshalUnit, CloudMarchStepsNeverLeaveTheShaderClampsRange)
 
 TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)
 {
-    EXPECT_EQ(clampPcfRadius(-1), 0U)
-      << "an unclamped cast turns -1 into 4294967295, which the shader's tap "
-         "loop never finishes, reading as fully shadowed";
+    EXPECT_EQ(clampPcfRadius(-1), 0U) << "an unclamped cast turns -1 into 4294967295, which the shader's tap "
+                                         "loop never finishes, reading as fully shadowed";
     EXPECT_EQ(clampPcfRadius(INT_MIN), 0U);
     EXPECT_EQ(clampPcfRadius(0), 0U);
     EXPECT_EQ(clampPcfRadius(MAX_PCF_RADIUS), static_cast<uint32_t>(MAX_PCF_RADIUS));
@@ -315,8 +314,7 @@ TEST(SceneUboMarshal, CameraFillsPositionAndDirection)
 TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
 {
     SceneUBO ubo{};
-    fillSceneUboDirectionalLight(
-      ubo, glm::vec3(3.0F, 4.0F, 0.0F), glm::vec3(0.9F, 0.8F, 0.7F), 2.5F);
+    fillSceneUboDirectionalLight(ubo, glm::vec3(3.0F, 4.0F, 0.0F), glm::vec3(0.9F, 0.8F, 0.7F), 2.5F);
 
     EXPECT_FLOAT_EQ(glm::length(glm::vec3(ubo.dirLight.direction)), 1.0F)
       << "direction.xyz must be unit length even for a non-normalized input";

@@ -8,8 +8,8 @@
 namespace Kataglyphis {
 
 // GUI transform for model 0: unscaled translation, then Z, Y, X rotations; no scale (see SceneConfig.cpp).
-inline auto makeGuiModelTransform(
-  std::span<const float, 3> position, std::span<const float, 3> rotationDegrees) -> glm::mat4
+inline auto makeGuiModelTransform(std::span<const float, 3> position, std::span<const float, 3> rotationDegrees)
+  -> glm::mat4
 {
     glm::mat4 modelMatrix = glm::mat4(1.0f);
 

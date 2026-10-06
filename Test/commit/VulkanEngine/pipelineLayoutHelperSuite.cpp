@@ -13,13 +13,13 @@ namespace {
 constexpr std::array<vk::DescriptorSetLayout, 2> kTwoLayouts{ vk::DescriptorSetLayout(nullptr),
     vk::DescriptorSetLayout(nullptr) };
 constexpr std::array<vk::DescriptorSetLayout, 3> kThreeLayouts{ vk::DescriptorSetLayout(nullptr),
-    vk::DescriptorSetLayout(nullptr), vk::DescriptorSetLayout(nullptr) };
+    vk::DescriptorSetLayout(nullptr),
+    vk::DescriptorSetLayout(nullptr) };
 constexpr std::array<vk::PushConstantRange, 1> kOneRange{ vk::PushConstantRange{} };
 constexpr std::array<vk::PushConstantRange, 2> kTwoRanges{ vk::PushConstantRange{}, vk::PushConstantRange{} };
 }// namespace
 
-static_assert(
-  buildPipelineLayoutCreateInfo(std::span<const vk::DescriptorSetLayout>(kTwoLayouts)).setLayoutCount == 2U,
+static_assert(buildPipelineLayoutCreateInfo(std::span<const vk::DescriptorSetLayout>(kTwoLayouts)).setLayoutCount == 2U,
   "buildPipelineLayoutCreateInfo must be usable in a constant expression");
 
 namespace {

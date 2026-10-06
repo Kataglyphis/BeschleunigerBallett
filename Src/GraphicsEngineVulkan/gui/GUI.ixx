@@ -24,9 +24,7 @@ class GUI
 
     GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
-    {
-        return guiRendererSharedVars;
-    };
+    { return guiRendererSharedVars; };
 
     void setUserSelectionForRRT(bool rrtCapabilitiesAvailable);
 
@@ -42,7 +40,7 @@ class GUI
       const vk::RenderPass &post_render_pass,
       uint32_t image_count);
 
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     Window *window{ nullptr };
     vk::DescriptorPool gui_descriptor_pool{};
 

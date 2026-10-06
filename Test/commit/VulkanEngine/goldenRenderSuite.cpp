@@ -1,11 +1,11 @@
 // Structure only, never exact pixels; see docs/gpu-golden-testing.md § Writing a new golden test.
 
-#include <gtest/gtest.h>
 #include "EngineLoadWait.hpp"
 #include "GoldenMetrics.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <gtest/gtest.h>
 #include <iostream>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -122,15 +122,14 @@ struct EngineHarness
 
     EngineHarness()
       : window(std::make_unique<Kataglyphis::Frontend::Window>(WINDOW_WIDTH, WINDOW_HEIGHT)),
-        scene(std::make_unique<Kataglyphis::Scene>()),
-        gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())), camera(std::make_unique<Camera>())
+        scene(std::make_unique<Kataglyphis::Scene>()), gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())),
+        camera(std::make_unique<Camera>())
     {
         if (const char *chosen = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); chosen == nullptr || *chosen == '\0') {
             golden_scene.emplace(GOLDEN_SCENE_MODEL);
         }
         frame_golden_view(*camera);
-        renderer =
-          std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
+        renderer = std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
     }
 
     EngineHarness(const EngineHarness &) = delete;
@@ -268,13 +267,10 @@ class ScopedValidationErrorCounter
 {
   public:
     ScopedValidationErrorCounter()
-      : sink_(std::make_shared<spdlog::sinks::callback_sink_mt>(
-          [this](const spdlog::details::log_msg &msg) {
-              if (msg.level >= spdlog::level::err) { ++error_count_; }
-          }))
-    {
-        spdlog::default_logger()->sinks().push_back(sink_);
-    }
+      : sink_(std::make_shared<spdlog::sinks::callback_sink_mt>([this](const spdlog::details::log_msg &msg) {
+            if (msg.level >= spdlog::level::err) { ++error_count_; }
+        }))
+    { spdlog::default_logger()->sinks().push_back(sink_); }
     ScopedValidationErrorCounter(const ScopedValidationErrorCounter &) = delete;
     ScopedValidationErrorCounter &operator=(const ScopedValidationErrorCounter &) = delete;
     ~ScopedValidationErrorCounter()
@@ -314,22 +310,20 @@ class ScopedGpuTimingJsonPath
     }
 };
 
-#define SKIP_WITHOUT_GPU()                                                             \
-    do {                                                                               \
-        if (!glfw_reports_vulkan_support()) {                                          \
-            GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system.";       \
-        }                                                                              \
+#define SKIP_WITHOUT_GPU()                                                                                            \
+    do {                                                                                                              \
+        if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; } \
     } while (false)
 
 // Vulkan support does not imply a surface that allows copying out of a swapchain image.
-#define SKIP_WITHOUT_FRAME_CAPTURE(harness)                                                        \
-    do {                                                                                           \
-        if (!(harness).supportsFrameCapture()) {                                                   \
-            GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";   \
-        }                                                                                           \
+#define SKIP_WITHOUT_FRAME_CAPTURE(harness)                                                      \
+    do {                                                                                         \
+        if (!(harness).supportsFrameCapture()) {                                                 \
+            GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable."; \
+        }                                                                                        \
     } while (false)
 
-} // namespace
+}// namespace
 
 // Cheapest guard against the whole render graph silently producing nothing.
 TEST(GoldenRender, RendersNonBlankFrame)
@@ -480,7 +474,8 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     std::vector<uint8_t> golden_delta(golden_order_on.size(), 255);
     for (size_t i = 0; i + 3 < golden_order_on.size(); i += 4) {
         for (size_t channel = 0; channel < 3; ++channel) {
-            const int d = static_cast<int>(golden_order_off[i + channel]) - static_cast<int>(golden_order_on[i + channel]);
+            const int d =
+              static_cast<int>(golden_order_off[i + channel]) - static_cast<int>(golden_order_on[i + channel]);
             golden_delta[i + channel] = static_cast<uint8_t>(255 - std::clamp(d * 32, 0, 255));
         }
     }
@@ -677,8 +672,7 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
 
     for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
         // Moved between identical captures: overlay or dither, not shadow.
-        if (std::abs(luminance_of(without_shadows, pixel) - luminance_of(noise_reference, pixel))
-            > CHANGE_THRESHOLD) {
+        if (std::abs(luminance_of(without_shadows, pixel) - luminance_of(noise_reference, pixel)) > CHANGE_THRESHOLD) {
             ++unstable;
             continue;
         }
@@ -721,9 +715,8 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
       << " at shadow intensity 1.0 vs " << mean_unshadowed << " at intensity 0.0.";
 
     // 3. Shadowing only attenuates, so brightened pixels are overlay noise and must stay a minority.
-    EXPECT_GT(darkened, brightened * 5U)
-      << darkened << " pixels darkened but " << brightened
-      << " brightened - raising the shadow intensity must not brighten the image.";
+    EXPECT_GT(darkened, brightened * 5U) << darkened << " pixels darkened but " << brightened
+                                         << " brightened - raising the shadow intensity must not brighten the image.";
 }
 
 // A counter assertion, not a pixel oracle, so no classifier or tonemap hazard.
@@ -825,8 +818,8 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
       scene_vars.directional_light_direction[1],
       scene_vars.directional_light_direction[2]);
     const float rotation_radians = glm::radians(-51.0F);
-    const glm::vec3 direction_b(glm::rotate(glm::mat4(1.0F), rotation_radians, glm::vec3(0.0F, 1.0F, 0.0F))
-                                 * glm::vec4(direction_a, 0.0F));
+    const glm::vec3 direction_b(
+      glm::rotate(glm::mat4(1.0F), rotation_radians, glm::vec3(0.0F, 1.0F, 0.0F)) * glm::vec4(direction_a, 0.0F));
 
     const auto set_direction = [&scene_vars](const glm::vec3 &direction) {
         scene_vars.directional_light_direction[0] = direction.x;
@@ -870,13 +863,12 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
 
     // ShadowsDarkenSomePixels' mask, for one light direction.
     const auto build_mask = [pixel_count](const std::vector<uint8_t> &unshadowed,
-                               const std::vector<uint8_t> &noise_reference,
-                               const std::vector<uint8_t> &shadowed) {
+                              const std::vector<uint8_t> &noise_reference,
+                              const std::vector<uint8_t> &shadowed) {
         std::vector<bool> mask(pixel_count, false);
         size_t darkened = 0;
         for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
-            if (std::abs(luminance_of(unshadowed, pixel) - luminance_of(noise_reference, pixel))
-                > CHANGE_THRESHOLD) {
+            if (std::abs(luminance_of(unshadowed, pixel) - luminance_of(noise_reference, pixel)) > CHANGE_THRESHOLD) {
                 continue;
             }
             if (luminance_of(unshadowed, pixel) - luminance_of(shadowed, pixel) > CHANGE_THRESHOLD) {
@@ -1078,16 +1070,14 @@ static glm::mat4 panel_free_card_placement()
         const char *value = std::getenv(name);
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
-    return glm::translate(glm::mat4(1.0F),
-             glm::vec3(env_f("CARD_X", 5.0F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+    return glm::translate(
+             glm::mat4(1.0F), glm::vec3(env_f("CARD_X", 5.0F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
            * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
 }
 
 // The inside of the card panel_free_card_placement frames, so a mean measures the card and not the sky around it.
 static Crop panel_free_card_box(uint32_t w, uint32_t h)
-{
-    return Crop{(w * 80U) / 100U, (w * 90U) / 100U, (h * 42U) / 100U, (h * 58U) / 100U};
-}
+{ return Crop{ (w * 80U) / 100U, (w * 90U) / 100U, (h * 42U) / 100U, (h * 58U) / 100U }; }
 
 // The build-integrity check only sees material.emission as text; this proves it actually brightens pixels.
 TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
@@ -1152,8 +1142,11 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
 }
 
 // Mean row of the pixels at x >= 68% where `after` moves any channel more than 12 levels from `before`.
-static std::optional<double> changed_centroid_row(
-  const std::vector<uint8_t> &before, const std::vector<uint8_t> &after, uint32_t w, uint32_t h, size_t &count)
+static std::optional<double> changed_centroid_row(const std::vector<uint8_t> &before,
+  const std::vector<uint8_t> &after,
+  uint32_t w,
+  uint32_t h,
+  size_t &count)
 {
     double row_sum = 0.0;
     count = 0;
@@ -1214,8 +1207,8 @@ TEST(GoldenRender, WorldUpIsScreenUp)
         return frames;
     };
     const auto add_card = [&](float y) {
-        const glm::mat4 placement = glm::translate(glm::mat4(1.0F), glm::vec3(5.0F, y, 15.0F))
-                                    * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+        const glm::mat4 placement =
+          glm::translate(glm::mat4(1.0F), glm::vec3(5.0F, y, 15.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
         return harness.renderer->addModel(TWO_PRIMITIVE_MODEL, placement).has_value();
     };
 
@@ -1325,8 +1318,8 @@ TEST(GoldenRender, FrustumCullingDropsOffscreenMeshesOnly)
     EXPECT_EQ(renderer_vars.visibility.meshes_total, considered)
       << "the number of meshes considered must not change when the camera moves";
     EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U)
-      << "a scene entirely outside the view should be culled completely, but "
-      << renderer_vars.visibility.meshes_drawn << " mesh(es) were still drawn";
+      << "a scene entirely outside the view should be culled completely, but " << renderer_vars.visibility.meshes_drawn
+      << " mesh(es) were still drawn";
 
     // Separates "culling works" from "the renderer stopped drawing".
     renderer_vars.frustum_culling_enabled = false;
@@ -1360,10 +1353,9 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     ASSERT_FALSE(before.empty());
 
     // The large untextured rig cannot fail to change the frame if it renders.
-    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 2.0F, 12.0F))
-                                * glm::scale(glm::mat4(1.0F), glm::vec3(0.15F));
-    const std::optional<uint32_t> second =
-      harness.renderer->addModel("Models/ShadowTest/shadow_rig.obj", placement);
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 2.0F, 12.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(0.15F));
+    const std::optional<uint32_t> second = harness.renderer->addModel("Models/ShadowTest/shadow_rig.obj", placement);
 
     ASSERT_TRUE(second.has_value()) << "the second model failed to load";
     EXPECT_EQ(*second, 1U) << "the second model must be index 1 - this is the objectIndex the raster path pushes";
@@ -1497,8 +1489,7 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
     harness.render_frames(WARMUP_FRAMES);
 
     // Nudge to reset history, or the early pair measures the mean healing from pre-load frames.
-    harness.camera->set_camera_position(harness.camera->get_camera_position()
-                                        + glm::vec3(0.001F, 0.0F, 0.0F));
+    harness.camera->set_camera_position(harness.camera->get_camera_position() + glm::vec3(0.001F, 0.0F, 0.0F));
     harness.render_frame();
 
     // Changed-pixel fraction in the GUI-free right edge; means and centre crops measured GUI noise.
@@ -1545,14 +1536,20 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
         const uint32_t cx0 = (width * 18U) / 25U, cx1 = (width * 49U) / 50U;
         const uint32_t cy0 = height / 4U, cy1 = (height * 3U) / 4U;
         auto corr = [&](uint32_t lag) {
-            double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0; size_t n = 0;
+            double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+            size_t n = 0;
             for (uint32_t y = cy0; y < cy1; ++y)
                 for (uint32_t x = cx0; x + lag < cx1; ++x) {
-                    const double a = luminance_of(early_a, (size_t)y * width + x)
-                                   - luminance_of(early_b, (size_t)y * width + x);
+                    const double a =
+                      luminance_of(early_a, (size_t)y * width + x) - luminance_of(early_b, (size_t)y * width + x);
                     const double b = luminance_of(early_a, (size_t)y * width + x + lag)
-                                   - luminance_of(early_b, (size_t)y * width + x + lag);
-                    sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b; ++n;
+                                     - luminance_of(early_b, (size_t)y * width + x + lag);
+                    sx += a;
+                    sy += b;
+                    sxx += a * a;
+                    syy += b * b;
+                    sxy += a * b;
+                    ++n;
                 }
             const double cov = sxy / n - (sx / n) * (sy / n);
             const double va = sxx / n - (sx / n) * (sx / n);
@@ -1572,9 +1569,8 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
       << "Path-traced frame is (nearly) black - accumulated image not reaching the screen.";
 
     // (1) The crop is GUI-free, so frozen sampling gives exactly 0; the limit is measured.
-    EXPECT_GT(early_delta, 1.0e-4)
-      << "Consecutive path-traced frames are (near) identical in the scene region - "
-         "per-frame seeding inactive.";
+    EXPECT_GT(early_delta, 1.0e-4) << "Consecutive path-traced frames are (near) identical in the scene region - "
+                                      "per-frame seeding inactive.";
 
     // (3) Half the early fraction leaves room for driver variance but still demands convergence.
     EXPECT_LT(late_delta, early_delta / 2.0)
@@ -1600,8 +1596,7 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     harness.render_frames(WARMUP_FRAMES);
 
     // History-reset nudge, as in PathTracingAccumulatesAndConverges.
-    harness.camera->set_camera_position(harness.camera->get_camera_position()
-                                        + glm::vec3(0.001F, 0.0F, 0.0F));
+    harness.camera->set_camera_position(harness.camera->get_camera_position() + glm::vec3(0.001F, 0.0F, 0.0F));
     harness.render_frame();
 
     // Shallow history looks "in between" from noise alone, which would pass vacuously.
@@ -1645,8 +1640,7 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
       << "No silhouette edge (a >40-level luminance jump between neighbours) found in the panel-free "
          "crop - the shadow rig's box/ground/sky boundary should always produce one; check the crop or rig.";
 
-    const double partial_fraction =
-      static_cast<double>(edges_with_partial_pixel) / static_cast<double>(edges_found);
+    const double partial_fraction = static_cast<double>(edges_with_partial_pixel) / static_cast<double>(edges_found);
     GTEST_LOG_(INFO) << "silhouette edges found: " << edges_found
                      << ", with a partial (intermediate-luminance) pixel: " << edges_with_partial_pixel << " ("
                      << (partial_fraction * 100.0) << "%)";
@@ -1714,8 +1708,7 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
                      << ", lit crop mean luminance: " << crop_mean_luminance(lit, width, height);
 
     // Measured with margin; a light-blind kernel leaves only accumulation drift, well below it.
-    EXPECT_GT(response, 5.0e-3)
-      << "Path-traced pixels did not respond to the directional light radiance.";
+    EXPECT_GT(response, 5.0e-3) << "Path-traced pixels did not respond to the directional light radiance.";
 }
 
 // One bounce means no indirect sky light at all, so a kernel honouring the cap changes large regions.
@@ -1748,14 +1741,12 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(full_quality.size(), single_bounce.size());
 
-    const double response =
-      swung_fraction(full_quality, single_bounce, width, height, panel_free_crop(width, height));
+    const double response = swung_fraction(full_quality, single_bounce, width, height, panel_free_crop(width, height));
     GTEST_LOG_(INFO) << "PT bounces 8-vs-1 swung-pixel fraction (panel-free crop): " << response;
 
     // Measured: removing all indirect light must change a real share of scene pixels.
-    EXPECT_GT(response, 5.0e-3)
-      << "The bounce-cap slider did not change the path-traced image - "
-         "quality push constants not reaching the kernel.";
+    EXPECT_GT(response, 5.0e-3) << "The bounce-cap slider did not change the path-traced image - "
+                                   "quality push constants not reaching the kernel.";
 }
 
 // The light must scale diffuse as well as specular, or only sparse highlights respond to radiance.
@@ -1804,16 +1795,13 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     const double unlit_luma = crop_mean_luminance(unlit, width, height);
     const double lit_luma = crop_mean_luminance(lit, width, height);
     GTEST_LOG_(INFO) << "forward lit-vs-unlit swung-pixel fraction (panel-free crop): " << response
-                     << ", lit crop mean luminance: " << lit_luma
-                     << ", unlit crop mean luminance: " << unlit_luma;
+                     << ", lit crop mean luminance: " << lit_luma << ", unlit crop mean luminance: " << unlit_luma;
 
-    EXPECT_LT(unlit_luma, 30.0)
-      << "The scene stays lit with the directional light at zero radiance - "
-         "the light factors are not reaching the diffuse term.";
+    EXPECT_LT(unlit_luma, 30.0) << "The scene stays lit with the directional light at zero radiance - "
+                                   "the light factors are not reaching the diffuse term.";
 
     // Vacuous alone; a cheap sanity floor.
-    EXPECT_GT(response, 0.05)
-      << "Forward lighting did not respond to the directional light radiance.";
+    EXPECT_GT(response, 0.05) << "Forward lighting did not respond to the directional light radiance.";
 }
 
 // A transform change must rebuild the TLAS; deterministic RT over a stale one is bit-identical.
@@ -1824,9 +1812,7 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
-    if (!harness.renderer->supportsHardwareRaytracing()) {
-        GTEST_SKIP() << "Hardware raytracing unsupported.";
-    }
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
@@ -1855,8 +1841,7 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     GTEST_LOG_(INFO) << "RT transform-move swung-pixel fraction (panel-free crop): " << moved;
 
     // Measured; a stale TLAS gives exactly zero.
-    EXPECT_GT(moved, 5.0e-3)
-      << "The traced image did not follow the model transform - stale TLAS.";
+    EXPECT_GT(moved, 5.0e-3) << "The traced image did not follow the model transform - stale TLAS.";
 }
 
 // Seeding the payload with albedo adds an ambient term forward/deferred lack, so shadows never go dark.
@@ -1867,9 +1852,7 @@ TEST(GoldenRender, RaytracedShadowsAreDarkerThanLitGround)
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
-    if (!harness.renderer->supportsHardwareRaytracing()) {
-        GTEST_SKIP() << "Hardware raytracing unsupported.";
-    }
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     renderer_vars.raytracing = true;
@@ -1905,9 +1888,8 @@ TEST(GoldenRender, RaytracedShadowsAreDarkerThanLitGround)
                      << ", lit-decile mean luminance: " << lit_mean;
 
     // Measured: between the fix (exactly black) and an albedo-seeded payload in raytrace.rchit.slang.
-    EXPECT_LT(dark_mean, lit_mean * 0.05)
-      << "Ray-traced shadow did not go dark relative to the lit ground - the "
-         "closest-hit shader is still seeding an ambient/unlit-albedo term.";
+    EXPECT_LT(dark_mean, lit_mean * 0.05) << "Ray-traced shadow did not go dark relative to the lit ground - the "
+                                             "closest-hit shader is still seeding an ambient/unlit-albedo term.";
 }
 
 // RT overwrites the raster image, so pixels prove nothing: the zeroed counters are the oracle, timing is logged.
@@ -1916,9 +1898,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsHardwareRaytracing()) {
-        GTEST_SKIP() << "Hardware raytracing unsupported.";
-    }
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = true;
@@ -1930,7 +1910,8 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     const unsigned int forward_meshes_drawn = renderer_vars.visibility.meshes_drawn;
     ASSERT_GT(forward_meshes_drawn, 0U) << "the renderer reported drawing no meshes at all in forward mode";
     const float forward_main_ms =
-      renderer_vars.gpuTimings.pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
+      renderer_vars.gpuTimings
+        .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
 
     renderer_vars.raytracing = true;
     // Flush again so the average holds RT-only samples.
@@ -1947,7 +1928,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
           renderer_vars.gpuTimings
             .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
         GTEST_LOG_(INFO) << "Main-pass GPU time: forward(raster only)=" << forward_main_ms
-                          << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
+                         << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
     }
 }
 
@@ -1968,8 +1949,7 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
     if (!std::filesystem::exists(sponza)) { GTEST_SKIP() << "textured second model not present"; }
 
     // Sponza spans about +-1800 units; 0.01 fits it next to the rig inside the frame.
-    const auto added = harness.renderer->addModel(
-      sponza, glm::scale(glm::mat4(1.0F), glm::vec3(0.01F)));
+    const auto added = harness.renderer->addModel(sponza, glm::scale(glm::mat4(1.0F), glm::vec3(0.01F)));
     ASSERT_TRUE(added.has_value()) << "adding the second model failed";
     harness.render_frames(SETTLE_FRAMES);
 
@@ -1983,9 +1963,8 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
     const double detail = detail_fraction(frame, width, height, card_crop(width, height));
     GTEST_LOG_(INFO) << "second-model texture-detail fraction (panel-free crop): " << detail;
 
-    EXPECT_GT(detail, 0.02)
-      << "The added model shows no texture detail - it is sampling the first "
-         "model's (flat white) texture slots.";
+    EXPECT_GT(detail, 0.02) << "The added model shows no texture detail - it is sampling the first "
+                               "model's (flat white) texture slots.";
 }
 
 // Sponza is the release default scene, so all its textures must fit under MAX_TEXTURE_COUNT.
@@ -2056,8 +2035,7 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
@@ -2123,17 +2101,15 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
     ASSERT_GT(changed_total, 200U)
       << "the card barely changed the upper-right region - not visible there (framing/culling)";
 
-    const double box_area =
-      static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
+    const double box_area = static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
     const double changed_fraction = static_cast<double>(changed_total) / box_area;
-    GTEST_LOG_(INFO) << "mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
-                     << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
+    GTEST_LOG_(INFO) << "mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << "," << miny
+                     << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
 
     // Measured between discard on and off; grey cut-out texels keep "off" below 1.0.
     EXPECT_LT(changed_fraction, 0.55)
       << "the card footprint changed too fully - cut-out texels are NOT being discarded";
-    EXPECT_GT(changed_fraction, 0.20)
-      << "the changed pixels are too sparse to be the checkerboard - check framing";
+    EXPECT_GT(changed_fraction, 0.20) << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
 // Any of FORCE_OPAQUE on either ray or an eOpaque BLAS skips any-hit, so all three must stay relaxed.
@@ -2144,9 +2120,7 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
-    if (!harness.renderer->supportsHardwareRaytracing()) {
-        GTEST_SKIP() << "Hardware raytracing unsupported.";
-    }
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     renderer_vars.raytracing = true;
@@ -2167,8 +2141,7 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
@@ -2236,14 +2209,13 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
 
     const double box_area = static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
     const double changed_fraction = static_cast<double>(changed_total) / box_area;
-    GTEST_LOG_(INFO) << "RT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
-                     << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
+    GTEST_LOG_(INFO) << "RT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << "," << miny
+                     << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
 
     // RTX 2080, 2026-10-01: 0.479 with any-hit discarding, 0.941 with the primary ray forced opaque.
     EXPECT_LT(changed_fraction, 0.70)
       << "the card footprint changed too fully in RT - cut-out texels are NOT being discarded";
-    EXPECT_GT(changed_fraction, 0.15)
-      << "the changed pixels are too sparse to be the checkerboard - check framing";
+    EXPECT_GT(changed_fraction, 0.15) << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
 // A ray query has no any-hit stage, so path_tracing.slang alpha-tests each candidate itself.
@@ -2278,8 +2250,7 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
@@ -2347,14 +2318,13 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
 
     const double box_area = static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
     const double changed_fraction = static_cast<double>(changed_total) / box_area;
-    GTEST_LOG_(INFO) << "PT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
-                     << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
+    GTEST_LOG_(INFO) << "PT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << "," << miny
+                     << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
 
     // RTX 2080, 2026-10-01: 0.346 with the ray query's alpha test, 0.627 with the query forced opaque.
     EXPECT_LT(changed_fraction, 0.49)
       << "the card footprint changed too fully in PT - cut-out texels are NOT being discarded";
-    EXPECT_GT(changed_fraction, 0.15)
-      << "the changed pixels are too sparse to be the checkerboard - check framing";
+    EXPECT_GT(changed_fraction, 0.15) << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
 // The card shows its back face, so it is visible only if doubleSided reaches the per-draw cull mode.
@@ -2381,8 +2351,7 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehind)
     };
     // Rotated 180 degrees about Y so the back face faces the camera.
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::rotate(glm::mat4(1.0F), glm::radians(180.0F), glm::vec3(0.0F, 1.0F, 0.0F))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
@@ -2424,12 +2393,10 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehind)
     }
 
     // Single-sided culling would leave changed_total near 0.
-    ASSERT_GT(changed_total, 1500U)
-      << "the back-facing doubleSided card is not visible - back-face culled, so "
-         "the doubleSided flag is not reaching the per-draw cull mode";
+    ASSERT_GT(changed_total, 1500U) << "the back-facing doubleSided card is not visible - back-face culled, so "
+                                       "the doubleSided flag is not reaching the per-draw cull mode";
 
-    const double box_area =
-      static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
+    const double box_area = static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
     const double changed_fraction = static_cast<double>(changed_total) / box_area;
     GTEST_LOG_(INFO) << "doubleSided card (from behind): changed " << changed_total << " px, fraction-in-box "
                      << changed_fraction;
@@ -2464,8 +2431,7 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::rotate(glm::mat4(1.0F), glm::radians(180.0F), glm::vec3(0.0F, 1.0F, 0.0F))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
@@ -2496,9 +2462,8 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
         }
     }
     GTEST_LOG_(INFO) << "doubleSided card (deferred, from behind): changed " << changed_total << " px";
-    ASSERT_GT(changed_total, 1500U)
-      << "the back-facing doubleSided card is not in the deferred G-buffer - the "
-         "geometry pass back-face culled it despite doubleSided";
+    ASSERT_GT(changed_total, 1500U) << "the back-facing doubleSided card is not in the deferred G-buffer - the "
+                                       "geometry pass back-face culled it despite doubleSided";
 }
 
 // Sampling repeats, so a 4x UV scale tiles the 8x8 checkerboard to 32x32, far more edges per area.
@@ -2524,8 +2489,7 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
         return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
     };
     const glm::mat4 placement =
-      glm::translate(glm::mat4(1.0F),
-        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the uv-transform card failed";
@@ -2567,7 +2531,7 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
     ASSERT_GT(changed_total, 500U) << "the uv-transform card is not visible in the upper-right (framing)";
 
     // A finely tiled checkerboard is nearly all edges; an untransformed one is not.
-    const double detail = detail_fraction(after, width, height, Crop{minx, maxx + 1U, miny, maxy + 1U});
+    const double detail = detail_fraction(after, width, height, Crop{ minx, maxx + 1U, miny, maxy + 1U });
     GTEST_LOG_(INFO) << "uv-transform card: box [" << minx << "," << miny << ".." << maxx << "," << maxy
                      << "] detail-fraction " << detail;
 
@@ -2733,9 +2697,8 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
     const double swung = swung_fraction(before, after, width, height, panel_free_crop(width, height));
     GTEST_LOG_(INFO) << "reload PT before/after swung-pixel fraction (panel-free crop): " << swung;
 
-    EXPECT_GT(swung, 0.05)
-      << "the reloaded model is not visible in path tracing - the scene "
-         "looks unchanged after the reload";
+    EXPECT_GT(swung, 0.05) << "the reloaded model is not visible in path tracing - the scene "
+                              "looks unchanged after the reload";
 }
 
 // Unbiased means every pixel hits linear_to_srgb(aces(1.0)) * 255; post.slang encodes for the UNORM swapchain.
@@ -2812,9 +2775,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     EXPECT_GT(mean, 225.6) << "Furnace converges LOW - the estimator is losing energy "
                               "(beyond the known bounce-cap truncation).";
     EXPECT_LT(mean, 237.6) << "Furnace converges HIGH - the estimator is gaining energy.";
-    EXPECT_GT(uniform_fraction, 0.98)
-      << "The furnace image is not uniform - geometry is visible, so some path "
-         "class is biased.";
+    EXPECT_GT(uniform_fraction, 0.98) << "The furnace image is not uniform - geometry is visible, so some path "
+                                         "class is biased.";
 }
 
 namespace {
@@ -2997,8 +2959,7 @@ TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
     // Well past MAX_FRAME_DRAWS, so a cross-frame hazard gets several chances to surface.
     constexpr int CLOUD_FRAMES = 30;
     harness.render_frames(CLOUD_FRAMES);
-    ASSERT_FALSE(harness.renderer->hasDeviceLost())
-      << "Device lost rendering repeated frames with clouds enabled.";
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost rendering repeated frames with clouds enabled.";
 
     uint32_t width = 0;
     uint32_t height = 0;
@@ -3056,14 +3017,15 @@ TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
 
     // Upper half only: below is geometry whose sharp skeleton edges would inflate the clouds-off baseline.
     const Crop panel_free = panel_free_crop(width, height);
-    const Crop crop{ panel_free.x0, panel_free.x1, panel_free.y0,
-        panel_free.y0 + (panel_free.y1 - panel_free.y0) / 2U };
+    const Crop crop{
+        panel_free.x0, panel_free.x1, panel_free.y0, panel_free.y0 + (panel_free.y1 - panel_free.y0) / 2U
+    };
     const double swung = swung_fraction(baseline, clouds, width, height, crop);
     const double baseline_detail = detail_fraction(baseline, width, height, crop);
     const double clouds_detail = detail_fraction(clouds, width, height, crop);
 
     GTEST_LOG_(INFO) << "clouds toggle: swung fraction " << swung << ", detail baseline " << baseline_detail
-                      << ", detail clouds " << clouds_detail;
+                     << ", detail clouds " << clouds_detail;
 
     // Measured; re-measure if the rig, camera or cloud_mesh_offset default changes.
     constexpr double SWUNG_FRACTION_MIN = 0.05;
@@ -3085,9 +3047,7 @@ TEST(GoldenRender, RaytracedLargeMeshDoesNotLoseTheDevice)
     // No override: the debug scene is the large dinosaur mesh this diagnoses.
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
-    if (!harness.renderer->supportsHardwareRaytracing()) {
-        GTEST_SKIP() << "Hardware raytracing unsupported.";
-    }
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     renderer_vars.raytracing = true;

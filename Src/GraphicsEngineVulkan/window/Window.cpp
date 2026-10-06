@@ -18,9 +18,7 @@ import kataglyphis.shared.frontend.window_input_callbacks;
 using namespace Kataglyphis::Frontend;
 // GLFW Callback functions
 static void onErrorCallback(int error, const char *description)
-{
-    std::cerr << "GLFW Error " << error << ": " << description << '\n';
-}
+{ std::cerr << "GLFW Error " << error << ": " << description << '\n'; }
 
 Window::Window() : framebuffer_resized(false)
 {
@@ -95,7 +93,7 @@ void Window::init_callbacks()
     glfwSetFramebufferSizeCallback(main_window, &framebuffer_size_callback);
     glfwSetWindowFocusCallback(main_window, &window_focus_callback);
     glfwSetCursorEnterCallback(main_window, &cursor_enter_callback);
-    // Always installed: ImGui's GLFW backend runs without its own callbacks and needs this one; look mode gates the camera.
+    // Always installed: ImGui's GLFW backend has no callbacks of its own and needs it; look mode gates the camera.
     glfwSetCursorPosCallback(main_window, &mouse_callback);
 }
 
@@ -124,9 +122,7 @@ void Window::window_focus_callback(GLFWwindow *window, int focused)
 }
 
 void Window::cursor_enter_callback(GLFWwindow *window, int entered)
-{
-    ImGui_ImplGlfw_CursorEnterCallback(window, entered);
-}
+{ ImGui_ImplGlfw_CursorEnterCallback(window, entered); }
 
 void Window::reset_framebuffer_has_changed() { this->framebuffer_resized = false; }
 
@@ -173,13 +169,9 @@ void Window::mouse_button_callback(GLFWwindow *window, int button, int action, i
 }
 
 void Window::scroll_callback(GLFWwindow *window, double x_offset, double y_offset)
-{
-    ImGui_ImplGlfw_ScrollCallback(window, x_offset, y_offset);
-}
+{ ImGui_ImplGlfw_ScrollCallback(window, x_offset, y_offset); }
 
 void Window::char_callback(GLFWwindow *window, unsigned int codepoint)
-{
-    ImGui_ImplGlfw_CharCallback(window, codepoint);
-}
+{ ImGui_ImplGlfw_CharCallback(window, codepoint); }
 
 Window::~Window() { cleanUp(); }

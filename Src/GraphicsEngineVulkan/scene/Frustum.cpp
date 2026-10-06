@@ -9,13 +9,14 @@ module kataglyphis.vulkan.frustum;
 namespace Kataglyphis {
 
 namespace {
-/// Keeps isVisible's epsilon scale-independent; a zero-length normal is left as is, since NaN would cull everything.
-glm::vec4 normalizePlane(const glm::vec4 &plane)
-{
-    const float length = glm::length(glm::vec3(plane));
-    if (length < 1e-8F) { return plane; }
-    return plane / length;
-}
+    /// Keeps isVisible's epsilon scale-independent; a zero-length normal is left as is, since NaN would cull
+    /// everything.
+    glm::vec4 normalizePlane(const glm::vec4 &plane)
+    {
+        const float length = glm::length(glm::vec3(plane));
+        if (length < 1e-8F) { return plane; }
+        return plane / length;
+    }
 }// namespace
 
 FrustumPlanes extractFrustumPlanes(const glm::mat4 &m)
@@ -38,42 +39,37 @@ FrustumPlanes extractFrustumPlanes(const glm::mat4 &m)
 }
 
 namespace {
-/// `skipPlane` lets the shadow-caster variant drop the near plane.
-bool visibleAgainstPlanes(const FrustumPlanes &planes, const AABB &box, int skipPlane)
-{
-    if (!box.isValid()) { return true; }
+    /// `skipPlane` lets the shadow-caster variant drop the near plane.
+    bool visibleAgainstPlanes(const FrustumPlanes &planes, const AABB &box, int skipPlane)
+    {
+        if (!box.isValid()) { return true; }
 
-    for (int index = 0; index < static_cast<int>(planes.size()); ++index) {
-        if (index == skipPlane) { continue; }
-        const glm::vec4 &plane = planes[static_cast<size_t>(index)];
-        const glm::vec3 normal{ plane };
-        if (glm::dot(normal, normal) < 1e-16F) { continue; }
+        for (int index = 0; index < static_cast<int>(planes.size()); ++index) {
+            if (index == skipPlane) { continue; }
+            const glm::vec4 &plane = planes[static_cast<size_t>(index)];
+            const glm::vec3 normal{ plane };
+            if (glm::dot(normal, normal) < 1e-16F) { continue; }
 
-        const glm::vec3 positive{
-            normal.x >= 0.0F ? box.max.x : box.min.x,
-            normal.y >= 0.0F ? box.max.y : box.min.y,
-            normal.z >= 0.0F ? box.max.z : box.min.z,
-        };
+            const glm::vec3 positive{
+                normal.x >= 0.0F ? box.max.x : box.min.x,
+                normal.y >= 0.0F ? box.max.y : box.min.y,
+                normal.z >= 0.0F ? box.max.z : box.min.z,
+            };
 
-        constexpr float kEpsilon = 1e-4F;
-        if (glm::dot(normal, positive) + plane.w < -kEpsilon) { return false; }
+            constexpr float kEpsilon = 1e-4F;
+            if (glm::dot(normal, positive) + plane.w < -kEpsilon) { return false; }
+        }
+        return true;
     }
-    return true;
-}
 
-/// Index of the near plane in the array extractFrustumPlanes builds.
-constexpr int kNearPlaneIndex = 4;
+    /// Index of the near plane in the array extractFrustumPlanes builds.
+    constexpr int kNearPlaneIndex = 4;
 }// namespace
 
 bool isVisibleAsShadowCaster(const FrustumPlanes &planes, const AABB &box)
-{
-    return visibleAgainstPlanes(planes, box, kNearPlaneIndex);
-}
+{ return visibleAgainstPlanes(planes, box, kNearPlaneIndex); }
 
-bool isVisible(const FrustumPlanes &planes, const AABB &box)
-{
-    return visibleAgainstPlanes(planes, box, -1);
-}
+bool isVisible(const FrustumPlanes &planes, const AABB &box) { return visibleAgainstPlanes(planes, box, -1); }
 
 AABB transformAABB(const glm::mat4 &model, const AABB &box)
 {
@@ -87,7 +83,7 @@ AABB transformAABB(const glm::mat4 &model, const AABB &box)
     glm::vec3 newExtents{ 0.0F };
     for (int row = 0; row < 3; ++row) {
         newExtents[row] = std::abs(model[0][row]) * extents.x + std::abs(model[1][row]) * extents.y
-                         + std::abs(model[2][row]) * extents.z;
+                          + std::abs(model[2][row]) * extents.z;
     }
 
     return AABB{ newCenter - newExtents, newCenter + newExtents };

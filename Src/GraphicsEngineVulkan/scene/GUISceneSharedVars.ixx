@@ -63,7 +63,7 @@ export struct GUISceneSharedVars
     // needing a measurement of the 4x memory jump index 3 would cost.
     int shadow_map_res_index = 2;
     bool shadow_resolution_changed = false;
-    int num_shadow_cascades = 3; // must stay <= MAX_CASCADES (SceneUBO array size)
+    int num_shadow_cascades = 3;// must stay <= MAX_CASCADES (SceneUBO array size)
     int pcf_radius = 2;
     float cascaded_shadow_intensity = 0.65f;
     // How far shadows are fitted, independent of the camera far plane. The
@@ -81,10 +81,12 @@ export struct GUISceneSharedVars
     // Labels of kShadowMapResolutions, in the same order; index i's label
     // must always read as the pixel count shadowResolutionForIndex(i)
     // returns (pinned by ShadowResolutionUnit.EveryComboLabelMatchesThePixelCount).
+    // clang-format off: BuildIntegrity's member parser reads `const char* name`, not `const char *name`.
     const char* available_shadow_map_resolutions[kShadowMapResolutionCount] = { "512", "1024", "2048", "4096" };
-    static_assert(sizeof(available_shadow_map_resolutions) / sizeof(const char*) ==
-                    static_cast<std::size_t>(kShadowMapResolutionCount),
-                  "available_shadow_map_resolutions must have one label per kShadowMapResolutions entry");
+    // clang-format on
+    static_assert(sizeof(available_shadow_map_resolutions) / sizeof(const char *)
+                    == static_cast<std::size_t>(kShadowMapResolutionCount),
+      "available_shadow_map_resolutions must have one label per kShadowMapResolutions entry");
 
     // Clouds
     int cloud_num_march_steps = 8;

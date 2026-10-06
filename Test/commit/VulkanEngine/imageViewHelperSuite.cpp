@@ -17,8 +17,7 @@ namespace {
 TEST(ImageViewHelperUnit, SubresourceRangeComesFromTheArguments)
 {
     const vk::ImageViewCreateInfo info = buildImageViewCreateInfo(
-      vk::Image(nullptr), vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor, 4,
-      vk::ImageViewType::eCube, 6);
+      vk::Image(nullptr), vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor, 4, vk::ImageViewType::eCube, 6);
 
     EXPECT_EQ(info.subresourceRange.levelCount, 4U);
     EXPECT_EQ(info.subresourceRange.layerCount, 6U);
@@ -47,8 +46,7 @@ TEST(ImageViewHelperUnit, ComponentsAreAllIdentity)
 TEST(ImageViewHelperUnit, BaseMipLevelAndBaseArrayLayerAreZero)
 {
     const vk::ImageViewCreateInfo info = buildImageViewCreateInfo(
-      vk::Image(nullptr), vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor, 4,
-      vk::ImageViewType::eCube, 6);
+      vk::Image(nullptr), vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor, 4, vk::ImageViewType::eCube, 6);
 
     EXPECT_EQ(info.subresourceRange.baseMipLevel, 0U);
     EXPECT_EQ(info.subresourceRange.baseArrayLayer, 0U);

@@ -17,9 +17,7 @@ using namespace Kataglyphis;
 Allocator::Allocator() = default;
 
 Allocator::Allocator(Allocator &&other) noexcept : vmaAllocator(other.vmaAllocator)
-{
-    other.vmaAllocator = VK_NULL_HANDLE;
-}
+{ other.vmaAllocator = VK_NULL_HANDLE; }
 
 Allocator &Allocator::operator=(Allocator &&other) noexcept
 {

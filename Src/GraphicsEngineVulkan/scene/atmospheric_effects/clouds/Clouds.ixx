@@ -21,7 +21,11 @@ class Clouds
     Clouds(const Clouds &) = delete;
     Clouds &operator=(const Clouds &) = delete;
 
-    void init(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
+    void init(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      vk::DescriptorSetLayout sharedLayout,
+      uint32_t width,
+      uint32_t height);
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 
@@ -31,12 +35,12 @@ class Clouds
 
     void cleanUp();
 
-    Kataglyphis::Texture* getCloudOutputTexture() const { return cloudOutputTexture.get(); }
+    Kataglyphis::Texture *getCloudOutputTexture() const { return cloudOutputTexture.get(); }
 
     ~Clouds() { cleanUp(); }
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     std::unique_ptr<Kataglyphis::Texture> cloudNoiseTexture;
     std::unique_ptr<Kataglyphis::Texture> cloudOutputTexture;
@@ -56,8 +60,13 @@ class Clouds
     void createTextures(vk::CommandPool commandPool);
     void createDescriptorSets();
     void createComputePipelines(vk::DescriptorSetLayout sharedLayout);
-    void dispatchNoiseGeneration(vk::CommandPool commandPool); // Run once during init
+    void dispatchNoiseGeneration(vk::CommandPool commandPool);// Run once during init
 
-    std::unique_ptr<Kataglyphis::Texture> createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType);
+    std::unique_ptr<Kataglyphis::Texture> createStorageTexture(vk::CommandPool commandPool,
+      uint32_t w,
+      uint32_t h,
+      uint32_t depth,
+      vk::ImageType type,
+      vk::ImageViewType viewType);
 };
-}
+}// namespace Kataglyphis

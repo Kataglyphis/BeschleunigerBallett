@@ -13,8 +13,13 @@ constexpr vk::FramebufferCreateInfo buildFramebufferCreateInfo(vk::RenderPass re
   vk::Extent2D extent,
   uint32_t layers = 1)
 {
-    return vk::FramebufferCreateInfo{ vk::FramebufferCreateFlags{}, render_pass,
-        static_cast<uint32_t>(attachments.size()), attachments.data(), extent.width, extent.height, layers };
+    return vk::FramebufferCreateInfo{ vk::FramebufferCreateFlags{},
+        render_pass,
+        static_cast<uint32_t>(attachments.size()),
+        attachments.data(),
+        extent.width,
+        extent.height,
+        layers };
 }
 
 // Idempotent: a null device is a no-op, and handles are cleared through the reference so a second call is safe.

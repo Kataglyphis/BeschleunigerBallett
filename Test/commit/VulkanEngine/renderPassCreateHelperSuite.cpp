@@ -12,9 +12,9 @@
 using Kataglyphis::buildRenderPassCreateInfo;
 
 namespace {
-constexpr std::array<vk::AttachmentDescription, 3> kThreeAttachments{
-    vk::AttachmentDescription{}, vk::AttachmentDescription{}, vk::AttachmentDescription{}
-};
+constexpr std::array<vk::AttachmentDescription, 3> kThreeAttachments{ vk::AttachmentDescription{},
+    vk::AttachmentDescription{},
+    vk::AttachmentDescription{} };
 constexpr std::array<vk::SubpassDescription, 1> kOneSubpass{ vk::SubpassDescription{} };
 constexpr std::array<vk::SubpassDependency, 1> kOneDependency{ vk::SubpassDependency{} };
 }// namespace
@@ -22,17 +22,18 @@ constexpr std::array<vk::SubpassDependency, 1> kOneDependency{ vk::SubpassDepend
 static_assert(buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(kThreeAttachments),
                 std::span<const vk::SubpassDescription>(kOneSubpass),
                 std::span<const vk::SubpassDependency>(kOneDependency))
-                .attachmentCount
-    == 3U,
+                  .attachmentCount
+                == 3U,
   "buildRenderPassCreateInfo must be usable in a constant expression");
 
 namespace {
 
 TEST(RenderPassCreateHelperUnit, AttachmentCountIsDerivedFromTheSpan)
 {
-    const vk::RenderPassCreateInfo info = buildRenderPassCreateInfo(
-      std::span<const vk::AttachmentDescription>(kThreeAttachments),
-      std::span<const vk::SubpassDescription>(kOneSubpass), std::span<const vk::SubpassDependency>(kOneDependency));
+    const vk::RenderPassCreateInfo info =
+      buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(kThreeAttachments),
+        std::span<const vk::SubpassDescription>(kOneSubpass),
+        std::span<const vk::SubpassDependency>(kOneDependency));
 
     EXPECT_EQ(info.attachmentCount, 3U);
 }
@@ -45,9 +46,10 @@ TEST(RenderPassCreateHelperUnit, SubpassAndDependencyCountsAreDerivedFromTheirSp
         vk::SubpassDependency{}, vk::SubpassDependency{}, vk::SubpassDependency{}
     };
 
-    const vk::RenderPassCreateInfo info = buildRenderPassCreateInfo(
-      std::span<const vk::AttachmentDescription>(kThreeAttachments),
-      std::span<const vk::SubpassDescription>(two_subpasses), std::span<const vk::SubpassDependency>(three_dependencies));
+    const vk::RenderPassCreateInfo info =
+      buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(kThreeAttachments),
+        std::span<const vk::SubpassDescription>(two_subpasses),
+        std::span<const vk::SubpassDependency>(three_dependencies));
 
     EXPECT_EQ(info.subpassCount, 2U);
     EXPECT_EQ(info.dependencyCount, 3U);
@@ -55,9 +57,10 @@ TEST(RenderPassCreateHelperUnit, SubpassAndDependencyCountsAreDerivedFromTheirSp
 
 TEST(RenderPassCreateHelperUnit, PointersPointAtTheCallersStorage)
 {
-    const vk::RenderPassCreateInfo info = buildRenderPassCreateInfo(
-      std::span<const vk::AttachmentDescription>(kThreeAttachments),
-      std::span<const vk::SubpassDescription>(kOneSubpass), std::span<const vk::SubpassDependency>(kOneDependency));
+    const vk::RenderPassCreateInfo info =
+      buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(kThreeAttachments),
+        std::span<const vk::SubpassDescription>(kOneSubpass),
+        std::span<const vk::SubpassDependency>(kOneDependency));
 
     EXPECT_EQ(info.pAttachments, kThreeAttachments.data());
     EXPECT_EQ(info.pSubpasses, kOneSubpass.data());
@@ -71,7 +74,8 @@ TEST(RenderPassCreateHelperUnit, SingleAttachmentPassStillReportsOne)
 
     const vk::RenderPassCreateInfo info =
       buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(one_attachment),
-        std::span<const vk::SubpassDescription>(kOneSubpass), std::span<const vk::SubpassDependency>(kOneDependency));
+        std::span<const vk::SubpassDescription>(kOneSubpass),
+        std::span<const vk::SubpassDependency>(kOneDependency));
 
     EXPECT_EQ(info.attachmentCount, 1U);
     EXPECT_EQ(info.pAttachments, one_attachment.data());
@@ -80,9 +84,10 @@ TEST(RenderPassCreateHelperUnit, SingleAttachmentPassStillReportsOne)
 TEST(RenderPassCreateHelperUnit, FlagsAndPNextAreDefaultedSoCallersCanChainTheirOwn)
 {
     // CascadedShadowMap chains multiview info through pNext, which is safe only if the helper leaves it unset.
-    const vk::RenderPassCreateInfo info = buildRenderPassCreateInfo(
-      std::span<const vk::AttachmentDescription>(kThreeAttachments),
-      std::span<const vk::SubpassDescription>(kOneSubpass), std::span<const vk::SubpassDependency>(kOneDependency));
+    const vk::RenderPassCreateInfo info =
+      buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription>(kThreeAttachments),
+        std::span<const vk::SubpassDescription>(kOneSubpass),
+        std::span<const vk::SubpassDependency>(kOneDependency));
 
     EXPECT_EQ(info.flags, vk::RenderPassCreateFlags{});
     EXPECT_EQ(info.pNext, nullptr);
@@ -105,8 +110,7 @@ TEST(RenderPassCreateHelperUnit, PostAndSkyboxPassesDeclareNoDepthAttachment)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path post_stage_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "PostStage.cpp";
-    const fs::path sky_box_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
+    const fs::path sky_box_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
 
     const std::string post_stage_contents = readFileText(post_stage_path).value_or(std::string{});
     const std::string sky_box_contents = readFileText(sky_box_path).value_or(std::string{});

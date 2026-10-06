@@ -55,7 +55,7 @@ class VulkanImage
     ~VulkanImage();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     vk::Image image{};
     // Backing memory owned by the device's VMA allocator; VK_NULL_HANDLE for

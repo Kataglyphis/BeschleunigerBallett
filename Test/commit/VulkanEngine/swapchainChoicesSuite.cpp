@@ -6,9 +6,9 @@ namespace {
 
 TEST(SwapchainChoicesUnit, PrefersMailboxOverFifo)
 {
-    const std::vector<vk::PresentModeKHR> modes = { vk::PresentModeKHR::eFifo,
-        vk::PresentModeKHR::eMailbox,
-        vk::PresentModeKHR::eImmediate };
+    const std::vector<vk::PresentModeKHR> modes = {
+        vk::PresentModeKHR::eFifo, vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate
+    };
 
     EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(modes), vk::PresentModeKHR::eMailbox);
 }
@@ -35,8 +35,7 @@ TEST(SwapchainChoicesUnit, PicksAnSrgbNonlinearUnormFormat)
 
 TEST(SwapchainChoicesUnit, TreatsTheSingleUndefinedEntryAsUnrestricted)
 {
-    const std::vector<vk::SurfaceFormatKHR> formats = { { vk::Format::eUndefined,
-      vk::ColorSpaceKHR::eSrgbNonlinear } };
+    const std::vector<vk::SurfaceFormatKHR> formats = { { vk::Format::eUndefined, vk::ColorSpaceKHR::eSrgbNonlinear } };
 
     const vk::SurfaceFormatKHR chosen = Kataglyphis::chooseBestSurfaceFormat(formats);
     EXPECT_EQ(chosen.format, vk::Format::eR8G8B8A8Unorm);

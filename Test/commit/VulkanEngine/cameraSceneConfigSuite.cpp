@@ -1,14 +1,14 @@
-#include <gtest/gtest.h>
 #include <glm/geometric.hpp>
+#include <gtest/gtest.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
+#include <algorithm>
 #include <array>
 #include <cmath>
-#include <algorithm>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -34,7 +34,7 @@ void expect_vec3_near(const glm::vec3 &actual, const glm::vec3 &expected, float 
     EXPECT_NEAR(actual.z, expected.z, epsilon);
 }
 
-} // namespace
+}// namespace
 
 TEST(CameraUnit, DefaultStateLooksDownNegativeZ)
 {
@@ -135,9 +135,9 @@ TEST(CameraUnit, ViewMatrixMatchesLookAt)
     EXPECT_NEAR(origin.y, 0.0F, kEpsilon);
     EXPECT_NEAR(origin.z, 0.0F, kEpsilon);
 
-    const glm::mat4 expected =
-      glm::lookAt(glm::vec3(3.0F, 4.0F, 5.0F), glm::vec3(3.0F, 4.0F, 5.0F) + camera.get_camera_direction(),
-        glm::vec3(0.0F, 1.0F, 0.0F));
+    const glm::mat4 expected = glm::lookAt(glm::vec3(3.0F, 4.0F, 5.0F),
+      glm::vec3(3.0F, 4.0F, 5.0F) + camera.get_camera_direction(),
+      glm::vec3(0.0F, 1.0F, 0.0F));
     for (int col = 0; col < 4; ++col) {
         for (int row = 0; row < 4; ++row) { EXPECT_NEAR(view[col][row], expected[col][row], kEpsilon); }
     }
@@ -217,9 +217,7 @@ TEST(SceneConfigUnit, ModelExtensionDispatchIsCaseInsensitive)
 }
 
 TEST(SceneConfigUnit, ModelExtensionDispatchUsesTheExtensionNotTheWholePath)
-{
-    EXPECT_FALSE(Kataglyphis::isGltfModelPath("C:/assets.glb/model.obj"));
-}
+{ EXPECT_FALSE(Kataglyphis::isGltfModelPath("C:/assets.glb/model.obj")); }
 
 TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
 {
@@ -249,13 +247,13 @@ TEST(SceneConfigUnit, DefaultModelRelativePathIsAmongTheModelsGetModelFileCanRes
 
 TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBackToTheFirst)
 {
-    const std::vector<std::string> models_with_preferred{
-        "Models/Dinosaurs/dinosaurs.obj", "Models/VikingRoom/viking_room.obj"};
+    const std::vector<std::string> models_with_preferred{ "Models/Dinosaurs/dinosaurs.obj",
+        "Models/VikingRoom/viking_room.obj" };
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/Dinosaurs/dinosaurs.obj"), 0);
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/VikingRoom/viking_room.obj"), 1);
 
     // Without the preferred path, fall back to 0: -1 leaves the model transform controls dead.
-    const std::vector<std::string> models_without_preferred{"Models/VikingRoom/viking_room.obj"};
+    const std::vector<std::string> models_without_preferred{ "Models/VikingRoom/viking_room.obj" };
     const int fallback_index =
       sceneConfig::defaultSelectedModelIndex(models_without_preferred, "Models/Dinosaurs/dinosaurs.obj");
     EXPECT_EQ(fallback_index, 0) << "must fall back to 0, not -1 - -1 disables the transform controls";
@@ -264,9 +262,8 @@ TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBac
     EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(empty_models, "Models/Dinosaurs/dinosaurs.obj"), -1);
 
     // Backslashed Windows spelling must still match the forward-slashed preferred path.
-    const std::vector<std::string> models_with_backslash{"Models\\Dinosaurs\\dinosaurs.obj"};
-    EXPECT_EQ(
-      sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
+    const std::vector<std::string> models_with_backslash{ "Models\\Dinosaurs\\dinosaurs.obj" };
+    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
 }
 
 TEST(SceneConfigUnit, ScanningARegularFileReportsAnIncompleteWalk)
@@ -296,9 +293,7 @@ TEST(SceneConfigUnit, ScanningTheRepoResourcesFindsTheDefaultDebugModel)
     const std::filesystem::path repo_root = Kataglyphis::TestSupport::repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "Could not locate repo root from the test working directory";
 
-    if (!std::filesystem::exists(repo_root / "Resources" / "Models")) {
-        GTEST_SKIP() << "Resources/Models is absent";
-    }
+    if (!std::filesystem::exists(repo_root / "Resources" / "Models")) { GTEST_SKIP() << "Resources/Models is absent"; }
 
     const auto result = sceneConfig::scanModelsUnder(repo_root / "Resources");
     EXPECT_TRUE(result.complete);

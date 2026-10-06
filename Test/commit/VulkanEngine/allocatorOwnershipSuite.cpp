@@ -1,4 +1,4 @@
-// Handle wrappers must be move-only, or two copies release one handle; these asserts fail at compile time, not teardown.
+// Handle wrappers must be move-only or two copies free one handle; these asserts fail at compile time, not teardown.
 
 #include <gtest/gtest.h>
 
@@ -17,10 +17,10 @@ static_assert(std::is_nothrow_move_assignable_v<Allocator>, "Allocator must be n
 
 TEST(AllocatorOwnership, DefaultConstructAndMoveAreClean)
 {
-    Allocator source;                    // owns no handle (no device required)
-    Allocator moved(std::move(source));  // move-construct
+    Allocator source;// owns no handle (no device required)
+    Allocator moved(std::move(source));// move-construct
     Allocator target;
-    target = std::move(moved);           // move-assign
+    target = std::move(moved);// move-assign
     // Unwinding the three destructors without a crash is the assertion.
     SUCCEED();
 }

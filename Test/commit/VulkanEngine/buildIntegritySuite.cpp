@@ -41,7 +41,7 @@
 #include "shared/scene/ObjMaterial.hpp"
 #include "shared/scene/Vertex.hpp"
 
-import kataglyphis.vulkan.cascaded_shadow_map;// Kataglyphis::ShadowPushConstants
+import kataglyphis.vulkan.cascaded_shadow_map; // Kataglyphis::ShadowPushConstants
 
 namespace {
 
@@ -75,7 +75,9 @@ std::string strip_line_comment(const std::string &line)
 }
 
 // Recursion helper for import_closure; `visited` makes each resolved file recurse exactly once.
-void collect_import_closure(const fs::path &slang_root, const fs::path &source, std::set<fs::path> &visited,
+void collect_import_closure(const fs::path &slang_root,
+  const fs::path &source,
+  std::set<fs::path> &visited,
   std::set<fs::path> &closure)
 {
     if (visited.contains(source)) { return; }// cycle guard
@@ -112,7 +114,10 @@ std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &so
 }
 
 // Newest mtime in the import closure and its file, so callers can name the stale import; false if the closure is empty.
-bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::file_time_type &out_time, fs::path &out_path)
+bool newest_import_for(const fs::path &slang_root,
+  const fs::path &source,
+  fs::file_time_type &out_time,
+  fs::path &out_path)
 {
     const auto closure = import_closure(slang_root, source);
 
@@ -136,8 +141,8 @@ bool newest_import_for(const fs::path &slang_root, const fs::path &source, fs::f
 struct WgslMapping
 {
     std::string slang_source;// "src": relative to Resources/ShadersSlang/
-    std::string dst_dir;     // "dst": relative to the repository root
-    std::string wgsl_file;   // "out": destination file name
+    std::string dst_dir;// "dst": relative to the repository root
+    std::string wgsl_file;// "out": destination file name
 };
 
 // What this suite needs from shader-manifest.json, parsed once (see shader_manifest below).
@@ -231,8 +236,7 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
 // Parsed once per process; std::nullopt means missing or malformed, so callers ASSERT on has_value(), never skip.
 const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_root)
 {
-    static const std::optional<ShaderManifestData> cached =
-      parse_shader_manifest(slangRoot() / "shader-manifest.json");
+    static const std::optional<ShaderManifestData> cached = parse_shader_manifest(slangRoot() / "shader-manifest.json");
     return cached;
 }
 
@@ -261,12 +265,22 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
 }
 
 // Binding constants hand-mirrored between host_device_shared_vars.hpp and scene_types.slang.
-const std::vector<std::string> kSharedConstantNames = {
-    "MAX_TEXTURE_COUNT", "MAX_CASCADES", "MAX_PCF_RADIUS", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING",
-    "TEXTURES_BINDING", "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING",
-    "ACCUMULATION_IMAGE_BINDING", "GBUFFER_NORMAL_BINDING", "GBUFFER_ALBEDO_BINDING", "GBUFFER_MATERIAL_BINDING",
-    "GBUFFER_DEPTH_BINDING"
-};
+const std::vector<std::string> kSharedConstantNames = { "MAX_TEXTURE_COUNT",
+    "MAX_CASCADES",
+    "MAX_PCF_RADIUS",
+    "globalUBO_BINDING",
+    "sceneUBO_BINDING",
+    "OBJECT_DESCRIPTION_BINDING",
+    "TEXTURES_BINDING",
+    "SAMPLER_BINDING",
+    "SHADOW_MAP_BINDING",
+    "TLAS_BINDING",
+    "OUT_IMAGE_BINDING",
+    "ACCUMULATION_IMAGE_BINDING",
+    "GBUFFER_NORMAL_BINDING",
+    "GBUFFER_ALBEDO_BINDING",
+    "GBUFFER_MATERIAL_BINDING",
+    "GBUFFER_DEPTH_BINDING" };
 
 bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
 
@@ -417,9 +431,7 @@ std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc
         const auto integration_val = parse_marker_field(line, "integration=");
         const auto total_val = parse_marker_field(line, "total=");
         const auto excluded_val = parse_marker_field(line, "excluded=");
-        if (!defined_val || !runnable_val || !integration_val || !total_val || !excluded_val) {
-            return std::nullopt;
-        }
+        if (!defined_val || !runnable_val || !integration_val || !total_val || !excluded_val) { return std::nullopt; }
 
         GoldenCountsMarker marker;
         marker.defined = *defined_val;
@@ -532,7 +544,7 @@ std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::p
     return suites;
 }
 
-// Fuzz targets declared via kataglyphis_add_fuzz_test(<name> ...); the definition has a space there, so it never matches.
+// Fuzz targets declared via kataglyphis_add_fuzz_test(<name> ...); the definition has a space there and never matches.
 std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
 {
     std::vector<std::string> targets;
@@ -774,7 +786,8 @@ std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spir
 
     std::map<uint32_t, std::string> type_names;// OpName: id -> name
     std::map<std::pair<uint32_t, uint32_t>, std::string> member_names;// OpMemberName: (type id, member) -> name
-    std::map<std::pair<uint32_t, uint32_t>, uint32_t> member_offsets;// OpMemberDecorate Offset: (type id, member) -> offset
+    std::map<std::pair<uint32_t, uint32_t>, uint32_t>
+      member_offsets;// OpMemberDecorate Offset: (type id, member) -> offset
 
     std::size_t pos = kSpirvHeaderWordCount;
     while (pos < words.size()) {
@@ -824,16 +837,26 @@ const std::set<uint32_t> kImplicitLodImageOpcodes = {
 std::string spirv_execution_model_name(uint32_t model)
 {
     switch (model) {
-        case 0: return "Vertex";
-        case 4: return "Fragment";
-        case 5: return "GLCompute";
-        case 5313: return "RayGenerationKHR";
-        case 5314: return "IntersectionKHR";
-        case 5315: return "AnyHitKHR";
-        case 5316: return "ClosestHitKHR";
-        case 5317: return "MissKHR";
-        case 5318: return "CallableKHR";
-        default: return "Unknown(" + std::to_string(model) + ")";
+    case 0:
+        return "Vertex";
+    case 4:
+        return "Fragment";
+    case 5:
+        return "GLCompute";
+    case 5313:
+        return "RayGenerationKHR";
+    case 5314:
+        return "IntersectionKHR";
+    case 5315:
+        return "AnyHitKHR";
+    case 5316:
+        return "ClosestHitKHR";
+    case 5317:
+        return "MissKHR";
+    case 5318:
+        return "CallableKHR";
+    default:
+        return "Unknown(" + std::to_string(model) + ")";
     }
 }
 
@@ -1026,12 +1049,10 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "frame_index", offsetof(PushConstantPathTracing, frame_index) },
             { "samples_per_pixel", offsetof(PushConstantPathTracing, samples_per_pixel) },
             { "max_bounces", offsetof(PushConstantPathTracing, max_bounces) } } },
-        { "PushConstantPost_std430",
-          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } } },
-        { "PushConstantRaytracing_std430",
-          { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
+        { "PushConstantPost_std430", { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } } },
+        { "PushConstantRaytracing_std430", { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
         { "ShadowPushConstants_std430",
-          // The host's cascadeIndex carries the shader's objectIndex (see makeShadowPush); what must agree is the offset.
+          // The host's cascadeIndex carries the shader's objectIndex (makeShadowPush); what must agree is the offset.
           { { "model", offsetof(ShadowPushConstants, model) },
             { "objectIndex", offsetof(ShadowPushConstants, cascadeIndex) } } },
     };
@@ -1047,7 +1068,11 @@ std::optional<std::string> first_statement_of_function(const std::string &text, 
     std::size_t pos = sig_pos + signature.size();
     int depth = 1;
     while (pos < text.size() && depth > 0) {
-        if (text[pos] == '(') { ++depth; } else if (text[pos] == ')') { --depth; }
+        if (text[pos] == '(') {
+            ++depth;
+        } else if (text[pos] == ')') {
+            --depth;
+        }
         ++pos;
     }
     if (depth != 0) { return std::nullopt; }
@@ -1057,9 +1082,7 @@ std::optional<std::string> first_statement_of_function(const std::string &text, 
 
     std::size_t body_pos = brace_pos + 1;
     while (body_pos < text.size()) {
-        while (body_pos < text.size() && std::isspace(static_cast<unsigned char>(text[body_pos])) != 0) {
-            ++body_pos;
-        }
+        while (body_pos < text.size() && std::isspace(static_cast<unsigned char>(text[body_pos])) != 0) { ++body_pos; }
         if (body_pos + 1 < text.size() && text[body_pos] == '/' && text[body_pos + 1] == '/') {
             const std::size_t newline = text.find('\n', body_pos);
             body_pos = newline == std::string::npos ? text.size() : newline + 1;
@@ -1074,8 +1097,8 @@ std::optional<std::string> first_statement_of_function(const std::string &text, 
 }
 
 // Like first_statement_of_function, but returns the [begin, end) span of the whole body.
-std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
-  const std::string &text, const std::string &qualified_name)
+std::optional<std::pair<std::size_t, std::size_t>> function_body_span(const std::string &text,
+  const std::string &qualified_name)
 {
     const std::string signature = qualified_name + "(";
     const std::size_t sig_pos = text.find(signature);
@@ -1084,7 +1107,11 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
     std::size_t pos = sig_pos + signature.size();
     int paren_depth = 1;
     while (pos < text.size() && paren_depth > 0) {
-        if (text[pos] == '(') { ++paren_depth; } else if (text[pos] == ')') { --paren_depth; }
+        if (text[pos] == '(') {
+            ++paren_depth;
+        } else if (text[pos] == ')') {
+            --paren_depth;
+        }
         ++pos;
     }
     if (paren_depth != 0) { return std::nullopt; }
@@ -1095,7 +1122,11 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
     std::size_t end_pos = brace_pos + 1;
     int brace_depth = 1;
     while (end_pos < text.size() && brace_depth > 0) {
-        if (text[end_pos] == '{') { ++brace_depth; } else if (text[end_pos] == '}') { --brace_depth; }
+        if (text[end_pos] == '{') {
+            ++brace_depth;
+        } else if (text[end_pos] == '}') {
+            --brace_depth;
+        }
         ++end_pos;
     }
     if (brace_depth != 0) { return std::nullopt; }
@@ -1143,8 +1174,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
       << joinViolations(unmapped);
 
     EXPECT_TRUE(stale.empty()) << "SPIR-V older than its source - the GPU would run stale shaders. "
-                              << "Stale binaries (" << stale.size() << "): "
-                              << joinViolations(stale);
+                               << "Stale binaries (" << stale.size() << "): " << joinViolations(stale);
 }
 
 // A .spv older than a module its source really imports was not recompiled; scoped to the closure, not all of common/.
@@ -1165,11 +1195,15 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
         if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
 
         const fs::path source = source_for_spirv(it->path(), spirv_root, slang_root);
-        if (source.empty() || !fs::exists(source)) { continue; }// unmapped: CompiledShadersAreNotOlderThanTheirSources owns this
+        if (source.empty() || !fs::exists(source)) {
+            continue;
+        }// unmapped: CompiledShadersAreNotOlderThanTheirSources owns this
 
         fs::file_time_type newest_import{};
         fs::path newest_import_path;
-        if (!newest_import_for(slang_root, source, newest_import, newest_import_path)) { continue; }// no imports: nothing shared to be stale against
+        if (!newest_import_for(slang_root, source, newest_import, newest_import_path)) {
+            continue;
+        }// no imports: nothing shared to be stale against
 
         const auto spv_time = fs::last_write_time(it->path(), error);
         if (error) { continue; }
@@ -1177,7 +1211,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
         ++checked;
         if (spv_time < newest_import) {
             stale.push_back(fs::relative(it->path(), repo_root).string() + " is older than its imported "
-                             + fs::relative(newest_import_path, repo_root).string());
+                            + fs::relative(newest_import_path, repo_root).string());
         }
     }
 
@@ -1189,7 +1223,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
                                << joinViolations(stale);
 }
 
-// ssao's closure must not hold material_fetch; rasterizer's reaches scene_types only by recursing through material_fetch.
+// ssao's closure must not hold material_fetch; rasterizer's reaches scene_types only through material_fetch.
 TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
 {
     const fs::path slang_root = slangRoot();
@@ -1220,7 +1254,9 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
 
     const fs::path slang_root = slangRoot();
     const fs::path spirv_root = spirvRoot();
-    if (!fs::exists(spirv_root)) { GTEST_SKIP() << "missing " << spirv_root.string() << " - shaders have not been compiled"; }
+    if (!fs::exists(spirv_root)) {
+        GTEST_SKIP() << "missing " << spirv_root.string() << " - shaders have not been compiled";
+    }
 
     constexpr uint32_t kFragmentExecutionModel = 4;
 
@@ -1236,8 +1272,9 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
 
         for (const uint32_t opcode : kImplicitLodImageOpcodes) {
             if (!info->opcodes_present.contains(opcode)) { continue; }
-            violations.push_back(fs::relative(spv, repo_root).string() + " (execution model " +
-              spirv_execution_model_name(info->execution_model) + ", opcode " + std::to_string(opcode) + ")");
+            violations.push_back(fs::relative(spv, repo_root).string() + " (execution model "
+                                 + spirv_execution_model_name(info->execution_model) + ", opcode "
+                                 + std::to_string(opcode) + ")");
         }
     }
 
@@ -1250,7 +1287,7 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
       << joinViolations(violations);
 }
 
-// create() must release first, or a second call leaks the previous allocation; a text check, as behaviour needs a device.
+// create() must release first, or a second call leaks the old allocation; a text check, as behaviour needs a device.
 TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
 {
     const fs::path repo_root = repoRoot();
@@ -1324,7 +1361,8 @@ TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
     };
     const std::array<Target, 2> targets = {
         Target{ scene_dir / "Texture.cpp", "vulkanImageView.cleanUp();", "createImage(device," },
-        Target{ scene_dir / "sky_box" / "SkyBox.cpp", "cubeMapTexture->releaseImageView();",
+        Target{ scene_dir / "sky_box" / "SkyBox.cpp",
+          "cubeMapTexture->releaseImageView();",
           "cubeMapTexture->createImage(device," },
     };
 
@@ -1360,11 +1398,9 @@ TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
     const float near_ndc = near_clip.z / near_clip.w;
     const float far_ndc = far_clip.z / far_clip.w;
 
-    EXPECT_NEAR(near_ndc, 0.0F, 1e-3F)
-      << "near plane should map to NDC z=0 (Vulkan). Got " << near_ndc
-      << " - GLM_FORCE_DEPTH_ZERO_TO_ONE is not reaching this translation unit.";
-    EXPECT_NEAR(far_ndc, 1.0F, 1e-3F)
-      << "far plane should map to NDC z=1 (Vulkan). Got " << far_ndc;
+    EXPECT_NEAR(near_ndc, 0.0F, 1e-3F) << "near plane should map to NDC z=0 (Vulkan). Got " << near_ndc
+                                       << " - GLM_FORCE_DEPTH_ZERO_TO_ONE is not reaching this translation unit.";
+    EXPECT_NEAR(far_ndc, 1.0F, 1e-3F) << "far plane should map to NDC z=1 (Vulkan). Got " << far_ndc;
 
     // glm::ortho must agree - the shadow cascades depend on it.
     const glm::mat4 ortho = glm::ortho(-1.0F, 1.0F, -1.0F, 1.0F, kNear, kFar);
@@ -1438,7 +1474,8 @@ std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_
             }
 
             for (auto match = std::sregex_iterator(line.begin(), line.end(), kSpvLiteralRegex);
-                 match != std::sregex_iterator(); ++match) {
+              match != std::sregex_iterator();
+              ++match) {
                 const std::string literal = (*match)[1].str();
                 const std::string full = literal.starts_with(kSpirvPrefix) ? literal : in_scope_slang_spv_dir + literal;
                 if (!full.starts_with(kSpirvPrefix)) { continue; }// not a spirv_root path; not this scanner's concern
@@ -1480,14 +1517,14 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
                                  << joinViolations(missing);
 }
 
-// A silent divergence corrupts every binding with no validation error; each name must exist in both files, not just match.
+// A divergence corrupts every binding without a validation error; each name must exist in both files, not just match.
 TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto host = parse_int_constants(repo_root / "Src" / "GraphicsEngineVulkan" / "common"
-                                           / "host_device_shared_vars.hpp");
+    const auto host =
+      parse_int_constants(repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp");
     const auto shader = parse_int_constants(slangRoot() / "common" / "scene_types.slang");
 
     for (const auto &name : kSharedConstantNames) {
@@ -1545,8 +1582,7 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
       << " - the anchor text ('$gpuOnlySuites = @(' / \"-join ':'\") may have changed";
     const std::set<std::string> filter_set(filter_suites.begin(), filter_suites.end());
 
-    const std::set<std::string> defined_suites =
-      collect_defined_suites(repo_root / "Test" / "commit" / "VulkanEngine");
+    const std::set<std::string> defined_suites = collect_defined_suites(repo_root / "Test" / "commit" / "VulkanEngine");
     ASSERT_FALSE(defined_suites.empty()) << "found zero TEST()/TEST_F() suites under Test/commit/VulkanEngine - "
                                             "the scan itself is broken";
 
@@ -1584,9 +1620,8 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
         GTEST_SKIP() << "could not open " << lane_path.string() << " - not running from the repo root?";
     }
     const std::vector<std::string> &ci_targets = *ci_targets_opt;
-    ASSERT_FALSE(ci_targets.empty())
-      << "parsed zero fuzz targets out of the foreach array in " << lane_path.string()
-      << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
+    ASSERT_FALSE(ci_targets.empty()) << "parsed zero fuzz targets out of the foreach array in " << lane_path.string()
+                                     << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
     const std::set<std::string> ci_set(ci_targets.begin(), ci_targets.end());
 
     // For a future smoke-only target that should not gate CI; empty, since every target runs today.
@@ -1614,7 +1649,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << joinViolations(dead_ci_entries);
 }
 
-// Every declared fuzz target must run in the Linux workflow, the Windows lane and the local runner, or it goes unexercised.
+// Every declared fuzz target must run in the Linux workflow, Windows lane and local runner, or it goes unexercised.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 {
     const fs::path repo_root = repoRoot();
@@ -1716,9 +1751,8 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
             runner_scripts.push_back(candidate);
         }
     }
-    ASSERT_FALSE(runner_scripts.empty())
-      << "found zero Invoke-ClangCl*.ps1 helpers under " << scripts_dir.string()
-      << " - the naming convention may have changed";
+    ASSERT_FALSE(runner_scripts.empty()) << "found zero Invoke-ClangCl*.ps1 helpers under " << scripts_dir.string()
+                                         << " - the naming convention may have changed";
 
     static const std::regex kExitVariableLine(R"(^\s*exit\s+\$[A-Za-z_][A-Za-z0-9_:]*\s*$)");
 
@@ -1765,8 +1799,8 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
     ASSERT_TRUE(baseline_names_opt.has_value())
       << "could not parse " << baseline_path.string() << " as Google Benchmark JSON";
     const std::vector<std::string> &baseline_names = *baseline_names_opt;
-    ASSERT_FALSE(baseline_names.empty())
-      << "parsed zero benchmarks[] rows out of " << baseline_path.string() << " - is the file empty or malformed?";
+    ASSERT_FALSE(baseline_names.empty()) << "parsed zero benchmarks[] rows out of " << baseline_path.string()
+                                         << " - is the file empty or malformed?";
     const std::set<std::string> baseline_set(baseline_names.begin(), baseline_names.end());
 
     static const char *const kRefreshHint =
@@ -1778,10 +1812,9 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
         if (!baseline_set.contains(name)) { missing_from_baseline.push_back(name); }
     }
     EXPECT_TRUE(missing_from_baseline.empty())
-      << missing_from_baseline.size()
-      << " benchmark(s) registered in Test/perf/perfSuite.cpp have no row in " << baseline_path.string()
-      << ", so Compare-PerfBaseline.ps1 silently never compares them (" << kRefreshHint << "): "
-      << joinViolations(missing_from_baseline);
+      << missing_from_baseline.size() << " benchmark(s) registered in Test/perf/perfSuite.cpp have no row in "
+      << baseline_path.string() << ", so Compare-PerfBaseline.ps1 silently never compares them (" << kRefreshHint
+      << "): " << joinViolations(missing_from_baseline);
 
     std::vector<std::string> dead_baseline_rows;
     for (const auto &name : baseline_names) {
@@ -1791,8 +1824,7 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
       << dead_baseline_rows.size() << " row(s) in " << baseline_path.string()
       << " do not correspond to any BENCHMARK(...) currently registered in Test/perf/perfSuite.cpp (renamed or "
          "removed? "
-      << kRefreshHint << "): "
-      << joinViolations(dead_baseline_rows);
+      << kRefreshHint << "): " << joinViolations(dead_baseline_rows);
 }
 
 // Local guard (a clone resets mtimes): WGSL must not predate its source or imports; byte-identical re-emits stay stale.
@@ -1810,8 +1842,8 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
     int checked = 0;
     for (const auto &mapping : manifest->wgsl_map) {
         const fs::path source = slang_root / mapping.slang_source;
-        ASSERT_TRUE(fs::exists(source))
-          << "Slang source mapped by the manifest's wgslMap is missing: " << source.string();
+        ASSERT_TRUE(fs::exists(source)) << "Slang source mapped by the manifest's wgslMap is missing: "
+                                        << source.string();
 
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
         if (!fs::exists(dest)) { continue; }// OxidANT submodule not checked out here
@@ -1830,11 +1862,11 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
         ++checked;
         if (dest_time < newest_time) {
-            stale.push_back(fs::relative(dest, repo_root).string() + " (mtime ticks=" + std::to_string(dest_time.time_since_epoch().count())
-                             + ") is older than "
-                             + (import_is_newer ? fs::relative(newest_import_path, repo_root).string()
-                                                 : fs::relative(source, repo_root).string())
-                             + " (mtime ticks=" + std::to_string(newest_time.time_since_epoch().count()) + ')');
+            stale.push_back(fs::relative(dest, repo_root).string() + " (mtime ticks="
+                            + std::to_string(dest_time.time_since_epoch().count()) + ") is older than "
+                            + (import_is_newer ? fs::relative(newest_import_path, repo_root).string()
+                                               : fs::relative(source, repo_root).string())
+                            + " (mtime ticks=" + std::to_string(newest_time.time_since_epoch().count()) + ')');
         }
     }
 
@@ -1873,8 +1905,8 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
         for (const auto &line : *lines) {
             ++line_number;
             if (line.find("//") != std::string::npos) {
-                hand_edits.push_back(fs::relative(dest, repo_root).string() + ':' + std::to_string(line_number)
-                                      + ": " + line);
+                hand_edits.push_back(
+                  fs::relative(dest, repo_root).string() + ':' + std::to_string(line_number) + ": " + line);
             }
         }
     }
@@ -1943,15 +1975,14 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
                 ++index;
             }
 
-            const bool is_io_struct = std::any_of(members.begin(), members.end(), [&](const auto &member) {
-                return is_io_attr(std::get<1>(member));
-            });
+            const bool is_io_struct = std::any_of(
+              members.begin(), members.end(), [&](const auto &member) { return is_io_attr(std::get<1>(member)); });
             if (!is_io_struct) { continue; }
 
             for (const auto &[line_number, attrs, text] : members) {
                 if (is_io_attr(attrs)) { continue; }
-                violations.push_back(fs::relative(dest, repo_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": struct " + struct_name + ": " + text);
+                violations.push_back(fs::relative(dest, repo_root).generic_string() + ':' + std::to_string(line_number)
+                                     + ": struct " + struct_name + ": " + text);
             }
         }
     }
@@ -2016,8 +2047,8 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
     std::vector<std::string> violations;
 
     auto record = [&](const fs::path &path, int line_number, const std::string &line, const std::string &reason) {
-        violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number)
-                              + ": " + reason + ": " + line);
+        violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number) + ": "
+                             + reason + ": " + line);
     };
 
     auto scan_line = [&](const fs::path &path, int line_number, const std::string &line, const std::string &text) {
@@ -2027,12 +2058,16 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
         if (std::regex_search(text, kDeadExtension)) {
             record(path, line_number, line, "references a GLSL-era shader-stage extension that no longer exists");
         }
-        for (auto match = std::sregex_iterator(text.begin(), text.end(), kSlangMention), match_end = std::sregex_iterator();
-             match != match_end; ++match) {
+        for (auto match = std::sregex_iterator(text.begin(), text.end(), kSlangMention),
+                  match_end = std::sregex_iterator();
+          match != match_end;
+          ++match) {
             const std::string basename = fs::path(match->str()).filename().string();
             if (!real_slang_basenames.contains(basename)) {
-                record(path, line_number, line,
-                       "names '" + basename + "', which does not exist under Resources/ShadersSlang/");
+                record(path,
+                  line_number,
+                  line,
+                  "names '" + basename + "', which does not exist under Resources/ShadersSlang/");
             }
         }
     };
@@ -2109,20 +2144,20 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
             violations.push_back(std::string(relative_path) + ": does not call " + kSharedPredicate);
         }
         if (text.find(kBannedFallback) != std::string::npos) {
-            violations.push_back(std::string(relative_path) + ": still contains the hand-rolled '"
-                                  + kBannedFallback + "' alpha-cutoff fallback");
+            violations.push_back(std::string(relative_path) + ": still contains the hand-rolled '" + kBannedFallback
+                                 + "' alpha-cutoff fallback");
         }
 
         // An untextured MASK material still alpha-tests its factor, so both sides of the textureID branch call it.
         std::size_t occurrences = 0;
         for (std::size_t pos = text.find(kSharedPredicate); pos != std::string::npos;
-             pos = text.find(kSharedPredicate, pos + kSharedPredicate.size())) {
+          pos = text.find(kSharedPredicate, pos + kSharedPredicate.size())) {
             ++occurrences;
         }
         if (text.find(kTextureGuard) != std::string::npos && occurrences < 2) {
-            violations.push_back(std::string(relative_path)
-                                  + ": calls " + kSharedPredicate + " only once - the untextured side of its '"
-                                  + kTextureGuard + "' branch must alpha-test the factor too");
+            violations.push_back(std::string(relative_path) + ": calls " + kSharedPredicate
+                                 + " only once - the untextured side of its '" + kTextureGuard
+                                 + "' branch must alpha-test the factor too");
         }
     }
 
@@ -2138,15 +2173,13 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         // A fixed window covers the short body without brace matching.
         const std::string body = text.substr(fn_start, 400);
         if (body.find("material.dissolve") == std::string::npos) {
-            violations.push_back(
-              "material_rules.slang: alpha_masked_out() no longer multiplies by material.dissolve");
+            violations.push_back("material_rules.slang: alpha_masked_out() no longer multiplies by material.dissolve");
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " raster shader(s) do not share the single alpha_masked_out() MASK rule:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " raster shader(s) do not share the single alpha_masked_out() MASK rule:"
+                                    << joinViolations(violations);
 }
 
 // Raw emissive, normal and metallic-roughness samples belong to material_textures.slang, so no path re-wraps them.
@@ -2158,11 +2191,12 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
-    static const std::array<const char *, 6> kRawSamplers = {
-        "sample_emissive_lod0(", "sample_emissive(",
-        "sample_normal_lod0(", "sample_normal(",
-        "sample_metallic_roughness_lod0(", "sample_metallic_roughness("
-    };
+    static const std::array<const char *, 6> kRawSamplers = { "sample_emissive_lod0(",
+        "sample_emissive(",
+        "sample_normal_lod0(",
+        "sample_normal(",
+        "sample_metallic_roughness_lod0(",
+        "sample_metallic_roughness(" };
     static const std::string kOwningFile = "common/material_textures.slang";
 
     // path_tracing keeps its block inline: the helper's fallback would apply metallic (glTF default 1.0) to its kernel.
@@ -2198,10 +2232,9 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " raw texture-slot sampler call(s) found outside their owning module:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " raw texture-slot sampler call(s) found outside their owning module:"
+                                    << joinViolations(violations);
 }
 
 // material_rules.slang stays binding-free so RT and PT entry points can import it without an ambiguous binding.
@@ -2290,10 +2323,9 @@ TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " shading path(s) do not alpha-test MASK materials in their ray queries:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " shading path(s) do not alpha-test MASK materials in their ray queries:"
+                                    << joinViolations(violations);
 }
 
 // glTF base colour is factor times texture, so every textured branch must route its sample through base_color(.
@@ -2346,14 +2378,14 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
             violations.push_back(std::string(relative_path) + ": textured branch no longer samples a texture");
         }
         if (!sawHelper) {
-            violations.push_back(std::string(relative_path)
-                                  + ": samples the base-colour texture without routing it through base_color(");
+            violations.push_back(
+              std::string(relative_path) + ": samples the base-colour texture without routing it through base_color(");
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " shader(s) do not scale their sampled base colour by the material factor:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " shader(s) do not scale their sampled base colour by the material factor:"
+                                    << joinViolations(violations);
 }
 
 // f0 = mix(0.04, albedo, metallic); a literal 0.0 there renders every metal as a dielectric.
@@ -2378,8 +2410,8 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
         for (const auto &line : *lines) {
             ++line_number;
             if (std::regex_search(line, kPinnedToZero)) {
-                violations.push_back(fs::relative(path, slang_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": " + line);
+                violations.push_back(
+                  fs::relative(path, slang_root).generic_string() + ':' + std::to_string(line_number) + ": " + line);
             }
         }
     }
@@ -2426,10 +2458,8 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
             if (line.find(kTextures) == std::string::npos || line.find(kSamplers) == std::string::npos) { continue; }
             sawSampleSite = true;
             const bool hasTransformCall = std::any_of(kTransformCalls.begin(),
-                                                        kTransformCalls.end(),
-                                                        [&line](const char *call) {
-                                                            return line.find(call) != std::string::npos;
-                                                        });
+              kTransformCalls.end(),
+              [&line](const char *call) { return line.find(call) != std::string::npos; });
             if (!hasTransformCall) {
                 violations.push_back(std::string(relative_path) + ":" + std::to_string(line_number)
                                       + " samples the base-colour texture without transform_uv(, so this mode "
@@ -2441,9 +2471,9 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " base-colour sample site(s) skip the KHR_texture_transform UV matrix:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " base-colour sample site(s) skip the KHR_texture_transform UV matrix:"
+                                    << joinViolations(violations);
 }
 
 // Every shading path must consume material.emission, or emitters render black.
@@ -2475,8 +2505,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(
-      deferred_text.find("outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords))"),
+    EXPECT_NE(deferred_text.find("outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords))"),
       std::string::npos)
       << "deferred.slang's geometry pass no longer packs resolved_emission() into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
@@ -2494,7 +2523,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
     const std::string &path_tracing_text = *path_tracing_text_opt;
     EXPECT_NE(path_tracing_text.find("radiance += throughput * resolved_emission_lod0(obj, material, texCoords)"),
-              std::string::npos)
+      std::string::npos)
       << "path_tracing.slang no longer adds throughput * resolved_emission_lod0() at the hit. " << kFailureMessage;
 }
 
@@ -2541,8 +2570,8 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
         const std::string &text = *text_opt;
         EXPECT_NE(text.find("import material_textures;"), std::string::npos)
           << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
-        const bool calls_resolved_emission =
-          text.find("resolved_emission(") != std::string::npos || text.find("resolved_emission_lod0(") != std::string::npos;
+        const bool calls_resolved_emission = text.find("resolved_emission(") != std::string::npos
+                                             || text.find("resolved_emission_lod0(") != std::string::npos;
         EXPECT_TRUE(calls_resolved_emission)
           << path.string() << " no longer calls resolved_emission()/resolved_emission_lod0(). " << kFailureMessage;
     }
@@ -2692,12 +2721,13 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
         pos += std::strlen("transform_uv(");
     }
     EXPECT_EQ(bareTransformUvCalls, 2U)
-      << path.string() << " must call the bare transform_uv(uv, material) overload exactly twice (sample_alpha_lod0 "
+      << path.string()
+      << " must call the bare transform_uv(uv, material) overload exactly twice (sample_alpha_lod0 "
          "and sample_alpha); every other slot must go through its own named accessor instead. "
       << kFailureMessage;
 }
 
-// material_textures.slang alone declares the texture bindings and samples the four non-base slots; base colour stays inline.
+// material_textures.slang alone declares texture bindings and samples the four non-base slots; base colour is inline.
 TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
 {
     const fs::path repo_root = repoRoot();
@@ -2754,16 +2784,16 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
         for (const auto &field : kSlotFields) {
             if (text.find("resolve_texture_slot(obj, " + field + ")") != std::string::npos) {
                 violations.push_back(relative + " still hand-rolls resolve_texture_slot(obj, " + field
-                                      + ") inline - call common/material_textures.slang's helper instead");
+                                     + ") inline - call common/material_textures.slang's helper instead");
             }
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " texture-slot sampling ownership violation(s):" << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " texture-slot sampling ownership violation(s):" << joinViolations(violations);
 }
 
-// Row members only inside their accessors and structs: naming them directly can pair one slot's row0 with another's row1.
+// Row members only inside their accessors and structs: direct use can pair one slot's row0 with another's row1.
 TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
 {
     const fs::path repo_root = repoRoot();
@@ -2807,19 +2837,20 @@ TEST(BuildIntegrity, PerSlotUvTransformRowsAreSpelledInExactlyOnePlace)
                 }
                 if (inAllowedBlock) {
                     for (char c : line) {
-                        if (c == '{') { ++allowedBlockBraceDepth; }
-                        else if (c == '}') {
+                        if (c == '{') {
+                            ++allowedBlockBraceDepth;
+                        } else if (c == '}') {
                             --allowedBlockBraceDepth;
                             if (allowedBlockBraceDepth <= 0) { inAllowedBlock = false; }
                         }
                     }
-                    continue; // inside an accessor body or the PrimUniforms declaration - allowed
+                    continue;// inside an accessor body or the PrimUniforms declaration - allowed
                 }
             }
 
             if (std::regex_search(line, kRowPattern)) {
-                violations.push_back(fs::relative(entry.path(), repo_root).string() + ":" + std::to_string(lineNumber)
-                                      + ": " + line);
+                violations.push_back(
+                  fs::relative(entry.path(), repo_root).string() + ":" + std::to_string(lineNumber) + ": " + line);
             }
         }
     }
@@ -2845,15 +2876,15 @@ TEST(BuildIntegrity, ForwardShaderUvSetMaskHasOneOwnerPerSlot)
     ASSERT_TRUE(text_opt.has_value()) << "could not open " << forward_slang.string();
 
     static const std::regex kMaskReadPattern(R"(prim\.material_flags\.y)");
-    static constexpr int kSlotCount = 5; // base_color, metallic_roughness, normal, emissive, occlusion
+    static constexpr int kSlotCount = 5;// base_color, metallic_roughness, normal, emissive, occlusion
 
     const auto matchCount =
       std::distance(std::sregex_iterator(text_opt->begin(), text_opt->end(), kMaskReadPattern), std::sregex_iterator());
 
     EXPECT_LE(matchCount, kSlotCount) << "forward.slang reads prim.material_flags.y in " << matchCount
-                                       << " place(s), more than the " << kSlotCount
-                                       << " per-slot UV accessors - a call site may be hand-rolling the uv-set mask "
-                                          "instead of calling the accessor";
+                                      << " place(s), more than the " << kSlotCount
+                                      << " per-slot UV accessors - a call site may be hand-rolling the uv-set mask "
+                                         "instead of calling the accessor";
 }
 
 // Every shading path must swizzle metallic-roughness through material_rules.slang (G = roughness, B = metallic).
@@ -2910,20 +2941,21 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
         } else {
             EXPECT_NE(text.find("import material_textures;"), std::string::npos)
               << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
-            const bool calls_resolved =
-              text.find("resolved_metallic_roughness(") != std::string::npos
-              || text.find("resolved_metallic_roughness_lod0(") != std::string::npos;
+            const bool calls_resolved = text.find("resolved_metallic_roughness(") != std::string::npos
+                                        || text.find("resolved_metallic_roughness_lod0(") != std::string::npos;
             EXPECT_TRUE(calls_resolved)
               << path.string() << " no longer calls resolved_metallic_roughness()/resolved_metallic_roughness_lod0(). "
               << kFailureMessage;
         }
         EXPECT_EQ(text.find("mrSample.g"), std::string::npos)
-          << path.string() << " hand-rolls the roughness (G) channel read instead of going through "
-                               "material_metallic_roughness(). "
+          << path.string()
+          << " hand-rolls the roughness (G) channel read instead of going through "
+             "material_metallic_roughness(). "
           << kFailureMessage;
         EXPECT_EQ(text.find("mrSample.b"), std::string::npos)
-          << path.string() << " hand-rolls the metallic (B) channel read instead of going through "
-                               "material_metallic_roughness(). "
+          << path.string()
+          << " hand-rolls the metallic (B) channel read instead of going through "
+             "material_metallic_roughness(). "
           << kFailureMessage;
     }
 }
@@ -3087,21 +3119,21 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
             if (!value) { continue; }
 
             std::string lower_name = name;
-            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
-                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
 
             if (*value == max_cascades && lower_name.find("cascade") != std::string::npos) {
-                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": " + name + " = " + std::to_string(*value));
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number)
+                                     + ": " + name + " = " + std::to_string(*value));
             }
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " shader-local cascade-count constant(s) redeclare MAX_CASCADES (" << max_cascades
-      << ") outside scene_types.slang - import MAX_CASCADES instead: "
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " shader-local cascade-count constant(s) redeclare MAX_CASCADES ("
+                                    << max_cascades << ") outside scene_types.slang - import MAX_CASCADES instead: "
+                                    << joinViolations(violations);
 }
 
 // The fullscreen uv's y differs per target, so a hand-written copy of either direction mirrors one renderer.
@@ -3157,29 +3189,29 @@ struct SharedDescriptorBinding
 
 // Shared-set declarations per file; pipeline-local bindings with no named constant are deliberately absent.
 const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
-    {"common/material_fetch.slang", "objectDescription"},
-    {"common/material_textures.slang", "textures"},
-    {"common/material_textures.slang", "textureSamplers"},
-    {"common/cascaded_shadow.slang", "directionalShadowMaps"},
-    {"rasterizer/rasterizer.slang", "globalUBO"},
-    {"rasterizer/rasterizer.slang", "sceneUBO"},
-    {"deferred/deferred.slang", "globalUBO"},
-    {"deferred/deferred.slang", "globalUBO_lighting"},
-    {"deferred/deferred.slang", "sceneUBO_lighting"},
-    {"deferred/deferred.slang", "inNormal"},
-    {"deferred/deferred.slang", "inAlbedo"},
-    {"deferred/deferred.slang", "inMaterial"},
-    {"deferred/deferred.slang", "inDepth"},
-    {"raytracing/raytrace.rchit.slang", "sceneUBO"},
-    {"raytracing/raytrace.rchit.slang", "TLAS"},
-    {"raytracing/raytrace.rgen.slang", "globalUBO"},
-    {"raytracing/raytrace.rgen.slang", "TLAS"},
-    {"raytracing/raytrace.rgen.slang", "image"},
-    {"path_tracing/path_tracing.slang", "globalUBO"},
-    {"path_tracing/path_tracing.slang", "sceneUBO"},
-    {"path_tracing/path_tracing.slang", "TLAS"},
-    {"path_tracing/path_tracing.slang", "image"},
-    {"path_tracing/path_tracing.slang", "accumulationImage"},
+    { "common/material_fetch.slang", "objectDescription" },
+    { "common/material_textures.slang", "textures" },
+    { "common/material_textures.slang", "textureSamplers" },
+    { "common/cascaded_shadow.slang", "directionalShadowMaps" },
+    { "rasterizer/rasterizer.slang", "globalUBO" },
+    { "rasterizer/rasterizer.slang", "sceneUBO" },
+    { "deferred/deferred.slang", "globalUBO" },
+    { "deferred/deferred.slang", "globalUBO_lighting" },
+    { "deferred/deferred.slang", "sceneUBO_lighting" },
+    { "deferred/deferred.slang", "inNormal" },
+    { "deferred/deferred.slang", "inAlbedo" },
+    { "deferred/deferred.slang", "inMaterial" },
+    { "deferred/deferred.slang", "inDepth" },
+    { "raytracing/raytrace.rchit.slang", "sceneUBO" },
+    { "raytracing/raytrace.rchit.slang", "TLAS" },
+    { "raytracing/raytrace.rgen.slang", "globalUBO" },
+    { "raytracing/raytrace.rgen.slang", "TLAS" },
+    { "raytracing/raytrace.rgen.slang", "image" },
+    { "path_tracing/path_tracing.slang", "globalUBO" },
+    { "path_tracing/path_tracing.slang", "sceneUBO" },
+    { "path_tracing/path_tracing.slang", "TLAS" },
+    { "path_tracing/path_tracing.slang", "image" },
+    { "path_tracing/path_tracing.slang", "accumulationImage" },
 };
 
 // Bindings must use the named constants, or a renumbering moves both headers while a shader literal stays behind.
@@ -3236,28 +3268,26 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
             const auto first_non_space = first_arg.find_first_not_of(" \t");
             const auto last_non_space = first_arg.find_last_not_of(" \t");
             first_arg = (first_non_space == std::string::npos)
-              ? std::string()
-              : first_arg.substr(first_non_space, last_non_space - first_non_space + 1);
+                          ? std::string()
+                          : first_arg.substr(first_non_space, last_non_space - first_non_space + 1);
 
-            const bool is_integer_literal = !first_arg.empty()
-              && std::all_of(first_arg.begin(), first_arg.end(),
-                              [](unsigned char c) { return std::isdigit(c) != 0; });
+            const bool is_integer_literal =
+              !first_arg.empty()
+              && std::all_of(first_arg.begin(), first_arg.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
             if (is_integer_literal) {
                 violations.push_back(fs::path(binding.relative_path).generic_string() + ":" + binding.variable_name);
             }
             break;
         }
-        ASSERT_TRUE(found_declaration)
-          << "kSharedDescriptorSetBindings names a declaration that no longer exists: " << binding.variable_name
-          << " in " << path.string() << " - update the gate in buildIntegritySuite.cpp";
+        ASSERT_TRUE(found_declaration) << "kSharedDescriptorSetBindings names a declaration that no longer exists: "
+                                       << binding.variable_name << " in " << path.string()
+                                       << " - update the gate in buildIntegritySuite.cpp";
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " shared render descriptor set binding(s) use a bare integer literal - "
+      << violations.size() << " shared render descriptor set binding(s) use a bare integer literal - "
       << "use scene_types.slang's named binding constant - host_device_shared_vars.hpp and "
-      << "HostAndShaderSharedConstantsAgree already pin these: "
-      << joinViolations(violations);
+      << "HostAndShaderSharedConstantsAgree already pin these: " << joinViolations(violations);
 }
 
 // A traced object-index source and how many instance-plus-geometry index pairs it must contain.
@@ -3269,9 +3299,9 @@ struct TracedObjectIndexFile
 
 // Update these counts when a traced object-index site is added, removed or moved.
 const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
-    {"path_tracing/path_tracing.slang", 3},
-    {"raytracing/raytrace.rchit.slang", 1},
-    {"raytracing/raytrace.rahit.slang", 1},
+    { "path_tracing/path_tracing.slang", 3 },
+    { "raytracing/raytrace.rchit.slang", 1 },
+    { "raytracing/raytrace.rahit.slang", 1 },
 };
 
 // The custom index names a model's first mesh, so every traced index must add the geometry index to reach the hit mesh.
@@ -3293,13 +3323,13 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
             const std::string line = strip_line_comment(raw_line);
 
             for (auto it = std::sregex_iterator(line.begin(), line.end(), kInstanceIndexRegex);
-                 it != std::sregex_iterator(); ++it) {
+              it != std::sregex_iterator();
+              ++it) {
                 const std::string prefix = (*it)[1].str();
                 const std::string geometry_call = prefix + "GeometryIndex()";
                 if (line.find(geometry_call) == std::string::npos) {
-                    violations.push_back(
-                      file.relative_path + ": '" + it->str() + "' with no matching '" + geometry_call
-                      + "' on the same line");
+                    violations.push_back(file.relative_path + ": '" + it->str() + "' with no matching '" + geometry_call
+                                         + "' on the same line");
                 } else {
                     ++pair_count;
                 }
@@ -3336,13 +3366,13 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
     const std::size_t actual_count = (count_it == counts->end()) ? 0 : count_it->second;
     EXPECT_GE(actual_count, kMinGeometryIndexOpcodeCount)
       << spv_path.string() << ": expected OpRayQueryGetIntersectionGeometryIndexKHR at least "
-      << kMinGeometryIndexOpcodeCount
-      << " times (one per RayQuery candidate/committed-hit site), found " << actual_count
+      << kMinGeometryIndexOpcodeCount << " times (one per RayQuery candidate/committed-hit site), found "
+      << actual_count
       << " - path_tracing.slang may have regressed to a bare instance index, or the compiled .spv is "
          "stale (recompile with Build-SlangShaders.ps1)";
 }
 
-// InstanceIndex() is the TLAS instance index, not the stamped custom index; presence only, as counts move with inlining.
+// InstanceIndex() is the TLAS instance index, not the stamped custom one; presence only, as counts move with inlining.
 TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
 {
     constexpr uint32_t kBuiltInInstanceId = 6;
@@ -3390,7 +3420,8 @@ TEST(BuildIntegrity, TracedObjectIndexReadsTheInstanceCustomIndex)
     EXPECT_EQ(instance_id_count, 0U)
       << path_tracing_spv.string()
       << ": expected no OpRayQueryGetIntersectionInstanceIdKHR - it reads the TLAS instance index, not "
-         "the host-written instanceCustomIndex, found " << instance_id_count << " occurrence(s)";
+         "the host-written instanceCustomIndex, found "
+      << instance_id_count << " occurrence(s)";
 }
 
 // Only material_fetch.slang declares objectDescription and does the lookup; scene_types.slang just defines the types.
@@ -3443,15 +3474,11 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
 
     EXPECT_TRUE(binding_violations.empty())
       << binding_violations.size() << " file(s) redeclare the objectDescription binding outside "
-      << kMaterialFetchRelative << ": "
-      << joinViolations(binding_violations)
-      << " - " << kFixSuggestion;
+      << kMaterialFetchRelative << ": " << joinViolations(binding_violations) << " - " << kFixSuggestion;
 
     EXPECT_TRUE(lookup_violations.empty())
       << lookup_violations.size() << " file(s) hand-roll the material_index_address lookup outside "
-      << kMaterialFetchRelative << ": "
-      << joinViolations(lookup_violations)
-      << " - " << kFixSuggestion;
+      << kMaterialFetchRelative << ": " << joinViolations(lookup_violations) << " - " << kFixSuggestion;
 }
 
 // The shader re-clamps what the host clamps, as only its own clamp guards the matrix index and tap loop on the GPU.
@@ -3485,11 +3512,11 @@ TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
 
     std::size_t init_count = 0;
     for (std::size_t pos = content.find("dirShadowMap.init("); pos != std::string::npos;
-         pos = content.find("dirShadowMap.init(", pos + 1)) {
+      pos = content.find("dirShadowMap.init(", pos + 1)) {
         ++init_count;
     }
     EXPECT_EQ(init_count, 1U) << "dirShadowMap.init( must be called from exactly one place "
-                                  "(reinitShadowMapForCurrentSettings) so every re-provisioning path stays in sync";
+                                 "(reinitShadowMapForCurrentSettings) so every re-provisioning path stays in sync";
 
     const auto reinit_span =
       function_body_span(content, "Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings");
@@ -3504,11 +3531,11 @@ TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
 
     std::size_t upload_count = 0;
     for (std::size_t pos = content.find("uploadLightMatrices("); pos != std::string::npos;
-         pos = content.find("uploadLightMatrices(", pos + 1)) {
-        EXPECT_GE(pos, update_span->first) << "uploadLightMatrices( call at offset " << pos
-                                            << " lies outside update_uniform_buffers";
-        EXPECT_LT(pos, update_span->second) << "uploadLightMatrices( call at offset " << pos
-                                             << " lies outside update_uniform_buffers";
+      pos = content.find("uploadLightMatrices(", pos + 1)) {
+        EXPECT_GE(pos, update_span->first)
+          << "uploadLightMatrices( call at offset " << pos << " lies outside update_uniform_buffers";
+        EXPECT_LT(pos, update_span->second)
+          << "uploadLightMatrices( call at offset " << pos << " lies outside update_uniform_buffers";
         ++upload_count;
     }
     EXPECT_GT(upload_count, 0U) << "expected at least one uploadLightMatrices( call in VulkanRenderer.cpp";
@@ -3547,7 +3574,7 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
     }
 
     EXPECT_TRUE(found_in_scene_types) << kClampLiteral << " not found in " << scene_types_relative.generic_string()
-                                       << " - resolve_texture_slot() moved or was rewritten?";
+                                      << " - resolve_texture_slot() moved or was rewritten?";
     EXPECT_TRUE(other_definitions.empty())
       << other_definitions.size() << " .slang file(s) besides scene_types.slang re-derive the clamp instead of "
       << "calling resolve_texture_slot(): " << joinViolations(other_definitions);
@@ -3588,8 +3615,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 
                 // Walk back over the "scene." or "sceneUBO_lighting." prefix to where the read starts.
                 std::size_t expr_start = marker_pos;
-                while (expr_start > 0
-                       && (is_identifier_char(line[expr_start - 1]) || line[expr_start - 1] == '.')) {
+                while (expr_start > 0 && (is_identifier_char(line[expr_start - 1]) || line[expr_start - 1] == '.')) {
                     --expr_start;
                 }
 
@@ -3598,18 +3624,18 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 
                 const bool negated = before > 0 && line[before - 1] == '-';
                 std::size_t normalize_end = negated ? before - 1 : before;
-                while (normalize_end > 0
-                       && std::isspace(static_cast<unsigned char>(line[normalize_end - 1])) != 0) {
+                while (normalize_end > 0 && std::isspace(static_cast<unsigned char>(line[normalize_end - 1])) != 0) {
                     --normalize_end;
                 }
-                const bool inside_normalize = normalize_end >= kNormalizeCall.size()
+                const bool inside_normalize =
+                  normalize_end >= kNormalizeCall.size()
                   && line.compare(normalize_end - kNormalizeCall.size(), kNormalizeCall.size(), kNormalizeCall) == 0;
 
                 if (!negated || !inside_normalize) {
                     violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
-                                          + std::to_string(line_number) + ": "
-                                          + line.substr(expr_start, marker_pos + kMarker.size() - expr_start)
-                                          + " is not negated inside normalize(...)");
+                                         + std::to_string(line_number) + ": "
+                                         + line.substr(expr_start, marker_pos + kMarker.size() - expr_start)
+                                         + " is not negated inside normalize(...)");
                 }
             }
         }
@@ -3663,9 +3689,9 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " shader site(s) hard-code roughness instead of deriving it from the material:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " shader site(s) hard-code roughness instead of deriving it from the material:"
+                                    << joinViolations(violations);
 
     // Three paths reach material_roughness() through material_textures.slang's resolved_metallic_roughness helpers.
     const fs::path material_textures_path = slang_root / "common/material_textures.slang";
@@ -3685,12 +3711,11 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
         const fs::path path = slang_root / relative;
         const auto content = readFileText(path);
         ASSERT_TRUE(content.has_value()) << "missing " << path.string();
-        const bool calls_resolved =
-          content->find("resolved_metallic_roughness(") != std::string::npos
-          || content->find("resolved_metallic_roughness_lod0(") != std::string::npos;
-        EXPECT_TRUE(calls_resolved)
-          << relative << " must derive roughness via resolved_metallic_roughness()/"
-                          "resolved_metallic_roughness_lod0(), not its own copy of the mapping";
+        const bool calls_resolved = content->find("resolved_metallic_roughness(") != std::string::npos
+                                    || content->find("resolved_metallic_roughness_lod0(") != std::string::npos;
+        EXPECT_TRUE(calls_resolved) << relative
+                                    << " must derive roughness via resolved_metallic_roughness()/"
+                                       "resolved_metallic_roughness_lod0(), not its own copy of the mapping";
     }
 }
 
@@ -3726,8 +3751,8 @@ TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
             ++line_number;
             const std::string line = strip_line_comment(raw_line);
             if (std::regex_search(line, kShininessRead)) {
-                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": " + line);
+                violations.push_back(
+                  fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number) + ": " + line);
             }
         }
     }
@@ -3770,8 +3795,11 @@ TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
     std::size_t depth = 1;
     std::size_t pos = args_start;
     for (; pos < tonemap_source.size() && depth > 0; ++pos) {
-        if (tonemap_source[pos] == '(') { ++depth; }
-        else if (tonemap_source[pos] == ')') { --depth; }
+        if (tonemap_source[pos] == '(') {
+            ++depth;
+        } else if (tonemap_source[pos] == ')') {
+            --depth;
+        }
     }
     ASSERT_EQ(depth, 0u) << "unbalanced parentheses after aces_tonemap( in " << tonemap_path.string();
     const std::string composite_expr = tonemap_source.substr(args_start, pos - 1 - args_start);
@@ -3782,26 +3810,28 @@ TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
     std::size_t term_depth = 0;
     for (std::size_t i = 0; i < composite_expr.size(); ++i) {
         const char ch = composite_expr[i];
-        if (ch == '(') { ++term_depth; }
-        else if (ch == ')') { --term_depth; }
-        else if (ch == '+' && term_depth == 0) {
+        if (ch == '(') {
+            ++term_depth;
+        } else if (ch == ')') {
+            --term_depth;
+        } else if (ch == '+' && term_depth == 0) {
             terms.push_back(composite_expr.substr(term_start, i - term_start));
             term_start = i + 1;
         }
     }
     terms.push_back(composite_expr.substr(term_start));
 
-    const auto bloom_term =
-      std::find_if(terms.begin(), terms.end(), [](const std::string &term) { return term.find("bloom") != std::string::npos; });
-    ASSERT_NE(bloom_term, terms.end())
-      << "no term of aces_tonemap(...)'s composite references bloom: " << composite_expr;
+    const auto bloom_term = std::find_if(
+      terms.begin(), terms.end(), [](const std::string &term) { return term.find("bloom") != std::string::npos; });
+    ASSERT_NE(bloom_term, terms.end()) << "no term of aces_tonemap(...)'s composite references bloom: "
+                                       << composite_expr;
     EXPECT_EQ(bloom_term->find("exposure"), std::string::npos)
       << "tonemap.slang must not multiply the bloom term by exposure - bloom.slang's fs_brightpass already "
          "pre-exposed it, so multiplying again here double-exposes bloom: "
       << *bloom_term;
 
-    const auto hdr_term =
-      std::find_if(terms.begin(), terms.end(), [](const std::string &term) { return term.find("hdr") != std::string::npos; });
+    const auto hdr_term = std::find_if(
+      terms.begin(), terms.end(), [](const std::string &term) { return term.find("hdr") != std::string::npos; });
     ASSERT_NE(hdr_term, terms.end()) << "no term of aces_tonemap(...)'s composite references hdr: " << composite_expr;
     EXPECT_NE(hdr_term->find("exposure"), std::string::npos)
       << "tonemap.slang must still apply exposure to the raw HDR term: " << *hdr_term;
@@ -3865,8 +3895,10 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
             search_from = marker_pos + kMarker.size();
 
             if (!bounds_checked) {
-                std::size_t line_number = 1 + static_cast<std::size_t>(
-                                                 std::count(stripped_text.begin(), stripped_text.begin() + static_cast<long>(marker_pos), '\n'));
+                std::size_t line_number =
+                  1
+                  + static_cast<std::size_t>(
+                    std::count(stripped_text.begin(), stripped_text.begin() + static_cast<long>(marker_pos), '\n'));
                 violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number)
                                       + ": SampleCmpLevelZero tap is not guarded by a [0,1] bounds check on both "
                                         "components of the tap coordinate in its enclosing statement");
@@ -3911,8 +3943,7 @@ std::vector<SlangToken> tokenize_slang(const std::string &text)
             continue;
         }
         if (std::isdigit(ch) != 0) {
-            while (i < text.size()
-                   && (std::isalnum(static_cast<unsigned char>(text[i])) != 0 || text[i] == '.')) {
+            while (i < text.size() && (std::isalnum(static_cast<unsigned char>(text[i])) != 0 || text[i] == '.')) {
                 ++i;
             }
             continue;
@@ -3976,15 +4007,17 @@ struct SlangFunctionDef
 {
     std::string name;
     std::string relative_file;// relative to Resources/ShadersSlang, forward slashes
-    int line = 0;             // 1-based, the line the return type starts on
-    bool is_root = false;     // preceded by a [shader("...")] attribute
-    std::string body;         // comment/string-stripped body text, for call-graph edges
-    std::string raw_def_line; // original (unstripped) text of `line`, for allowlist marker lookup
+    int line = 0;// 1-based, the line the return type starts on
+    bool is_root = false;// preceded by a [shader("...")] attribute
+    std::string body;// comment/string-stripped body text, for call-graph edges
+    std::string raw_def_line;// original (unstripped) text of `line`, for allowlist marker lookup
 };
 
 // A definition is type, name, '(' at depth 0, the matching ')', an optional semantic, then '{', never ';'.
-void collect_functions_from_file(const std::vector<std::string> &stripped_lines, const std::vector<std::string> &raw_lines,
-                                  const std::string &relative_file, std::vector<SlangFunctionDef> &out)
+void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
+  const std::vector<std::string> &raw_lines,
+  const std::string &relative_file,
+  std::vector<SlangFunctionDef> &out)
 {
     std::string text;
     std::vector<std::size_t> line_start_offsets;
@@ -4007,8 +4040,11 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
     while (t < tokens.size()) {
         const SlangToken &tok = tokens[t];
         if (!tok.is_identifier) {
-            if (tok.text == "{") { ++depth; }
-            else if (tok.text == "}") { --depth; }
+            if (tok.text == "{") {
+                ++depth;
+            } else if (tok.text == "}") {
+                --depth;
+            }
             ++t;
             continue;
         }
@@ -4019,8 +4055,11 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
             int paren_depth = 1;
             std::size_t j = t + 3;
             while (j < tokens.size() && paren_depth > 0) {
-                if (!tokens[j].is_identifier && tokens[j].text == "(") { ++paren_depth; }
-                else if (!tokens[j].is_identifier && tokens[j].text == ")") { --paren_depth; }
+                if (!tokens[j].is_identifier && tokens[j].text == "(") {
+                    ++paren_depth;
+                } else if (!tokens[j].is_identifier && tokens[j].text == ")") {
+                    --paren_depth;
+                }
                 ++j;
             }
             if (paren_depth == 0) {
@@ -4035,8 +4074,11 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
                     int body_depth = 1;
                     std::size_t m = k + 1;
                     while (m < tokens.size() && body_depth > 0) {
-                        if (!tokens[m].is_identifier && tokens[m].text == "{") { ++body_depth; }
-                        else if (!tokens[m].is_identifier && tokens[m].text == "}") { --body_depth; }
+                        if (!tokens[m].is_identifier && tokens[m].text == "{") {
+                            ++body_depth;
+                        } else if (!tokens[m].is_identifier && tokens[m].text == "}") {
+                            --body_depth;
+                        }
                         ++m;
                     }
                     const std::size_t body_begin_offset = tokens[k].offset;
@@ -4050,8 +4092,8 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
                     fn.is_root = preceded_by_shader_attribute(stripped_lines, static_cast<std::size_t>(fn.line - 1));
                     fn.body = text.substr(body_begin_offset, body_end_offset - body_begin_offset);
                     fn.raw_def_line = (fn.line >= 1 && static_cast<std::size_t>(fn.line - 1) < raw_lines.size())
-                                         ? raw_lines[static_cast<std::size_t>(fn.line - 1)]
-                                         : std::string();
+                                        ? raw_lines[static_cast<std::size_t>(fn.line - 1)]
+                                        : std::string();
                     out.push_back(std::move(fn));
 
                     depth = 0;// back to top level once the function's own body has closed
@@ -4118,12 +4160,10 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
     const int total_functions = static_cast<int>(functions.size());
     const int total_roots =
       static_cast<int>(std::count_if(functions.begin(), functions.end(), [](const auto &fn) { return fn.is_root; }));
-    ASSERT_GT(total_functions, 40) << "found only " << total_functions
-                                    << " Slang function definition(s) under " << slang_root.string()
-                                    << " - the definition scan itself is broken";
-    ASSERT_GT(total_roots, 20) << "found only " << total_roots
-                                << " [shader(\"...\")] entry point(s) under " << slang_root.string()
-                                << " - the root scan itself is broken";
+    ASSERT_GT(total_functions, 40) << "found only " << total_functions << " Slang function definition(s) under "
+                                   << slang_root.string() << " - the definition scan itself is broken";
+    ASSERT_GT(total_roots, 20) << "found only " << total_roots << " [shader(\"...\")] entry point(s) under "
+                               << slang_root.string() << " - the root scan itself is broken";
 
     std::map<std::string, std::vector<std::size_t>> functions_by_name;
     for (std::size_t idx = 0; idx < functions.size(); ++idx) { functions_by_name[functions[idx].name].push_back(idx); }
@@ -4192,7 +4232,8 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
     std::vector<std::string> dead_exemptions;
     for (std::size_t idx = 0; idx < kUnreachableSlangAllowlist.size(); ++idx) {
         if (!allowlist_entry_matched[idx]) {
-            dead_exemptions.push_back(kUnreachableSlangAllowlist[idx].file + " (" + kUnreachableSlangAllowlist[idx].marker + ")");
+            dead_exemptions.push_back(
+              kUnreachableSlangAllowlist[idx].file + " (" + kUnreachableSlangAllowlist[idx].marker + ")");
         }
     }
     EXPECT_TRUE(dead_exemptions.empty())
@@ -4221,7 +4262,9 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
         for (const auto &raw_line : *lines) {
             const std::string stripped = strip_line_comment(raw_line);
             std::smatch match;
-            if (std::regex_search(stripped, match, kImportRe)) { worklist.push_back("common/" + match[1].str() + ".slang"); }
+            if (std::regex_search(stripped, match, kImportRe)) {
+                worklist.push_back("common/" + match[1].str() + ".slang");
+            }
         }
     }
     return file_set;
@@ -4229,8 +4272,8 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
 
 // Names reachable from `entry_relative`'s entry points within `file_set`: its WGSL holds only its own call graph.
 std::set<std::string> slang_function_names_reachable_from_source(const std::vector<SlangFunctionDef> &all_functions,
-                                                                   const std::set<std::string> &file_set,
-                                                                   const std::string &entry_relative)
+  const std::set<std::string> &file_set,
+  const std::string &entry_relative)
 {
     std::vector<std::size_t> in_scope;
     for (std::size_t idx = 0; idx < all_functions.size(); ++idx) {
@@ -4285,9 +4328,8 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
-    ASSERT_GT(functions.size(), 40u) << "found only " << functions.size()
-                                      << " Slang function definition(s) under " << slang_root.string()
-                                      << " - the definition scan itself is broken";
+    ASSERT_GT(functions.size(), 40u) << "found only " << functions.size() << " Slang function definition(s) under "
+                                     << slang_root.string() << " - the definition scan itself is broken";
 
     std::vector<std::string> violations;
     int checked_destinations = 0;
@@ -4324,10 +4366,9 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
                         "submodule is likely not checked out here";
     }
 
-    ASSERT_GE(checked_destinations, 8) << "only checked " << checked_destinations << " of "
-                                        << manifest->wgsl_map.size()
-                                        << " wgslMap destination(s) - most are missing, which is more than a "
-                                           "submodule simply not being checked out";
+    ASSERT_GE(checked_destinations, 8) << "only checked " << checked_destinations << " of " << manifest->wgsl_map.size()
+                                       << " wgslMap destination(s) - most are missing, which is more than a "
+                                          "submodule simply not being checked out";
     ASSERT_GT(forward_reachable_count, 8)
       << "found only " << forward_reachable_count
       << " function(s) reachable from forward.wgsl's own entry point(s) - the reachability scan itself is broken";
@@ -4349,8 +4390,9 @@ struct SlangStructDef
 };
 
 // `struct` always precedes the type name, so no brace or paren bookkeeping is needed.
-void collect_structs_from_file(const std::vector<std::string> &stripped_lines, const std::string &relative_file,
-                                std::vector<SlangStructDef> &out)
+void collect_structs_from_file(const std::vector<std::string> &stripped_lines,
+  const std::string &relative_file,
+  std::vector<SlangStructDef> &out)
 {
     std::string text;
     for (const auto &line : stripped_lines) {
@@ -4399,8 +4441,8 @@ std::vector<SlangStructDef> collect_slang_structs(const fs::path &slang_root)
 
 // Resolves an import as slangc does: same directory, then common/, then the alphabetically first candidate.
 std::optional<std::string> resolve_slang_module(const std::map<std::string, std::vector<std::string>> &files_by_stem,
-                                                  const std::string &module_name,
-                                                  const std::string &importer_relative_file)
+  const std::string &module_name,
+  const std::string &importer_relative_file)
 {
     const auto found = files_by_stem.find(module_name);
     if (found == files_by_stem.end() || found->second.empty()) { return std::nullopt; }
@@ -4476,15 +4518,16 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
             const auto resolved = resolve_slang_module(files_by_stem, module_name, relative_path);
             if (!resolved.has_value()) {
                 violations.push_back(relative_path + ": import " + module_name
-                                      + " does not resolve to any .slang file under " + slang_root.string()
-                                      + " - the resolution scan itself is broken");
+                                     + " does not resolve to any .slang file under " + slang_root.string()
+                                     + " - the resolution scan itself is broken");
                 continue;
             }
 
             const auto exported = exported_names_by_file.find(*resolved);
             const bool used = exported != exported_names_by_file.end()
-              && std::any_of(exported->second.begin(), exported->second.end(),
-                              [&identifiers](const std::string &name) { return identifiers.contains(name); });
+                              && std::any_of(exported->second.begin(),
+                                exported->second.end(),
+                                [&identifiers](const std::string &name) { return identifiers.contains(name); });
             if (!used) {
                 violations.push_back(relative_path + ": import " + module_name + " (" + *resolved
                                       + ") is unused - none of its exported function or struct names appear in "
@@ -4494,7 +4537,7 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
     }
 
     ASSERT_GE(imports_checked, 10) << "found only " << imports_checked << " Slang import statement(s) under "
-                                    << slang_root.string() << " - the import scan itself is broken";
+                                   << slang_root.string() << " - the import scan itself is broken";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
@@ -4546,8 +4589,8 @@ TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
     const fs::path slang_root = slangRoot();
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
-    ASSERT_GE(manifest->wgsl_map.size(), 5U) << "found only " << manifest->wgsl_map.size()
-                                              << " wgslMap entr(y/ies) - the manifest parse itself is broken";
+    ASSERT_GE(manifest->wgsl_map.size(), 5U)
+      << "found only " << manifest->wgsl_map.size() << " wgslMap entr(y/ies) - the manifest parse itself is broken";
 
     std::vector<std::string> violations;
     for (const auto &mapping : manifest->wgsl_map) {
@@ -4661,7 +4704,8 @@ TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
 
         const auto it = importers.find(iface.name);
         const std::string declaring_path = iface.path.generic_string();
-        const bool imported_elsewhere = it != importers.end()
+        const bool imported_elsewhere =
+          it != importers.end()
           && std::any_of(it->second.begin(), it->second.end(), [&](const std::string &importer_path) {
                  return importer_path != declaring_path;
              });
@@ -4821,7 +4865,8 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
     std::vector<std::string> dead_exemptions;
     for (std::size_t idx = 0; idx < kCheckedResultAllowlist.size(); ++idx) {
         if (!allowlist_entry_matched[idx]) {
-            dead_exemptions.push_back(kCheckedResultAllowlist[idx].file + " (" + kCheckedResultAllowlist[idx].marker + ")");
+            dead_exemptions.push_back(
+              kCheckedResultAllowlist[idx].file + " (" + kCheckedResultAllowlist[idx].marker + ")");
         }
     }
 
@@ -4836,9 +4881,7 @@ namespace {
 
 // The one non-call "beginCommandBuffer(" under Src/ is its own definition.
 bool is_begin_command_buffer_definition_line(const std::string &line)
-{
-    return line.find("beginCommandBuffer(vk::Device device") != std::string::npos;
-}
+{ return line.find("beginCommandBuffer(vk::Device device") != std::string::npos; }
 
 // The name declared as "vk::CommandBuffer <name>" on the call line or up to `lookback` lines above, else empty.
 std::string declared_command_buffer_name(const std::vector<std::string> &lines, std::size_t call_line, int lookback)
@@ -4910,15 +4953,15 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " beginCommandBuffer() call(s) with no null-check on the returned command buffer within " << kWindow
+      << violations.size() << " beginCommandBuffer() call(s) with no null-check on the returned command buffer within "
+      << kWindow
       << " lines - beginCommandBuffer documents a null return on allocate/begin failure, and exceptions are "
          "disabled project-wide, so that null handle is the only failure signal available; recording into it "
          "or submitting it is undefined behaviour:"
       << joinViolations(violations);
 }
 
-// Each submit result is assigned, tested, or explicitly discarded with static_cast<void>, so a failure is never invisible.
+// Each submit result is assigned, tested, or discarded via static_cast<void>, so a failure is never invisible.
 TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
 {
     const fs::path repo_root = repoRoot();
@@ -4951,7 +4994,8 @@ TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
             const bool discarded = prefix.find("static_cast<void>(") != std::string::npos;
             const bool assigned = prefix.find(" = ") != std::string::npos;
             const bool in_condition = prefix.find("if (") != std::string::npos
-              || prefix.find("if(") != std::string::npos || prefix.find("while (") != std::string::npos;
+                                      || prefix.find("if(") != std::string::npos
+                                      || prefix.find("while (") != std::string::npos;
 
             if (!discarded && !assigned && !in_condition) {
                 violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + line);
@@ -4978,8 +5022,8 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
     ASSERT_TRUE(as_manager_source_opt.has_value()) << "missing " << as_manager_path.string();
     const std::string &as_manager_source = *as_manager_source_opt;
 
-    EXPECT_NE(as_manager_source.find("bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS("),
-      std::string::npos)
+    EXPECT_NE(
+      as_manager_source.find("bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS("), std::string::npos)
       << "ASManager::createBLAS must be declared returning bool so its caller can react to a failed build";
 
     {
@@ -5002,8 +5046,8 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
           << "createTLAS's blas.size() guard must appear before the first blas[...] index";
     }
 
-    const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
-                                  / "clouds" / "Clouds.cpp";
+    const fs::path clouds_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects" / "clouds" / "Clouds.cpp";
     const auto clouds_source_opt = readFileText(clouds_path);
     ASSERT_TRUE(clouds_source_opt.has_value()) << "missing " << clouds_path.string();
     const std::string &clouds_source = *clouds_source_opt;
@@ -5068,8 +5112,7 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
              "successful upload";
     }
 
-    const fs::path sky_box_cpp_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
+    const fs::path sky_box_cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
     const auto sky_box_cpp_source_opt = readFileText(sky_box_cpp_path);
     ASSERT_TRUE(sky_box_cpp_source_opt.has_value()) << "missing " << sky_box_cpp_path.string();
     const std::string &sky_box_cpp_source = *sky_box_cpp_source_opt;
@@ -5078,8 +5121,8 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
         const std::size_t call_pos = sky_box_cpp_source.find("endAndSubmitCommandBuffer(");
         ASSERT_NE(call_pos, std::string::npos) << "could not locate endAndSubmitCommandBuffer( call in SkyBox.cpp";
         const std::size_t line_start = sky_box_cpp_source.rfind('\n', call_pos);
-        const std::string prefix = sky_box_cpp_source.substr(
-          line_start == std::string::npos ? 0 : line_start + 1, call_pos - (line_start + 1));
+        const std::string prefix =
+          sky_box_cpp_source.substr(line_start == std::string::npos ? 0 : line_start + 1, call_pos - (line_start + 1));
         EXPECT_EQ(prefix.find("static_cast<void>("), std::string::npos)
           << "SkyBox.cpp's endAndSubmitCommandBuffer(...) call must consume the submit result instead of "
              "discarding it with static_cast<void> - a failed cubemap upload must not write a descriptor "
@@ -5107,8 +5150,7 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path renderer_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
     const auto renderer_lines = readFileLines(renderer_path);
     ASSERT_TRUE(renderer_lines.has_value()) << "missing " << renderer_path.string();
     const auto &lines = *renderer_lines;
@@ -5222,8 +5264,10 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
     const std::vector<std::string> integration_tests = collect_suite_test_names(tests_dir, "Integration");
 
     const int counted_defined = static_cast<int>(golden_tests.size());
-    const int counted_runnable = static_cast<int>(std::count_if(golden_tests.begin(), golden_tests.end(),
-      [](const std::string &name) { return !name.starts_with("DISABLED_"); }));
+    const int counted_runnable =
+      static_cast<int>(std::count_if(golden_tests.begin(), golden_tests.end(), [](const std::string &name) {
+          return !name.starts_with("DISABLED_");
+      }));
     const int counted_integration = static_cast<int>(integration_tests.size());
 
     EXPECT_EQ(marker->defined, counted_defined)
@@ -5372,17 +5416,18 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
 
     const auto doc_value = parse_max_texture_count_marker(doc_path);
     ASSERT_TRUE(doc_value.has_value())
-      << doc_path.string() << " is missing its '<!-- max-texture-count: N -->' marker line - a deleted marker must "
-                              "fail this test, not silently pass";
+      << doc_path.string()
+      << " is missing its '<!-- max-texture-count: N -->' marker line - a deleted marker must "
+         "fail this test, not silently pass";
 
     const fs::path header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp";
     const auto header_value = parse_max_texture_count_header(header_path);
     ASSERT_TRUE(header_value.has_value())
       << header_path.string() << " does not define 'const int MAX_TEXTURE_COUNT = <N>;'";
 
-    EXPECT_EQ(*doc_value, *header_value)
-      << doc_path.string() << "'s max-texture-count marker says " << *doc_value << " but " << header_path.string()
-      << " defines MAX_TEXTURE_COUNT = " << *header_value;
+    EXPECT_EQ(*doc_value, *header_value) << doc_path.string() << "'s max-texture-count marker says " << *doc_value
+                                         << " but " << header_path.string()
+                                         << " defines MAX_TEXTURE_COUNT = " << *header_value;
 }
 
 // Cite symbols, not line numbers, which silently point at unrelated code once a function moves; bare colons rot too.
@@ -5400,9 +5445,7 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
         if (!content.has_value()) { return; }
         const std::string relative = fs::relative(path, repo_root).generic_string();
         auto begin = std::sregex_iterator(content->begin(), content->end(), kFileLinePattern);
-        for (auto it = begin; it != std::sregex_iterator(); ++it) {
-            violations.push_back(relative + ": " + it->str());
-        }
+        for (auto it = begin; it != std::sregex_iterator(); ++it) { violations.push_back(relative + ": " + it->str()); }
         auto bare_begin = std::sregex_iterator(content->begin(), content->end(), kBareLinePattern);
         for (auto it = bare_begin; it != std::sregex_iterator(); ++it) {
             violations.push_back(relative + ": " + it->str());
@@ -5423,7 +5466,7 @@ TEST(BuildIntegrity, SourceAndDocsCiteSymbolsNotLineNumbers)
     }
 
     for (fs::recursive_directory_iterator it(repo_root / "Resources" / "ShadersSlang", error), end; it != end;
-         it.increment(error)) {
+      it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
         scan_file(it->path());
@@ -5455,12 +5498,28 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
     const auto doc_content = readFileText(doc_path);
     ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
 
-    static constexpr std::array<const char *, 22> kObjMaterialMembers{ "diffuse", "emission", "shininess",
-        "dissolve", "textureID", "alphaCutoff", "uv_transform_row0", "uv_transform_row1", "metallic", "roughness",
-        "emissiveTextureID", "normalTextureID", "normalScale", "metallicRoughnessTextureID",
-        "normal_uv_transform_row0", "normal_uv_transform_row1", "metallic_roughness_uv_transform_row0",
-        "metallic_roughness_uv_transform_row1", "emissive_uv_transform_row0", "emissive_uv_transform_row1",
-        "unlit", "alphaTextureID" };
+    static constexpr std::array<const char *, 22> kObjMaterialMembers{ "diffuse",
+        "emission",
+        "shininess",
+        "dissolve",
+        "textureID",
+        "alphaCutoff",
+        "uv_transform_row0",
+        "uv_transform_row1",
+        "metallic",
+        "roughness",
+        "emissiveTextureID",
+        "normalTextureID",
+        "normalScale",
+        "metallicRoughnessTextureID",
+        "normal_uv_transform_row0",
+        "normal_uv_transform_row1",
+        "metallic_roughness_uv_transform_row0",
+        "metallic_roughness_uv_transform_row1",
+        "emissive_uv_transform_row0",
+        "emissive_uv_transform_row1",
+        "unlit",
+        "alphaTextureID" };
 
     const auto table_start = doc_content->find("Material fields and where they come from");
     ASSERT_NE(table_start, std::string::npos)
@@ -5477,13 +5536,13 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
         constexpr std::string_view kRow1Suffix = "_row1";
         if (member_view.size() > kRow1Suffix.size()
             && member_view.substr(member_view.size() - kRow1Suffix.size()) == kRow1Suffix) {
-            const std::string row0_name = std::string(member_view.substr(0, member_view.size() - kRow1Suffix.size()))
-              + "_row0";
+            const std::string row0_name =
+              std::string(member_view.substr(0, member_view.size() - kRow1Suffix.size())) + "_row0";
             const auto row0_pos = table_text.find(std::string("`") + row0_name + "`");
             if (row0_pos != std::string::npos) {
                 const auto line_end = table_text.find('\n', row0_pos);
-                const auto line = table_text.substr(
-                  row0_pos, line_end == std::string::npos ? std::string::npos : line_end - row0_pos);
+                const auto line =
+                  table_text.substr(row0_pos, line_end == std::string::npos ? std::string::npos : line_end - row0_pos);
                 if (line.find("`_row1`") != std::string::npos) { continue; }
             }
         }
@@ -5492,8 +5551,8 @@ TEST(BuildIntegrity, ModelLoadingDocDocumentsEveryObjMaterialMember)
     }
 
     EXPECT_TRUE(missing.empty()) << doc_path.string()
-                                  << "'s material table is missing a row for the following ObjMaterial member(s):"
-                                  << joinViolations(missing);
+                                 << "'s material table is missing a row for the following ObjMaterial member(s):"
+                                 << joinViolations(missing);
 }
 
 // The hand-summarised srgb row must name every map_... directive the *TextureID rows name.
@@ -5510,8 +5569,8 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
     ASSERT_NE(table_start, std::string::npos)
       << doc_path.string() << " is missing its \"Material fields and where they come from\" section";
     const auto table_end = doc_content->find("\n## ", table_start);
-    const std::string table_text = doc_content->substr(
-      table_start, table_end == std::string::npos ? std::string::npos : table_end - table_start);
+    const std::string table_text =
+      doc_content->substr(table_start, table_end == std::string::npos ? std::string::npos : table_end - table_start);
 
     // Table rows only: prose lines without a leading '|' would shift the row indices below.
     std::vector<std::vector<std::string>> rows;
@@ -5527,8 +5586,7 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
                 const std::size_t end = next == std::string::npos ? line.size() : next;
                 std::string cell = line.substr(pos, end - pos);
                 const std::size_t first = cell.find_first_not_of(" \t");
-                cell = first == std::string::npos ? ""
-                                                   : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
+                cell = first == std::string::npos ? "" : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
                 cells.push_back(std::move(cell));
                 pos = end + 1;
             }
@@ -5552,37 +5610,41 @@ TEST(BuildIntegrity, ModelLoadingDocSrgbRowCoversEveryObjTextureDirective)
 
         if (member == "srgb") { srgb_mtl_cell = cells[2]; }
 
-        const bool is_texture_id_row = member == "textureID"
-          || (member.size() > 9 && member.compare(member.size() - 9, 9, "TextureID") == 0);
+        const bool is_texture_id_row =
+          member == "textureID" || (member.size() > 9 && member.compare(member.size() - 9, 9, "TextureID") == 0);
         if (!is_texture_id_row) { continue; }
 
         for (auto it = std::sregex_iterator(cells[2].begin(), cells[2].end(), kBacktickToken);
-             it != std::sregex_iterator(); ++it) {
+          it != std::sregex_iterator();
+          ++it) {
             const std::string token = (*it)[1].str();
             if (token.rfind("map_", 0) == 0) { required_directives.push_back(token); }
         }
     }
 
-    ASSERT_FALSE(srgb_mtl_cell.empty())
-      << doc_path.string() << "'s material table has no `srgb` row (or its `.mtl` cell is empty)";
+    ASSERT_FALSE(srgb_mtl_cell.empty()) << doc_path.string()
+                                        << "'s material table has no `srgb` row (or its `.mtl` cell is empty)";
 
     std::string srgb_mtl_cell_lower = srgb_mtl_cell;
-    std::transform(srgb_mtl_cell_lower.begin(), srgb_mtl_cell_lower.end(), srgb_mtl_cell_lower.begin(),
-      [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(
+      srgb_mtl_cell_lower.begin(), srgb_mtl_cell_lower.end(), srgb_mtl_cell_lower.begin(), [](unsigned char c) {
+          return static_cast<char>(std::tolower(c));
+      });
 
     std::vector<std::string> missing;
     for (const std::string &directive : required_directives) {
         std::string needle = directive;
-        std::transform(
-          needle.begin(), needle.end(), needle.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
         if (srgb_mtl_cell_lower.find(needle) == std::string::npos) { missing.push_back(directive); }
     }
     std::sort(missing.begin(), missing.end());
     missing.erase(std::unique(missing.begin(), missing.end()), missing.end());
 
-    EXPECT_TRUE(missing.empty())
-      << doc_path.string() << "'s `srgb` row's `.mtl` cell (\"" << srgb_mtl_cell
-      << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:" << joinViolations(missing, "\n  add `", "` to the srgb row's .mtl column");
+    EXPECT_TRUE(missing.empty()) << doc_path.string() << "'s `srgb` row's `.mtl` cell (\"" << srgb_mtl_cell
+                                 << "\") is missing the following directive(s) named in a *TextureID row's `.mtl` cell:"
+                                 << joinViolations(missing, "\n  add `", "` to the srgb row's .mtl column");
 }
 
 // Every known C++/Rust glTF loader divergence needs a doc row; presence only, not accuracy.
@@ -5595,8 +5657,9 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryKnownLoaderDivergence)
     const auto doc_content = readFileText(doc_path);
     ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
 
-    static constexpr std::array<const char *, 6> kDivergenceKeys{ "TEXCOORD_0", "KHR_materials_unlit",
-        "occlusionTexture", "KHR_texture_transform", "BLEND", "Pr" };
+    static constexpr std::array<const char *, 6> kDivergenceKeys{
+        "TEXCOORD_0", "KHR_materials_unlit", "occlusionTexture", "KHR_texture_transform", "BLEND", "Pr"
+    };
 
     const auto section_start = doc_content->find("Known glTF loader divergences");
     ASSERT_NE(section_start, std::string::npos)
@@ -5638,8 +5701,9 @@ std::size_t count_cpp_sources(const fs::path &root)
 
     std::size_t count = 0;
     std::error_code error;
-    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error), end; it != end;
-         it.increment(error)) {
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error), end;
+      it != end;
+      it.increment(error)) {
         if (error) { break; }
         if (it->is_directory(error) && it->path().filename().string().starts_with("build")) {
             it.disable_recursion_pending();
@@ -5741,7 +5805,8 @@ std::optional<std::map<std::string, std::string>> parse_shared_module_targets_ma
 }
 
 // Per common/*.slang module, the union of targets over every enabled source (tests included) whose closure reaches it.
-std::map<std::string, std::string> shared_module_target_truth(const fs::path &slang_root, const ShaderManifestData &manifest)
+std::map<std::string, std::string> shared_module_target_truth(const fs::path &slang_root,
+  const ShaderManifestData &manifest)
 {
     std::map<std::string, std::set<std::string>> module_targets;
 
@@ -5807,8 +5872,8 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
         truth.emplace(source, *targets.begin());
     }
     EXPECT_TRUE(ambiguous.empty())
-      << "shader-manifest.json has " << ambiguous.size()
-      << " non-test file(s) compiled to BOTH spirv and wgsl - " << doc_path.string()
+      << "shader-manifest.json has " << ambiguous.size() << " non-test file(s) compiled to BOTH spirv and wgsl - "
+      << doc_path.string()
       << "'s shader-targets table has only two columns (spirv-only / wgsl-only) and needs a third list for:"
       << joinViolations(ambiguous);
 
@@ -5827,12 +5892,12 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
         if (!doc_targets->contains(source)) { manifest_only.push_back(source); }
     }
 
-    EXPECT_TRUE(doc_only.empty()) << doc_path.string() << " lists file(s) shader-manifest.json does not have:"
-                                  << joinViolations(doc_only);
-    EXPECT_TRUE(manifest_only.empty())
-      << doc_path.string() << " is missing file(s) shader-manifest.json has:" << joinViolations(manifest_only);
-    EXPECT_TRUE(mismatched.empty())
-      << doc_path.string() << " disagrees with shader-manifest.json on target(s):" << joinViolations(mismatched);
+    EXPECT_TRUE(doc_only.empty()) << doc_path.string()
+                                  << " lists file(s) shader-manifest.json does not have:" << joinViolations(doc_only);
+    EXPECT_TRUE(manifest_only.empty()) << doc_path.string() << " is missing file(s) shader-manifest.json has:"
+                                       << joinViolations(manifest_only);
+    EXPECT_TRUE(mismatched.empty()) << doc_path.string() << " disagrees with shader-manifest.json on target(s):"
+                                    << joinViolations(mismatched);
 
     EXPECT_FALSE(doc_targets->contains("histogram.wgsl"))
       << doc_path.string()
@@ -5878,13 +5943,14 @@ TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
         if (!doc_targets->contains(module)) { truth_only.push_back(module + " (" + target + ")"); }
     }
 
-    EXPECT_TRUE(doc_only.empty())
-      << doc_path.string() << "'s shared-module-targets table lists module(s) not found under "
-      << (slang_root / "common").string() << ":" << joinViolations(doc_only);
-    EXPECT_TRUE(truth_only.empty())
-      << doc_path.string() << "'s shared-module-targets table is missing module(s):" << joinViolations(truth_only);
-    EXPECT_TRUE(mismatched.empty())
-      << doc_path.string() << "'s shared-module-targets table disagrees with the import graph on:" << joinViolations(mismatched);
+    EXPECT_TRUE(doc_only.empty()) << doc_path.string()
+                                  << "'s shared-module-targets table lists module(s) not found under "
+                                  << (slang_root / "common").string() << ":" << joinViolations(doc_only);
+    EXPECT_TRUE(truth_only.empty()) << doc_path.string() << "'s shared-module-targets table is missing module(s):"
+                                    << joinViolations(truth_only);
+    EXPECT_TRUE(mismatched.empty()) << doc_path.string()
+                                    << "'s shared-module-targets table disagrees with the import graph on:"
+                                    << joinViolations(mismatched);
 }
 
 // The first [numthreads(X, Y, Z)]; std::nullopt when absent, so a renamed attribute cannot match zero times.
@@ -5937,7 +6003,7 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
       << (*cloud_threads)[2] << ")] Y does not match CloudDispatch.hpp's kCloudWorkgroupSize ("
       << Kataglyphis::kCloudWorkgroupSize << ')';
     EXPECT_EQ((*cloud_threads)[2], 1) << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", "
-                                       << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
+                                      << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
 // [min, max] of the num_march_steps clamp; std::nullopt when the expression is not found.
@@ -5954,7 +6020,7 @@ std::optional<std::pair<float, float>> parse_cloud_march_steps_range(const std::
 std::optional<std::pair<float, float>> parse_cloud_light_march_steps_range(const std::string &contents)
 {
     static const std::regex kPattern(R"(num_march_steps_to_light\s*=\s*int\(\s*clamp\(\s*scene\.cloudLightMarch\.x\s*,)"
-                                      R"(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)\s*\))");
+                                     R"(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\)\s*\))");
     std::smatch match;
     if (!std::regex_search(contents, match, kPattern)) { return std::nullopt; }
     return std::make_pair(std::stof(match[1].str()), std::stof(match[2].str()));
@@ -5971,15 +6037,17 @@ TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
     ASSERT_TRUE(march_steps_range.has_value())
       << clouds_path.string() << ": no `num_march_steps = int(clamp(scene.cloudParameters.w, ...))` found";
     EXPECT_FLOAT_EQ(march_steps_range->first, static_cast<float>(Kataglyphis::kMinCloudMarchSteps))
-      << clouds_path.string() << "'s num_march_steps lower bound does not match CloudDispatch.hpp's kMinCloudMarchSteps ("
+      << clouds_path.string()
+      << "'s num_march_steps lower bound does not match CloudDispatch.hpp's kMinCloudMarchSteps ("
       << Kataglyphis::kMinCloudMarchSteps << ')';
     EXPECT_FLOAT_EQ(march_steps_range->second, static_cast<float>(Kataglyphis::kMaxCloudMarchSteps))
-      << clouds_path.string() << "'s num_march_steps upper bound does not match CloudDispatch.hpp's kMaxCloudMarchSteps ("
+      << clouds_path.string()
+      << "'s num_march_steps upper bound does not match CloudDispatch.hpp's kMaxCloudMarchSteps ("
       << Kataglyphis::kMaxCloudMarchSteps << ')';
 
     const auto light_march_steps_range = parse_cloud_light_march_steps_range(*contents);
-    ASSERT_TRUE(light_march_steps_range.has_value()) << clouds_path.string()
-      << ": no `num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, ...))` found";
+    ASSERT_TRUE(light_march_steps_range.has_value())
+      << clouds_path.string() << ": no `num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, ...))` found";
     EXPECT_FLOAT_EQ(light_march_steps_range->first, static_cast<float>(Kataglyphis::kMinCloudLightMarchSteps))
       << clouds_path.string()
       << "'s num_march_steps_to_light lower bound does not match CloudDispatch.hpp's kMinCloudLightMarchSteps ("
@@ -6052,8 +6120,11 @@ std::string extract_function_body(const std::string &contents, const std::string
     int depth = 1;
     size_t pos = brace_pos + 1;
     for (; pos < contents.size() && depth > 0; ++pos) {
-        if (contents[pos] == '{') { ++depth; }
-        else if (contents[pos] == '}') { --depth; }
+        if (contents[pos] == '{') {
+            ++depth;
+        } else if (contents[pos] == '}') {
+            --depth;
+        }
     }
     return contents.substr(brace_pos, pos - brace_pos);
 }
@@ -6083,9 +6154,9 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     // (b) No float4() operand may be a bare numeric literal, a hard-coded channel.
     const auto operands = parse_noise_volume_write_operands(*noise_contents);
     ASSERT_TRUE(operands.has_value()) << "no `noiseVolume[tid] = float4( ... );` assignment found in "
-                                       << noise_path.string();
+                                      << noise_path.string();
     ASSERT_EQ(operands->size(), 4u) << noise_path.string()
-                                     << "'s noiseVolume[tid] = float4( ... ) assignment does not have 4 operands";
+                                    << "'s noiseVolume[tid] = float4( ... ) assignment does not have 4 operands";
 
     static const std::regex kBareNumericLiteral(R"(^[+-]?[0-9]+(\.[0-9]*)?[fF]?$)");
     static const char *const kChannelNames[4] = { ".r", ".g", ".b", ".a" };
@@ -6103,13 +6174,13 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     ASSERT_TRUE(clouds_contents.has_value()) << "could not read " << clouds_path.string();
     const std::string sample_density_body =
       extract_function_body(*clouds_contents, "float sample_density(float3 position, Clouds cloud)");
-    ASSERT_FALSE(sample_density_body.empty())
-      << "could not locate sample_density's body in " << clouds_path.string();
+    ASSERT_FALSE(sample_density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
 
     static const std::regex kSwizzleRead(R"(noise(?:Coarse|Fine)\.([rgba]))");
     std::set<char> swizzle_components;
     for (auto it = std::sregex_iterator(sample_density_body.begin(), sample_density_body.end(), kSwizzleRead);
-         it != std::sregex_iterator(); ++it) {
+      it != std::sregex_iterator();
+      ++it) {
         swizzle_components.insert((*it)[1].str()[0]);
     }
     const std::set<char> expected_components = { 'r', 'g', 'b', 'a' };
@@ -6124,8 +6195,8 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
-                                  / "clouds" / "Clouds.cpp";
+    const fs::path clouds_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects" / "clouds" / "Clouds.cpp";
     const auto clouds_source_opt = readFileText(clouds_path);
     ASSERT_TRUE(clouds_source_opt.has_value()) << "missing " << clouds_path.string();
     const std::string &clouds_source = *clouds_source_opt;
@@ -6137,8 +6208,7 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
       << "Clouds.cpp must reuse the graphics command pool passed into init(), not create its own transient pool "
          "for a different queue family";
 
-    const fs::path device_header_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.ixx";
+    const fs::path device_header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.ixx";
     const auto device_header_source_opt = readFileText(device_header_path);
     ASSERT_TRUE(device_header_source_opt.has_value()) << "missing " << device_header_path.string();
     const std::string &device_header_source = *device_header_source_opt;
@@ -6161,8 +6231,7 @@ TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
 
     const std::string sample_density_body =
       extract_function_body(contents, "float sample_density(float3 position, Clouds cloud)");
-    ASSERT_FALSE(sample_density_body.empty())
-      << "could not locate sample_density's body in " << clouds_path.string();
+    ASSERT_FALSE(sample_density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
 
     EXPECT_EQ(sample_density_body.find("abs(fmod("), std::string::npos)
       << clouds_path.string()
@@ -6171,8 +6240,9 @@ TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
          "the default cloud box straddles that plane, so this renders as a mirror image of "
          "itself. Use frac(x), which returns [0, 1) for negative x too.";
     EXPECT_NE(sample_density_body.find("frac("), std::string::npos)
-      << clouds_path.string() << "'s sample_density must wrap the sample position with frac(), "
-                                 "not abs(fmod(...))";
+      << clouds_path.string()
+      << "'s sample_density must wrap the sample position with frac(), "
+         "not abs(fmod(...))";
 }
 
 // Density scales by a constant step length, not distance travelled, or the quality slider becomes a density slider.
@@ -6195,8 +6265,9 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
 
     static const std::regex kLightMarchOriginIsSamplePos(R"(box_intersect\(samplePos,)");
     EXPECT_TRUE(std::regex_search(contents, kLightMarchOriginIsSamplePos))
-      << clouds_path.string() << "'s light_march must intersect the box from the point being "
-                                 "shadowed (samplePos), not the camera";
+      << clouds_path.string()
+      << "'s light_march must intersect the box from the point being "
+         "shadowed (samplePos), not the camera";
 
     EXPECT_EQ(contents.find("totalDensity /= "), std::string::npos)
       << clouds_path.string()
@@ -6244,14 +6315,14 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
 
     // In the march loop transmittance only decreases, through the Beer-Lambert `*= exp(-...)`.
     const std::size_t loop_start = contents.find("for (int i = 0; i < cloud.num_march_steps; i++)");
-    ASSERT_NE(loop_start, std::string::npos)
-      << clouds_path.string() << " is missing the primary march loop";
+    ASSERT_NE(loop_start, std::string::npos) << clouds_path.string() << " is missing the primary march loop";
     // Tolerate CRLF: the file is checked in with Windows line endings.
     static const std::regex kLoopClosingBrace(R"(\r?\n        \}\r?\n)");
     std::size_t loop_body_end = std::string::npos;
     for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kLoopClosingBrace),
               end = std::sregex_iterator();
-         it != end; ++it) {
+      it != end;
+      ++it) {
         if (static_cast<std::size_t>(it->position()) >= loop_start) {
             loop_body_end = static_cast<std::size_t>(it->position());
             break;
@@ -6297,15 +6368,16 @@ TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
     const std::size_t model_to_world_count = countOccurrences(clouds_contents, "model_to_world");
     const std::size_t inv_model_to_world_count = countOccurrences(clouds_contents, "inv_model_to_world");
     EXPECT_EQ(model_to_world_count, inv_model_to_world_count)
-      << clouds_path.string() << " contains a \"model_to_world\" occurrence that is not part of "
-                                 "\"inv_model_to_world\" - the write-only forward matrix must stay deleted";
+      << clouds_path.string()
+      << " contains a \"model_to_world\" occurrence that is not part of "
+         "\"inv_model_to_world\" - the write-only forward matrix must stay deleted";
 
     static const std::regex kCpuAttributionClaim(
       R"((inverse model matrix|inv_model_to_world)[^.]{0,80}(CPU|host))", std::regex::icase);
     std::smatch clouds_match;
     EXPECT_FALSE(std::regex_search(clouds_contents, clouds_match, kCpuAttributionClaim))
-      << clouds_path.string()
-      << " re-attributes the inverse model matrix to the CPU/host: \"" << (clouds_match.empty() ? "" : clouds_match.str())
+      << clouds_path.string() << " re-attributes the inverse model matrix to the CPU/host: \""
+      << (clouds_match.empty() ? "" : clouds_match.str())
       << "\" - it is formed in clouds_main, not precomputed on the host";
 
     const fs::path clouds_doc_path = repo_root / "docs" / "clouds.md";
@@ -6315,8 +6387,8 @@ TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
 
     std::smatch doc_match;
     EXPECT_FALSE(std::regex_search(clouds_doc_contents, doc_match, kCpuAttributionClaim))
-      << clouds_doc_path.string()
-      << " re-attributes the inverse model matrix to the CPU/host: \"" << (doc_match.empty() ? "" : doc_match.str())
+      << clouds_doc_path.string() << " re-attributes the inverse model matrix to the CPU/host: \""
+      << (doc_match.empty() ? "" : doc_match.str())
       << "\" - it is formed in the shader, not precomputed on the host (this window is bounded to one "
          "sentence so it cannot collide with the doc's legitimate statement that inv_projection/inv_view "
          "ARE CPU-precomputed into GlobalUBO)";
@@ -6353,7 +6425,7 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
 
     for (const auto &pair : kCloudUboFieldPairs) {
         const std::string pattern = std::string("cloud\\.") + pair.cloud_field + R"(\s*=[^;]*scene\.)"
-          + pair.scene_field + "\\." + pair.component + "\\b";
+                                    + pair.scene_field + "\\." + pair.component + "\\b";
         const std::regex field_regex(pattern);
         EXPECT_TRUE(std::regex_search(*contents, field_regex))
           << clouds_path.string() << " no longer assigns cloud." << pair.cloud_field << " from scene."
@@ -6377,8 +6449,7 @@ std::optional<std::vector<ParsedCloudUboRow>> parse_cloud_ubo_doc_table(const fs
     const auto lines = readFileLines(doc_path);
     if (!lines) { return std::nullopt; }
 
-    static const std::regex kRowPattern(
-      R"(\|[^|]*\|\s*`cloud\.([A-Za-z_]+)`\s*\|\s*`([A-Za-z]+)\.([A-Za-z]+)`\s*\|)");
+    static const std::regex kRowPattern(R"(\|[^|]*\|\s*`cloud\.([A-Za-z_]+)`\s*\|\s*`([A-Za-z]+)\.([A-Za-z]+)`\s*\|)");
 
     std::vector<ParsedCloudUboRow> rows;
     bool in_block = false;
@@ -6488,12 +6559,12 @@ TEST(BuildIntegrity, CloudsDocTablesMatchTheirSources)
         ASSERT_TRUE(it != constants_rows->end())
           << doc_path.string() << "'s cloud-constants table is missing a row for `" << name << '`';
         EXPECT_EQ(it->second, value) << doc_path.string() << "'s cloud-constants table says " << name << " = "
-                                      << it->second << ", CloudDispatch.hpp says " << value;
+                                     << it->second << ", CloudDispatch.hpp says " << value;
     }
     for (const auto &[name, value] : *constants_rows) {
         if (truth.contains(name)) { continue; }
-        ADD_FAILURE() << doc_path.string() << "'s cloud-constants table has an unexpected row `" << name << "` = "
-                       << value << " with no matching CloudDispatch.hpp constant";
+        ADD_FAILURE() << doc_path.string() << "'s cloud-constants table has an unexpected row `" << name
+                      << "` = " << value << " with no matching CloudDispatch.hpp constant";
     }
 }
 
@@ -6503,8 +6574,7 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path path_tracing_path =
-      slangRoot() / "path_tracing" / "path_tracing.slang";
+    const fs::path path_tracing_path = slangRoot() / "path_tracing" / "path_tracing.slang";
 
     const auto path_tracing_threads = parse_numthreads(path_tracing_path);
     ASSERT_TRUE(path_tracing_threads.has_value())
@@ -6536,8 +6606,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
     };
 
     // Barriers come from buildImageMemoryBarrier, whose third argument is newLayout.
-    static const std::regex kBarrierConstruction(
-      R"((\w+)\s*=\s*Kataglyphis::buildImageMemoryBarrier\(([\s\S]*?)\);)");
+    static const std::regex kBarrierConstruction(R"((\w+)\s*=\s*Kataglyphis::buildImageMemoryBarrier\(([\s\S]*?)\);)");
     static const std::regex kPipelineBarrierCall(R"(commandBuffer\.pipelineBarrier\(([\s\S]*?)\);)");
     static const std::regex kIdentifier(R"([A-Za-z_]\w*)");
 
@@ -6552,7 +6621,8 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 
         std::set<std::string> transitions_to_shader_read_only;
         for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kBarrierConstruction);
-             it != std::sregex_iterator(); ++it) {
+          it != std::sregex_iterator();
+          ++it) {
             const std::string barrier_name = (*it)[1].str();
             const std::string call_args = (*it)[2].str();
 
@@ -6579,7 +6649,8 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         }
 
         for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kPipelineBarrierCall);
-             it != std::sregex_iterator(); ++it) {
+          it != std::sregex_iterator();
+          ++it) {
             const std::string call_args = (*it)[1].str();
 
             std::vector<std::string> parts;
@@ -6612,9 +6683,9 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 
             ++gated_barriers_found;
             if (dst_stage.find("eFragmentShader") == std::string::npos) {
-                violations.push_back(std::string(relative_path) + ": barrier '" + barrier_name +
-                  "' transitions to eShaderReadOnlyOptimal but names dst stage '" + dst_stage +
-                  "' instead of eFragmentShader");
+                violations.push_back(std::string(relative_path) + ": barrier '" + barrier_name
+                                     + "' transitions to eShaderReadOnlyOptimal but names dst stage '" + dst_stage
+                                     + "' instead of eFragmentShader");
             }
         }
     }
@@ -6700,7 +6771,9 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
         if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
 
         const auto parsed = parse_spirv_member_offsets(it->path());
-        if (!parsed.has_value()) { continue; }// unreadable/invalid SPIR-V - CompiledShadersAreNotOlderThan* catches that
+        if (!parsed.has_value()) {
+            continue;
+        }// unreadable/invalid SPIR-V - CompiledShadersAreNotOlderThan* catches that
 
         for (const auto &[struct_name, members] : *parsed) {
             for (const auto &[member_name, offset] : members) { compiled[struct_name][member_name] = offset; }
@@ -6727,20 +6800,18 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
             }
             if (member_it->second != host_offset) {
                 offset_mismatches.push_back(contract.spirv_name + "." + member_name + ": compiled SPIR-V offset "
-                  + std::to_string(member_it->second) + " != host offsetof " + std::to_string(host_offset));
+                                            + std::to_string(member_it->second) + " != host offsetof "
+                                            + std::to_string(host_offset));
             }
         }
     }
 
     EXPECT_TRUE(not_found_in_any_spv.empty())
-      << not_found_in_any_spv.size()
-      << " struct(s) expected in the compiled SPIR-V were not emitted by ANY .spv under " << spirv_root.string()
-      << " - renamed or deleted shader struct: "
-      << joinViolations(not_found_in_any_spv);
+      << not_found_in_any_spv.size() << " struct(s) expected in the compiled SPIR-V were not emitted by ANY .spv under "
+      << spirv_root.string() << " - renamed or deleted shader struct: " << joinViolations(not_found_in_any_spv);
 
     EXPECT_TRUE(offset_mismatches.empty())
-      << offset_mismatches.size() << " host/SPIR-V struct-offset mismatch(es):"
-      << joinViolations(offset_mismatches);
+      << offset_mismatches.size() << " host/SPIR-V struct-offset mismatch(es):" << joinViolations(offset_mismatches);
 }
 
 // Only C++ compiles the shared headers now, so the GLSL dual-compile shim (`#ifdef __cplusplus`, KTG_VEC*) is dead.
@@ -6768,15 +6839,14 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
         for (const auto &line : *lines) {
             ++line_number;
             if (line.find("__cplusplus") != std::string::npos || line.find("KTG_VEC") != std::string::npos) {
-                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": " + line);
+                violations.push_back(
+                  fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number) + ": " + line);
             }
         }
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " line(s) under " << src_root.string()
+      << violations.size() << " line(s) under " << src_root.string()
       << " still carry the retired GLSL dual-compile shim (__cplusplus guard or KTG_VEC macro) - the GLSL tree "
          "these guarded against is gone and these headers are compiled only by C++: "
       << joinViolations(violations);
@@ -6856,7 +6926,8 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
 // Member names of scene_types.slang's scalar-layout ObjMaterial mirror, brace-matched like the SceneUBO parser.
 std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_types_path)
 {
-    const auto struct_body = cpp_struct_body(readFileText(scene_types_path).value_or(std::string{}), "struct ObjMaterial");
+    const auto struct_body =
+      cpp_struct_body(readFileText(scene_types_path).value_or(std::string{}), "struct ObjMaterial");
     if (!struct_body) { return {}; }
     const std::string &body = *struct_body;
     static const std::regex kMemberDecl(R"(\b(?:float3|float|int)\s+([A-Za-z_]\w*)\s*;)");
@@ -6881,7 +6952,7 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
 
     const std::vector<std::string> members = parse_scene_ubo_member_names(header_path);
     ASSERT_GT(members.size(), 5U) << "found only " << members.size() << " SceneUBO member(s) in "
-                                   << header_path.string() << " - the parser itself is broken";
+                                  << header_path.string() << " - the parser itself is broken";
 
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
@@ -6921,7 +6992,7 @@ TEST(BuildIntegrity, EveryObjMaterialFieldIsReadByAShader)
 
     const std::vector<std::string> members = parse_obj_material_member_names(scene_types_path);
     ASSERT_GT(members.size(), 3U) << "found only " << members.size() << " ObjMaterial member(s) in "
-                                   << scene_types_path.string() << " - the parser itself is broken";
+                                  << scene_types_path.string() << " - the parser itself is broken";
 
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
@@ -6979,7 +7050,8 @@ TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
 
     bool matchedRadianceField = false;
     for (const char *field : kWBearingFields) {
-        const std::regex assignRegex(std::string("ubo\\.") + field
+        const std::regex assignRegex(
+          std::string("ubo\\.") + field
           + R"(\s*=\s*glm::vec4\([^;]*?,\s*([A-Za-z_][A-Za-z0-9_]*|-?[0-9]+\.[0-9]+[fF]?)\s*\)\s*;)");
         std::smatch match;
         ASSERT_TRUE(std::regex_search(*marshal_source, match, assignRegex))
@@ -7024,7 +7096,7 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
     // A substring search for this codebase's error_code naming idioms, not a parser.
     auto carries_error_code_token = [](const std::string &text) {
         return text.find("ec") != std::string::npos || text.find("error") != std::string::npos
-          || text.find("ignored") != std::string::npos;
+               || text.find("ignored") != std::string::npos;
     };
 
     std::vector<std::string> violations;
@@ -7048,7 +7120,7 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
 
                 std::string window = lines[i];
                 for (int extra = 1; extra <= kLookaheadLines && i + static_cast<std::size_t>(extra) < lines.size();
-                     ++extra) {
+                  ++extra) {
                     window += lines[i + static_cast<std::size_t>(extra)];
                 }
 
@@ -7093,7 +7165,8 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
             ++line_number;
             if (line.find("spdlog::") == std::string::npos) { continue; }
             const bool has_vk_cast_to_uint64 = line.find("(uint64_t)(Vk") != std::string::npos;
-            const bool has_hex_format_with_vk_cast = line.find("0x{:x}") != std::string::npos && line.find("Vk") != std::string::npos;
+            const bool has_hex_format_with_vk_cast =
+              line.find("0x{:x}") != std::string::npos && line.find("Vk") != std::string::npos;
             if (has_vk_cast_to_uint64 || has_hex_format_with_vk_cast) {
                 violations.push_back(
                   fs::relative(path, repo_root).generic_string() + ":" + std::to_string(line_number) + ": " + line);
@@ -7164,8 +7237,8 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
                                     "(vulkan_base/DescriptorSetGroup.ixx) via addBinding()/create() instead");
         } else {
             violations.push_back(file + ": found " + std::to_string(count)
-                                  + " hand-rolled descriptor set layout/pool/set triad(s), budget is "
-                                  + std::to_string(budget) + " - lower the budget in this test");
+                                 + " hand-rolled descriptor set layout/pool/set triad(s), budget is "
+                                 + std::to_string(budget) + " - lower the budget in this test");
         }
     }
 
@@ -7205,7 +7278,7 @@ TEST(BuildIntegrity, DescriptorBudgetsNameOnlyFilesThatStillHaveTriads)
     }
 }
 
-// AS rebuilds go through refreshAfterSceneChange, or descriptors keep the destroyed TLAS (VUID-vkCmdDispatch-None-08114).
+// AS rebuilds must use refreshAfterSceneChange, or descriptors keep a destroyed TLAS (VUID-vkCmdDispatch-None-08114).
 TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
 {
     const fs::path repo_root = repoRoot();
@@ -7214,8 +7287,7 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
     const fs::path src_root = repo_root / "Src";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    static const std::array<const char *, 2> kGuardedCalls = { "asManager.createASForScene(",
-        "asManager.createTLAS(" };
+    static const std::array<const char *, 2> kGuardedCalls = { "asManager.createASForScene(", "asManager.createTLAS(" };
     static const char *const kAllowedFile = "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
     static const char *const kAllowedFunction = "VulkanRenderer::refreshAfterSceneChange";
     static const std::regex kFunctionSignature(R"(([A-Za-z_][A-Za-z0-9_:]*::[A-Za-z_][A-Za-z0-9_]*)\s*\()");
@@ -7279,7 +7351,9 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
                 ++matches_found;
                 const bool is_allowed =
                   relative_file == kAllowedFile && current_function.find(kAllowedFunction) != std::string::npos;
-                if (!is_allowed) { violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line); }
+                if (!is_allowed) {
+                    violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+                }
             }
         }
     }
@@ -7345,8 +7419,8 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
     const std::string &renderer_contents = *renderer_contents_opt;
 
     const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
-    ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
-                                                 << renderer_path.string();
+    ASSERT_NE(signature_pos, std::string::npos)
+      << "VulkanRenderer::shaderHotReload is no longer defined in " << renderer_path.string();
 
     const std::size_t body_open = renderer_contents.find('{', signature_pos);
     ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
@@ -7354,8 +7428,9 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
-        if (renderer_contents[i] == '{') { ++brace_depth; }
-        else if (renderer_contents[i] == '}') {
+        if (renderer_contents[i] == '{') {
+            ++brace_depth;
+        } else if (renderer_contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;
@@ -7363,7 +7438,8 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
             }
         }
     }
-    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+    ASSERT_NE(body_close, std::string::npos)
+      << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
 
     const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
     std::size_t call_sites = 0;
@@ -7375,7 +7451,8 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
 
     EXPECT_GE(call_sites, implementing_classes.size())
       << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
-      << implementing_classes.size() << " stage(s) implement it - some implementation is silently unreachable. "
+      << implementing_classes.size()
+      << " stage(s) implement it - some implementation is silently unreachable. "
          "Stage classes implementing shaderHotReload: "
       << joinViolations(implementing_classes);
 }
@@ -7403,9 +7480,8 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
         if (contents->find(kSpirvMarker) != std::string::npos) { spirv_loading_files.push_back(path); }
     }
 
-    ASSERT_GT(spirv_loading_files.size(), 0u)
-      << "found zero .cpp files referencing " << kSpirvMarker << " under " << src_root.string()
-      << " - the scan itself is broken";
+    ASSERT_GT(spirv_loading_files.size(), 0u) << "found zero .cpp files referencing " << kSpirvMarker << " under "
+                                              << src_root.string() << " - the scan itself is broken";
 
     std::vector<std::string> missing_implementation;
     for (const fs::path &path : spirv_loading_files) {
@@ -7434,8 +7510,8 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
     const std::string &renderer_contents = *renderer_contents_opt;
 
     const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
-    ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
-                                                 << renderer_path.string();
+    ASSERT_NE(signature_pos, std::string::npos)
+      << "VulkanRenderer::shaderHotReload is no longer defined in " << renderer_path.string();
 
     const std::size_t body_open = renderer_contents.find('{', signature_pos);
     ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
@@ -7443,8 +7519,9 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
-        if (renderer_contents[i] == '{') { ++brace_depth; }
-        else if (renderer_contents[i] == '}') {
+        if (renderer_contents[i] == '{') {
+            ++brace_depth;
+        } else if (renderer_contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;
@@ -7452,7 +7529,8 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
             }
         }
     }
-    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+    ASSERT_NE(body_close, std::string::npos)
+      << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
 
     const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
     std::size_t call_sites = 0;
@@ -7504,8 +7582,9 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
             int brace_depth = 0;
             std::size_t body_close = std::string::npos;
             for (std::size_t i = body_open; i < contents.size(); ++i) {
-                if (contents[i] == '{') { ++brace_depth; }
-                else if (contents[i] == '}') {
+                if (contents[i] == '{') {
+                    ++brace_depth;
+                } else if (contents[i] == '}') {
                     --brace_depth;
                     if (brace_depth == 0) {
                         body_close = i;
@@ -7547,8 +7626,7 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path raytracing_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Raytracing.cpp";
+    const fs::path raytracing_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Raytracing.cpp";
     const auto contentsOpt = readFileText(raytracing_path);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << raytracing_path.string();
     const std::string &contents = *contentsOpt;
@@ -7563,8 +7641,9 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < contents.size(); ++i) {
-        if (contents[i] == '{') { ++brace_depth; }
-        else if (contents[i] == '}') {
+        if (contents[i] == '{') {
+            ++brace_depth;
+        } else if (contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;
@@ -7572,8 +7651,7 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
             }
         }
     }
-    ASSERT_NE(body_close, std::string::npos)
-      << "could not brace-match the closing '}' of Raytracing::shaderHotReload";
+    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of Raytracing::shaderHotReload";
 
     const std::string body = contents.substr(body_open, body_close - body_open + 1);
     EXPECT_TRUE(body.find("recreateSBT") != std::string::npos || body.find("createSBT") != std::string::npos)
@@ -7638,15 +7716,12 @@ TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
     // ShaderStageHelper.hpp is the builders' own definition.
-    static const std::array<const char *, 1> kExemptFiles = {
-        "Src/GraphicsEngineVulkan/common/ShaderStageHelper.hpp"
-    };
+    static const std::array<const char *, 1> kExemptFiles = { "Src/GraphicsEngineVulkan/common/ShaderStageHelper.hpp" };
 
     static const std::regex kPNameAssignment(R"(\.pName\s*=[^=])");
     static const std::regex kStageAssignment(R"(\.stage\s*=[^=])");
     // Local declarations only: span or vector parameters of the type construct nothing, so no '<' may precede it.
-    static const std::regex kLocalDeclaration(
-      R"((?:^|[^<,]\s)vk::PipelineShaderStageCreateInfo\s+\w+\s*[{;])");
+    static const std::regex kLocalDeclaration(R"((?:^|[^<,]\s)vk::PipelineShaderStageCreateInfo\s+\w+\s*[{;])");
 
     std::size_t checked = 0;
     std::vector<std::string> violations;
@@ -7792,8 +7867,8 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
       << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find the CascadedShadowMap.cpp shadow-map-array exemption marker "
-                                  "(\"// DEPTH_ATTACHMENT_CHAIN_OK: ...\") in source - if it was removed, delete "
-                                  "this check too";
+                                 "(\"// DEPTH_ATTACHMENT_CHAIN_OK: ...\") in source - if it was removed, delete "
+                                 "this check too";
 }
 
 // Raster stages share buildExternalColorDepthDependency; SkyBox and CascadedShadowMap keep a genuinely different edge.
@@ -7808,11 +7883,9 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
     static const char *const kExternalAssign = "srcSubpass = VK_SUBPASS_EXTERNAL";
     static const char *const kStageAssign = "srcStageMask =";
     // The helper's own definition and the two passes with a genuinely different dependency.
-    static const std::set<std::string> kAllowedFiles = {
-        "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp",
+    static const std::set<std::string> kAllowedFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp",
         "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
-        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp"
-    };
+        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp" };
     // Hand-rolled sites set srcStageMask within a couple of lines of srcSubpass.
     static constexpr std::size_t kLookaheadLines = 4;
 
@@ -7903,8 +7976,8 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
       << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find at least one of the non-goal exemption markers "
-                                  "(\"// COLOR_ATTACHMENT_CHAIN_OK: ...\") in source - if all of them were "
-                                  "removed, delete this check too";
+                                 "(\"// COLOR_ATTACHMENT_CHAIN_OK: ...\") in source - if all of them were "
+                                 "removed, delete this check too";
 }
 
 // The framebuffer reuses the shadow array's sampled view instead of a byte-identical second one.
@@ -7913,10 +7986,10 @@ TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
-                               / "CascadedShadowMap.cpp";
-    const fs::path ixx_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
-                               / "CascadedShadowMap.ixx";
+    const fs::path cpp_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.cpp";
+    const fs::path ixx_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.ixx";
     const auto cpp_contents_opt = readFileText(cpp_path);
     ASSERT_TRUE(cpp_contents_opt.has_value()) << "missing " << cpp_path.string();
     const std::string &cpp_contents = *cpp_contents_opt;
@@ -7961,9 +8034,7 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
     static const char *const kRawTeardownCall = ".destroyFramebuffer(";
 
     // FramebufferHelper.hpp is the helper's own definition.
-    static const std::array<const char *, 1> kExemptFiles = {
-        "Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp"
-    };
+    static const std::array<const char *, 1> kExemptFiles = { "Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp" };
 
     std::vector<std::string> violations;
     std::error_code error;
@@ -8005,9 +8076,7 @@ TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
     static const char *const kRawTeardownCall = ".destroyRenderPass(";
 
     // RenderPassHelper.hpp is the helper's own definition.
-    static const std::array<const char *, 1> kExemptFiles = {
-        "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp"
-    };
+    static const std::array<const char *, 1> kExemptFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp" };
 
     std::vector<std::string> violations;
     std::error_code error;
@@ -8043,8 +8112,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path renderer_cpp =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const fs::path renderer_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
     const auto contentsOpt = readFileText(renderer_cpp);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << renderer_cpp.string();
     const std::string &contents = *contentsOpt;
@@ -8060,8 +8128,9 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < contents.size(); ++i) {
-        if (contents[i] == '{') { ++brace_depth; }
-        else if (contents[i] == '}') {
+        if (contents[i] == '{') {
+            ++brace_depth;
+        } else if (contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;
@@ -8069,8 +8138,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
             }
         }
     }
-    ASSERT_NE(body_close, std::string::npos)
-      << "could not brace-match the closing '}' of recreateSwapChain";
+    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of recreateSwapChain";
 
     const std::string body = contents.substr(body_open, body_close - body_open + 1);
 
@@ -8083,7 +8151,8 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
         if (first_non_space != std::string::npos && first_non_space < line_end
             && code_only.compare(first_non_space, 2, "//") == 0) {
             std::fill(code_only.begin() + static_cast<std::ptrdiff_t>(line_start),
-                code_only.begin() + static_cast<std::ptrdiff_t>(line_end), ' ');
+              code_only.begin() + static_cast<std::ptrdiff_t>(line_end),
+              ' ');
         }
         line_start = line_end + 1;
     }
@@ -8105,7 +8174,8 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
     std::set<std::string> receivers;
     for (auto it = std::sregex_iterator(code_only.begin(), code_only.end(), kReceiverPattern),
               end = std::sregex_iterator();
-         it != end; ++it) {
+      it != end;
+      ++it) {
         receivers.insert((*it)[1].str());
     }
     ASSERT_FALSE(receivers.empty()) << "found no X.recreateFrameResources(...) calls in recreateSwapChain";
@@ -8134,7 +8204,8 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
           << " - its framebuffers reference the outgoing swapchain image views and must be destroyed "
              "before vulkanSwapChain.recreate(), or vkDestroyDevice will report them as live objects";
         EXPECT_LT(destroy_pos, recreate_pos)
-          << receiver << ".destroyFramebuffers() is called after vulkanSwapChain.recreate() in "
+          << receiver
+          << ".destroyFramebuffers() is called after vulkanSwapChain.recreate() in "
              "recreateSwapChain - its framebuffers reference the outgoing swapchain image views, so the "
              "destroy must happen before the swapchain is recreated, not after";
     }
@@ -8197,8 +8268,8 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
             break;
         }
     }
-    ASSERT_LT(guard_start, lines.size())
-      << vulkan_device_cpp.string() << " has no " << kGuard << " block to check - did the guard get renamed?";
+    ASSERT_LT(guard_start, lines.size()) << vulkan_device_cpp.string() << " has no " << kGuard
+                                         << " block to check - did the guard get renamed?";
 
     std::size_t guard_end = lines.size();
     int brace_depth = 0;
@@ -8226,8 +8297,7 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " device feature bit(s) are hardcoded to true outside the " << kGuard
+      << violations.size() << " device feature bit(s) are hardcoded to true outside the " << kGuard
       << " block - every enabled feature must be copied from an availability query so a device that does not "
          "support it degrades instead of failing vkCreateDevice:"
       << joinViolations(violations);
@@ -8239,8 +8309,7 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path shadow_dir =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light";
+    const fs::path shadow_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light";
 
     const fs::path ixx_path = shadow_dir / "CascadedShadowMap.ixx";
     const auto ixx_contents_opt = readFileText(ixx_path);
@@ -8267,8 +8336,7 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
          "the swapchain image being rendered, not always the same one.";
 
     EXPECT_EQ(cpp_contents.find("lightMatricesDescriptors.sets()[0]"), std::string::npos)
-      << "CascadedShadowMap.cpp still binds lightMatricesDescriptors.sets()[0] unconditionally in "
-      << cpp_path.string()
+      << "CascadedShadowMap.cpp still binds lightMatricesDescriptors.sets()[0] unconditionally in " << cpp_path.string()
       << " - that is the exact bug this test pins: the CPU rewrites the light-matrix UBO for whichever image is "
          "current, while the shadow pass keeps sampling set 0 regardless of image_index.";
 }
@@ -8279,8 +8347,7 @@ TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountC
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path renderer_path =
-      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
     const auto renderer_contents_opt = readFileText(renderer_path);
     ASSERT_TRUE(renderer_contents_opt.has_value()) << "could not open " << renderer_path.string();
     const std::string &renderer_contents = *renderer_contents_opt;
@@ -8313,8 +8380,9 @@ TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountC
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
-        if (renderer_contents[i] == '{') { ++brace_depth; }
-        else if (renderer_contents[i] == '}') {
+        if (renderer_contents[i] == '{') {
+            ++brace_depth;
+        } else if (renderer_contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;
@@ -8356,14 +8424,12 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
     // The wrapped functions' own definitions, and the two loaders as the shared guard's intended callers.
-    static const std::array<const char *, 6> kExemptFiles = {
-        "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
+    static const std::array<const char *, 6> kExemptFiles = { "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
         "Src/GraphicsEngineVulkan/scene/MeshRange.ixx",
         "Src/GraphicsEngineVulkan/scene/Texture.ixx",
         "Src/GraphicsEngineVulkan/scene/Texture.cpp",
         "Src/GraphicsEngineVulkan/scene/ObjLoader.cpp",
-        "Src/GraphicsEngineVulkan/scene/GltfLoader.cpp"
-    };
+        "Src/GraphicsEngineVulkan/scene/GltfLoader.cpp" };
     static const std::array<const char *, 3> kBannedCalls = {
         "sliceMeshRange(", "createDefaultTexture(", "uploadPreconditionsMet("
     };
@@ -8427,10 +8493,8 @@ TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
     static const std::array<const char *, 1> kExpected = { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp" };
     std::sort(files_with_pool_creation.begin(), files_with_pool_creation.end());
 
-    EXPECT_TRUE(std::equal(files_with_pool_creation.begin(),
-      files_with_pool_creation.end(),
-      kExpected.begin(),
-      kExpected.end()))
+    EXPECT_TRUE(
+      std::equal(files_with_pool_creation.begin(), files_with_pool_creation.end(), kExpected.begin(), kExpected.end()))
       << "expected only VulkanRenderer.cpp to create a vk::CommandPool, found:"
       << joinViolations(files_with_pool_creation);
 }
@@ -8440,8 +8504,8 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path shadow_map_cpp = repo_root
-      / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.cpp";
+    const fs::path shadow_map_cpp =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.cpp";
     ASSERT_TRUE(fs::exists(shadow_map_cpp)) << "missing " << shadow_map_cpp.string();
 
     const auto contentsOpt = readFileText(shadow_map_cpp);
@@ -8535,14 +8599,14 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
                                     "(common/ImageBarrierHelper.hpp)");
         } else {
             violations.push_back(file + ": found " + std::to_string(count) + " hand-rolled barrier(s), budget is "
-                                  + std::to_string(budget) + " - lower the budget in this test");
+                                 + std::to_string(budget) + " - lower the budget in this test");
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier declarations under "
-         "Src/GraphicsEngineVulkan/:"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier declarations under "
+                                       "Src/GraphicsEngineVulkan/:"
+                                    << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
@@ -8607,11 +8671,14 @@ TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
     const std::string &renderer_content = *renderer_content_opt;
 
     const bool renderer_records_the_removal = renderer_content.find("used to sit here") != std::string::npos;
-    const bool doc_still_asks_for_the_removal = doc_content.find("remove only after a sync-validation") != std::string::npos;
+    const bool doc_still_asks_for_the_removal =
+      doc_content.find("remove only after a sync-validation") != std::string::npos;
 
     EXPECT_FALSE(renderer_records_the_removal && doc_still_asks_for_the_removal)
-      << doc_path.string() << " still asks for the same-layout swapchain barrier to be removed "
-         "(\"remove only after a sync-validation\"), but " << renderer_path.string()
+      << doc_path.string()
+      << " still asks for the same-layout swapchain barrier to be removed "
+         "(\"remove only after a sync-validation\"), but "
+      << renderer_path.string()
       << " already records the removal (\"used to sit here\") - the doc is asking for shipped work.";
 
     const std::string in_progress_marker = "## In progress";
@@ -8622,8 +8689,10 @@ TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
     const std::string in_progress_section = doc_content.substr(in_progress_pos, queued_pos - in_progress_pos);
 
     EXPECT_EQ(in_progress_section.find("sync-validated barrier removal"), std::string::npos)
-      << doc_path.string() << "'s \"## In progress\" section still lists \"sync-validated barrier removal\" as "
-         "remaining queue, but " << renderer_path.string() << " already records the removal (\"used to sit here\").";
+      << doc_path.string()
+      << "'s \"## In progress\" section still lists \"sync-validated barrier removal\" as "
+         "remaining queue, but "
+      << renderer_path.string() << " already records the removal (\"used to sit here\").";
 }
 
 // An inline function naming a static header function is IFNDR; column 0 tells free functions from static members.
@@ -8710,12 +8779,11 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
         if (const auto cpp_contents = readFileText(cpp_path)) { combined_contents += *cpp_contents; }
 
         // Matches "~Name() { cleanUp(); }" inline or out-of-line, possibly namespace-qualified.
-        const std::regex dtor_pattern(
-          R"(~)" + class_name + R"(\s*\(\s*\)\s*\{\s*cleanUp\s*\(\s*\)\s*;\s*\})");
+        const std::regex dtor_pattern(R"(~)" + class_name + R"(\s*\(\s*\)\s*\{\s*cleanUp\s*\(\s*\)\s*;\s*\})");
         if (std::regex_search(combined_contents, dtor_pattern)) { continue; }
 
         violations.push_back(fs::relative(path, repo_root).generic_string() + ": class " + class_name
-                              + " declares cleanUp() but its destructor does not call it");
+                             + " declares cleanUp() but its destructor does not call it");
     }
 
     EXPECT_TRUE(violations.empty())
@@ -8796,8 +8864,8 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
       << joinViolations(violations);
 
     EXPECT_TRUE(marker_found) << "expected to find at least one \"// DEVICE_SINK_OK: ...\" exemption marker "
-                                  "(DescriptorSetGroup::create, the GltfLoader ctor, the ShaderStagePair ctor) - "
-                                  "if all sinks were removed, delete this check too";
+                                 "(DescriptorSetGroup::create, the GltfLoader ctor, the ShaderStagePair ctor) - "
+                                 "if all sinks were removed, delete this check too";
 }
 
 // abseil is the one CLI front end, so no dead hand-rolled parser can come back.
@@ -8816,11 +8884,10 @@ TEST(BuildIntegrity, MainHasOneCommandLineParser)
       << "Main.cpp must not carry a hand-rolled parse_command_line() alongside absl::ParseCommandLine in "
       << source.string();
     EXPECT_EQ(text->find("print_usage"), std::string::npos)
-      << "Main.cpp must not carry a hand-rolled print_usage() alongside absl::ParseCommandLine in "
-      << source.string();
+      << "Main.cpp must not carry a hand-rolled print_usage() alongside absl::ParseCommandLine in " << source.string();
 }
 
-// No suite may regrow its own repo-root or file-slurp helper; the banned signatures are concatenated so this file passes.
+// No suite may regrow a repo-root or file-slurp helper; the banned signatures are concatenated so this file passes.
 TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
 {
     const fs::path test_root = repoRoot() / "Test";
@@ -8844,8 +8911,7 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
 
         for (const std::string &pattern : kBannedPatterns) {
             if (text->find(pattern) != std::string::npos) {
-                violations.push_back(
-                  fs::relative(path, repoRoot()).generic_string() + " contains \"" + pattern + "\"");
+                violations.push_back(fs::relative(path, repoRoot()).generic_string() + " contains \"" + pattern + "\"");
             }
         }
     }
@@ -8888,9 +8954,8 @@ TEST(BuildIntegrity, DocsNameThisRepository)
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " doc file(s) still reference the old repository slug \"" << kStaleSlug << "\":"
-      << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size() << " doc file(s) still reference the old repository slug \""
+                                    << kStaleSlug << "\":" << joinViolations(violations);
 }
 
 // The swapchain is UNORM, so shaders writing it encode sRGB; an sRGB surface format would double-encode.
@@ -8931,8 +8996,11 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
         std::size_t depth = 1;
         std::size_t pos = body_start + 1;
         for (; pos < source->size() && depth > 0; ++pos) {
-            if ((*source)[pos] == '{') { ++depth; }
-            else if ((*source)[pos] == '}') { --depth; }
+            if ((*source)[pos] == '{') {
+                ++depth;
+            } else if ((*source)[pos] == '}') {
+                --depth;
+            }
         }
         ASSERT_EQ(depth, 0u) << "unbalanced braces in the fragment entry point of " << shader_path.string();
 
@@ -8942,7 +9010,7 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
     }
 }
 
-// maxAnisotropy comes from resolveMaxAnisotropy (VUID-VkSamplerCreateInfo-anisotropyEnable-01071); features are queried in VulkanDevice.cpp only.
+// VUID-VkSamplerCreateInfo-anisotropyEnable-01071: anisotropy via resolveMaxAnisotropy, queried in VulkanDevice.cpp.
 TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
 {
     const fs::path repo_root = repoRoot();
@@ -8975,12 +9043,15 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
         while ((sig_pos = contents.find(kSignature, sig_pos)) != std::string::npos) {
             const std::size_t args_begin = sig_pos + kSignature.size();
 
-            // Balanced parens, not a lazy regex, which would run past a declaration's parameter list into unrelated code.
+            // Balanced parens, not a lazy regex, which runs past a declaration's parameter list into unrelated code.
             std::size_t pos = args_begin;
             int paren_depth = 1;
             while (pos < contents.size() && paren_depth > 0) {
-                if (contents[pos] == '(') { ++paren_depth; }
-                else if (contents[pos] == ')') { --paren_depth; }
+                if (contents[pos] == '(') {
+                    ++paren_depth;
+                } else if (contents[pos] == ')') {
+                    --paren_depth;
+                }
                 ++pos;
             }
             sig_pos = pos;
@@ -8995,9 +9066,11 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
             int depth = 0;
             for (std::size_t i = 0; i < call_args.size(); ++i) {
                 const char character = call_args[i];
-                if (character == '(') { ++depth; }
-                else if (character == ')') { --depth; }
-                else if (character == ',' && depth == 0) {
+                if (character == '(') {
+                    ++depth;
+                } else if (character == ')') {
+                    --depth;
+                } else if (character == ',' && depth == 0) {
                     args.push_back(call_args.substr(arg_start, i - arg_start));
                     arg_start = i + 1;
                 }
@@ -9079,8 +9152,9 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
 
                 std::size_t close_pos = std::string::npos;
                 for (std::size_t i = search_pos; i < line.size(); ++i) {
-                    if (line[i] == '(') { ++paren_depth; }
-                    else if (line[i] == ')') {
+                    if (line[i] == '(') {
+                        ++paren_depth;
+                    } else if (line[i] == ')') {
                         --paren_depth;
                         if (paren_depth == 0) {
                             close_pos = i;
@@ -9095,8 +9169,8 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
                 const bool ends_in_semicolon = close_pos + 1 < line.size() && line[close_pos + 1] == ';';
                 if (!ends_in_semicolon) {
                     violations.push_back(fs::relative(path, repo_root).generic_string() + ":"
-                                          + std::to_string(call_start_line) + "-" + std::to_string(line_number)
-                                          + ": " + line);
+                                         + std::to_string(call_start_line) + "-" + std::to_string(line_number) + ": "
+                                         + line);
                 }
             }
         }
@@ -9136,8 +9210,7 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
     EXPECT_NE(deferred_text.find("SV_IsFrontFace"), std::string::npos)
       << "deferred.slang's geometry_fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("N = -N"), std::string::npos)
-      << "deferred.slang no longer negates N for back-facing fragments before the G-buffer write. "
-      << kFailureMessage;
+      << "deferred.slang no longer negates N for back-facing fragments before the G-buffer write. " << kFailureMessage;
 
     const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
     const auto forward_text_opt = readFileText(forward_path);
@@ -9146,8 +9219,7 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
     EXPECT_NE(forward_text.find("SV_IsFrontFace"), std::string::npos)
       << "forward.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
     EXPECT_NE(forward_text.find("nGeom = -nGeom"), std::string::npos)
-      << "forward.slang no longer negates nGeom for back-facing fragments before t/b are derived. "
-      << kFailureMessage;
+      << "forward.slang no longer negates nGeom for back-facing fragments before t/b are derived. " << kFailureMessage;
 }
 
 // Model owns the transform; a per-mesh matrix would be a second truth that no draw path reads.
@@ -9186,10 +9258,12 @@ TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
     };
 
     const std::array<Target, 2> targets{ {
-      { repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Rasterizer.cpp", "Rasterizer::cleanUp",
+      { repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Rasterizer.cpp",
+        "Rasterizer::cleanUp",
         "Rasterizer::recreateFrameResources" },
       { repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "DeferredRasterizer.cpp",
-        "DeferredRasterizer::cleanUp", "DeferredRasterizer::recreateFrameResources" },
+        "DeferredRasterizer::cleanUp",
+        "DeferredRasterizer::recreateFrameResources" },
     } };
 
     static const std::array<const char *, 3> kTextureCleanUpTokens{
@@ -9242,8 +9316,8 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
     }
 
     const auto slots_span = function_body_span(text, "gltfTextureSlots");
-    ASSERT_TRUE(slots_span.has_value())
-      << "gltfTextureSlots not found in " << path.string() << " - was the table rewrite reverted?";
+    ASSERT_TRUE(slots_span.has_value()) << "gltfTextureSlots not found in " << path.string()
+                                        << " - was the table rewrite reverted?";
 
     // Everything outside gltfTextureSlots' body, anchored on the function rather than a line number.
     const std::string outside = text.substr(0, slots_span->first) + text.substr(slots_span->second);
@@ -9251,7 +9325,7 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
     const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
         std::size_t count = 0;
         for (std::size_t pos = haystack.find(needle); pos != std::string::npos;
-             pos = haystack.find(needle, pos + needle.size())) {
+          pos = haystack.find(needle, pos + needle.size())) {
             ++count;
         }
         return count;
@@ -9272,7 +9346,7 @@ TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
       << "assignTextureSlot must be called from one loop over gltfTextureSlots' table, not once per texture slot";
 }
 
-// A false submit means nothing ran, so a discard treats failure as success; only a SUBMIT_RESULT_IGNORED_OK marker allows one.
+// A false submit means nothing ran; discarding it reads failure as success unless SUBMIT_RESULT_IGNORED_OK marks it.
 TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
 {
     const fs::path repo_root = repoRoot();
@@ -9320,9 +9394,9 @@ TEST(BuildIntegrity, EverySubmitResultIsCheckedOrExplicitlyExempt)
       << joinViolations(violations);
 
     EXPECT_TRUE(call_site_seen) << "expected to find at least one non-discarded endAndSubmitCommandBuffer() call "
-                                    "site under Src/ - if this fired, either the function was renamed (update "
-                                    "kCallMarker) or every call site started discarding its result, and this gate "
-                                    "would be silently checking nothing";
+                                   "site under Src/ - if this fired, either the function was renamed (update "
+                                   "kCallMarker) or every call site started discarding its result, and this gate "
+                                   "would be silently checking nothing";
 }
 
 // Both raster passes share raster_geometry_vs(), since the forward/deferred parity oracle needs identical outputs.
@@ -9390,7 +9464,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
     ASSERT_TRUE(fs::exists(scene_types_path)) << "missing " << scene_types_path.string();
     const std::vector<std::string> members = parse_obj_material_member_names(scene_types_path);
     ASSERT_GT(members.size(), 3U) << "found only " << members.size() << " ObjMaterial member(s) in "
-                                   << scene_types_path.string() << " - the parser itself is broken";
+                                  << scene_types_path.string() << " - the parser itself is broken";
 
     const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
     const auto doc_content = readFileText(doc_path);
@@ -9417,8 +9491,7 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
                 const std::size_t end = next == std::string::npos ? line.size() : next;
                 std::string cell = line.substr(pos, end - pos);
                 const std::size_t first = cell.find_first_not_of(" \t");
-                cell = first == std::string::npos ? ""
-                                                   : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
+                cell = first == std::string::npos ? "" : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
                 cells.push_back(std::move(cell));
                 pos = end + 1;
             }
@@ -9458,9 +9531,9 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
         rows_by_member.emplace(member, shading_cells);
     }
 
-    EXPECT_TRUE(malformed_rows.empty())
-      << doc_path.string()
-      << "'s per-shading-path table has row(s) with an empty shading-path cell:" << joinViolations(malformed_rows);
+    EXPECT_TRUE(malformed_rows.empty()) << doc_path.string()
+                                        << "'s per-shading-path table has row(s) with an empty shading-path cell:"
+                                        << joinViolations(malformed_rows);
 
     EXPECT_TRUE(extra_rows.empty())
       << doc_path.string()
@@ -9476,8 +9549,11 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
       << joinViolations(missing_rows);
 
     // One source blob per column, in order; shadow_map and alpha_test share one, both alpha-only consumers.
-    static constexpr std::array<const char *, 5> kColumnNames{ "rasterizer.slang", "deferred.slang",
-        "raytrace.rchit.slang", "path_tracing.slang", "shadow_map.slang / alpha_test.slang" };
+    static constexpr std::array<const char *, 5> kColumnNames{ "rasterizer.slang",
+        "deferred.slang",
+        "raytrace.rchit.slang",
+        "path_tracing.slang",
+        "shadow_map.slang / alpha_test.slang" };
     std::array<std::string, 5> column_text;
     {
         const std::array<std::vector<const char *>, 5> kColumnFiles{ {
@@ -9504,7 +9580,11 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
         { "resolved_emission",
           { "emission", "emissiveTextureID", "emissive_uv_transform_row0", "emissive_uv_transform_row1" } },
         { "resolved_metallic_roughness",
-          { "metallic", "roughness", "shininess", "metallicRoughnessTextureID", "metallic_roughness_uv_transform_row0",
+          { "metallic",
+            "roughness",
+            "shininess",
+            "metallicRoughnessTextureID",
+            "metallic_roughness_uv_transform_row0",
             "metallic_roughness_uv_transform_row1" } },
         { "resolved_normal",
           { "normalTextureID", "normalScale", "normal_uv_transform_row0", "normal_uv_transform_row1" } },
@@ -9597,20 +9677,21 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
 // Run names per BENCHMARK: the bare NAME, or "NAME/N" per ->Arg(N); other chained calls leave the name alone.
 std::vector<std::string> parse_registered_benchmark_names(const std::string &perf_suite_text)
 {
-    static const std::regex kRegistration(
-      R"(BENCHMARK\(\s*([A-Za-z_]\w*)\s*\)((?:\s*->\s*\w+\([^)]*\))*)\s*;)");
+    static const std::regex kRegistration(R"(BENCHMARK\(\s*([A-Za-z_]\w*)\s*\)((?:\s*->\s*\w+\([^)]*\))*)\s*;)");
     static const std::regex kArg(R"(->\s*Arg\(\s*(\d+)\s*\))");
 
     std::vector<std::string> names;
     for (auto match = std::sregex_iterator(perf_suite_text.begin(), perf_suite_text.end(), kRegistration),
               match_end = std::sregex_iterator();
-         match != match_end; ++match) {
+      match != match_end;
+      ++match) {
         const std::string benchmark_name = (*match)[1].str();
         const std::string chain = (*match)[2].str();
 
         std::vector<std::string> args;
         for (auto arg_match = std::sregex_iterator(chain.begin(), chain.end(), kArg), arg_end = std::sregex_iterator();
-             arg_match != arg_end; ++arg_match) {
+          arg_match != arg_end;
+          ++arg_match) {
             args.push_back((*arg_match)[1].str());
         }
 
@@ -9663,10 +9744,10 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
     }
 
     EXPECT_TRUE(missing.empty()) << perf_suite_path.string() << " registers benchmark(s) with no row in "
-                                  << baseline_path.string() << ":" << joinViolations(missing);
+                                 << baseline_path.string() << ":" << joinViolations(missing);
     EXPECT_TRUE(stale.empty()) << baseline_path.string()
-                                << " has benchmarks[] row(s) for benchmark(s) no longer registered in "
-                                << perf_suite_path.string() << " - delete the stale row(s):" << joinViolations(stale);
+                               << " has benchmarks[] row(s) for benchmark(s) no longer registered in "
+                               << perf_suite_path.string() << " - delete the stale row(s):" << joinViolations(stale);
 }
 
 namespace {
@@ -9698,14 +9779,16 @@ void expect_every_member_has_a_gui_control(const std::string &struct_name,
     }
     std::vector<std::string> stale;
     for (const auto &[name, reason] : exempt) {
-        if (std::find(members.begin(), members.end(), name) == members.end()) { stale.push_back(name + " (" + reason + ")"); }
+        if (std::find(members.begin(), members.end(), name) == members.end()) {
+            stale.push_back(name + " (" + reason + ")");
+        }
     }
 
     EXPECT_TRUE(missing.empty()) << gui_path.string() << " does not read/write the following " << struct_name
                                  << " member(s) - add a control, or an exemption with its reason in this test:"
                                  << joinViolations(missing);
-    EXPECT_TRUE(stale.empty()) << "exempted member(s) no longer in " << struct_name << " - delete the exemption:"
-                               << joinViolations(stale);
+    EXPECT_TRUE(stale.empty()) << "exempted member(s) no longer in " << struct_name
+                               << " - delete the exemption:" << joinViolations(stale);
 }
 
 }// namespace
@@ -9744,8 +9827,7 @@ TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path camera_controller_path = repo_root / "Src" / "shared" / "frontend" / "CameraController.ixx";
-    const fs::path window_input_callbacks_path =
-      repo_root / "Src" / "shared" / "frontend" / "WindowInputCallbacks.ixx";
+    const fs::path window_input_callbacks_path = repo_root / "Src" / "shared" / "frontend" / "WindowInputCallbacks.ixx";
     const fs::path panel_path = repo_root / "Src" / "shared" / "frontend" / "CommonGuiPanels.ixx";
 
     const auto camera_controller_text = readFileText(camera_controller_path);
@@ -9760,13 +9842,13 @@ TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
     std::set<std::string> bindings;
     for (const auto *text : { &*camera_controller_text, &*window_input_callbacks_text }) {
         for (auto it = std::sregex_iterator(text->begin(), text->end(), kKeyOrButtonPattern);
-             it != std::sregex_iterator(); ++it) {
+          it != std::sregex_iterator();
+          ++it) {
             bindings.insert(it->str());
         }
     }
     ASSERT_FALSE(bindings.empty()) << "found no GLFW_KEY_*/GLFW_MOUSE_BUTTON_* usages in "
-                                    << camera_controller_path.string() << " or "
-                                    << window_input_callbacks_path.string();
+                                   << camera_controller_path.string() << " or " << window_input_callbacks_path.string();
 
     // Symbol -> the exact substring the panel literal must contain for it.
     static const std::map<std::string, std::string> kSymbolToProse{
@@ -9796,8 +9878,8 @@ TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
     }
 
     EXPECT_TRUE(unmapped.empty()) << "found GLFW binding(s) with no prose mapping in this test's kSymbolToProse "
-                                      "table - add one, or if the binding is deliberately not user-facing, add it "
-                                      "to kExemptSymbols with a reason:"
+                                     "table - add one, or if the binding is deliberately not user-facing, add it "
+                                     "to kExemptSymbols with a reason:"
                                   << joinViolations(unmapped);
     EXPECT_TRUE(missing_from_panel.empty())
       << panel_path.string()
@@ -9877,7 +9959,8 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
         std::string reason;
     };
     // Accessors the compiler proved cannot become const without a return-type change.
-    const std::vector<Exemption> exemptions = { { "Src/GraphicsEngineVulkan/scene/Model.ixx", "getMesh",
+    const std::vector<Exemption> exemptions = { { "Src/GraphicsEngineVulkan/scene/Model.ixx",
+      "getMesh",
       "returns Mesh* via meshes[index] over std::vector<Mesh> - operator[] const yields const Mesh&, so "
       "&meshes[index] cannot convert to the non-const Mesh* this returns (unlike the "
       "unique_ptr<T>::get()/shared_ptr<T>::get()-backed accessors, whose constness does not propagate to the "
@@ -9907,13 +9990,14 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
         const std::string relative_path = fs::relative(path, repo_root).generic_string();
 
         for (auto match = std::sregex_iterator(stripped_text.begin(), stripped_text.end(), kAccessorRegex);
-             match != std::sregex_iterator(); ++match) {
+          match != std::sregex_iterator();
+          ++match) {
             const auto &found = *match;
             if (found[5].str() != "{") { continue; }// declaration-only, or a call site - not a definition
 
             const auto match_start = static_cast<std::size_t>(found.position(0));
-            const auto line_start_pos = match_start == 0 ? std::string::npos
-                                                           : stripped_text.find_last_of('\n', match_start - 1);
+            const auto line_start_pos =
+              match_start == 0 ? std::string::npos : stripped_text.find_last_of('\n', match_start - 1);
             const std::size_t prefix_start = line_start_pos == std::string::npos ? 0 : line_start_pos + 1;
             const std::string prefix = stripped_text.substr(prefix_start, match_start - prefix_start);
 
@@ -9921,9 +10005,10 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
             if (prefix.empty() || (prefix.front() != ' ' && prefix.front() != '\t')) { continue; }
 
             const std::size_t trimmed_end = prefix.find_last_not_of(" \t");
-            const std::string trimmed_prefix = trimmed_end == std::string::npos ? std::string{} : prefix.substr(0, trimmed_end + 1);
-            const bool returns_non_const_reference =
-              !trimmed_prefix.empty() && trimmed_prefix.back() == '&' && trimmed_prefix.find("const") == std::string::npos;
+            const std::string trimmed_prefix =
+              trimmed_end == std::string::npos ? std::string{} : prefix.substr(0, trimmed_end + 1);
+            const bool returns_non_const_reference = !trimmed_prefix.empty() && trimmed_prefix.back() == '&'
+                                                     && trimmed_prefix.find("const") == std::string::npos;
             if (returns_non_const_reference) { continue; }// mutable-handle accessor, not read-only - out of scope
 
             const std::string name = found[1].str();
@@ -9935,16 +10020,18 @@ TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
             });
             if (is_exempt) { continue; }
 
-            const auto line_number = 1
-              + static_cast<std::size_t>(std::count(stripped_text.begin(), stripped_text.begin() + static_cast<std::ptrdiff_t>(match_start), '\n'));
-            violations.push_back(
-              relative_path + ':' + std::to_string(line_number) + ": " + name + "() is a read-only accessor with no const qualifier");
+            const auto line_number =
+              1
+              + static_cast<std::size_t>(std::count(
+                stripped_text.begin(), stripped_text.begin() + static_cast<std::ptrdiff_t>(match_start), '\n'));
+            violations.push_back(relative_path + ':' + std::to_string(line_number) + ": " + name
+                                 + "() is a read-only accessor with no const qualifier");
         }
     }
 
     EXPECT_GT(accessors_checked, 0) << "scanner found zero candidate accessors under " << src_root.string()
-                                     << " - the regex or the indentation heuristic has drifted from the "
-                                        "codebase's formatting";
+                                    << " - the regex or the indentation heuristic has drifted from the "
+                                       "codebase's formatting";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
@@ -9971,10 +10058,10 @@ TEST(BuildIntegrity, ViolationListsGoThroughTheSharedJoiner)
         ++line_number;
         if (line.find(kHandRolledJoinDecl) != std::string::npos) {
             violations.push_back(this_file.string() + ':' + std::to_string(line_number)
-                                  + ": hand-rolled join loop - use Kataglyphis::TestSupport::joinViolations instead");
+                                 + ": hand-rolled join loop - use Kataglyphis::TestSupport::joinViolations instead");
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size() << " hand-rolled join loop(s) found, budget is 0: " << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " hand-rolled join loop(s) found, budget is 0: " << joinViolations(violations);
 }

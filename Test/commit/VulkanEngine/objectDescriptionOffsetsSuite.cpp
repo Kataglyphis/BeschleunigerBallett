@@ -71,9 +71,7 @@ TEST(ObjectDescriptionOffsets, MeshBaseOffsetsAgreeWithAssignTextureOffsets)
     const auto offsets = meshBaseOffsets(meshCountPerModel);
 
     uint32_t totalMeshes = 0;
-    for (const uint32_t count : meshCountPerModel) {
-        totalMeshes += count;
-    }
+    for (const uint32_t count : meshCountPerModel) { totalMeshes += count; }
     std::vector<ObjectDescription> descriptions(totalMeshes);
     assignTextureOffsets(descriptions, meshCountPerModel, textureCountPerModel);
 
@@ -139,9 +137,7 @@ TEST(ObjectDescriptionOffsets, PaddingRepeatsTheFirstSlot)
     const auto plan = planFlattenedTextureSlots(textureCountPerModel, 5U);
 
     ASSERT_EQ(plan.slots.size(), 5U);
-    for (std::size_t i = 2; i < plan.slots.size(); ++i) {
-        EXPECT_EQ(plan.slots[i], plan.slots[0]);
-    }
+    for (std::size_t i = 2; i < plan.slots.size(); ++i) { EXPECT_EQ(plan.slots[i], plan.slots[0]); }
     EXPECT_FALSE(plan.exhausted);
 }
 

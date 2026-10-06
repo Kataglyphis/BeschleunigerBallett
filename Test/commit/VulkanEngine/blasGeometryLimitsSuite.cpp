@@ -3,8 +3,8 @@
 #include <array>
 #include <gtest/gtest.h>
 
-#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
 #include "renderer/accelerationStructures/BlasCompaction.hpp"
+#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 
 static_assert(Kataglyphis::blasTriangleLimits(100, 300).maxVertex == 99,
@@ -16,9 +16,7 @@ static_assert(Kataglyphis::blasGeometryFlags(false) == vk::GeometryFlagBitsKHR::
 namespace {
 
 TEST(BlasGeometryLimitsUnit, MaxVertexIsTheHighestIndexNotTheCount)
-{
-    EXPECT_EQ(Kataglyphis::blasTriangleLimits(100, 300).maxVertex, 99U);
-}
+{ EXPECT_EQ(Kataglyphis::blasTriangleLimits(100, 300).maxVertex, 99U); }
 
 TEST(BlasGeometryLimitsUnit, AnEmptyMeshDoesNotWrapToUintMax)
 {
@@ -27,22 +25,28 @@ TEST(BlasGeometryLimitsUnit, AnEmptyMeshDoesNotWrapToUintMax)
 }
 
 TEST(BlasGeometryLimitsUnit, PrimitiveCountTruncatesAPartialTriangle)
-{
-    EXPECT_EQ(Kataglyphis::blasTriangleLimits(4, 7).primitiveCount, 2U);
-}
+{ EXPECT_EQ(Kataglyphis::blasTriangleLimits(4, 7).primitiveCount, 2U); }
 
 namespace {
-ObjMaterial opaqueMaterial()
-{
-    return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F }, .emission = { 0.0F, 0.0F, 0.0F }, .shininess = 0.0F,
-        .dissolve = 1.0F, .textureID = -1, .alphaCutoff = -1.0F };
-}
+    ObjMaterial opaqueMaterial()
+    {
+        return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F },
+            .emission = { 0.0F, 0.0F, 0.0F },
+            .shininess = 0.0F,
+            .dissolve = 1.0F,
+            .textureID = -1,
+            .alphaCutoff = -1.0F };
+    }
 
-ObjMaterial maskMaterial()
-{
-    return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F }, .emission = { 0.0F, 0.0F, 0.0F }, .shininess = 0.0F,
-        .dissolve = 1.0F, .textureID = -1, .alphaCutoff = 0.5F };
-}
+    ObjMaterial maskMaterial()
+    {
+        return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F },
+            .emission = { 0.0F, 0.0F, 0.0F },
+            .shininess = 0.0F,
+            .dissolve = 1.0F,
+            .textureID = -1,
+            .alphaCutoff = 0.5F };
+    }
 }// namespace
 
 TEST(BlasGeometryLimitsUnit, MaskMaterialDropsOpaque)
@@ -56,15 +60,13 @@ TEST(BlasGeometryLimitsUnit, AllOpaqueMaterialsKeepOpaque)
 {
     const std::array<ObjMaterial, 2> materials{ opaqueMaterial(), opaqueMaterial() };
     EXPECT_FALSE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
-    EXPECT_EQ(
-      Kataglyphis::blasGeometryFlags(Kataglyphis::blasGeometryNeedsAnyHit(materials)), vk::GeometryFlagBitsKHR::eOpaque);
+    EXPECT_EQ(Kataglyphis::blasGeometryFlags(Kataglyphis::blasGeometryNeedsAnyHit(materials)),
+      vk::GeometryFlagBitsKHR::eOpaque);
 }
 
 TEST(BlasGeometryLimitsUnit, ASingleMaskMaterialAmongManyOpaqueOnesDropsOpaque)
 {
-    const std::array<ObjMaterial, 4> materials{
-        opaqueMaterial(), opaqueMaterial(), maskMaterial(), opaqueMaterial()
-    };
+    const std::array<ObjMaterial, 4> materials{ opaqueMaterial(), opaqueMaterial(), maskMaterial(), opaqueMaterial() };
     EXPECT_TRUE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
 }
 

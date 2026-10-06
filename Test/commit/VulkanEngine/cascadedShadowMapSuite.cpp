@@ -29,7 +29,8 @@ constexpr float kAspect = 16.0F / 9.0F;
 constexpr float kNear = 0.1F;
 constexpr float kFar = 150.0F;
 
-glm::mat4 default_view() { return glm::lookAt(glm::vec3(0.0F, 6.0F, 26.0F), glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)); }
+glm::mat4 default_view()
+{ return glm::lookAt(glm::vec3(0.0F, 6.0F, 26.0F), glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F)); }
 
 glm::vec3 default_light() { return glm::vec3(-0.55F, -1.0F, -0.35F); }
 
@@ -68,8 +69,7 @@ std::vector<glm::vec4> frustum_slice_corners(const glm::mat4 &view, float near_d
         for (unsigned y = 0; y < 2; ++y) {
             // Vulkan NDC depth is 0..1 (GLM_FORCE_DEPTH_ZERO_TO_ONE).
             for (unsigned z = 0; z < 2; ++z) {
-                const glm::vec4 pt =
-                  inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
+                const glm::vec4 pt = inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
                 corners.push_back(pt / pt.w);
             }
         }

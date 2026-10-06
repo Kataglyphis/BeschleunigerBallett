@@ -145,10 +145,7 @@ TEST(RepoFilesUnit, ReadFileLinesReturnsLastLineWithNoTrailingNewline)
     std::filesystem::remove(path, ec);
 }
 
-TEST(RepoFilesUnit, JoinViolationsEmptyVectorReturnsEmptyString)
-{
-    EXPECT_EQ(joinViolations({}), "");
-}
+TEST(RepoFilesUnit, JoinViolationsEmptyVectorReturnsEmptyString) { EXPECT_EQ(joinViolations({}), ""); }
 
 TEST(RepoFilesUnit, JoinViolationsDefaultPrefixesEachEntryWithIndentedNewline)
 {

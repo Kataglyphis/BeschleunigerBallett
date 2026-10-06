@@ -12,7 +12,11 @@ constexpr vk::ImageViewCreateInfo buildImageViewCreateInfo(vk::Image image,
   vk::ImageViewType view_type = vk::ImageViewType::e2D,
   uint32_t array_layers = 1)
 {
-    return vk::ImageViewCreateInfo{ vk::ImageViewCreateFlags{}, image, view_type, format, vk::ComponentMapping{},
+    return vk::ImageViewCreateInfo{ vk::ImageViewCreateFlags{},
+        image,
+        view_type,
+        format,
+        vk::ComponentMapping{},
         vk::ImageSubresourceRange{ aspect_flags, 0, mip_levels, 0, array_layers } };
 }
 

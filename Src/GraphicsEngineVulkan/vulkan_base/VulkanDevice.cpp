@@ -273,8 +273,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         if (indices.graphics_family >= 0 && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
             graphics_queue_timestamp_valid_bits =
               queue_family_props[static_cast<size_t>(indices.graphics_family)].timestampValidBits;
-            graphics_family_supports_compute = static_cast<bool>(
-              queue_family_props[static_cast<size_t>(indices.graphics_family)].queueFlags & vk::QueueFlagBits::eCompute);
+            graphics_family_supports_compute =
+              static_cast<bool>(queue_family_props[static_cast<size_t>(indices.graphics_family)].queueFlags
+                                & vk::QueueFlagBits::eCompute);
         }
     }
 
@@ -376,8 +377,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // Query available extensions for the physical device
     auto available_extensions_result = physical_device.enumerateDeviceExtensionProperties();
     if (available_extensions_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
-                     "supported extensions.",
+        spdlog::warn(
+          "vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
+          "supported extensions.",
           device_properties.deviceName.data(),
           static_cast<int>(available_extensions_result.result));
     }
@@ -477,7 +479,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; related shader capabilities may be unavailable.");
     }
 
-    // Slang emits derivative-group quads for compute shaders; request them only once proven, as linear-only devices refuse.
+    // Slang emits derivative-group quads for compute; request them only once proven, as linear-only devices refuse.
     vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};
     const bool computeDerivativeExtensionPresent =
       supportsExtension(availableExtensions, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
@@ -575,8 +577,9 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     // get list of formats
     auto formats_result = device.getSurfaceFormatsKHR(*surface);
     if (formats_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkGetPhysicalDeviceSurfaceFormatsKHR failed for device '{}' (result {}); treating as no "
-                     "supported formats.",
+        spdlog::warn(
+          "vkGetPhysicalDeviceSurfaceFormatsKHR failed for device '{}' (result {}); treating as no "
+          "supported formats.",
           device.getProperties().deviceName.data(),
           static_cast<int>(formats_result.result));
     }
@@ -585,8 +588,9 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     // get list of presentation modes
     auto presentation_modes_result = device.getSurfacePresentModesKHR(*surface);
     if (presentation_modes_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkGetPhysicalDeviceSurfacePresentModesKHR failed for device '{}' (result {}); treating as no "
-                     "supported presentation modes.",
+        spdlog::warn(
+          "vkGetPhysicalDeviceSurfacePresentModesKHR failed for device '{}' (result {}); treating as no "
+          "supported presentation modes.",
           device.getProperties().deviceName.data(),
           static_cast<int>(presentation_modes_result.result));
     }
@@ -616,8 +620,9 @@ auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevic
 {
     auto extensions_result = device.enumerateDeviceExtensionProperties();
     if (extensions_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
-                     "supported extensions.",
+        spdlog::warn(
+          "vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
+          "supported extensions.",
           device.getProperties().deviceName.data(),
           static_cast<int>(extensions_result.result));
     }

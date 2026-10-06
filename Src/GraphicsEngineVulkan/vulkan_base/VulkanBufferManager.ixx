@@ -1,6 +1,6 @@
 ﻿module;
-#include <memory>
 #include <cstring>
+#include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -27,7 +27,11 @@ class VulkanBufferManager
       VulkanBuffer &dst_buffer,
       vk::DeviceSize buffer_size);
 
-    static void copyImageBuffer(vk::CommandBuffer command_buffer, vk::Buffer src_buffer, vk::Image image, uint32_t width, uint32_t height);
+    static void copyImageBuffer(vk::CommandBuffer command_buffer,
+      vk::Buffer src_buffer,
+      vk::Image image,
+      uint32_t width,
+      uint32_t height);
 
     template<typename T>
     bool createBufferAndUploadVectorOnDevice(const std::shared_ptr<VulkanDevice> &device,

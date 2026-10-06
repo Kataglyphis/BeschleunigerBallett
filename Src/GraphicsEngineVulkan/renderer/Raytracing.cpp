@@ -16,8 +16,8 @@
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/ShaderStageHelper.hpp"
 #include "common/Utilities.hpp"
-#include <spdlog/spdlog.h>
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include <spdlog/spdlog.h>
 
 module kataglyphis.vulkan.raytracing;
 
@@ -86,8 +86,12 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
     // eUndefined: rgen overwrites every pixel, whether or not the raster pass ran this frame.
-    const vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
-      renderImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
+    const vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier =
+      Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eGeneral,
+        {},
+        vk::AccessFlagBits::eShaderWrite);
 
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
       vk::PipelineStageFlagBits::eRayTracingShaderKHR,
@@ -99,8 +103,8 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
     if (!this->vulkanSwapChain) {
-      spdlog::error("Raytracing::recordCommands: VulkanSwapChain is null");
-      return;
+        spdlog::error("Raytracing::recordCommands: VulkanSwapChain is null");
+        return;
     }
     const vk::Extent2D &swap_chain_extent = this->vulkanSwapChain->getSwapChainExtent();
     commandBuffer.traceRaysKHR(
@@ -265,18 +269,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
     void *mapped_rchit = hitShaderBindingTableBuffer.getMappedData();
 
     // Group layout: 0 raygen, 1 miss, 2 shadow miss, 3 triangles-hit.
-    memcpy(mapped_raygen,
-      handles.data() + sbt_handle_source_offset(0, handle_size),
-      handle_size);
+    memcpy(mapped_raygen, handles.data() + sbt_handle_source_offset(0, handle_size), handle_size);
     memcpy(static_cast<uint8_t *>(mapped_miss) + sbt_record_offset(0, handle_size_aligned),
       handles.data() + sbt_handle_source_offset(1, handle_size),
       handle_size);
     memcpy(static_cast<uint8_t *>(mapped_miss) + sbt_record_offset(1, handle_size_aligned),
       handles.data() + sbt_handle_source_offset(2, handle_size),
       handle_size);
-    memcpy(mapped_rchit,
-      handles.data() + sbt_handle_source_offset(3, handle_size),
-      handle_size);
+    memcpy(mapped_rchit, handles.data() + sbt_handle_source_offset(3, handle_size), handle_size);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recreateSBT()

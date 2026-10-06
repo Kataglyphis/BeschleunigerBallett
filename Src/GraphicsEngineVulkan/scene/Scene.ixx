@@ -1,9 +1,9 @@
 module;
-#include <optional>
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
+#include <optional>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -42,9 +42,7 @@ class Scene
     // Public, not private: MeshDrawRecorder and CascadedShadowMap are
     // separate translation units and hoist their own Mesh* with these.
     [[nodiscard]] Model *findModel(uint32_t model_index) const
-    {
-        return model_index < model_list.size() ? model_list[static_cast<size_t>(model_index)].get() : nullptr;
-    };
+    { return model_index < model_list.size() ? model_list[static_cast<size_t>(model_index)].get() : nullptr; };
     /// findModel() chained through Model::getMesh(), which is already
     /// nullptr out of range - so the mesh half of the rule is one null
     /// test, not a second bounds check.
@@ -78,7 +76,8 @@ class Scene
         return model != nullptr ? model->getTextureCount() : 0;
     };
     uint32_t getModelCount() const { return static_cast<uint32_t>(model_list.size()); };
-    glm::mat4 getModelMatrix(uint32_t model_index) const {
+    glm::mat4 getModelMatrix(uint32_t model_index) const
+    {
         Model *model = findModel(model_index);
         return model != nullptr ? model->getModel() : glm::mat4(1.0f);
     };
@@ -103,9 +102,7 @@ class Scene
     {
         std::vector<uint32_t> counts;
         counts.reserve(model_list.size());
-        for (uint32_t i = 0; i < static_cast<uint32_t>(model_list.size()); ++i) {
-            counts.push_back(getMeshCount(i));
-        }
+        for (uint32_t i = 0; i < static_cast<uint32_t>(model_list.size()); ++i) { counts.push_back(getMeshCount(i)); }
         return counts;
     };
     vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index) const
@@ -170,7 +167,9 @@ class Scene
     /// Resources/ and is resolved here, like loadAdditionalModel()'s
     /// contract. The previous scene is torn down before the new load is
     /// attempted, so a failed reload leaves the scene empty by design.
-    void reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &modelPath);
+    void reloadModel(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      const std::string &modelPath);
 
     /// Loads an ADDITIONAL model, leaving existing ones in place, and returns
     /// its model index (the value the raster paths push as objectIndex) or
@@ -198,6 +197,5 @@ class Scene
     bool modelLoadPending{ false };
     std::vector<ObjectDescription> object_descriptions;
     std::vector<std::shared_ptr<Model>> model_list;
-
 };
 }// namespace Kataglyphis

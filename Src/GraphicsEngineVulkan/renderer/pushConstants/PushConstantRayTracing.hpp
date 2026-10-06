@@ -4,8 +4,6 @@
 namespace Kataglyphis::VulkanRendererInternals {
 
 struct PushConstantRaytracing
-{
-    vec4 clear_color;
-};
+{ vec4 clear_color; };
 
 }// namespace Kataglyphis::VulkanRendererInternals

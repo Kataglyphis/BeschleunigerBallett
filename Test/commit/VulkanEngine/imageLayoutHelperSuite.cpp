@@ -7,8 +7,7 @@
 static_assert(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eUndefined) == vk::AccessFlags{},
   "accessFlagsForImageLayout must be usable in a constant expression");
 
-static_assert(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eUndefined)
-                == vk::PipelineStageFlagBits::eTopOfPipe,
+static_assert(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eUndefined) == vk::PipelineStageFlagBits::eTopOfPipe,
   "pipelineStageForLayout must be usable in a constant expression");
 
 namespace {
@@ -27,14 +26,18 @@ TEST(ImageLayoutHelperUnit, PreinitializedIsHostWrite)
 
 TEST(ImageLayoutHelperUnit, TransferSrcIsTransferRead)
 {
-    EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferSrcOptimal), vk::AccessFlagBits::eTransferRead);
-    EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferSrcOptimal), vk::PipelineStageFlagBits::eTransfer);
+    EXPECT_EQ(
+      Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferSrcOptimal), vk::AccessFlagBits::eTransferRead);
+    EXPECT_EQ(
+      Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferSrcOptimal), vk::PipelineStageFlagBits::eTransfer);
 }
 
 TEST(ImageLayoutHelperUnit, TransferDstIsTransferWrite)
 {
-    EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferDstOptimal), vk::AccessFlagBits::eTransferWrite);
-    EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
+    EXPECT_EQ(
+      Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferDstOptimal), vk::AccessFlagBits::eTransferWrite);
+    EXPECT_EQ(
+      Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
 }
 
 TEST(ImageLayoutHelperUnit, ColorAttachmentOptimalIsColorAttachmentWrite)
@@ -57,8 +60,8 @@ TEST(ImageLayoutHelperUnit, DepthStencilAttachmentOptimalWidensStageToAllCommand
 TEST(ImageLayoutHelperUnit, ShaderReadOnlyOptimalWidensStageToAllCommands)
 {
     // eAllCommands, as for depth/stencil above.
-    EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
-      vk::AccessFlagBits::eShaderRead);
+    EXPECT_EQ(
+      Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal), vk::AccessFlagBits::eShaderRead);
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
       vk::PipelineStageFlagBits::eAllCommands);
 }
@@ -66,8 +69,8 @@ TEST(ImageLayoutHelperUnit, ShaderReadOnlyOptimalWidensStageToAllCommands)
 TEST(ImageLayoutHelperUnit, GeneralIsTheFiveBitAccessUnionAndAllCommands)
 {
     vk::AccessFlags const expected = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite
-                                      | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eTransferRead
-                                      | vk::AccessFlagBits::eTransferWrite;
+                                     | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eTransferRead
+                                     | vk::AccessFlagBits::eTransferWrite;
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eGeneral), expected);
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eGeneral), vk::PipelineStageFlagBits::eAllCommands);
 }
@@ -75,16 +78,19 @@ TEST(ImageLayoutHelperUnit, GeneralIsTheFiveBitAccessUnionAndAllCommands)
 TEST(ImageLayoutHelperUnit, UnhandledLayoutFallsThroughToEmptyAccessAndBottomOfPipe)
 {
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::ePresentSrcKHR), vk::AccessFlags{});
-    EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::ePresentSrcKHR), vk::PipelineStageFlagBits::eBottomOfPipe);
+    EXPECT_EQ(
+      Kataglyphis::pipelineStageForLayout(vk::ImageLayout::ePresentSrcKHR), vk::PipelineStageFlagBits::eBottomOfPipe);
 }
 
 // The barrier SkyBox::uploadCubeMapFaces once wrote by hand.
 TEST(ImageLayoutHelperUnit, ReproducesSkyBoxFirstBarrier)
 {
     EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eUndefined), vk::AccessFlags{});
-    EXPECT_EQ(Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferDstOptimal), vk::AccessFlagBits::eTransferWrite);
+    EXPECT_EQ(
+      Kataglyphis::accessFlagsForImageLayout(vk::ImageLayout::eTransferDstOptimal), vk::AccessFlagBits::eTransferWrite);
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eUndefined), vk::PipelineStageFlagBits::eTopOfPipe);
-    EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
+    EXPECT_EQ(
+      Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
 }
 
 // Compute and ray-tracing shaders also read the mips, and only eAllCommands covers them all.

@@ -59,7 +59,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
     device = vulkan_device;
 
     if (buffer_size == 0) {
-        buffer_size = 4; // Prevent VUID-VkBufferCreateInfo-size-00912
+        buffer_size = 4;// Prevent VUID-VkBufferCreateInfo-size-00912
     }
 
     // information to create a buffer (doesn't include assigning memory)
@@ -70,7 +70,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
     // similar to swap chain images, can share vertex buffers
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    // requiredFlags keeps every requested property; host-visible buffers stay persistently mapped for sequential writes.
+    // requiredFlags keeps every requested property; host-visible buffers stay mapped for sequential writes.
     VmaAllocationCreateInfo allocation_create_info{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(buffer_propertiy_flags);

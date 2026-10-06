@@ -33,7 +33,7 @@ class VulkanImageView
     ~VulkanImageView();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     vk::ImageView imageView{};
 };

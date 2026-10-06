@@ -44,9 +44,7 @@ void GUI::initializeVulkanContext(const std::shared_ptr<VulkanDevice> &vulkan_de
 }
 
 void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable)
-{
-    renderUserSelectionForRRT = rrtCapabilitiesAvailable;
-}
+{ renderUserSelectionForRRT = rrtCapabilitiesAvailable; }
 
 void GUI::render()
 {
@@ -61,7 +59,7 @@ void GUI::render()
         const auto model_paths = sceneConfig::getAvailableModelPaths();
         const auto model_names = sceneConfig::getAvailableModelDisplayNames();
         const int model_count = static_cast<int>(model_paths.size());
-        
+
         // Must not stay -1: handleModelTransformChange gates the Position/Rotation controls on it.
         if (guiSceneSharedVars.selected_model_index == -1 && model_count > 0) {
             guiSceneSharedVars.selected_model_index =
@@ -73,8 +71,8 @@ void GUI::render()
         if (model_count > 0 && model_count == num_model_names) {
             int prev_index = guiSceneSharedVars.selected_model_index;
             const char *current_display = (prev_index >= 0 && prev_index < model_count)
-              ? model_names[static_cast<size_t>(prev_index)].c_str()
-              : "Select a model...";
+                                            ? model_names[static_cast<size_t>(prev_index)].c_str()
+                                            : "Select a model...";
 
             if (ImGui::BeginCombo("Model", current_display)) {
                 for (int i = 0; i < model_count; i++) {
@@ -83,9 +81,7 @@ void GUI::render()
                         guiSceneSharedVars.selected_model_index = i;
                         guiSceneSharedVars.model_reload_requested = true;
                     }
-                    if (is_selected) {
-                        ImGui::SetItemDefaultFocus();
-                    }
+                    if (is_selected) { ImGui::SetItemDefaultFocus(); }
                 }
                 ImGui::EndCombo();
             }
@@ -122,12 +118,16 @@ void GUI::render()
 
     if (e == 0) {
         ImGui::Separator();
-        int raster_mode = guiRendererSharedVars.rasterizationMode
-            == VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? 0 : 1;
+        int raster_mode =
+          guiRendererSharedVars.rasterizationMode == VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
+            ? 0
+            : 1;
         ImGui::RadioButton("Forward", &raster_mode, 0);
         ImGui::SameLine();
         ImGui::RadioButton("Deferred", &raster_mode, 1);
-        guiRendererSharedVars.rasterizationMode = raster_mode == 0 ? VulkanRendererInternals::FrontendShared::RasterizationMode::Forward : VulkanRendererInternals::FrontendShared::RasterizationMode::Deferred;
+        guiRendererSharedVars.rasterizationMode =
+          raster_mode == 0 ? VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
+                           : VulkanRendererInternals::FrontendShared::RasterizationMode::Deferred;
     }
 
     switch (e) {
@@ -178,11 +178,15 @@ void GUI::render()
                       &guiSceneSharedVars.shadow_map_res_index,
                       guiSceneSharedVars.available_shadow_map_resolutions,
                       kShadowMapResolutionCount);
-                    if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
+                    if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) {
+                        guiSceneSharedVars.shadow_resolution_changed = true;
+                    }
 
                     int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;
                     ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, MAX_CASCADES);
-                    if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
+                    if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) {
+                        guiSceneSharedVars.shadow_resolution_changed = true;
+                    }
 
                     // AlwaysClamp: a Ctrl+click entry past the bound would otherwise stay in the GUI state.
                     ImGui::SliderInt("PCF radius",
@@ -206,18 +210,26 @@ void GUI::render()
         if (ImGui::TreeNode("Cloud Settings")) {
             ImGui::Checkbox("Enable Clouds", &guiSceneSharedVars.clouds_enabled);
             if (guiSceneSharedVars.clouds_enabled) {
-                ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps,
-                  Kataglyphis::kMinCloudMarchSteps, Kataglyphis::kMaxCloudMarchSteps);
-                ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light,
-                  Kataglyphis::kMinCloudLightMarchSteps, Kataglyphis::kMaxCloudLightMarchSteps);
+                ImGui::SliderInt("# march steps",
+                  &guiSceneSharedVars.cloud_num_march_steps,
+                  Kataglyphis::kMinCloudMarchSteps,
+                  Kataglyphis::kMaxCloudMarchSteps);
+                ImGui::SliderInt("# march steps to light",
+                  &guiSceneSharedVars.cloud_num_march_steps_to_light,
+                  Kataglyphis::kMinCloudLightMarchSteps,
+                  Kataglyphis::kMaxCloudLightMarchSteps);
                 // cloud.scale (clouds.slang) - the density multiplier applied to the noise sample.
-                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density_multiplier, Kataglyphis::kMinCloudDensityMultiplier, 1.0F);
+                ImGui::SliderFloat("Density",
+                  &guiSceneSharedVars.cloud_density_multiplier,
+                  Kataglyphis::kMinCloudDensityMultiplier,
+                  1.0F);
                 // cloud.threshold (clouds.slang) - the noise cut-off below which a sample counts as clear sky.
                 ImGui::SliderFloat("Coverage threshold", &guiSceneSharedVars.cloud_coverage_threshold, 0.F, 1.0F);
                 ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
                 ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
                 ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);
-                ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, Kataglyphis::kMinCloudMeshExtent, 1000.0F);
+                ImGui::SliderFloat3(
+                  "Scale", guiSceneSharedVars.cloud_mesh_scale, Kataglyphis::kMinCloudMeshExtent, 1000.0F);
                 ImGui::SliderFloat3("Translation", guiSceneSharedVars.cloud_mesh_offset, -200.F, 400.0F);
             }
 

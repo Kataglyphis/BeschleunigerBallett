@@ -37,7 +37,8 @@ auto loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const st
 class ShaderStagePair
 {
   public:
-    ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,  // DEVICE_SINK_OK: moved into member
+    ShaderStagePair(std::shared_ptr<VulkanDevice> device,// DEVICE_SINK_OK: moved into member
+      const std::string &vertexSpvPath,
       const std::string &fragmentSpvPath);
 
     ShaderStagePair(const ShaderStagePair &) = delete;
@@ -71,7 +72,8 @@ struct ComputePipelineHandles
 // compute pass in this engine needs, and creates the pipeline - the shape
 // Clouds and PathTracing each hand-rolled independently. The shader module
 // is destroyed before returning, exactly as every call site already did.
-[[nodiscard]] auto createComputePipeline(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath,
+[[nodiscard]] auto createComputePipeline(const std::shared_ptr<VulkanDevice> &device,
+  const std::string &spvPath,
   std::span<const vk::DescriptorSetLayout> setLayouts,
   std::span<const vk::PushConstantRange> pushConstantRanges = {},
   const char *layoutErrorMessage = "Failed to create a compute pipeline layout!",

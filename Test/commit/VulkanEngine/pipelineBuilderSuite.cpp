@@ -102,8 +102,7 @@ TEST(PipelineBuilderUnit, EmptyVertexInputCarriesNullPointers)
 TEST(PipelineBuilderUnit, MatchesForwardRasterizerCallSite)
 {
     // Rasterizer.cpp: dynamic cull mode serves doubleSided glTF meshes.
-    const GraphicsPipelineState state =
-      PipelineBuilder().setAlphaBlending(true).setDynamicCullMode(true).buildState();
+    const GraphicsPipelineState state = PipelineBuilder().setAlphaBlending(true).setDynamicCullMode(true).buildState();
 
     EXPECT_EQ(state.color_states[0].blendEnable, VK_TRUE);
     ASSERT_EQ(state.dynamic_states.size(), 3U);
@@ -128,11 +127,11 @@ TEST(PipelineBuilderUnit, MatchesDeferredLightingCallSite)
 {
     // DeferredRasterizer.cpp lighting pipeline: a vertex-less fullscreen triangle.
     const GraphicsPipelineState state = PipelineBuilder()
-                                           .setVertexInput({}, {})
-                                           .setCullMode(vk::CullModeFlagBits::eNone)
-                                           .setDepthTest(false)
-                                           .setDepthWrite(false)
-                                           .buildState();
+                                          .setVertexInput({}, {})
+                                          .setCullMode(vk::CullModeFlagBits::eNone)
+                                          .setDepthTest(false)
+                                          .setDepthWrite(false)
+                                          .buildState();
 
     EXPECT_EQ(state.vertex_input_create_info.pVertexBindingDescriptions, nullptr);
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eNone);
@@ -144,10 +143,10 @@ TEST(PipelineBuilderUnit, MatchesPostStageCallSite)
 {
     // PostStage.cpp: blending composites the tonemapped result over the swapchain.
     const GraphicsPipelineState state = PipelineBuilder()
-                                           .setCullMode(vk::CullModeFlagBits::eNone)
-                                           .setAlphaBlending(true)
-                                           .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
-                                           .buildState();
+                                          .setCullMode(vk::CullModeFlagBits::eNone)
+                                          .setAlphaBlending(true)
+                                          .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
+                                          .buildState();
 
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eNone);
     EXPECT_EQ(state.color_states[0].blendEnable, VK_TRUE);
@@ -167,10 +166,10 @@ TEST(PipelineBuilderUnit, MatchesCascadedShadowMapCallSite)
     EXPECT_FALSE(clamp_on.use_color_blend_state);
 
     const GraphicsPipelineState clamp_off = PipelineBuilder()
-                                               .setCullMode(vk::CullModeFlagBits::eNone)
-                                               .setDepthClamp(false)
-                                               .setUseColorBlendState(false)
-                                               .buildState();
+                                              .setCullMode(vk::CullModeFlagBits::eNone)
+                                              .setDepthClamp(false)
+                                              .setUseColorBlendState(false)
+                                              .buildState();
     EXPECT_EQ(clamp_off.rasterizer_create_info.depthClampEnable, VK_FALSE);
 
     const vk::GraphicsPipelineCreateInfo info =
@@ -182,11 +181,11 @@ TEST(PipelineBuilderUnit, MatchesSkyBoxCallSite)
 {
     // SkyBox.cpp: drawn behind everything, so no depth test or write.
     const GraphicsPipelineState state = PipelineBuilder()
-                                           .setCullMode(vk::CullModeFlagBits::eNone)
-                                           .setDepthTest(false)
-                                           .setDepthWrite(false)
-                                           .setDepthCompareOp(vk::CompareOp::eAlways)
-                                           .buildState();
+                                          .setCullMode(vk::CullModeFlagBits::eNone)
+                                          .setDepthTest(false)
+                                          .setDepthWrite(false)
+                                          .setDepthCompareOp(vk::CompareOp::eAlways)
+                                          .buildState();
 
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eNone);
     EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_FALSE);

@@ -298,9 +298,7 @@ void BM_GltfParse_CubeGlb(benchmark::State &state) { parse_and_walk_gltf(find_mo
 BENCHMARK(BM_GltfParse_CubeGlb)->Unit(benchmark::kMicrosecond);
 
 void BM_GltfParse_CubeTextured(benchmark::State &state)
-{
-    parse_and_walk_gltf(find_model("GltfTest/cube_textured.gltf"), state);
-}
+{ parse_and_walk_gltf(find_model("GltfTest/cube_textured.gltf"), state); }
 BENCHMARK(BM_GltfParse_CubeTextured)->Unit(benchmark::kMicrosecond);
 
 // Tangent gen: one call per primitive over a growing array, where whole-array accumulators turn quadratic.

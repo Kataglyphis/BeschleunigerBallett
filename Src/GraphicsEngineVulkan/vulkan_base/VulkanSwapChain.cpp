@@ -68,8 +68,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     swap_chain_create_info.minImageCount = image_count;// minimum images in swapchain
     swap_chain_create_info.imageArrayLayers = 1;// number of layers for each image in chain
     // Unconditional: every present-capable surface supports color-attachment and transfer-dst use.
-    vk::ImageUsageFlags image_usage =
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
+    vk::ImageUsageFlags image_usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
 
     // eSampled and eStorage are optional; requesting an unsupported usage fails createSwapchainKHR.
     const vk::ImageUsageFlags supported_usage = swap_chain_details.surface_capabilities.supportedUsageFlags;
@@ -131,7 +130,9 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
         swap_chain_images.emplace_back();
         Texture &swap_chain_image = swap_chain_images.back();
         swap_chain_image.setImage(image);
+        // clang-format off: BuildIntegrity wants the call, its eColor aspect and the marker on one line.
         swap_chain_image.createImageView(device, swap_chain_image_format, vk::ImageAspectFlagBits::eColor, 1);// COLOR_ATTACHMENT_CHAIN_OK: view-over-an-image-the-swapchain-owns
+        // clang-format on
     }
 }
 
@@ -153,7 +154,8 @@ void Kataglyphis::VulkanSwapChain::cleanUp()
 
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() { cleanUp(); }
 
-void Kataglyphis::VulkanSwapChain::recreate(const std::shared_ptr<VulkanDevice> &in_device, const vk::SurfaceKHR &surface)
+void Kataglyphis::VulkanSwapChain::recreate(const std::shared_ptr<VulkanDevice> &in_device,
+  const vk::SurfaceKHR &surface)
 {
     // The old handle survives the create as the oldSwapchain handoff; its views go first, as they reference its images.
     const vk::SwapchainKHR previousSwapchain = swapchain;

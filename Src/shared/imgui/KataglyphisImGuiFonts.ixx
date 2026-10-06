@@ -21,7 +21,7 @@ inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cw
 
     if (const auto found = Kataglyphis::Shared::searchAncestorsForRelative(
           cwd, "third_party/IMGUI/misc/fonts", Kataglyphis::Shared::kResourceSearchDepth);
-        found.has_value()) {
+      found.has_value()) {
         return *found;
     }
 

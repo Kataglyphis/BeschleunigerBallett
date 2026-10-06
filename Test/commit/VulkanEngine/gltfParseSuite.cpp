@@ -3,11 +3,11 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
-#include <glm/vec2.hpp>
-#include <glm/vec3.hpp>
-#include <glm/geometric.hpp>
 #include <filesystem>
 #include <fstream>
+#include <glm/geometric.hpp>
+#include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 #include <set>
 #include <string>
 #include <vulkan/vulkan.hpp>
@@ -19,15 +19,9 @@ import kataglyphis.vulkan.scene_config;
 
 namespace {
 
-std::string test_gltf()
-{
-    return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
-}
+std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb"); }
 
-std::string test_textured_gltf()
-{
-    return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf");
-}
+std::string test_textured_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf"); }
 
 }// namespace
 
@@ -766,8 +760,22 @@ namespace {
 
 // extractImageBytes never decodes, so a truncated but genuine PNG prefix is enough.
 const unsigned char kMinimalPngBytes[] = {
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,// PNG signature
-    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52// IHDR length + tag
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,// PNG signature
+    0x00,
+    0x00,
+    0x00,
+    0x0D,
+    0x49,
+    0x48,
+    0x44,
+    0x52// IHDR length + tag
 };
 
 // One-triangle skeleton; only the image uri varies per test.
@@ -925,8 +933,7 @@ TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
         out << doc;
     }
     Kataglyphis::GltfLoader loader;
-    ASSERT_TRUE(loader.parseCpu(tmp.string()))
-      << "a triangle-strip mesh must load, not be dropped as non-triangle";
+    ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a triangle-strip mesh must load, not be dropped as non-triangle";
     std::filesystem::remove(tmp);
 
     EXPECT_EQ(loader.getVertices().size(), 4U) << "four strip vertices";
@@ -957,8 +964,7 @@ TEST(GltfParseUnit, TriangleFanIsTriangulatedAroundTheHubVertex)
         out << doc;
     }
     Kataglyphis::GltfLoader loader;
-    ASSERT_TRUE(loader.parseCpu(tmp.string()))
-      << "a triangle-fan mesh must load, not be dropped as non-triangle";
+    ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a triangle-fan mesh must load, not be dropped as non-triangle";
     std::filesystem::remove(tmp);
 
     EXPECT_EQ(loader.getVertices().size(), 4U) << "four fan vertices";
@@ -1020,12 +1026,12 @@ std::string skin_node_gltf(bool skinned)
     return std::string(R"GLTF({
       "asset": { "version": "2.0" },
       )GLTF")
-      + skinsArray + R"GLTF(
+           + skinsArray + R"GLTF(
       "meshes": [ { "primitives": [ {
         "attributes": { "POSITION": 0 }
       } ] } ],
       "nodes": [ { "mesh": 0, "translation": [10, 0, 0])GLTF"
-      + skinBlock + R"GLTF( }, { } ],
+           + skinBlock + R"GLTF( }, { } ],
       "scenes": [ { "nodes": [ 0, 1 ] } ],
       "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
                        "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
@@ -1040,7 +1046,7 @@ std::string material_gltf(const std::string &alphaSnippet)
     return std::string(R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [ { "pbrMetallicRoughness": { "baseColorFactor": [1,1,1,1] })GLTF")
-      + alphaSnippet + R"GLTF( } ],
+           + alphaSnippet + R"GLTF( } ],
       "meshes": [ { "primitives": [ {
         "attributes": { "POSITION": 0 },
         "material": 0
@@ -1120,7 +1126,7 @@ std::string scaled_node_gltf(const std::string &scaleJson)
         "attributes": { "POSITION": 0 }
       } ] } ],
       "nodes": [ { "mesh": 0, "scale": )GLTF")
-      + scaleJson + R"GLTF( } ],
+           + scaleJson + R"GLTF( } ],
       "scenes": [ { "nodes": [ 0 ] } ],
       "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
                        "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
@@ -1173,8 +1179,8 @@ TEST(GltfParseUnit, RotatedNodeWithTwoNegativeScalesKeepsItsWinding)
 TEST(GltfParseUnit, MaskAlphaModeSetsTheCutoff)
 {
     // The raster shaders discard against this cutoff; losing it renders a cut-out as a solid quad.
-    const float cutoff = first_material_cutoff(material_gltf(R"(, "alphaMode": "MASK", "alphaCutoff": 0.5)"),
-      "kat_mask.gltf");
+    const float cutoff =
+      first_material_cutoff(material_gltf(R"(, "alphaMode": "MASK", "alphaCutoff": 0.5)"), "kat_mask.gltf");
     EXPECT_NEAR(cutoff, 0.5F, 1e-6F) << "MASK material must carry its alphaCutoff into ObjMaterial";
 }
 
@@ -1389,11 +1395,15 @@ TEST(GltfParseUnit, GltfShininessIsThePinnedFallbackValue)
     const auto &withPbr = loader.getMaterials()[0];
     const auto &withoutPbr = loader.getMaterials()[1];
 
-    EXPECT_NEAR(withPbr.roughness, 0.1F, 1e-5F) << "the authored roughnessFactor must still reach ObjMaterial::roughness";
-    EXPECT_LT(withoutPbr.roughness, 0.0F) << "the material without pbrMetallicRoughness must have no authored roughness";
+    EXPECT_NEAR(withPbr.roughness, 0.1F, 1e-5F)
+      << "the authored roughnessFactor must still reach ObjMaterial::roughness";
+    EXPECT_LT(withoutPbr.roughness, 0.0F)
+      << "the material without pbrMetallicRoughness must have no authored roughness";
 
-    EXPECT_FLOAT_EQ(withPbr.shininess, 1.0F) << "shininess must be the pinned fallback value regardless of roughnessFactor";
-    EXPECT_FLOAT_EQ(withoutPbr.shininess, 1.0F) << "shininess must be the pinned fallback value regardless of roughnessFactor";
+    EXPECT_FLOAT_EQ(withPbr.shininess, 1.0F)
+      << "shininess must be the pinned fallback value regardless of roughnessFactor";
+    EXPECT_FLOAT_EQ(withoutPbr.shininess, 1.0F)
+      << "shininess must be the pinned fallback value regardless of roughnessFactor";
 }
 
 TEST(GltfParseUnit, EmissiveFactorReachesTheMaterial)
@@ -1712,10 +1722,9 @@ TEST(GltfParseUnit, AllFourTextureSlotsRoundTripTogether)
     ASSERT_GE(material.metallicRoughnessTextureID, 0);
     ASSERT_GE(material.normalTextureID, 0);
     ASSERT_GE(material.emissiveTextureID, 0);
-    const std::set<int> slots = { material.textureID,
-        material.metallicRoughnessTextureID,
-        material.normalTextureID,
-        material.emissiveTextureID };
+    const std::set<int> slots = {
+        material.textureID, material.metallicRoughnessTextureID, material.normalTextureID, material.emissiveTextureID
+    };
     EXPECT_EQ(slots.size(), 4U) << "four distinct images must land on four mutually distinct slots";
 
     EXPECT_NEAR(material.uv_transform_row0.x, 4.0F, 1e-6F) << "base-colour scale must reach the base-colour rows";
@@ -1799,8 +1808,7 @@ TEST(GltfParseUnit, ReadsColor0VertexColours)
 
     const auto has_color = [&](float r, float g, float b) {
         for (const Vertex &v : loader.getVertices()) {
-            if (std::abs(v.color.x - r) < 1e-4F && std::abs(v.color.y - g) < 1e-4F
-                && std::abs(v.color.z - b) < 1e-4F) {
+            if (std::abs(v.color.x - r) < 1e-4F && std::abs(v.color.y - g) < 1e-4F && std::abs(v.color.z - b) < 1e-4F) {
                 return true;
             }
         }
@@ -1946,8 +1954,7 @@ TEST(GltfParseUnit, PrimitiveWithoutMaterialRoutesToNeutralFallback)
     // The loader appends one neutral fallback material for exactly this case.
     ASSERT_EQ(loader.getMaterials().size(), 1U)
       << "no declared materials + one material-less primitive = exactly the fallback";
-    ASSERT_EQ(loader.getIndices().size() % 3U, 0U)
-      << "indices must form whole triangles";
+    ASSERT_EQ(loader.getIndices().size() % 3U, 0U) << "indices must form whole triangles";
     ASSERT_EQ(loader.getMaterialIndices().size(), loader.getIndices().size() / 3U)
       << "materialIndex is one id per triangle";
 

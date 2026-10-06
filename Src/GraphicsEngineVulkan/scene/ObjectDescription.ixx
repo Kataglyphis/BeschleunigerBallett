@@ -105,9 +105,7 @@ inline FlattenedTexturePlan planFlattenedTextureSlots(std::span<const uint32_t> 
     if (plan.slots.empty()) { return plan; }
 
     const FlattenedTextureSlot firstSlot = plan.slots.front();
-    while (plan.slots.size() < maxSlots) {
-        plan.slots.push_back(firstSlot);
-    }
+    while (plan.slots.size() < maxSlots) { plan.slots.push_back(firstSlot); }
 
     return plan;
 }

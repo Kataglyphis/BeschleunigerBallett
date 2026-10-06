@@ -50,8 +50,7 @@ void DecodingArbitraryImageBytesRespectsTheSizeContract(const std::vector<uint8_
         EXPECT_GT(width, 0) << "decode succeeded but reported a non-positive width";
         EXPECT_GT(height, 0) << "decode succeeded but reported a non-positive height";
         // Callers size the staging buffer from this; STBI_rgb_alpha forces 4 channels.
-        EXPECT_EQ(image_size,
-          static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4U)
+        EXPECT_EQ(image_size, static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * 4U)
           << "reported byte count does not match the reported dimensions - a staging "
              "buffer sized from this would over- or under-run";
         stbi_image_free(pixels);

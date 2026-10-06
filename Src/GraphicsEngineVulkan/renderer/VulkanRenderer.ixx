@@ -1,14 +1,14 @@
 module;
-#include <optional>
-#include <string>
-#include <glm/glm.hpp>
+#include "renderer/PathTracingHistory.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
-#include "renderer/PathTracingHistory.hpp"
 
 export module kataglyphis.vulkan.renderer;
 
@@ -52,9 +52,7 @@ class VulkanRenderer
 
     void drawFrame(const GUISceneSharedVars &guiSceneSharedVars);
 
-    void updateUniforms(Scene *scene_data,
-      Camera *camera_data,
-      const GUISceneSharedVars &guiSceneSharedVars);
+    void updateUniforms(Scene *scene_data, Camera *camera_data, const GUISceneSharedVars &guiSceneSharedVars);
 
     /// Adds a model to the current scene without replacing what is already
     /// there, and refreshes the descriptor sets that reference scene
@@ -120,11 +118,10 @@ class VulkanRenderer
 
     // -- decomposed updateStateDueToUserInput handlers
     void handleShaderHotReloadRequest(
-        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
+      Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
     void handleRasterizationModeChange(
-        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
-    void handleShadowResolutionChange(
-        GUISceneSharedVars &guiSceneSharedVars);
+      Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
+    void handleShadowResolutionChange(GUISceneSharedVars &guiSceneSharedVars);
     // Tears down and re-creates dirShadowMap against the resolution/cascade
     // count the GUI currently holds and the swapchain's current image count.
     // Shared by handleShadowResolutionChange (GUI-driven resolution change)
@@ -132,10 +129,8 @@ class VulkanRenderer
     // need the exact same cleanUp()+init()+createGraphicsPipeline() sequence,
     // just triggered by a different condition.
     void reinitShadowMapForCurrentSettings();
-    void handleModelTransformChange(
-        GUISceneSharedVars &guiSceneSharedVars);
-    void handleModelReloadRequest(
-        GUISceneSharedVars &guiSceneSharedVars);
+    void handleModelTransformChange(GUISceneSharedVars &guiSceneSharedVars);
+    void handleModelReloadRequest(GUISceneSharedVars &guiSceneSharedVars);
 
     // The rasterization mode whose offscreen texture the post (and RT) input
     // descriptors currently point at. The mode branch in record_commands is
@@ -204,10 +199,10 @@ class VulkanRenderer
     // uniform buffers
     VulkanRendererInternals::GlobalUBO globalUBO{};
     std::vector<VulkanBuffer> globalUBOBuffer;
-    std::vector<void*> globalUBOMapped;
+    std::vector<void *> globalUBOMapped;
     VulkanRendererInternals::SceneUBO sceneUBO{};
     std::vector<VulkanBuffer> sceneUBOBuffer;
-    std::vector<void*> sceneUBOMapped;
+    std::vector<void *> sceneUBOMapped;
     void create_uniform_buffers();
     // Returns false (and leaves the UBOs untouched) if image_index is out of
     // range for the currently sized UBO vectors.

@@ -4,10 +4,10 @@ module;
 #include <array>
 #include <cctype>
 #include <filesystem>
-#include <system_error>
 #include <fstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 export module kataglyphis.shared.util.file_reader;
@@ -34,22 +34,20 @@ export namespace Kataglyphis::Shared {
 inline bool isWindowsReservedDeviceName(const std::string &file_location)
 {
     const std::size_t last_separator = file_location.find_last_of("/\\");
-    std::string name =
-      last_separator == std::string::npos ? file_location : file_location.substr(last_separator + 1);
+    std::string name = last_separator == std::string::npos ? file_location : file_location.substr(last_separator + 1);
 
     if (const std::size_t dot = name.find('.'); dot != std::string::npos) { name.erase(dot); }
     while (!name.empty() && (name.back() == ' ' || name.back() == '.')) { name.pop_back(); }
-    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::transform(
+      name.begin(), name.end(), name.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
     static constexpr std::array<std::string_view, 4> kDeviceNames = { "con", "prn", "aux", "nul" };
     if (std::find(kDeviceNames.begin(), kDeviceNames.end(), name) != kDeviceNames.end()) { return true; }
 
     // COM0-COM9 and LPT0-LPT9. (Windows also accepts the superscript digits
     // for these; they cannot appear in a narrow path here.)
-    return name.size() == 4 && (name.compare(0, 3, "com") == 0 || name.compare(0, 3, "lpt") == 0)
-           && name[3] >= '0' && name[3] <= '9';
+    return name.size() == 4 && (name.compare(0, 3, "com") == 0 || name.compare(0, 3, "lpt") == 0) && name[3] >= '0'
+           && name[3] <= '9';
 }
 
 // Every reader below refuses anything that is not a REGULAR file, for two

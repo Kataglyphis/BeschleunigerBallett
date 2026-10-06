@@ -45,8 +45,8 @@ inline vk::Format chooseDepthFormat(vk::PhysicalDevice physical_device)
 constexpr bool supportsMipmapGeneration(vk::FormatFeatureFlags optimalTilingFeatures)
 {
     constexpr vk::FormatFeatureFlags required = vk::FormatFeatureFlagBits::eSampledImageFilterLinear
-                                                 | vk::FormatFeatureFlagBits::eBlitSrc
-                                                 | vk::FormatFeatureFlagBits::eBlitDst;
+                                                | vk::FormatFeatureFlagBits::eBlitSrc
+                                                | vk::FormatFeatureFlagBits::eBlitDst;
     return (optimalTilingFeatures & required) == required;
 }
 

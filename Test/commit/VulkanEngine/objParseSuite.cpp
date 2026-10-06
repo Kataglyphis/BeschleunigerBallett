@@ -8,8 +8,8 @@
 #include <fstream>
 #include <glm/geometric.hpp>
 #include <glm/vec3.hpp>
-#include <string>
 #include <memory>
+#include <string>
 #include <thread>
 
 import kataglyphis.vulkan.obj_loader;
@@ -46,8 +46,7 @@ TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
     Kataglyphis::ObjLoader loader;
     ASSERT_TRUE(loader.parseCpu(test_model()));
 
-    ASSERT_FALSE(loader.getMaterials().empty())
-      << "a file without materials must still yield the default material";
+    ASSERT_FALSE(loader.getMaterials().empty()) << "a file without materials must still yield the default material";
     for (const unsigned int index : loader.getMaterialIndices()) {
         ASSERT_LT(index, loader.getMaterials().size())
           << "face material index escapes the materials array (GPU OOB read)";
@@ -86,8 +85,7 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
 
     ASSERT_FALSE(loader.getMaterials().empty());
     for (const auto &material : loader.getMaterials()) {
-        EXPECT_EQ(material.get_textureID(), -1)
-          << "a material without map_Kd must route to the diffuse fallback";
+        EXPECT_EQ(material.get_textureID(), -1) << "a material without map_Kd must route to the diffuse fallback";
     }
 }
 
@@ -403,7 +401,9 @@ TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
         std::ofstream mtl(dir / "beside.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Kd paint.png\n";
     }
-    { std::ofstream texture(dir / "paint.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "paint.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "beside.obj", std::ios::binary);
         obj << "mtllib beside.mtl\n"
@@ -417,8 +417,7 @@ TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
 
     ASSERT_FALSE(loader.getTextureNames().empty());
     EXPECT_TRUE(std::filesystem::exists(loader.getTextureNames()[0]))
-      << "the resolved texture path must name a file that actually exists: "
-      << loader.getTextureNames()[0];
+      << "the resolved texture path must name a file that actually exists: " << loader.getTextureNames()[0];
 
     std::filesystem::remove_all(dir);
 }
@@ -434,7 +433,9 @@ TEST(ObjParseUnit, MaterialsSharingAMapKdShareOneTextureSlot)
         mtl << "newmtl first\nKd 1 1 1\nmap_Kd paint.png\n"
                "newmtl second\nKd 1 1 1\nmap_Kd paint.png\n";
     }
-    { std::ofstream texture(dir / "paint.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "paint.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "shared.obj", std::ios::binary);
         obj << "mtllib shared.mtl\n"
@@ -467,8 +468,12 @@ TEST(ObjParseUnit, MtlMapBumpBecomesTheNormalTextureSlot)
         std::ofstream mtl(dir / "bump.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\nmap_Bump wood_n.png\n";
     }
-    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
-    { std::ofstream texture(dir / "wood_n.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "wood.png", std::ios::binary);
+    }
+    {
+        std::ofstream texture(dir / "wood_n.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "bump.obj", std::ios::binary);
         obj << "mtllib bump.mtl\n"
@@ -484,8 +489,7 @@ TEST(ObjParseUnit, MtlMapBumpBecomesTheNormalTextureSlot)
     const auto &material = loader.getMaterials()[0];
     EXPECT_GE(material.textureID, 0);
     EXPECT_GE(material.normalTextureID, 0);
-    EXPECT_NE(material.textureID, material.normalTextureID)
-      << "the diffuse and normal maps must not share a slot";
+    EXPECT_NE(material.textureID, material.normalTextureID) << "the diffuse and normal maps must not share a slot";
 
     std::filesystem::remove_all(dir);
 }
@@ -501,8 +505,12 @@ TEST(ObjParseUnit, MtlNormPreferredOverMapBump)
         std::ofstream mtl(dir / "norm.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Bump height.png\nnorm normal.png\n";
     }
-    { std::ofstream texture(dir / "height.png", std::ios::binary); }
-    { std::ofstream texture(dir / "normal.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "height.png", std::ios::binary);
+    }
+    {
+        std::ofstream texture(dir / "normal.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "norm.obj", std::ios::binary);
         obj << "mtllib norm.mtl\n"
@@ -539,7 +547,9 @@ TEST(ObjParseUnit, AnMtlWithoutANormalMapKeepsTheMinusOneSentinel)
         std::ofstream mtl(dir / "flat.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\n";
     }
-    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "wood.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "flat.obj", std::ios::binary);
         obj << "mtllib flat.mtl\n"
@@ -568,7 +578,9 @@ TEST(ObjParseUnit, OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots)
         std::ofstream mtl(dir / "dual.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\nmap_Bump wood.png\n";
     }
-    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "wood.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "dual.obj", std::ios::binary);
         obj << "mtllib dual.mtl\n"
@@ -601,7 +613,9 @@ TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
         std::ofstream mtl(dir / "sub.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Kd paint.png\n";
     }
-    { std::ofstream texture(dir / "textures" / "paint.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "textures" / "paint.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "sub.obj", std::ios::binary);
         obj << "mtllib sub.mtl\n"
@@ -652,8 +666,8 @@ TEST(ObjParseUnit, EmptyBaseDirStaysRelative)
     // An empty base dir must not become a filesystem-root path.
     const std::string resolved = Kataglyphis::resolveObjTexturePath("", "viking_room.png");
 
-    EXPECT_FALSE(resolved.starts_with('/')) << "an empty base dir must not resolve against the filesystem root: "
-                                             << resolved;
+    EXPECT_FALSE(resolved.starts_with('/'))
+      << "an empty base dir must not resolve against the filesystem root: " << resolved;
     EXPECT_FALSE(std::filesystem::path(resolved).is_absolute());
 }
 
@@ -668,7 +682,9 @@ TEST(ObjParseUnit, NormDirectiveBumpMultiplierReachesNormalScale)
         std::ofstream mtl(dir / "norm_bm.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nnorm -bm 0.5 rock_n.png\n";
     }
-    { std::ofstream texture(dir / "rock_n.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "rock_n.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "norm_bm.obj", std::ios::binary);
         obj << "mtllib norm_bm.mtl\n"
@@ -698,8 +714,12 @@ TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirecti
         std::ofstream mtl(dir / "no_leak.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nmap_Bump -bm 3.0 height.png\nnorm rock_n.png\n";
     }
-    { std::ofstream texture(dir / "height.png", std::ios::binary); }
-    { std::ofstream texture(dir / "rock_n.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "height.png", std::ios::binary);
+    }
+    {
+        std::ofstream texture(dir / "rock_n.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "no_leak.obj", std::ios::binary);
         obj << "mtllib no_leak.mtl\n"
@@ -713,8 +733,7 @@ TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirecti
 
     ASSERT_EQ(loader.getMaterials().size(), 1U);
     const auto &material = loader.getMaterials()[0];
-    EXPECT_FLOAT_EQ(material.normalScale, 1.0F)
-      << "map_Bump's -bm must not leak onto the preferred norm directive";
+    EXPECT_FLOAT_EQ(material.normalScale, 1.0F) << "map_Bump's -bm must not leak onto the preferred norm directive";
 
     bool sawRockN = false;
     for (const std::string &name : loader.getTextureNames()) {
@@ -736,8 +755,12 @@ TEST(ObjParseUnit, MapKeBecomesTheEmissiveTextureSlot)
         std::ofstream mtl(dir / "glow.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nKe 1 1 1\nmap_Kd base.png\nmap_Ke glow.png\n";
     }
-    { std::ofstream texture(dir / "base.png", std::ios::binary); }
-    { std::ofstream texture(dir / "glow.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "base.png", std::ios::binary);
+    }
+    {
+        std::ofstream texture(dir / "glow.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "glow.obj", std::ios::binary);
         obj << "mtllib glow.mtl\n"
@@ -752,8 +775,7 @@ TEST(ObjParseUnit, MapKeBecomesTheEmissiveTextureSlot)
     ASSERT_EQ(loader.getMaterials().size(), 1U);
     const auto &material = loader.getMaterials()[0];
     EXPECT_GE(material.emissiveTextureID, 0);
-    EXPECT_NE(material.textureID, material.emissiveTextureID)
-      << "the diffuse and emissive maps must not share a slot";
+    EXPECT_NE(material.textureID, material.emissiveTextureID) << "the diffuse and emissive maps must not share a slot";
 
     ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureNames().size());
     bool sawGlowPngSrgb = false;
@@ -779,7 +801,9 @@ TEST(ObjParseUnit, MapKdAndMapKeNamingOneFileShareASlot)
         std::ofstream mtl(dir / "dual_ke.mtl", std::ios::binary);
         mtl << "newmtl painted\nKd 1 1 1\nKe 1 1 1\nmap_Kd wood.png\nmap_Ke wood.png\n";
     }
-    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "wood.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "dual_ke.obj", std::ios::binary);
         obj << "mtllib dual_ke.mtl\n"
@@ -830,8 +854,12 @@ TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
         mtl << "newmtl leafy\nKd 1 1 1\nmap_Kd base.png\nmap_d mask.png\n"
                "newmtl solid\nKd 1 1 1\nmap_Kd base.png\n";
     }
-    { std::ofstream texture(dir / "base.png", std::ios::binary); }
-    { std::ofstream texture(dir / "mask.png", std::ios::binary); }
+    {
+        std::ofstream texture(dir / "base.png", std::ios::binary);
+    }
+    {
+        std::ofstream texture(dir / "mask.png", std::ios::binary);
+    }
     {
         std::ofstream obj(dir / "cutout.obj", std::ios::binary);
         obj << "mtllib cutout.mtl\n"
@@ -847,8 +875,7 @@ TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
     ASSERT_EQ(loader.getMaterials().size(), 2U);
     const auto &leafy = loader.getMaterials()[0];
     EXPECT_GE(leafy.alphaTextureID, 0);
-    EXPECT_NE(leafy.textureID, leafy.alphaTextureID)
-      << "the diffuse and alpha maps must not share a slot";
+    EXPECT_NE(leafy.textureID, leafy.alphaTextureID) << "the diffuse and alpha maps must not share a slot";
     EXPECT_FLOAT_EQ(leafy.alphaCutoff, 0.5F);
 
     const auto &solid = loader.getMaterials()[1];

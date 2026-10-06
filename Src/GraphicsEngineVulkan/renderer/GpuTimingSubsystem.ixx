@@ -4,8 +4,8 @@ module;
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
-#include <vector>
 #include <nlohmann/json.hpp>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 #include "spdlog/spdlog.h"
@@ -118,7 +118,9 @@ class GpuTimingSubsystem
 
     // Reads back the previous results of imageIndex's slice (never waits) and
     // publishes smoothed per-pass milliseconds to the GUI shared vars.
-    void readTimings(VulkanDevice &device, uint32_t imageIndex, FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+    void readTimings(VulkanDevice &device,
+      uint32_t imageIndex,
+      FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
     {
         guiRendererSharedVars.gpuTimings.supported = gpu_timings_supported;
 
@@ -168,7 +170,7 @@ class GpuTimingSubsystem
             // wraparound on queue families with fewer than 64 valid bits.
             const uint64_t delta_ticks = (end_value - start_value) & gpu_timestamp_mask;
             const double pass_ms_raw = static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period)
-                                        / NANOSECONDS_PER_MILLISECOND;
+                                       / NANOSECONDS_PER_MILLISECOND;
             guiRendererSharedVars.gpuTimings.pass_ms[static_cast<size_t>(pass)] =
               gpu_pass_averages[static_cast<size_t>(pass)].add(static_cast<float>(pass_ms_raw));
 

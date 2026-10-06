@@ -35,9 +35,7 @@ inline float consume_axis_delta(float &axis_change)
 }
 
 inline bool imgui_wants_keyboard_capture()
-{
-    return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard;
-}
+{ return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard; }
 
 inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int action)
 {
@@ -111,28 +109,20 @@ inline void handle_mouse_callback(GLFWwindow *window,
 }
 
 inline bool imgui_wants_mouse_capture()
-{
-    return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
-}
+{ return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse; }
 
 inline int cursor_input_mode_for(bool look_mode_active)
-{
-    return look_mode_active ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL;
-}
+{ return look_mode_active ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL; }
 
 inline bool should_capture_cursor(int button, int action)
-{
-    return (action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT);
-}
+{ return (action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT); }
 
 // Start and stop cannot share one predicate: "not a right-press" also
 // matches unrelated buttons (left click, middle click, ...), so treating
 // its negation as "release look mode" ends look mode on input that never
 // started it.
 inline bool should_release_cursor(int button, int action)
-{
-    return (action == GLFW_RELEASE) && (button == GLFW_MOUSE_BUTTON_RIGHT);
-}
+{ return (action == GLFW_RELEASE) && (button == GLFW_MOUSE_BUTTON_RIGHT); }
 
 inline void handle_mouse_button_callback(GLFWwindow *window,
   bool &mouse_first_moved,

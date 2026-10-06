@@ -22,7 +22,8 @@ class PathTracing
     PathTracing(const PathTracing &) = delete;
     PathTracing &operator=(const PathTracing &) = delete;
 
-    void init(const std::shared_ptr<VulkanDevice> &in_device, std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
@@ -41,7 +42,7 @@ class PathTracing
     ~PathTracing();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     vk::PipelineLayout pipeline_layout{};
     vk::Pipeline pipeline{};

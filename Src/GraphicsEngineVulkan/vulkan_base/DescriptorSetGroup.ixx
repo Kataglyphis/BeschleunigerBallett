@@ -16,8 +16,8 @@ export namespace Kataglyphis {
 // distinct descriptor type, accumulated as descriptorCount * set_count
 // across all bindings that share the type, in first-seen order. Pure and
 // device-free so it can be unit-tested without a VulkanDevice.
-std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(
-  std::span<const vk::DescriptorSetLayoutBinding> bindings, uint32_t set_count);
+std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(std::span<const vk::DescriptorSetLayoutBinding> bindings,
+  uint32_t set_count);
 
 // True when a write of writeCount descriptors matches what the binding
 // declared. Named (rather than an inline comparison) so beginWrite's
@@ -53,10 +53,8 @@ class DescriptorSetGroup
     DescriptorSetGroup(DescriptorSetGroup &&other) noexcept;
     DescriptorSetGroup &operator=(DescriptorSetGroup &&other) noexcept;
 
-    DescriptorSetGroup &addBinding(uint32_t binding,
-      vk::DescriptorType type,
-      uint32_t descriptor_count,
-      vk::ShaderStageFlags stages);
+    DescriptorSetGroup &
+      addBinding(uint32_t binding, vk::DescriptorType type, uint32_t descriptor_count, vk::ShaderStageFlags stages);
 
     // Creates layout + pool and allocates set_count sets. Releases any
     // layout/pool from a previous create() first, so calling create() again
@@ -65,7 +63,8 @@ class DescriptorSetGroup
     // duplicate binding number, before anything is created; every later
     // failure goes through ASSERT_VULKAN, which logs critical and aborts, so
     // there is no partial-cleanup path.
-    [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count);  // DEVICE_SINK_OK: moved into member
+    [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device,// DEVICE_SINK_OK: moved into member
+      uint32_t set_count);
 
     // -- write helpers (thin wrappers around vkUpdateDescriptorSets; the
     // descriptor type / array count come from the declared binding)
@@ -102,8 +101,8 @@ class DescriptorSetGroup
     // dstArrayElement = 0, descriptorType, descriptorCount = 1). Returns the
     // found binding, or nullptr (having already logged) on failure; callers
     // must return early in that case.
-    const vk::DescriptorSetLayoutBinding *beginWrite(uint32_t set_index, uint32_t binding,
-      vk::WriteDescriptorSet &out) const;
+    const vk::DescriptorSetLayoutBinding *
+      beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const;
 
     // Destroys pool + layout (guarded on device) and clears descriptor_sets,
     // leaving bindings and device alone. The GPU-resource half of cleanUp();

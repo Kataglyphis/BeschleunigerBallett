@@ -38,7 +38,7 @@ class VulkanSwapChain
     ~VulkanSwapChain();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     Kataglyphis::Frontend::Window *window{ nullptr };
 
     vk::SwapchainKHR swapchain{};

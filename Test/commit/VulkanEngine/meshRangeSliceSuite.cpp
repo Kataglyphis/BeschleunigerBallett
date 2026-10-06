@@ -16,7 +16,8 @@ using Kataglyphis::sliceMeshRange;
 using ::Vertex;
 
 namespace {
-Vertex vertexAtX(float x) { return Vertex(glm::vec3(x, 0.0F, 0.0F), glm::vec3(0.0F), glm::vec4(1.0F), glm::vec2(0.0F)); }
+Vertex vertexAtX(float x)
+{ return Vertex(glm::vec3(x, 0.0F, 0.0F), glm::vec3(0.0F), glm::vec4(1.0F), glm::vec2(0.0F)); }
 }// namespace
 
 TEST(MeshRangeSlice, RebasesIndicesAndSlicesArraysForASubMesh)

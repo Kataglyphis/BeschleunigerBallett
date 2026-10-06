@@ -6,15 +6,9 @@
 
 using Kataglyphis::appExitCode;
 
-TEST(AppExitCodeUnit, CleanRunSucceeds)
-{
-    EXPECT_EQ(appExitCode(false, false), EXIT_SUCCESS);
-}
+TEST(AppExitCodeUnit, CleanRunSucceeds) { EXPECT_EQ(appExitCode(false, false), EXIT_SUCCESS); }
 
-TEST(AppExitCodeUnit, DeviceLossFails)
-{
-    EXPECT_EQ(appExitCode(true, false), EXIT_FAILURE);
-}
+TEST(AppExitCodeUnit, DeviceLossFails) { EXPECT_EQ(appExitCode(true, false), EXIT_FAILURE); }
 
 TEST(AppExitCodeUnit, FatalFrameErrorWithoutDeviceLossFails)
 {
@@ -22,7 +16,4 @@ TEST(AppExitCodeUnit, FatalFrameErrorWithoutDeviceLossFails)
     EXPECT_EQ(appExitCode(false, true), EXIT_FAILURE);
 }
 
-TEST(AppExitCodeUnit, BothFail)
-{
-    EXPECT_EQ(appExitCode(true, true), EXIT_FAILURE);
-}
+TEST(AppExitCodeUnit, BothFail) { EXPECT_EQ(appExitCode(true, true), EXIT_FAILURE); }

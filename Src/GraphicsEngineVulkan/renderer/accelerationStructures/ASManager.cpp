@@ -1,4 +1,8 @@
 module;
+#include "common/Utilities.hpp"
+#include "renderer/accelerationStructures/BlasCompaction.hpp"
+#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+#include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -6,14 +10,10 @@ module;
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/matrix.hpp>
 #include <memory>
+#include <spdlog/spdlog.h>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
-#include <spdlog/spdlog.h>
-#include "common/Utilities.hpp"
-#include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
-#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
-#include "renderer/accelerationStructures/BlasCompaction.hpp"
 
 module kataglyphis.vulkan.as_manager;
 
@@ -34,9 +34,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(const std
   Kataglyphis::Scene *scene)
 {
     this->vulkanDevice = device;
-    if (scene == nullptr || scene->getModelCount() == 0) {
-        return;
-    }
+    if (scene == nullptr || scene->getModelCount() == 0) { return; }
     if (!createBLAS(device, commandPool, scene)) {
         spdlog::error(
           "ASManager::createASForScene: BLAS build failed; no acceleration structure this scene change; ray "
@@ -52,9 +50,7 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
 {
     // Clear old BLAS if any
     for (auto &bla : blas) {
-        if (bla.vulkanAS) {
-            vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS);
-        }
+        if (bla.vulkanAS) { vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS); }
         bla.vulkanBuffer.cleanUp();
     }
     blas.clear();
@@ -139,8 +135,9 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
     bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
     if (!build_submitted) {
-        spdlog::error("ASManager::createBLAS: failed to submit BLAS build commands for {} model(s); no "
-                      "acceleration structures were built.",
+        spdlog::error(
+          "ASManager::createBLAS: failed to submit BLAS build commands for {} model(s); no "
+          "acceleration structures were built.",
           scene->getModelCount());
         scratchBuffer.cleanUp();
         return false;
@@ -201,8 +198,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
       sizeof(vk::DeviceSize),
       vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
     if (query_result != vk::Result::eSuccess) {
-        spdlog::warn("ASManager: compacted-size query failed ({}); keeping uncompacted BLAS.",
-          static_cast<int>(query_result));
+        spdlog::warn(
+          "ASManager: compacted-size query failed ({}); keeping uncompacted BLAS.", static_cast<int>(query_result));
         logical.destroyQueryPool(query_pool);
         return;
     }
@@ -439,8 +436,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
     if (!build_submitted) {
         // The only signal: the TLAS handle exists but was never built, and the next traced frame reads it.
-        spdlog::error("ASManager::createTLAS: failed to submit TLAS build commands; the top-level "
-                      "acceleration structure handle exists but was never built.");
+        spdlog::error(
+          "ASManager::createTLAS: failed to submit TLAS build commands; the top-level "
+          "acceleration structure handle exists but was never built.");
     }
     scratchBuffer.cleanUp();
     geometryInstanceBuffer.cleanUp();
@@ -501,7 +499,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(const std
     command_buffer.buildAccelerationStructuresKHR(1, &build_as_structure.build_info, &build_as_structure.range_info);
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(const std::shared_ptr<VulkanDevice> &device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(
+  const std::shared_ptr<VulkanDevice> &device,
   BuildAccelerationStructure &build_as_structure,
   BlasInput &blas_input,
   vk::DeviceSize &current_scratch_size,
@@ -510,7 +509,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
     build_as_structure.build_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
     // eAllowCompaction enables compactBLAS without slowing the trace.
     build_as_structure.build_info.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
-      | vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
+                                          | vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
     build_as_structure.build_info.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
     build_as_structure.build_info.geometryCount = static_cast<uint32_t>(blas_input.as_geometry.size());
     build_as_structure.build_info.pGeometries = blas_input.as_geometry.data();

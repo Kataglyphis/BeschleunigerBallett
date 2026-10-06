@@ -1,5 +1,6 @@
 module;
 
+#include "spdlog/spdlog.h"
 #include <array>
 #include <cstdio>
 #include <iostream>
@@ -7,7 +8,6 @@ module;
 #include <string>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_structs.hpp>
-#include "spdlog/spdlog.h"
 
 #include "common/Utilities.hpp"
 

@@ -10,23 +10,25 @@ using Kataglyphis::buildRenderPassBeginInfo;
 
 namespace {
 // Default handle constructors are not constexpr in this vulkan-hpp; the nullptr_t one is.
-constexpr std::array<vk::ClearValue, 3> kThreeClearValues{
-    vk::ClearValue{}, vk::ClearValue{}, vk::ClearValue{}
-};
+constexpr std::array<vk::ClearValue, 3> kThreeClearValues{ vk::ClearValue{}, vk::ClearValue{}, vk::ClearValue{} };
 }// namespace
 
-static_assert(buildRenderPassBeginInfo(vk::RenderPass(nullptr), vk::Framebuffer(nullptr), vk::Extent2D{ 1920, 1080 },
+static_assert(buildRenderPassBeginInfo(vk::RenderPass(nullptr),
+                vk::Framebuffer(nullptr),
+                vk::Extent2D{ 1920, 1080 },
                 std::span<const vk::ClearValue>(kThreeClearValues))
-                .clearValueCount
-    == 3U,
+                  .clearValueCount
+                == 3U,
   "buildRenderPassBeginInfo must be usable in a constant expression");
 
 namespace {
 
 TEST(RenderPassBeginHelperUnit, ClearValueCountIsDerivedFromTheSpan)
 {
-    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{}, vk::Framebuffer{},
-      vk::Extent2D{ 800, 600 }, std::span<const vk::ClearValue>(kThreeClearValues));
+    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{},
+      vk::Framebuffer{},
+      vk::Extent2D{ 800, 600 },
+      std::span<const vk::ClearValue>(kThreeClearValues));
 
     EXPECT_EQ(info.clearValueCount, 3U);
 }
@@ -42,16 +44,20 @@ TEST(RenderPassBeginHelperUnit, EmptySpanYieldsZeroClearValueCountAndNullPointer
 
 TEST(RenderPassBeginHelperUnit, PClearValuesPointsAtTheCallersStorage)
 {
-    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{}, vk::Framebuffer{},
-      vk::Extent2D{ 800, 600 }, std::span<const vk::ClearValue>(kThreeClearValues));
+    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{},
+      vk::Framebuffer{},
+      vk::Extent2D{ 800, 600 },
+      std::span<const vk::ClearValue>(kThreeClearValues));
 
     EXPECT_EQ(info.pClearValues, kThreeClearValues.data());
 }
 
 TEST(RenderPassBeginHelperUnit, RenderAreaOffsetIsAlwaysZero)
 {
-    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{}, vk::Framebuffer{},
-      vk::Extent2D{ 800, 600 }, std::span<const vk::ClearValue>(kThreeClearValues));
+    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{},
+      vk::Framebuffer{},
+      vk::Extent2D{ 800, 600 },
+      std::span<const vk::ClearValue>(kThreeClearValues));
 
     EXPECT_EQ(info.renderArea.offset.x, 0);
     EXPECT_EQ(info.renderArea.offset.y, 0);

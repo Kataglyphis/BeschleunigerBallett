@@ -73,7 +73,7 @@ class Rasterizer
   private:
     unsigned int meshesDrawn{ 0 };
     unsigned int meshesConsidered{ 0 };
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     std::vector<vk::Framebuffer> framebuffer;

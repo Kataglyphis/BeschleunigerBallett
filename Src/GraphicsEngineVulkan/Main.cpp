@@ -25,10 +25,7 @@ import kataglyphis.vulkan.app;
 #include <string>
 
 // abseil owns argument parsing, `--help` and unknown-argument rejection; add no parser of your own.
-ABSL_FLAG(std::string,
-          gpu,
-          "",
-          "GPU selection mode (auto, dedicated, integrated)");
+ABSL_FLAG(std::string, gpu, "", "GPU selection mode (auto, dedicated, integrated)");
 
 namespace {
 auto normalize_gpu_mode(std::string value) -> std::string
@@ -102,7 +99,7 @@ auto main(int argc, char **argv) -> int
             setenv("KATAGLYPHIS_VK_GPU", normalized_mode.c_str(), 1);
 #endif
             spdlog::default_logger_raw()->log(
-                spdlog::level::info, std::string("GPU selection mode set via CLI: ") + normalized_mode);
+              spdlog::level::info, std::string("GPU selection mode set via CLI: ") + normalized_mode);
         }
     }
 

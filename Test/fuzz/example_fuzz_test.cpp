@@ -7,7 +7,8 @@
 #include <string>
 
 // An example function we want to fuzz test
-bool IsPalindrome(const std::string& s) {
+bool IsPalindrome(const std::string &s)
+{
     if (s.empty()) return true;
     int left = 0;
     int right = s.size() - 1;
@@ -20,7 +21,8 @@ bool IsPalindrome(const std::string& s) {
 }
 
 // Property: Reversing a string and appending it to itself should always produce a palindrome
-void ReversingAndAppendingCreatesPalindrome(const std::string& input) {
+void ReversingAndAppendingCreatesPalindrome(const std::string &input)
+{
     std::string reversed(input.rbegin(), input.rend());
     std::string candidate = input + reversed;
     EXPECT_TRUE(IsPalindrome(candidate));

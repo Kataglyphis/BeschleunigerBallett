@@ -65,9 +65,7 @@ Camera::Camera()
         .far_plane = 150.F,
         .fov = 45.F }
 #endif
-{
-    update();
-}
+{ update(); }
 
 void Camera::key_control(std::span<const bool> keys, float delta_time)
 {
@@ -76,9 +74,7 @@ void Camera::key_control(std::span<const bool> keys, float delta_time)
 }
 
 void Camera::mouse_control(float x_change, float y_change)
-{
-    Kataglyphis::Frontend::apply_mouse_input(controllerState(camera_state), x_change, y_change);
-}
+{ Kataglyphis::Frontend::apply_mouse_input(controllerState(camera_state), x_change, y_change); }
 
 void Camera::set_near_plane(float near_plane) { camera_state.near_plane = near_plane; }
 

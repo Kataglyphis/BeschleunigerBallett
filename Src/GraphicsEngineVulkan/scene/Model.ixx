@@ -52,7 +52,7 @@ class Model
     ~Model();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     void addSampler(const Texture &newTexture, const GltfSamplerDesc &samplerDesc);
 

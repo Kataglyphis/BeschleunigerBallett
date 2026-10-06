@@ -23,7 +23,8 @@ class Raytracing
     Raytracing(const Raytracing &) = delete;
     Raytracing &operator=(const Raytracing &) = delete;
 
-    void init(const std::shared_ptr<VulkanDevice> &in_device, std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
       VulkanSwapChain *swapchain);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
@@ -37,7 +38,7 @@ class Raytracing
     ~Raytracing();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     vk::Pipeline graphicsPipeline{};

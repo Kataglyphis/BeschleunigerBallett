@@ -1,9 +1,9 @@
 module;
-#include <vector>
+#include <glm/glm.hpp>
 #include <memory>
 #include <span>
+#include <vector>
 #include <vulkan/vulkan.hpp>
-#include <glm/glm.hpp>
 
 export module kataglyphis.vulkan.cascaded_shadow_map;
 
@@ -16,7 +16,8 @@ import kataglyphis.vulkan.descriptor_set_group;
 
 export namespace Kataglyphis {
 
-struct CascadeData {
+struct CascadeData
+{
     float splitDepth;
     glm::mat4 viewProjMatrix;
 };
@@ -36,7 +37,8 @@ struct ShadowPushConstants
 // Aggregate for the parameters shared by computeCascadeData and
 // computeCascadeDataInto - six adjacent floats where a transposed argument
 // still compiles, so callers build this by name instead.
-struct CascadeFitParams {
+struct CascadeFitParams
+{
     glm::mat4 cameraView{ 1.0F };
     float cameraFov{ 45.0F };
     float aspect{ 1.0F };
@@ -135,17 +137,25 @@ class CascadedShadowMap
     CascadedShadowMap(const CascadedShadowMap &) = delete;
     CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
 
-    void init(const std::shared_ptr<VulkanDevice> &device, uint32_t width, uint32_t height, uint32_t num_cascades,
-      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
+    void init(const std::shared_ptr<VulkanDevice> &device,
+      uint32_t width,
+      uint32_t height,
+      uint32_t num_cascades,
+      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout,
+      uint32_t swapChainImageCount,
       vk::CommandPool commandPool);
 
     void createGraphicsPipeline();
     void shaderHotReload();
-    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled);
+    void recordCommands(vk::CommandBuffer &commandBuffer,
+      uint32_t image_index,
+      Scene *scene,
+      std::span<const vk::DescriptorSet> descriptorSets,
+      bool cullingEnabled);
     // With shadows off: the raster pipeline still binds the array, so it must leave UNDEFINED without a pass.
     void recordSkippedPass(vk::CommandBuffer &commandBuffer);
 
-    Kataglyphis::Texture* getShadowMapArray() const { return shadowMapArray.get(); }
+    Kataglyphis::Texture *getShadowMapArray() const { return shadowMapArray.get(); }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
     // Passes the map resolution through, so live cascades are stabilized.
@@ -157,7 +167,7 @@ class CascadedShadowMap
       const glm::vec3 &lightDir,
       float shadowDistance = 0.0F,
       float splitLambda = 0.0F);
-    const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
+    const std::vector<CascadeData> &getCascadeData() const { return cascadeData; }
 
     // Uploads the current cascadeData into this swapchain image's own light
     // matrices buffer. Call once per image_index, before recordCommands binds
@@ -178,7 +188,7 @@ class CascadedShadowMap
   private:
     unsigned int castersDrawn{ 0 };
     unsigned int castersConsidered{ 0 };
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
     uint32_t shadowWidth{ 0 };
     uint32_t shadowHeight{ 0 };
     uint32_t numCascades{ 0 };
@@ -213,4 +223,4 @@ class CascadedShadowMap
     void createDescriptorSetAndPipeline();
     void buildGraphicsPipeline();
 };
-}
+}// namespace Kataglyphis

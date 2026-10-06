@@ -13,30 +13,32 @@ using Kataglyphis::destroyFramebuffers;
 
 namespace {
 // Default handle constructors are not constexpr in this vulkan-hpp; the nullptr_t one is.
-constexpr std::array<vk::ImageView, 3> kThreeViews{ vk::ImageView(nullptr), vk::ImageView(nullptr),
+constexpr std::array<vk::ImageView, 3> kThreeViews{ vk::ImageView(nullptr),
+    vk::ImageView(nullptr),
     vk::ImageView(nullptr) };
 }// namespace
 
-static_assert(buildFramebufferCreateInfo(vk::RenderPass(nullptr), std::span<const vk::ImageView>(kThreeViews),
+static_assert(buildFramebufferCreateInfo(vk::RenderPass(nullptr),
+                std::span<const vk::ImageView>(kThreeViews),
                 vk::Extent2D{ 1920, 1080 })
-                .layers
-    == 1,
+                  .layers
+                == 1,
   "buildFramebufferCreateInfo must be usable in a constant expression");
 
 namespace {
 
 TEST(FramebufferHelperUnit, AttachmentCountIsDerivedFromTheSpan)
 {
-    const vk::FramebufferCreateInfo info =
-      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+    const vk::FramebufferCreateInfo info = buildFramebufferCreateInfo(
+      vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
 
     EXPECT_EQ(info.attachmentCount, 3U);
 }
 
 TEST(FramebufferHelperUnit, PAttachmentsPointsAtTheCallersStorage)
 {
-    const vk::FramebufferCreateInfo info =
-      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+    const vk::FramebufferCreateInfo info = buildFramebufferCreateInfo(
+      vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
 
     EXPECT_EQ(info.pAttachments, kThreeViews.data());
 }
@@ -53,8 +55,8 @@ TEST(FramebufferHelperUnit, WidthAndHeightComeFromTheExtent)
 
 TEST(FramebufferHelperUnit, LayersDefaultsToOne)
 {
-    const vk::FramebufferCreateInfo info =
-      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+    const vk::FramebufferCreateInfo info = buildFramebufferCreateInfo(
+      vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
 
     EXPECT_EQ(info.layers, 1U);
 }

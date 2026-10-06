@@ -15,8 +15,8 @@ using Kataglyphis::usesNearestFiltering;
 
 TEST(SamplerBuilderUnit, MatchesPostStageOffscreenSamplerConfiguration)
 {
-    const vk::SamplerCreateInfo info =
-      buildSamplerCreateInfo(vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 0.0F, VK_TRUE, 16.0F, vk::BorderColor::eFloatOpaqueBlack);
+    const vk::SamplerCreateInfo info = buildSamplerCreateInfo(
+      vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 0.0F, VK_TRUE, 16.0F, vk::BorderColor::eFloatOpaqueBlack);
 
     EXPECT_EQ(info.magFilter, vk::Filter::eLinear);
     EXPECT_EQ(info.minFilter, vk::Filter::eLinear);
@@ -35,8 +35,8 @@ TEST(SamplerBuilderUnit, MatchesPostStageOffscreenSamplerConfiguration)
 
 TEST(SamplerBuilderUnit, MatchesModelSamplerConfigurationWithMipLevelAsMaxLod)
 {
-    const vk::SamplerCreateInfo info =
-      buildSamplerCreateInfo(vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 4.0F, VK_FALSE, 1.0F, vk::BorderColor::eFloatOpaqueBlack);
+    const vk::SamplerCreateInfo info = buildSamplerCreateInfo(
+      vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 4.0F, VK_FALSE, 1.0F, vk::BorderColor::eFloatOpaqueBlack);
 
     EXPECT_EQ(info.magFilter, vk::Filter::eLinear);
     EXPECT_EQ(info.minFilter, vk::Filter::eLinear);
@@ -50,8 +50,12 @@ TEST(SamplerBuilderUnit, MatchesModelSamplerConfigurationWithMipLevelAsMaxLod)
 
 TEST(SamplerBuilderUnit, MatchesTextureSamplerConfigurationWithAnisotropyHardDisabled)
 {
-    const vk::SamplerCreateInfo info =
-      buildSamplerCreateInfo(vk::Filter::eNearest, vk::SamplerAddressMode::eClampToEdge, 5.0F, VK_FALSE, 1.0F, vk::BorderColor::eIntOpaqueBlack);
+    const vk::SamplerCreateInfo info = buildSamplerCreateInfo(vk::Filter::eNearest,
+      vk::SamplerAddressMode::eClampToEdge,
+      5.0F,
+      VK_FALSE,
+      1.0F,
+      vk::BorderColor::eIntOpaqueBlack);
 
     EXPECT_EQ(info.magFilter, vk::Filter::eNearest);
     EXPECT_EQ(info.minFilter, vk::Filter::eNearest);
@@ -106,18 +110,22 @@ TEST(SamplerBuilderUnit, ScalarOverloadDelegatesToTheDescOverload)
 
     {
         // Default-ish parameter set.
-        const vk::SamplerCreateInfo scalar = buildSamplerCreateInfo(
-          vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 4.0F, VK_TRUE, 16.0F, vk::BorderColor::eFloatOpaqueBlack);
-        const vk::SamplerCreateInfo desc = buildSamplerCreateInfo(
-          GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eRepeat,
-            .addressModeV = vk::SamplerAddressMode::eRepeat,
-            .magFilter = vk::Filter::eLinear,
-            .minFilter = vk::Filter::eLinear,
-            .mipmapMode = vk::SamplerMipmapMode::eLinear },
+        const vk::SamplerCreateInfo scalar = buildSamplerCreateInfo(vk::Filter::eLinear,
+          vk::SamplerAddressMode::eRepeat,
           4.0F,
           VK_TRUE,
           16.0F,
           vk::BorderColor::eFloatOpaqueBlack);
+        const vk::SamplerCreateInfo desc =
+          buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eRepeat,
+                                   .addressModeV = vk::SamplerAddressMode::eRepeat,
+                                   .magFilter = vk::Filter::eLinear,
+                                   .minFilter = vk::Filter::eLinear,
+                                   .mipmapMode = vk::SamplerMipmapMode::eLinear },
+            4.0F,
+            VK_TRUE,
+            16.0F,
+            vk::BorderColor::eFloatOpaqueBlack);
         expectSameFields(scalar, desc);
     }
 
@@ -131,18 +139,18 @@ TEST(SamplerBuilderUnit, ScalarOverloadDelegatesToTheDescOverload)
           vk::BorderColor::eIntOpaqueBlack,
           VK_TRUE,
           vk::CompareOp::eLessOrEqual);
-        const vk::SamplerCreateInfo desc = buildSamplerCreateInfo(
-          GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eClampToEdge,
-            .addressModeV = vk::SamplerAddressMode::eClampToEdge,
-            .magFilter = vk::Filter::eNearest,
-            .minFilter = vk::Filter::eNearest,
-            .mipmapMode = vk::SamplerMipmapMode::eLinear },
-          5.0F,
-          VK_FALSE,
-          1.0F,
-          vk::BorderColor::eIntOpaqueBlack,
-          VK_TRUE,
-          vk::CompareOp::eLessOrEqual);
+        const vk::SamplerCreateInfo desc =
+          buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+                                   .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+                                   .magFilter = vk::Filter::eNearest,
+                                   .minFilter = vk::Filter::eNearest,
+                                   .mipmapMode = vk::SamplerMipmapMode::eLinear },
+            5.0F,
+            VK_FALSE,
+            1.0F,
+            vk::BorderColor::eIntOpaqueBlack,
+            VK_TRUE,
+            vk::CompareOp::eLessOrEqual);
         expectSameFields(scalar, desc);
     }
 }

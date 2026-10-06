@@ -18,8 +18,7 @@ void waitForModelLoad(Renderer *renderer, RenderOneFrame renderOneFrame)
         if (renderer->hasDeviceLost()) { return; }
     }
 
-    EXPECT_FALSE(renderer->isModelLoadPending())
-      << "Model was still loading after " << MAX_LOAD_FRAMES << " frames.";
+    EXPECT_FALSE(renderer->isModelLoadPending()) << "Model was still loading after " << MAX_LOAD_FRAMES << " frames.";
 }
 
 }// namespace Kataglyphis::TestSupport

@@ -1,5 +1,5 @@
-#include <gtest/gtest.h>
 #include "EngineLoadWait.hpp"
+#include <gtest/gtest.h>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -61,13 +61,11 @@ void run_frames(Kataglyphis::Frontend::Window *window,
     }
 }
 
-} // namespace
+}// namespace
 
 TEST(Integration, RenderModesSelectableInGui)
 {
-    if (!glfw_reports_vulkan_support()) {
-        GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system.";
-    }
+    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
 
     constexpr int window_width = 1200;
     constexpr int window_height = 768;
@@ -95,8 +93,7 @@ TEST(Integration, RenderModesSelectableInGui)
 
     // Back to forward: mode switches must be repeatable in both directions.
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    run_frames(
-      window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "forward-again");
+    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "forward-again");
 
     if (renderer->supportsHardwareRaytracing()) {
         renderer_vars.raytracing = true;
@@ -105,8 +102,7 @@ TEST(Integration, RenderModesSelectableInGui)
 
         renderer_vars.raytracing = false;
         renderer_vars.pathTracing = true;
-        run_frames(
-          window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "path-tracing");
+        run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "path-tracing");
 
         renderer_vars.pathTracing = false;
         run_frames(

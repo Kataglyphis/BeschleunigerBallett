@@ -9,8 +9,11 @@
 using Kataglyphis::buildImageMemoryBarrier;
 
 // vk::Image{} is not constexpr in vulkan-hpp; only the nullptr_t constructor is.
-static_assert(buildImageMemoryBarrier(vk::Image(nullptr), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {},
-                 vk::AccessFlagBits::eShaderWrite)
+static_assert(buildImageMemoryBarrier(vk::Image(nullptr),
+                vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eGeneral,
+                {},
+                vk::AccessFlagBits::eShaderWrite)
                   .newLayout
                 == vk::ImageLayout::eGeneral,
   "buildImageMemoryBarrier must be usable in a constant expression");

@@ -22,9 +22,7 @@ class ScopedCmdLabel
   public:
     ScopedCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
       : cmd(commandBuffer)
-    {
-        beginCmdLabel(cmd, name, color);
-    }
+    { beginCmdLabel(cmd, name, color); }
 
     ScopedCmdLabel(const ScopedCmdLabel &) = delete;
     ScopedCmdLabel &operator=(const ScopedCmdLabel &) = delete;

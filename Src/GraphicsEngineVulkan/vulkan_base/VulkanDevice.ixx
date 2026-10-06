@@ -1,9 +1,9 @@
 module;
 
+#include "renderer/SwapChainDetails.hpp"
 #include <vector>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
-#include "renderer/SwapChainDetails.hpp"
 
 export module kataglyphis.vulkan.device;
 
@@ -43,8 +43,10 @@ class VulkanDevice
     // the shared render descriptor set binds MAX_TEXTURE_COUNT sampled
     // images and samplers in one stage, so a device below that limit could
     // not actually satisfy the fixed-size shader array.
-    uint32_t getMaxPerStageDescriptorSampledImages() const { return device_properties.limits.maxPerStageDescriptorSampledImages; };
-    uint32_t getMaxPerStageDescriptorSamplers() const { return device_properties.limits.maxPerStageDescriptorSamplers; };
+    uint32_t getMaxPerStageDescriptorSampledImages() const
+    { return device_properties.limits.maxPerStageDescriptorSampledImages; };
+    uint32_t getMaxPerStageDescriptorSamplers() const
+    { return device_properties.limits.maxPerStageDescriptorSamplers; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
     // Minimum alignment for allocations backing buffers whose device address
@@ -97,7 +99,8 @@ class VulkanDevice
     void create_pipeline_cache();
     void save_and_destroy_pipeline_cache();
 
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice);
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(
+      vk::PhysicalDevice selectedPhysicalDevice);
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(vk::PhysicalDevice device);
 
     bool check_device_suitable(vk::PhysicalDevice device);

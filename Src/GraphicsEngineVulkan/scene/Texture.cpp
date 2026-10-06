@@ -1,10 +1,10 @@
 module;
 #include <memory>
 
-#include "spdlog/spdlog.h"
 #include "common/FormatHelper.hpp"
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -31,11 +31,8 @@ using namespace Kataglyphis;
 Kataglyphis::Texture::Texture() = default;
 
 Kataglyphis::Texture::Texture(Texture &&other) noexcept
-  : mip_levels(other.mip_levels),
-    vulkanImage(std::move(other.vulkanImage)),
-    vulkanImageView(std::move(other.vulkanImageView)),
-    textureSampler(other.textureSampler),
-    device(other.device)
+  : mip_levels(other.mip_levels), vulkanImage(std::move(other.vulkanImage)),
+    vulkanImageView(std::move(other.vulkanImageView)), textureSampler(other.textureSampler), device(other.device)
 {
     other.textureSampler = nullptr;
     other.device = nullptr;
@@ -158,9 +155,8 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     // One submit for transition, copy and mips instead of three fence-waited ones.
-    vk::CommandBuffer command_buffer =
-      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
-        device->getLogicalDevice(), commandPool);
+    vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), commandPool);
     if (!command_buffer) {
         spdlog::error("Skipping texture upload due to invalid command buffer.");
         stagingBuffer.cleanUp();
@@ -168,8 +164,11 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
         return false;
     }
 
-    vulkanImage.transitionImageLayout(
-      command_buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mip_levels, vk::ImageAspectFlagBits::eColor);
+    vulkanImage.transitionImageLayout(command_buffer,
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eTransferDstOptimal,
+      mip_levels,
+      vk::ImageAspectFlagBits::eColor);
 
     VulkanBufferManager::copyImageBuffer(command_buffer,
       stagingBuffer.getBuffer(),
@@ -198,7 +197,9 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
         return false;
     }
 
+    // clang-format off: BuildIntegrity wants the call, its eColor aspect and the marker on one line.
     createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);// COLOR_ATTACHMENT_CHAIN_OK: real-mip-chain
+    // clang-format on
 
     return true;
 }
@@ -231,7 +232,18 @@ void Kataglyphis::Texture::createImage(const std::shared_ptr<VulkanDevice> &in_d
 {
     this->device = in_device;
     this->mip_levels = in_mip_levels;
-    vulkanImage.create(in_device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags, array_layers, create_flags, image_type, depth);
+    vulkanImage.create(in_device,
+      width,
+      height,
+      in_mip_levels,
+      format,
+      tiling,
+      use_flags,
+      prop_flags,
+      array_layers,
+      create_flags,
+      image_type,
+      depth);
 }
 
 void Kataglyphis::Texture::createImageView(const std::shared_ptr<VulkanDevice> &in_device,
@@ -242,10 +254,15 @@ void Kataglyphis::Texture::createImageView(const std::shared_ptr<VulkanDevice> &
   uint32_t array_layers)
 {
     this->device = in_device;
-    vulkanImageView.create(in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
+    vulkanImageView.create(
+      in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
 }
 
-void Kataglyphis::Texture::createTextureSampler(const std::shared_ptr<VulkanDevice> &in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
+void Kataglyphis::Texture::createTextureSampler(const std::shared_ptr<VulkanDevice> &in_device,
+  vk::Filter filter,
+  vk::SamplerAddressMode addressMode,
+  vk::Bool32 compareEnable,
+  vk::CompareOp compareOp)
 {
     // Before the device swap: the old sampler must be destroyed with the device that created it.
     releaseSampler();
@@ -301,7 +318,10 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
     return image;
 }
 
-void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer, vk::Image image, int32_t width, int32_t height)
+void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer,
+  vk::Image image,
+  int32_t width,
+  int32_t height)
 {
     vk::ImageMemoryBarrier barrier{};
     barrier.image = image;
@@ -353,7 +373,7 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer, vk:
           blit,
           vk::Filter::eLinear);
 
-        // Raster, ray-tracing and compute shaders all sample these mips, so a raster-only stage would leave two unsynchronized.
+        // Raster, ray-tracing and compute shaders all sample these mips; a raster-only stage leaves two unsynchronized.
         barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.oldLayout);

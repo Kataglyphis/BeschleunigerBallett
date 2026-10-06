@@ -38,4 +38,4 @@ void fillMissingFlatNormals(std::span<Vertex> vertices,
 /// UVs fall back to an arbitrary axis orthogonal to the normal instead of
 /// producing a NaN.
 void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex = 0);
-}
+}// namespace vertex

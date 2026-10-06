@@ -72,6 +72,4 @@ TEST(GpuTimingTablesUnit, DefaultTimingsReportNoSampleForEveryPass)
 }
 
 TEST(GpuTimingTablesUnit, PassCountMatchesTheEnum)
-{
-    EXPECT_EQ(static_cast<int>(FrontendShared::GpuTimedPass::Count), FrontendShared::GPU_TIMED_PASS_COUNT);
-}
+{ EXPECT_EQ(static_cast<int>(FrontendShared::GpuTimedPass::Count), FrontendShared::GPU_TIMED_PASS_COUNT); }

@@ -1,18 +1,4 @@
 module;
-#include <algorithm>
-#include <array>
-#include <cmath>
-#include <cstddef>
-#include <cstring>
-#include <vector>
-#include <memory>
-#include <filesystem>
-#include <span>
-#include <sstream>
-#include <vulkan/vulkan.hpp>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
 #include "common/ImageBarrierHelper.hpp"
@@ -21,6 +7,20 @@ module;
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/SceneUBO.hpp"
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstring>
+#include <filesystem>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <memory>
+#include <span>
+#include <sstream>
+#include <vector>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.cascaded_shadow_map;
 
@@ -38,8 +38,12 @@ import kataglyphis.vulkan.mesh_draw_recorder;
 namespace Kataglyphis {
 
 
-void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
-  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
+void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device,
+  uint32_t width,
+  uint32_t height,
+  uint32_t num_cascades,
+  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout,
+  uint32_t swapChainImageCount,
   vk::CommandPool commandPool)
 {
     this->device = in_device;
@@ -57,7 +61,7 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device, uin
     depth_format = depthFormat;
 
     shadowMapArray = std::make_unique<Texture>();
-    // Sampled array with a comparison sampler, so deliberately outside createDepthAttachment (renderer/DepthAttachment.ixx).
+    // Sampled array with a comparison sampler, so deliberately outside createDepthAttachment (DepthAttachment.ixx).
     shadowMapArray->createImage(device,
       shadowWidth,
       shadowHeight,
@@ -70,8 +74,9 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device, uin
       numCascades);
 
     // Sampled view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    shadowMapArray->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
-    // Comparison sampler: linear filtering gives a free 2x2 PCF tap; eLessOrEqual matches the Rust renderer's shadow_sampler.
+    shadowMapArray->createImageView(
+      device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
+    // Comparison sampler: linear filtering gives a free 2x2 PCF tap; eLessOrEqual matches the Rust shadow_sampler.
     shadowMapArray->createTextureSampler(
       device, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, VK_TRUE, vk::CompareOp::eLessOrEqual);
 
@@ -79,7 +84,7 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device, uin
     createFramebuffers();
 }
 
-// The pure cascade math lives in CascadedShadowMapMath.cpp, so perfSuite links it without this TU's device dependencies.
+// The pure cascade math lives in CascadedShadowMapMath.cpp, so perfSuite links it without this TU's device deps.
 
 void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
   float cameraFov,
@@ -92,7 +97,8 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
 {
     // Frame path must not allocate: only init() sizes cascadeData, so a mismatch is an upstream bug, not a resize.
     if (cascadeData.size() != numCascades) {
-        spdlog::error("CascadedShadowMap::updateCascades: cascadeData ({}) not sized for numCascades ({}); init() must size it",
+        spdlog::error(
+          "CascadedShadowMap::updateCascades: cascadeData ({}) not sized for numCascades ({}); init() must size it",
           cascadeData.size(),
           numCascades);
         return;
@@ -118,7 +124,8 @@ void CascadedShadowMap::uploadLightMatrices(uint32_t image_index)
     if (lightMatricesBuffers.empty()) { return; }
     if (image_index >= lightMatricesBuffers.size()) {
         spdlog::error("CascadedShadowMap::uploadLightMatrices: image_index ({}) exceeds buffer count ({})",
-          image_index, lightMatricesBuffers.size());
+          image_index,
+          lightMatricesBuffers.size());
         return;
     }
 
@@ -191,7 +198,6 @@ void CascadedShadowMap::createFramebuffers()
     auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
     ASSERT_VULKAN(fbResult.result, "Failed to create shadow map framebuffer!");
     framebuffer = fbResult.value;
-
 }
 
 void CascadedShadowMap::cleanUp()
@@ -225,12 +231,14 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
     // One host-visible buffer per swapchain image, so a rewrite never touches one an in-flight shadow pass reads.
     lightMatricesBuffers.resize(swapChainImageCount);
     for (uint32_t i = 0; i < swapChainImageCount; i++) {
-        lightMatricesBuffers[i].create(device, sizeof(glm::mat4) * numCascades,
+        lightMatricesBuffers[i].create(device,
+          sizeof(glm::mat4) * numCascades,
           vk::BufferUsageFlagBits::eUniformBuffer,
           vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
         // UNIFORM_LIGHT_MATRICES_BINDING = 1
-        lightMatricesDescriptors.writeBuffer(i, 1, lightMatricesBuffers[i].getBuffer(), sizeof(glm::mat4) * numCascades);
+        lightMatricesDescriptors.writeBuffer(
+          i, 1, lightMatricesBuffers[i].getBuffer(), sizeof(glm::mat4) * numCascades);
     }
     for (uint32_t i = 0; i < swapChainImageCount; i++) { uploadLightMatrices(i); }
 }
@@ -254,8 +262,9 @@ void CascadedShadowMap::buildGraphicsPipeline()
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
 
     // No geometry stage: under multiview the vertex shader picks the cascade matrix by SV_ViewID.
-    ShaderStagePair stages{ device, slang_spv_dir + "shadow_map.shadow_vs_main.spv",
-        slang_spv_dir + "shadow_map.shadow_fs_main.spv" };
+    ShaderStagePair stages{
+        device, slang_spv_dir + "shadow_map.shadow_vs_main.spv", slang_spv_dir + "shadow_map.shadow_fs_main.spv"
+    };
 
     vk::VertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
@@ -289,7 +298,8 @@ void CascadedShadowMap::buildGraphicsPipeline()
     pushConstantRange.size = sizeof(glm::mat4) + sizeof(uint32_t);
 
     // Set 0 = VulkanRenderer's shared set, which the alpha test samples; set 1 = this pass's light matrices.
-    std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout, lightMatricesDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout,
+        lightMatricesDescriptors.getLayout() };
     const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
@@ -302,7 +312,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ bindingDesc }, { posAttr, uvAttr, colorAttr })
-        // Culling off: the cascade orthos lack the camera's Y flip, so back-face culling dropped exactly the faces that cast.
+        // No culling: the cascade orthos lack the camera's Y flip, so back-face culling dropped the faces that cast.
         .setCullMode(vk::CullModeFlagBits::eNone)
         // Pancake casters in front of the near plane rather than clip them; a wider depth range would scale the bias.
         .setDepthClamp(device->supportsDepthClamp())
@@ -315,19 +325,25 @@ void CascadedShadowMap::buildGraphicsPipeline()
           "Failed to create shadow map graphics pipeline!");
 }
 
-void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled)
+void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
+  uint32_t image_index,
+  Scene *scene,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  bool cullingEnabled)
 {
     castersDrawn = 0;
     castersConsidered = 0;
 
     // Multiview culls against the union of cascade frusta: only geometry outside every cascade's box is skipped.
     if (numCascades > MAX_CASCADES) {
-        spdlog::error("CascadedShadowMap::recordCommands: numCascades ({}) exceeds MAX_CASCADES ({})", numCascades, MAX_CASCADES);
+        spdlog::error(
+          "CascadedShadowMap::recordCommands: numCascades ({}) exceeds MAX_CASCADES ({})", numCascades, MAX_CASCADES);
         return;
     }
     if (image_index >= lightMatricesDescriptors.sets().size()) {
         spdlog::error("CascadedShadowMap::recordCommands: image_index ({}) exceeds descriptor set count ({})",
-          image_index, lightMatricesDescriptors.sets().size());
+          image_index,
+          lightMatricesDescriptors.sets().size());
         return;
     }
     std::array<FrustumPlanes, MAX_CASCADES> cascadeFrusta{};
@@ -338,9 +354,9 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     }
 
     std::array<vk::ClearValue, 1> clearValues{};
-    clearValues[0].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    clearValues[0].depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 };
     const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
-      renderPass, framebuffer, vk::Extent2D{shadowWidth, shadowHeight}, clearValues);
+      renderPass, framebuffer, vk::Extent2D{ shadowWidth, shadowHeight }, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
@@ -350,12 +366,13 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // The layout always puts the light matrices at set 1; shadowSetBinding keeps firstSet right when set 0 is unbound.
     const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[image_index];
     if (descriptorSets.empty()) {
-        spdlog::warn("CascadedShadowMap::recordCommands: no shared render set bound; the fragment alpha test will "
-                     "sample nothing (degraded mode)");
+        spdlog::warn(
+          "CascadedShadowMap::recordCommands: no shared render set bound; the fragment alpha test will "
+          "sample nothing (degraded mode)");
     }
     const std::array<vk::DescriptorSet, 2> sets =
       descriptorSets.empty() ? std::array<vk::DescriptorSet, 2>{ lightMatricesSet, VK_NULL_HANDLE }
-                              : std::array<vk::DescriptorSet, 2>{ descriptorSets[0], lightMatricesSet };
+                             : std::array<vk::DescriptorSet, 2>{ descriptorSets[0], lightMatricesSet };
     const ShadowSetBinding binding = shadowSetBinding(!descriptorSets.empty());
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
       pipelineLayout,
@@ -417,4 +434,4 @@ void CascadedShadowMap::recordSkippedPass(vk::CommandBuffer &commandBuffer)
       1,
       &to_sampled);
 }
-}
+}// namespace Kataglyphis

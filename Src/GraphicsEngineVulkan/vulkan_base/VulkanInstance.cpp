@@ -87,8 +87,9 @@ auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 {
     auto available_layers_result = vk::enumerateInstanceLayerProperties();
     if (available_layers_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkEnumerateInstanceLayerProperties failed (result {}); treating as no supported "
-                     "validation layers.",
+        spdlog::warn(
+          "vkEnumerateInstanceLayerProperties failed (result {}); treating as no supported "
+          "validation layers.",
           static_cast<int>(available_layers_result.result));
     }
     std::vector<vk::LayerProperties> availableLayers = available_layers_result.value;
@@ -105,8 +106,9 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::span<con
 {
     auto extensions_result = vk::enumerateInstanceExtensionProperties();
     if (extensions_result.result != vk::Result::eSuccess) {
-        spdlog::warn("vkEnumerateInstanceExtensionProperties failed (result {}); treating as no supported "
-                     "instance extensions.",
+        spdlog::warn(
+          "vkEnumerateInstanceExtensionProperties failed (result {}); treating as no supported "
+          "instance extensions.",
           static_cast<int>(extensions_result.result));
     }
     std::vector<vk::ExtensionProperties> extensions = extensions_result.value;

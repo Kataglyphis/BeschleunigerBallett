@@ -36,18 +36,22 @@ class ASManager
 
     vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
 
-    void createASForScene(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createASForScene(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      Kataglyphis::Scene *scene);
 
-    bool createBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    bool
+      createBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createTLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void
+      createTLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
     void cleanUp();
 
     ~ASManager();
 
   private:
-    std::shared_ptr<VulkanDevice>vulkanDevice{ nullptr };
+    std::shared_ptr<VulkanDevice> vulkanDevice{ nullptr };
     Kataglyphis::VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;

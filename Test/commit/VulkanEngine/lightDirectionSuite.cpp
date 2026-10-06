@@ -18,8 +18,7 @@ TEST(LightDirectionUnit, ZeroVectorReturnsFiniteFallback)
     EXPECT_TRUE(std::isfinite(result.y));
     EXPECT_TRUE(std::isfinite(result.z));
     EXPECT_NEAR(glm::length(result), 1.0F, 1e-5F);
-    EXPECT_EQ(result, glm::vec3(0.0F, -1.0F, 0.0F))
-      << "fallback must match CascadedShadowMapMath.cpp's rule";
+    EXPECT_EQ(result, glm::vec3(0.0F, -1.0F, 0.0F)) << "fallback must match CascadedShadowMapMath.cpp's rule";
 }
 
 TEST(LightDirectionUnit, NonUnitVectorIsNormalizedButKeepsDirection)

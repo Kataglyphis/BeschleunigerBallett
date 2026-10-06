@@ -34,7 +34,7 @@ class VulkanBuffer
     ~VulkanBuffer();
 
   private:
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     vk::Buffer buffer{};
     VmaAllocation allocation{ VK_NULL_HANDLE };

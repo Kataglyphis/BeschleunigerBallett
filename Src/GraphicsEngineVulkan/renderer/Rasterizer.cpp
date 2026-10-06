@@ -58,14 +58,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
 }
 
 auto Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index) -> Kataglyphis::Texture &
-{
-    return *offscreenTextures[index];
-}
+{ return *offscreenTextures[index]; }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer push_constant)
-{
-    this->pushConstant = push_constant;
-}
+{ this->pushConstant = push_constant; }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
@@ -79,8 +75,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     clear_values[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } };
     clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
-    const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
-      render_pass, framebuffer[image_index], swap_chain_extent, clear_values);
+    const vk::RenderPassBeginInfo render_pass_begin_info =
+      Kataglyphis::buildRenderPassBeginInfo(render_pass, framebuffer[image_index], swap_chain_extent, clear_values);
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 
@@ -120,9 +116,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
-{
-    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
-}
+{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
 {
@@ -151,11 +145,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
       buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
 
     // Store eDontCare: depth is never read after the pass. Reuses createTextures()'s depth_format.
-    const vk::AttachmentDescription depth_attachment =
-      buildAttachmentDescription(depth_format,
-        vk::ImageLayout::eDepthStencilAttachmentOptimal,
-        vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eDontCare);
+    const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(depth_format,
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eDontCare);
 
     vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;
@@ -193,8 +186,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         std::array<vk::ImageView, 2> attachments = { offscreenTextures[i]->getImageView(),
             depthBufferImage->getImageView() };
 
-        const vk::FramebufferCreateInfo frame_buffer_create_info = Kataglyphis::buildFramebufferCreateInfo(
-          render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
+        const vk::FramebufferCreateInfo frame_buffer_create_info =
+          Kataglyphis::buildFramebufferCreateInfo(render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
 
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
         if (result.result == vk::Result::eSuccess) {
@@ -256,7 +249,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
-    ShaderStagePair stages{ device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv" };
+    ShaderStagePair stages{
+        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv"
+    };
 
     vk::VertexInputBindingDescription binding_description;
     binding_description.binding = 0;

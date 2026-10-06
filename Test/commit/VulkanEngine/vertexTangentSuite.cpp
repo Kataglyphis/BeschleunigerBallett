@@ -120,11 +120,20 @@ TEST(VertexUnit, TangentsForALaterRangeLeaveEarlierVerticesUntouched)
     for (Vertex &v : vertices) { v.tangent = sentinel; }
     for (Vertex &v : unitQuadVertices()) { vertices.push_back(v); }
 
-    const std::vector<unsigned int> indices = {
-        // First quad: in the array but outside the range.
-        0U, 1U, 2U, 0U, 2U, 3U,
+    const std::vector<unsigned int> indices = { // First quad: in the array but outside the range.
+        0U,
+        1U,
+        2U,
+        0U,
+        2U,
+        3U,
         // Second quad, offset by 4 - the range computeTangents must act on.
-        4U, 5U, 6U, 4U, 6U, 7U
+        4U,
+        5U,
+        6U,
+        4U,
+        6U,
+        7U
     };
 
     vertex::computeTangents(vertices, indices, /*firstIndex=*/6);
@@ -157,8 +166,7 @@ TEST(VertexUnit, SharedVertexTangentIsIndependentOfIncidenceCount)
 
     constexpr int kSpokes = 6;
     for (int i = 0; i < kSpokes; ++i) {
-        const float angle =
-          (2.0F * std::numbers::pi_v<float> * static_cast<float>(i)) / static_cast<float>(kSpokes);
+        const float angle = (2.0F * std::numbers::pi_v<float> * static_cast<float>(i)) / static_cast<float>(kSpokes);
         const glm::vec3 pos(std::cos(angle), std::sin(angle), 0.0F);
         vertices.emplace_back(pos, normal, glm::vec4(1.0F), glm::vec2(pos.x, pos.y));
     }
@@ -192,8 +200,7 @@ TEST(VertexUnit, SharedVertexTangentIsIndependentOfIncidenceCount)
     ASSERT_GT(glm::dot(expectedTangent, expectedTangent), 1e-12F)
       << "fixture must not hit the degenerate-UV fallback path";
     expectedTangent = glm::normalize(expectedTangent);
-    const float expectedW =
-      glm::dot(glm::cross(normal, expectedTangent), expectedBitangentAccum) < 0.0F ? -1.0F : 1.0F;
+    const float expectedW = glm::dot(glm::cross(normal, expectedTangent), expectedBitangentAccum) < 0.0F ? -1.0F : 1.0F;
 
     vertex::computeTangents(vertices, indices);
 

@@ -70,9 +70,7 @@ inline std::string joinViolations(const std::vector<std::string> &entries,
   std::string_view suffix = {})
 {
     std::string joined;
-    for (const auto &entry : entries) {
-        joined.append(prefix).append(entry).append(suffix);
-    }
+    for (const auto &entry : entries) { joined.append(prefix).append(entry).append(suffix); }
     return joined;
 }
 

@@ -31,13 +31,15 @@ constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render
   vk::Extent2D extent,
   std::span<const vk::ClearValue> clear_values)
 {
-    return vk::RenderPassBeginInfo{ render_pass, framebuffer, vk::Rect2D{ vk::Offset2D{ 0, 0 }, extent },
-        static_cast<uint32_t>(clear_values.size()), clear_values.data() };
+    return vk::RenderPassBeginInfo{ render_pass,
+        framebuffer,
+        vk::Rect2D{ vk::Offset2D{ 0, 0 }, extent },
+        static_cast<uint32_t>(clear_values.size()),
+        clear_values.data() };
 }
 
 // Borrows both spans and depth_attachment: they must outlive the createRenderPass call.
-constexpr vk::SubpassDescription buildSubpassDescription(
-  std::span<const vk::AttachmentReference> color_attachments,
+constexpr vk::SubpassDescription buildSubpassDescription(std::span<const vk::AttachmentReference> color_attachments,
   const vk::AttachmentReference *depth_attachment,
   std::span<const vk::AttachmentReference> input_attachments = {})
 {
@@ -52,14 +54,17 @@ constexpr vk::SubpassDescription buildSubpassDescription(
 }
 
 // Borrows all three spans; pNext is left for the caller (CascadedShadowMap chains multiview).
-constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
-  std::span<const vk::AttachmentDescription> attachments,
+constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(std::span<const vk::AttachmentDescription> attachments,
   std::span<const vk::SubpassDescription> subpasses,
   std::span<const vk::SubpassDependency> dependencies)
 {
-    return vk::RenderPassCreateInfo{ vk::RenderPassCreateFlags{}, static_cast<uint32_t>(attachments.size()),
-        attachments.data(), static_cast<uint32_t>(subpasses.size()), subpasses.data(),
-        static_cast<uint32_t>(dependencies.size()), dependencies.data() };
+    return vk::RenderPassCreateInfo{ vk::RenderPassCreateFlags{},
+        static_cast<uint32_t>(attachments.size()),
+        attachments.data(),
+        static_cast<uint32_t>(subpasses.size()),
+        subpasses.data(),
+        static_cast<uint32_t>(dependencies.size()),
+        dependencies.data() };
 }
 
 // The depth buffer is shared across frames in flight, so the last write must land before this clear; not by-region.

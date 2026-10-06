@@ -13,7 +13,8 @@ namespace Kataglyphis {
 enum class GpuSelectionMode : std::uint8_t { Auto, Dedicated, Integrated };
 
 // typeRank compares first, so no capability lets a lower device type outrank a higher one.
-struct PhysicalDeviceScore {
+struct PhysicalDeviceScore
+{
     int typeRank;// 4 discrete, 3 integrated, 2 virtual, 1 cpu, 0 other
     uint32_t capability;// maxImageDimension2D, tie-break only
     friend auto operator<=>(const PhysicalDeviceScore &, const PhysicalDeviceScore &) = default;
@@ -62,15 +63,11 @@ inline auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties,
 
 // A device may support only the linear bit; requesting quads there fails vkCreateDevice outright.
 constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
-{
-    return extensionPresent && quadsSupported == VK_TRUE;
-}
+{ return extensionPresent && quadsSupported == VK_TRUE; }
 
 // Clamped per VUID-VkSamplerCreateInfo-anisotropyEnable-01071; a fixed 16x keeps texture quality equal across GPUs.
 constexpr float resolveMaxAnisotropy(bool anisotropyEnabled, float deviceLimit)
-{
-    return anisotropyEnabled ? std::clamp(16.0F, 1.0F, deviceLimit) : 1.0F;
-}
+{ return anisotropyEnabled ? std::clamp(16.0F, 1.0F, deviceLimit) : 1.0F; }
 
 inline auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> PhysicalDeviceScore
 {

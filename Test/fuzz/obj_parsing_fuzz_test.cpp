@@ -63,9 +63,7 @@ void ParsingArbitraryObjNeverCrashes(const std::string &obj_text, const std::str
                         && (3 * static_cast<size_t>(idx.normal_index)) + 2 < attrib.normals.size()) {
                         checksum += attrib.normals[3 * static_cast<size_t>(idx.normal_index)];
                     }
-                    if ((3 * vertex_index) + 2 < attrib.colors.size()) {
-                        checksum += attrib.colors[3 * vertex_index];
-                    }
+                    if ((3 * vertex_index) + 2 < attrib.colors.size()) { checksum += attrib.colors[3 * vertex_index]; }
                     if (idx.texcoord_index >= 0
                         && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
                         checksum += attrib.texcoords[2 * static_cast<size_t>(idx.texcoord_index)];
@@ -94,10 +92,11 @@ void ParsingArbitraryObjNeverCrashes(const std::string &obj_text, const std::str
 
         const std::array<float, 3> e1{ p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] };
         const std::array<float, 3> e2{ p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2] };
-        const std::array<float, 3> faceNormal{ (e1[1] * e2[2]) - (e1[2] * e2[1]),
-            (e1[2] * e2[0]) - (e1[0] * e2[2]), (e1[0] * e2[1]) - (e1[1] * e2[0]) };
-        const float lenSq = (faceNormal[0] * faceNormal[0]) + (faceNormal[1] * faceNormal[1])
-                             + (faceNormal[2] * faceNormal[2]);
+        const std::array<float, 3> faceNormal{
+            (e1[1] * e2[2]) - (e1[2] * e2[1]), (e1[2] * e2[0]) - (e1[0] * e2[2]), (e1[0] * e2[1]) - (e1[1] * e2[0])
+        };
+        const float lenSq =
+          (faceNormal[0] * faceNormal[0]) + (faceNormal[1] * faceNormal[1]) + (faceNormal[2] * faceNormal[2]);
         if (lenSq <= 0.0F) { continue; }// degenerate triangle: no normalize
         checksum += faceNormal[0];
     }

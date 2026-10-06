@@ -1,5 +1,6 @@
 module;
 
+#include "spdlog/spdlog.h"
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -12,15 +13,14 @@ module;
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
-#include "spdlog/spdlog.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_DISABLE_FAST_FLOAT
+#include <algorithm>
 #include <glm/ext/vector_float2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
-#include <algorithm>
-#include <iterator>
 #include <iostream>
+#include <iterator>
 #include <tiny_obj_loader.h>
 #include <unordered_map>
 
@@ -106,8 +106,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
     for (size_t i = 0; i < textureNames.size(); i++) {
         if (!textureNames[i].empty()) {
             Texture texture;
-            const bool created =
-              texture.createFromFile(device, command_pool, textureNames[i], textureSrgb[i] != 0);
+            const bool created = texture.createFromFile(device, command_pool, textureNames[i], textureSrgb[i] != 0);
             addTextureOrDefault(*new_model, device, command_pool, created, std::move(texture));
         }
     }
@@ -115,8 +114,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
     ensureAtLeastOneTexture(*new_model, device, command_pool);
 
     // One mesh per OBJ shape; each shares the full materials array, since materialIndex keeps the original indices.
-    addMeshesForRanges(
-      *new_model, device, command_pool, vertices, indices, materialIndex, this->materials, meshRanges);
+    addMeshesForRanges(*new_model, device, command_pool, vertices, indices, materialIndex, this->materials, meshRanges);
     return new_model;
 }
 
@@ -136,9 +134,7 @@ std::string Kataglyphis::resolveObjTexturePath(const std::string &baseDir, const
     if (std::filesystem::exists(beside_mtl, beside_mtl_ec) && !beside_mtl_ec) { return beside_mtl; }
 
     std::error_code under_textures_ec;
-    if (std::filesystem::exists(under_textures, under_textures_ec) && !under_textures_ec) {
-        return under_textures;
-    }
+    if (std::filesystem::exists(under_textures, under_textures_ec) && !under_textures_ec) { return under_textures; }
 
     // Warn loudly: otherwise a wrong path silently renders the default white texture.
     spdlog::warn(
@@ -204,8 +200,7 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             material.normalTextureID = resolveSlot(mp->normal_texname, false);
             material.normalScale = mp->normal_texopt.bump_multiplier;
         } else if (!mp->bump_texname.empty()) {
-            spdlog::debug(
-              "ObjLoader: material '{}' has no 'norm' directive; using 'map_Bump' ('{}') as the normal map",
+            spdlog::debug("ObjLoader: material '{}' has no 'norm' directive; using 'map_Bump' ('{}') as the normal map",
               mp->name,
               mp->bump_texname);
             material.normalTextureID = resolveSlot(mp->bump_texname, false);
@@ -310,8 +305,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                     // A negative texcoord_index means no texcoord data.
                     if (idx.texcoord_index >= 0
                         && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
-                        tinyobj::real_t const tx =
-                          attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
+                        tinyobj::real_t const tx = attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
                         // flip y coordinate !!
                         tinyobj::real_t const ty =
                           1.F - attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 1];
@@ -338,11 +332,11 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         // A shape whose every face was dropped gets no range, so no empty mesh is built.
         if (vertices.size() > shape_vertex_base) {
             meshRanges.push_back(MeshRange{ shape_vertex_base,
-                                                       vertices.size() - shape_vertex_base,
-                                                       shape_index_start,
-                                                       indices.size() - shape_index_start,
-                                                       shape_tri_start,
-                                                       materialIndex.size() - shape_tri_start });
+              vertices.size() - shape_vertex_base,
+              shape_index_start,
+              indices.size() - shape_index_start,
+              shape_tri_start,
+              materialIndex.size() - shape_tri_start });
         }
     }
 

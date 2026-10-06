@@ -90,8 +90,7 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
     state.vertex_input_create_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_bindings.size());
     state.vertex_input_create_info.pVertexBindingDescriptions =
       vertex_bindings.empty() ? nullptr : vertex_bindings.data();
-    state.vertex_input_create_info.vertexAttributeDescriptionCount =
-      static_cast<uint32_t>(vertex_attributes.size());
+    state.vertex_input_create_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attributes.size());
     state.vertex_input_create_info.pVertexAttributeDescriptions =
       vertex_attributes.empty() ? nullptr : vertex_attributes.data();
 
@@ -188,8 +187,6 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
       linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout, render_pass, subpass);
 
     auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
-    if (pipeline_result.result != vk::Result::eSuccess) {
-        ASSERT_VULKAN(pipeline_result.result, error_message);
-    }
+    if (pipeline_result.result != vk::Result::eSuccess) { ASSERT_VULKAN(pipeline_result.result, error_message); }
     return pipeline_result.value.front();
 }

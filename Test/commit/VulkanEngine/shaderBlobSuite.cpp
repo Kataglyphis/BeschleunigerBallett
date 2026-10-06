@@ -18,16 +18,11 @@ namespace {
 
 // SPIR-V magic number, little endian - a real shader's first four bytes.
 std::vector<char> spirvMagicBytes()
-{
-    return { static_cast<char>(0x03), static_cast<char>(0x02), static_cast<char>(0x23), static_cast<char>(0x07) };
-}
+{ return { static_cast<char>(0x03), static_cast<char>(0x02), static_cast<char>(0x23), static_cast<char>(0x07) }; }
 
 }// namespace
 
-TEST(ShaderBlobUnit, EmptyBlobIsRejected)
-{
-    EXPECT_FALSE(validateSpirvBlob(std::span<const char>{}));
-}
+TEST(ShaderBlobUnit, EmptyBlobIsRejected) { EXPECT_FALSE(validateSpirvBlob(std::span<const char>{})); }
 
 TEST(ShaderBlobUnit, SizeNotAMultipleOfFourIsRejected)
 {

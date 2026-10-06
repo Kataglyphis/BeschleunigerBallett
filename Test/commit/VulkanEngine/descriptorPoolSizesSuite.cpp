@@ -29,7 +29,8 @@ vk::DescriptorSetLayoutBinding makeBinding(uint32_t binding, vk::DescriptorType 
 
 TEST(DescriptorPoolSizesUnit, DerivesCountTimesSetCountPerBinding)
 {
-    const std::vector<vk::DescriptorSetLayoutBinding> bindings = { makeBinding(0, vk::DescriptorType::eUniformBuffer, 1) };
+    const std::vector<vk::DescriptorSetLayoutBinding> bindings = { makeBinding(
+      0, vk::DescriptorType::eUniformBuffer, 1) };
 
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, 3);
 
@@ -40,8 +41,9 @@ TEST(DescriptorPoolSizesUnit, DerivesCountTimesSetCountPerBinding)
 
 TEST(DescriptorPoolSizesUnit, AccumulatesBindingsThatShareADescriptorType)
 {
-    const std::vector<vk::DescriptorSetLayoutBinding> bindings = { makeBinding(0, vk::DescriptorType::eUniformBuffer, 1),
-        makeBinding(1, vk::DescriptorType::eUniformBuffer, 2) };
+    const std::vector<vk::DescriptorSetLayoutBinding> bindings = {
+        makeBinding(0, vk::DescriptorType::eUniformBuffer, 1), makeBinding(1, vk::DescriptorType::eUniformBuffer, 2)
+    };
 
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, 3);
 
@@ -52,7 +54,8 @@ TEST(DescriptorPoolSizesUnit, AccumulatesBindingsThatShareADescriptorType)
 
 TEST(DescriptorPoolSizesUnit, KeepsOneEntryPerDistinctType)
 {
-    const std::vector<vk::DescriptorSetLayoutBinding> bindings = { makeBinding(0, vk::DescriptorType::eUniformBuffer, 1),
+    const std::vector<vk::DescriptorSetLayoutBinding> bindings = { makeBinding(
+                                                                     0, vk::DescriptorType::eUniformBuffer, 1),
         makeBinding(1, vk::DescriptorType::eStorageBuffer, 1),
         makeBinding(2, vk::DescriptorType::eCombinedImageSampler, 1) };
 
@@ -94,10 +97,9 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
 
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);
 
-    const auto storage_buffer_entry =
-      std::find_if(pool_sizes.begin(), pool_sizes.end(), [](const vk::DescriptorPoolSize &pool_size) {
-          return pool_size.type == vk::DescriptorType::eStorageBuffer;
-      });
+    const auto storage_buffer_entry = std::find_if(pool_sizes.begin(),
+      pool_sizes.end(),
+      [](const vk::DescriptorPoolSize &pool_size) { return pool_size.type == vk::DescriptorType::eStorageBuffer; });
     ASSERT_NE(storage_buffer_entry, pool_sizes.end());
     EXPECT_EQ(storage_buffer_entry->descriptorCount, set_count);
     EXPECT_NE(storage_buffer_entry->descriptorCount, 1600U);
@@ -114,7 +116,8 @@ TEST(DescriptorPoolSizesUnit, WriteCountMustMatchTheDeclaredBinding)
     EXPECT_TRUE(descriptorWriteCountMatchesBinding(single_descriptor_binding, 1));
     EXPECT_TRUE(descriptorWriteCountMatchesBinding(array_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
     EXPECT_FALSE(descriptorWriteCountMatchesBinding(array_binding, 1));
-    EXPECT_FALSE(descriptorWriteCountMatchesBinding(single_descriptor_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
+    EXPECT_FALSE(
+      descriptorWriteCountMatchesBinding(single_descriptor_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
 }
 
 TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)

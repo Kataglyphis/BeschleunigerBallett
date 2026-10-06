@@ -7,8 +7,8 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include "spdlog/spdlog.h"
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 
 module kataglyphis.vulkan.descriptor_set_group;
 
@@ -17,8 +17,7 @@ import kataglyphis.vulkan.device;
 // Not = default: a defaulted ctor in the implementation unit can miss the interface's member initializers.
 Kataglyphis::DescriptorSetGroup::DescriptorSetGroup()
   : device(nullptr), bindings(), layout(nullptr), pool(nullptr), descriptor_sets()
-{
-}
+{}
 
 Kataglyphis::DescriptorSetGroup::DescriptorSetGroup(DescriptorSetGroup &&other) noexcept
   : device(std::move(other.device)), bindings(std::move(other.bindings)), layout(other.layout), pool(other.pool),
@@ -64,7 +63,9 @@ auto Kataglyphis::DescriptorSetGroup::addBinding(uint32_t binding,
     return *this;
 }
 
-bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count)  // DEVICE_SINK_OK: moved into member
+bool Kataglyphis::DescriptorSetGroup::create(
+  std::shared_ptr<VulkanDevice> vulkan_device,// DEVICE_SINK_OK: moved into member
+  uint32_t set_count)
 {
     releaseGpuResources();
 
@@ -125,8 +126,8 @@ auto Kataglyphis::DescriptorSetGroup::findBinding(uint32_t binding) const -> con
     return nullptr;
 }
 
-const vk::DescriptorSetLayoutBinding *Kataglyphis::DescriptorSetGroup::beginWrite(
-  uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const
+const vk::DescriptorSetLayoutBinding *
+  Kataglyphis::DescriptorSetGroup::beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const
 {
     if (!device || set_index >= descriptor_sets.size()) {
         spdlog::error("DescriptorSetGroup: write to binding {} with invalid set index {}.", binding, set_index);
@@ -136,8 +137,9 @@ const vk::DescriptorSetLayoutBinding *Kataglyphis::DescriptorSetGroup::beginWrit
     if (layout_binding == nullptr) { return nullptr; }
 
     if (!descriptorWriteCountMatchesBinding(*layout_binding, 1)) {
-        spdlog::error("DescriptorSetGroup: single-descriptor write to binding {} (declared descriptorCount {}) "
-                      "would under-write; use writeImageArray for array bindings.",
+        spdlog::error(
+          "DescriptorSetGroup: single-descriptor write to binding {} (declared descriptorCount {}) "
+          "would under-write; use writeImageArray for array bindings.",
           binding,
           layout_binding->descriptorCount);
         return nullptr;

@@ -38,7 +38,8 @@ import kataglyphis.shared.util.file_reader;
 
 namespace Kataglyphis {
 
-GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool)  // DEVICE_SINK_OK: moved into member
+GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device,// DEVICE_SINK_OK: moved into member
+  vk::CommandPool command_pool)
   : device(std::move(device)), command_pool(command_pool)
 {}
 
@@ -84,311 +85,311 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     return model;
 }
 
-TexCoordSetInfo describeTexCoordSet(int texcoord)
-{
-    return { static_cast<unsigned int>(texcoord), texcoord == 0 };
-}
+TexCoordSetInfo describeTexCoordSet(int texcoord) { return { static_cast<unsigned int>(texcoord), texcoord == 0 }; }
 
 namespace {
 
-// Shininess is read only without a pbrMetallicRoughness block, where the default roughnessFactor makes it 1.0.
-constexpr float kFallbackShininess = 1.0F;
+    // Shininess is read only without a pbrMetallicRoughness block, where the default roughnessFactor makes it 1.0.
+    constexpr float kFallbackShininess = 1.0F;
 
-/// Neutral untextured Lambertian stand-in for primitives with no material.
-ObjMaterial neutralMaterial()
-{
-    return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = kFallbackShininess };
-}
+    /// Neutral untextured Lambertian stand-in for primitives with no material.
+    ObjMaterial neutralMaterial() { return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = kFallbackShininess }; }
 
-/// Warns when a texture uses a UV set other than TEXCOORD_0, the only one the vertex layout binds.
-void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
-{
-    if (view.texture == nullptr) { return; }
-    const TexCoordSetInfo texCoordInfo = describeTexCoordSet(view.texcoord);
-    if (!texCoordInfo.supported) {
-        spdlog::warn("GltfLoader: material '{}' {} texture uses TEXCOORD_{}, but only TEXCOORD_0 is supported; "
-                     "sampling with UV0",
-          materialName, slotLabel, texCoordInfo.set);
-    }
-}
-
-/// Top two rows of a KHR_texture_transform T*R*S matrix; the third is always [0,0,1].
-struct UvTransformRows
-{
-    glm::vec3 row0{ 1.0F, 0.0F, 0.0F };
-    glm::vec3 row1{ 0.0F, 1.0F, 0.0F };
-};
-
-/// Identity rows when the slot has no texture or no transform.
-UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
-{
-    if (view.texture == nullptr || view.has_transform == 0) { return {}; }
-
-    const cgltf_texture_transform &transform = view.transform;
-    const glm::vec2 offset(transform.offset[0], transform.offset[1]);
-    const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
-
-    // Same T*R*S as the Rust loader, rotation negated because glTF's is clockwise in UV space.
-    const glm::mat3 uvMatrix =
-      glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
-
-    UvTransformRows rows;
-    rows.row0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
-    rows.row1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
-
-    // The transform's own UV-set override is not applied, so warn instead of dropping it silently.
-    if (transform.has_texcoord != 0 && transform.texcoord != 0) {
-        spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the {} UV set to "
-                     "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
-          materialName, slotLabel, static_cast<unsigned int>(transform.texcoord));
-    }
-
-    return rows;
-}
-
-/// One texture slot; `srgb` is true for colour (base-colour, emissive), false for data (glTF 2.0 SS3.9.2/3).
-struct GltfTextureSlot
-{
-    const cgltf_texture_view *view;
-    const char *label;
-    bool srgb;
-};
-
-/// The only place the pbr guard lives: without the block, the pbr slots point at an empty view.
-std::array<GltfTextureSlot, 4> gltfTextureSlots(const cgltf_material &material)
-{
-    static const cgltf_texture_view kNoView{};
-    const bool hasPbr = material.has_pbr_metallic_roughness != 0;
-    const cgltf_texture_view &baseColorView = hasPbr ? material.pbr_metallic_roughness.base_color_texture : kNoView;
-    const cgltf_texture_view &metallicRoughnessView =
-      hasPbr ? material.pbr_metallic_roughness.metallic_roughness_texture : kNoView;
-    return { {
-        { &baseColorView, "base-colour", true },
-        { &metallicRoughnessView, "metallic-roughness", false },
-        { &material.normal_texture, "normal", false },
-        { &material.emissive_texture, "emissive", true },
-    } };
-}
-
-/// Maps a glTF material to ObjMaterial; texture IDs are assigned later in parseCpu.
-ObjMaterial fromGltfMaterial(const cgltf_material &material)
-{
-    glm::vec3 baseColor(0.8F);
-    float baseAlpha = 1.0F;
-    float metallic = 0.0F;
-    // -1 sentinel: without a pbr block, roughness resolves through shininess.
-    float authoredRoughness = -1.0F;
-    const char *materialName = material.name != nullptr ? material.name : "<unnamed>";
-    if (material.has_pbr_metallic_roughness != 0) {
-        const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
-        baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
-        baseAlpha = pbr.base_color_factor[3];
-        metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
-        authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
-    }
-    // KHR_materials_emissive_strength is folded into the factor, so shaders need not know it.
-    const float emissiveStrength = material.has_emissive_strength != 0 ? material.emissive_strength.emissive_strength : 1.0F;
-    const glm::vec3 emission(material.emissive_factor[0] * emissiveStrength,
-      material.emissive_factor[1] * emissiveStrength,
-      material.emissive_factor[2] * emissiveStrength);
-
-    // BLEND renders opaque (-1) like OPAQUE: the engine has no sorted transparent pass.
-    const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
-
-    // KHR_texture_transform is per slot, so each slot reads its own rows.
-    const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
-    std::array<UvTransformRows, 4> uvTransforms{};
-    for (std::size_t i = 0; i < textureSlots.size(); ++i) {
-        warnUnsupportedTexCoordSet(materialName, *textureSlots[i].view, textureSlots[i].label);
-        uvTransforms[i] = readUvTransform(materialName, *textureSlots[i].view, textureSlots[i].label);
-    }
-    const UvTransformRows &baseColorUvTransform = uvTransforms[0];
-    const UvTransformRows &metallicRoughnessUvTransform = uvTransforms[1];
-    const UvTransformRows &normalUvTransform = uvTransforms[2];
-    const UvTransformRows &emissiveUvTransform = uvTransforms[3];
-
-    return ObjMaterial{
-        .diffuse = baseColor,
-        .emission = emission,
-        .shininess = kFallbackShininess,
-        .dissolve = baseAlpha,// glTF baseColorFactor.a
-        // textureID, emissiveTextureID, normalTextureID: assigned in parseCpu.
-        .alphaCutoff = alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
-        .uv_transform_row0 = baseColorUvTransform.row0,// KHR_texture_transform T*R*S row 0, base colour
-        .uv_transform_row1 = baseColorUvTransform.row1,// KHR_texture_transform T*R*S row 1, base colour
-        .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
-        .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
-        // cgltf leaves scale zero without a normalTexture, so guard on the pointer.
-        .normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F,
-        .normal_uv_transform_row0 = normalUvTransform.row0,
-        .normal_uv_transform_row1 = normalUvTransform.row1,
-        .metallic_roughness_uv_transform_row0 = metallicRoughnessUvTransform.row0,
-        .metallic_roughness_uv_transform_row1 = metallicRoughnessUvTransform.row1,
-        .emissive_uv_transform_row0 = emissiveUvTransform.row0,
-        .emissive_uv_transform_row1 = emissiveUvTransform.row1,
-        .unlit = (material.unlit != 0) ? 1 : 0,// KHR_materials_unlit
-    };
-}
-
-/// Reads a 2-, 3- or 4-component float attribute into `out`, one entry per accessor element.
-template<int N, typename VecT>
-void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
-{
-    // Pre-filled with 1.0: a VEC3 COLOR_0 read with N=4 leaves alpha unwritten.
-    out.assign(accessor->count, VecT(1.0F));
-    for (cgltf_size i = 0; i < accessor->count; ++i) {
-        cgltf_accessor_read_float(accessor, i, glm::value_ptr(out[i]), N);
-    }
-}
-
-/// Decodes only well-formed %XX triplets; a bare or truncated escape is kept as is.
-std::string percentDecodeUri(const std::string &uri)
-{
-    std::string out;
-    out.reserve(uri.size());
-    for (std::string::size_type i = 0; i < uri.size(); ++i) {
-        if (uri[i] == '%' && i + 2 < uri.size() && std::isxdigit(static_cast<unsigned char>(uri[i + 1])) != 0
-            && std::isxdigit(static_cast<unsigned char>(uri[i + 2])) != 0) {
-            out.push_back(static_cast<char>(std::strtoul(uri.substr(i + 1, 2).c_str(), nullptr, 16)));
-            i += 2;
-        } else {
-            out.push_back(uri[i]);
+    /// Warns when a texture uses a UV set other than TEXCOORD_0, the only one the vertex layout binds.
+    void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+    {
+        if (view.texture == nullptr) { return; }
+        const TexCoordSetInfo texCoordInfo = describeTexCoordSet(view.texcoord);
+        if (!texCoordInfo.supported) {
+            spdlog::warn(
+              "GltfLoader: material '{}' {} texture uses TEXCOORD_{}, but only TEXCOORD_0 is supported; "
+              "sampling with UV0",
+              materialName,
+              slotLabel,
+              texCoordInfo.set);
         }
     }
-    return out;
-}
 
-/// Rejects `..` escapes from untrusted glTFs; lexically_relative avoids "/foo/bar" matching "/foo/barbaz".
-bool isWithinDirectory(const std::filesystem::path &candidate, const std::filesystem::path &base)
-{
-    const std::filesystem::path rel = candidate.lexically_relative(base);
-    return !rel.empty() && rel.begin()->string() != "..";
-}
+    /// Top two rows of a KHR_texture_transform T*R*S matrix; the third is always [0,0,1].
+    struct UvTransformRows
+    {
+        glm::vec3 row0{ 1.0F, 0.0F, 0.0F };
+        glm::vec3 row1{ 0.0F, 1.0F, 0.0F };
+    };
 
-/// Encoded bytes from a buffer view, base64 data URI or sibling file; empty for remote URIs or on failure.
-std::vector<unsigned char> extractImageBytes(
-  const cgltf_image *image, const cgltf_options &options, const std::filesystem::path &documentDir)
-{
-    if (image == nullptr) { return {}; }
+    /// Identity rows when the slot has no texture or no transform.
+    UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+    {
+        if (view.texture == nullptr || view.has_transform == 0) { return {}; }
 
-    if (image->buffer_view != nullptr && image->buffer_view->buffer != nullptr
-        && image->buffer_view->buffer->data != nullptr) {
-        const auto *base = static_cast<const unsigned char *>(image->buffer_view->buffer->data);
-        const cgltf_size offset = image->buffer_view->offset;
-        const cgltf_size size = image->buffer_view->size;
-        // Reject a view running past its buffer, written so offset + size cannot overflow.
-        const cgltf_size buffer_size = image->buffer_view->buffer->size;
-        if (offset > buffer_size || size > buffer_size - offset) { return {}; }
-        return std::vector<unsigned char>(base + offset, base + offset + size);
+        const cgltf_texture_transform &transform = view.transform;
+        const glm::vec2 offset(transform.offset[0], transform.offset[1]);
+        const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
+
+        // Same T*R*S as the Rust loader, rotation negated because glTF's is clockwise in UV space.
+        const glm::mat3 uvMatrix =
+          glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
+
+        UvTransformRows rows;
+        rows.row0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
+        rows.row1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
+
+        // The transform's own UV-set override is not applied, so warn instead of dropping it silently.
+        if (transform.has_texcoord != 0 && transform.texcoord != 0) {
+            spdlog::warn(
+              "GltfLoader: material '{}' KHR_texture_transform overrides the {} UV set to "
+              "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
+              materialName,
+              slotLabel,
+              static_cast<unsigned int>(transform.texcoord));
+        }
+
+        return rows;
     }
 
-    if (image->uri != nullptr) {
-        const std::string uri = image->uri;
-        const std::string marker = "base64,";
-        const std::string::size_type pos = uri.find(marker);
-        if (pos != std::string::npos) {
-            const char *b64 = uri.c_str() + pos + marker.size();
-            const cgltf_size b64len = uri.size() - pos - marker.size();
-            // Anything but a positive multiple of 4 would underflow the unsigned size below.
-            if (b64len < 4 || (b64len % 4) != 0) { return {}; }
-            cgltf_size padding = 0;
-            if (b64[b64len - 1] == '=') { ++padding; }
-            if (b64[b64len - 2] == '=') { ++padding; }
-            const cgltf_size decoded = (b64len / 4) * 3 - padding;
-            void *out = nullptr;
-            if (cgltf_load_buffer_base64(&options, decoded, b64, &out) == cgltf_result_success && out != nullptr) {
-                const auto *bytes = static_cast<const unsigned char *>(out);
-                std::vector<unsigned char> result(bytes, bytes + decoded);
-                free(out);// cgltf's default allocator is malloc/free
-                return result;
+    /// One texture slot; `srgb` is true for colour (base-colour, emissive), false for data (glTF 2.0 SS3.9.2/3).
+    struct GltfTextureSlot
+    {
+        const cgltf_texture_view *view;
+        const char *label;
+        bool srgb;
+    };
+
+    /// The only place the pbr guard lives: without the block, the pbr slots point at an empty view.
+    std::array<GltfTextureSlot, 4> gltfTextureSlots(const cgltf_material &material)
+    {
+        static const cgltf_texture_view kNoView{};
+        const bool hasPbr = material.has_pbr_metallic_roughness != 0;
+        const cgltf_texture_view &baseColorView = hasPbr ? material.pbr_metallic_roughness.base_color_texture : kNoView;
+        const cgltf_texture_view &metallicRoughnessView =
+          hasPbr ? material.pbr_metallic_roughness.metallic_roughness_texture : kNoView;
+        return { {
+          { &baseColorView, "base-colour", true },
+          { &metallicRoughnessView, "metallic-roughness", false },
+          { &material.normal_texture, "normal", false },
+          { &material.emissive_texture, "emissive", true },
+        } };
+    }
+
+    /// Maps a glTF material to ObjMaterial; texture IDs are assigned later in parseCpu.
+    ObjMaterial fromGltfMaterial(const cgltf_material &material)
+    {
+        glm::vec3 baseColor(0.8F);
+        float baseAlpha = 1.0F;
+        float metallic = 0.0F;
+        // -1 sentinel: without a pbr block, roughness resolves through shininess.
+        float authoredRoughness = -1.0F;
+        const char *materialName = material.name != nullptr ? material.name : "<unnamed>";
+        if (material.has_pbr_metallic_roughness != 0) {
+            const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
+            baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
+            baseAlpha = pbr.base_color_factor[3];
+            metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
+            authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
+        }
+        // KHR_materials_emissive_strength is folded into the factor, so shaders need not know it.
+        const float emissiveStrength =
+          material.has_emissive_strength != 0 ? material.emissive_strength.emissive_strength : 1.0F;
+        const glm::vec3 emission(material.emissive_factor[0] * emissiveStrength,
+          material.emissive_factor[1] * emissiveStrength,
+          material.emissive_factor[2] * emissiveStrength);
+
+        // BLEND renders opaque (-1) like OPAQUE: the engine has no sorted transparent pass.
+        const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
+
+        // KHR_texture_transform is per slot, so each slot reads its own rows.
+        const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
+        std::array<UvTransformRows, 4> uvTransforms{};
+        for (std::size_t i = 0; i < textureSlots.size(); ++i) {
+            warnUnsupportedTexCoordSet(materialName, *textureSlots[i].view, textureSlots[i].label);
+            uvTransforms[i] = readUvTransform(materialName, *textureSlots[i].view, textureSlots[i].label);
+        }
+        const UvTransformRows &baseColorUvTransform = uvTransforms[0];
+        const UvTransformRows &metallicRoughnessUvTransform = uvTransforms[1];
+        const UvTransformRows &normalUvTransform = uvTransforms[2];
+        const UvTransformRows &emissiveUvTransform = uvTransforms[3];
+
+        return ObjMaterial{
+            .diffuse = baseColor,
+            .emission = emission,
+            .shininess = kFallbackShininess,
+            .dissolve = baseAlpha,// glTF baseColorFactor.a
+            // textureID, emissiveTextureID, normalTextureID: assigned in parseCpu.
+            .alphaCutoff = alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
+            .uv_transform_row0 = baseColorUvTransform.row0,// KHR_texture_transform T*R*S row 0, base colour
+            .uv_transform_row1 = baseColorUvTransform.row1,// KHR_texture_transform T*R*S row 1, base colour
+            .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
+            .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
+            // cgltf leaves scale zero without a normalTexture, so guard on the pointer.
+            .normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F,
+            .normal_uv_transform_row0 = normalUvTransform.row0,
+            .normal_uv_transform_row1 = normalUvTransform.row1,
+            .metallic_roughness_uv_transform_row0 = metallicRoughnessUvTransform.row0,
+            .metallic_roughness_uv_transform_row1 = metallicRoughnessUvTransform.row1,
+            .emissive_uv_transform_row0 = emissiveUvTransform.row0,
+            .emissive_uv_transform_row1 = emissiveUvTransform.row1,
+            .unlit = (material.unlit != 0) ? 1 : 0,// KHR_materials_unlit
+        };
+    }
+
+    /// Reads a 2-, 3- or 4-component float attribute into `out`, one entry per accessor element.
+    template<int N, typename VecT> void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
+    {
+        // Pre-filled with 1.0: a VEC3 COLOR_0 read with N=4 leaves alpha unwritten.
+        out.assign(accessor->count, VecT(1.0F));
+        for (cgltf_size i = 0; i < accessor->count; ++i) {
+            cgltf_accessor_read_float(accessor, i, glm::value_ptr(out[i]), N);
+        }
+    }
+
+    /// Decodes only well-formed %XX triplets; a bare or truncated escape is kept as is.
+    std::string percentDecodeUri(const std::string &uri)
+    {
+        std::string out;
+        out.reserve(uri.size());
+        for (std::string::size_type i = 0; i < uri.size(); ++i) {
+            if (uri[i] == '%' && i + 2 < uri.size() && std::isxdigit(static_cast<unsigned char>(uri[i + 1])) != 0
+                && std::isxdigit(static_cast<unsigned char>(uri[i + 2])) != 0) {
+                out.push_back(static_cast<char>(std::strtoul(uri.substr(i + 1, 2).c_str(), nullptr, 16)));
+                i += 2;
+            } else {
+                out.push_back(uri[i]);
             }
-            return {};
         }
-
-        // Remote and malformed data: URIs must not fall through to a filesystem read.
-        if (uri.rfind("data:", 0) == 0 || uri.rfind("http:", 0) == 0 || uri.rfind("https:", 0) == 0) { return {}; }
-
-        std::string decodedUri = percentDecodeUri(uri);
-        std::replace(decodedUri.begin(), decodedUri.end(), '\\', '/');
-
-        const std::filesystem::path baseDir = documentDir.empty() ? std::filesystem::path(".") : documentDir;
-        const std::filesystem::path candidate = baseDir / decodedUri;
-
-        std::error_code baseEc;
-        const std::filesystem::path canonicalBase = std::filesystem::weakly_canonical(baseDir, baseEc);
-        std::error_code candidateEc;
-        const std::filesystem::path canonicalCandidate = std::filesystem::weakly_canonical(candidate, candidateEc);
-        if (baseEc || candidateEc) { return {}; }
-
-        if (!isWithinDirectory(canonicalCandidate, canonicalBase)) {
-            spdlog::warn(
-              "GltfLoader: external image URI '{}' resolves outside the document directory ('{}'); rejected",
-              uri,
-              canonicalCandidate.string());
-            return {};
-        }
-
-        const std::vector<char> fileBytes = Kataglyphis::Shared::readBinaryFile(canonicalCandidate.string());
-        if (fileBytes.empty()) {
-            spdlog::warn(
-              "GltfLoader: external image URI '{}' resolved to '{}' but the file could not be read",
-              uri,
-              canonicalCandidate.string());
-            return {};
-        }
-        return std::vector<unsigned char>(fileBytes.begin(), fileBytes.end());
+        return out;
     }
-    return {};
-}
 
-/// Must match gltf_loader.rs's to_cpu_sampler; no sampler or an undefined filter keeps the defaults.
-GltfSamplerDesc gltfSamplerDesc(const cgltf_sampler *sampler)
-{
-    GltfSamplerDesc desc{};
-    if (sampler == nullptr) { return desc; }
+    /// Rejects `..` escapes from untrusted glTFs; lexically_relative avoids "/foo/bar" matching "/foo/barbaz".
+    bool isWithinDirectory(const std::filesystem::path &candidate, const std::filesystem::path &base)
+    {
+        const std::filesystem::path rel = candidate.lexically_relative(base);
+        return !rel.empty() && rel.begin()->string() != "..";
+    }
 
-    const auto wrap = [](cgltf_wrap_mode mode) {
-        switch (mode) {
-        case cgltf_wrap_mode_clamp_to_edge:
-            return vk::SamplerAddressMode::eClampToEdge;
-        case cgltf_wrap_mode_mirrored_repeat:
-            return vk::SamplerAddressMode::eMirroredRepeat;
-        case cgltf_wrap_mode_repeat:
+    /// Encoded bytes from a buffer view, base64 data URI or sibling file; empty for remote URIs or on failure.
+    std::vector<unsigned char> extractImageBytes(const cgltf_image *image,
+      const cgltf_options &options,
+      const std::filesystem::path &documentDir)
+    {
+        if (image == nullptr) { return {}; }
+
+        if (image->buffer_view != nullptr && image->buffer_view->buffer != nullptr
+            && image->buffer_view->buffer->data != nullptr) {
+            const auto *base = static_cast<const unsigned char *>(image->buffer_view->buffer->data);
+            const cgltf_size offset = image->buffer_view->offset;
+            const cgltf_size size = image->buffer_view->size;
+            // Reject a view running past its buffer, written so offset + size cannot overflow.
+            const cgltf_size buffer_size = image->buffer_view->buffer->size;
+            if (offset > buffer_size || size > buffer_size - offset) { return {}; }
+            return std::vector<unsigned char>(base + offset, base + offset + size);
+        }
+
+        if (image->uri != nullptr) {
+            const std::string uri = image->uri;
+            const std::string marker = "base64,";
+            const std::string::size_type pos = uri.find(marker);
+            if (pos != std::string::npos) {
+                const char *b64 = uri.c_str() + pos + marker.size();
+                const cgltf_size b64len = uri.size() - pos - marker.size();
+                // Anything but a positive multiple of 4 would underflow the unsigned size below.
+                if (b64len < 4 || (b64len % 4) != 0) { return {}; }
+                cgltf_size padding = 0;
+                if (b64[b64len - 1] == '=') { ++padding; }
+                if (b64[b64len - 2] == '=') { ++padding; }
+                const cgltf_size decoded = (b64len / 4) * 3 - padding;
+                void *out = nullptr;
+                if (cgltf_load_buffer_base64(&options, decoded, b64, &out) == cgltf_result_success && out != nullptr) {
+                    const auto *bytes = static_cast<const unsigned char *>(out);
+                    std::vector<unsigned char> result(bytes, bytes + decoded);
+                    free(out);// cgltf's default allocator is malloc/free
+                    return result;
+                }
+                return {};
+            }
+
+            // Remote and malformed data: URIs must not fall through to a filesystem read.
+            if (uri.rfind("data:", 0) == 0 || uri.rfind("http:", 0) == 0 || uri.rfind("https:", 0) == 0) { return {}; }
+
+            std::string decodedUri = percentDecodeUri(uri);
+            std::replace(decodedUri.begin(), decodedUri.end(), '\\', '/');
+
+            const std::filesystem::path baseDir = documentDir.empty() ? std::filesystem::path(".") : documentDir;
+            const std::filesystem::path candidate = baseDir / decodedUri;
+
+            std::error_code baseEc;
+            const std::filesystem::path canonicalBase = std::filesystem::weakly_canonical(baseDir, baseEc);
+            std::error_code candidateEc;
+            const std::filesystem::path canonicalCandidate = std::filesystem::weakly_canonical(candidate, candidateEc);
+            if (baseEc || candidateEc) { return {}; }
+
+            if (!isWithinDirectory(canonicalCandidate, canonicalBase)) {
+                spdlog::warn(
+                  "GltfLoader: external image URI '{}' resolves outside the document directory ('{}'); rejected",
+                  uri,
+                  canonicalCandidate.string());
+                return {};
+            }
+
+            const std::vector<char> fileBytes = Kataglyphis::Shared::readBinaryFile(canonicalCandidate.string());
+            if (fileBytes.empty()) {
+                spdlog::warn("GltfLoader: external image URI '{}' resolved to '{}' but the file could not be read",
+                  uri,
+                  canonicalCandidate.string());
+                return {};
+            }
+            return std::vector<unsigned char>(fileBytes.begin(), fileBytes.end());
+        }
+        return {};
+    }
+
+    /// Must match gltf_loader.rs's to_cpu_sampler; no sampler or an undefined filter keeps the defaults.
+    GltfSamplerDesc gltfSamplerDesc(const cgltf_sampler *sampler)
+    {
+        GltfSamplerDesc desc{};
+        if (sampler == nullptr) { return desc; }
+
+        const auto wrap = [](cgltf_wrap_mode mode) {
+            switch (mode) {
+            case cgltf_wrap_mode_clamp_to_edge:
+                return vk::SamplerAddressMode::eClampToEdge;
+            case cgltf_wrap_mode_mirrored_repeat:
+                return vk::SamplerAddressMode::eMirroredRepeat;
+            case cgltf_wrap_mode_repeat:
+            default:
+                return vk::SamplerAddressMode::eRepeat;
+            }
+        };
+        desc.addressModeU = wrap(sampler->wrap_s);
+        desc.addressModeV = wrap(sampler->wrap_t);
+
+        desc.magFilter = sampler->mag_filter == cgltf_filter_type_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
+
+        // Split like to_cpu_sampler; a bare Nearest/Linear counts as its *_mipmap_* sibling.
+        switch (sampler->min_filter) {
+        case cgltf_filter_type_nearest:
+        case cgltf_filter_type_nearest_mipmap_nearest:
+            desc.minFilter = vk::Filter::eNearest;
+            desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
+            break;
+        case cgltf_filter_type_nearest_mipmap_linear:
+            desc.minFilter = vk::Filter::eNearest;
+            desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
+            break;
+        case cgltf_filter_type_linear_mipmap_nearest:
+            desc.minFilter = vk::Filter::eLinear;
+            desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
+            break;
+        case cgltf_filter_type_linear:
+        case cgltf_filter_type_linear_mipmap_linear:
+        case cgltf_filter_type_undefined:
         default:
-            return vk::SamplerAddressMode::eRepeat;
+            desc.minFilter = vk::Filter::eLinear;
+            desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
+            break;
         }
-    };
-    desc.addressModeU = wrap(sampler->wrap_s);
-    desc.addressModeV = wrap(sampler->wrap_t);
 
-    desc.magFilter = sampler->mag_filter == cgltf_filter_type_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
-
-    // Split like to_cpu_sampler; a bare Nearest/Linear counts as its *_mipmap_* sibling.
-    switch (sampler->min_filter) {
-    case cgltf_filter_type_nearest:
-    case cgltf_filter_type_nearest_mipmap_nearest:
-        desc.minFilter = vk::Filter::eNearest;
-        desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
-        break;
-    case cgltf_filter_type_nearest_mipmap_linear:
-        desc.minFilter = vk::Filter::eNearest;
-        desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
-        break;
-    case cgltf_filter_type_linear_mipmap_nearest:
-        desc.minFilter = vk::Filter::eLinear;
-        desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
-        break;
-    case cgltf_filter_type_linear:
-    case cgltf_filter_type_linear_mipmap_linear:
-    case cgltf_filter_type_undefined:
-    default:
-        desc.minFilter = vk::Filter::eLinear;
-        desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
-        break;
+        return desc;
     }
-
-    return desc;
-}
 
 }// namespace
 
@@ -448,9 +449,9 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         const glm::vec4 vcolor = i < colors.size() ? colors[i] : glm::vec4(1.0F);
         // A tangent lies in the surface, so it takes `world`, not normalMatrix; handedness flips with mirroring.
         const glm::vec4 vtangent = i < tangents.size()
-          ? glm::vec4(glm::normalize(glm::mat3(world) * glm::vec3(tangents[i])),
-              mirrored ? -tangents[i].w : tangents[i].w)
-          : glm::vec4(0.0F);
+                                     ? glm::vec4(glm::normalize(glm::mat3(world) * glm::vec3(tangents[i])),
+                                         mirrored ? -tangents[i].w : tangents[i].w)
+                                     : glm::vec4(0.0F);
         vertices.emplace_back(worldPos, worldNormal, vcolor, uv, vtangent);
     }
 
@@ -464,9 +465,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         }
     } else {
         localSeq.reserve(positions.size());
-        for (std::size_t i = 0; i < positions.size(); ++i) {
-            localSeq.push_back(static_cast<unsigned int>(i));
-        }
+        for (std::size_t i = 0; i < positions.size(); ++i) { localSeq.push_back(static_cast<unsigned int>(i)); }
     }
 
     const std::size_t primIndexStart = indices.size();
@@ -499,9 +498,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         }
     } else if (primType == cgltf_primitive_type_triangle_fan) {
         // Fan: vertex 0 is shared by every triangle.
-        for (std::size_t i = 1; i + 1 < localSeq.size(); ++i) {
-            emitTri(localSeq[0], localSeq[i], localSeq[i + 1]);
-        }
+        for (std::size_t i = 1; i + 1 < localSeq.size(); ++i) { emitTri(localSeq[0], localSeq[i], localSeq[i + 1]); }
     } else {
         for (std::size_t i = 0; i + 2 < localSeq.size(); i += 3) {
             emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
@@ -520,10 +517,9 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // Generated only when TANGENT is absent, after the final normals exist.
     if (tangents.empty()) { vertex::computeTangents(vertices, indices, primIndexStart); }
 
-    const unsigned int primitiveMaterial =
-      primitive->material != nullptr
-        ? static_cast<unsigned int>(primitive->material - data->materials)
-        : fallbackMaterial;
+    const unsigned int primitiveMaterial = primitive->material != nullptr
+                                             ? static_cast<unsigned int>(primitive->material - data->materials)
+                                             : fallbackMaterial;
     // One id per emitted triangle: the raw index count over-counts strips and fans.
     const std::size_t triStart = materialIndex.size();
     const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
@@ -559,9 +555,7 @@ void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsig
         }
     }
 
-    for (cgltf_size c = 0; c < node->children_count; ++c) {
-        visitNode(node->children[c], data, fallbackMaterial);
-    }
+    for (cgltf_size c = 0; c < node->children_count; ++c) { visitNode(node->children[c], data, fallbackMaterial); }
 }
 
 bool GltfLoader::parseCpu(const std::string &modelFile)

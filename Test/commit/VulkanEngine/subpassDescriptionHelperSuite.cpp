@@ -11,21 +11,19 @@ using Kataglyphis::buildSubpassDescription;
 namespace {
 constexpr vk::AttachmentReference kColorRef{ 0, vk::ImageLayout::eColorAttachmentOptimal };
 constexpr vk::AttachmentReference kDepthRef{ 1, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-constexpr std::array<vk::AttachmentReference, 3> kThreeColorRefs{
-    vk::AttachmentReference{ 1, vk::ImageLayout::eColorAttachmentOptimal },
+constexpr std::array<vk::AttachmentReference, 3> kThreeColorRefs{ vk::AttachmentReference{ 1,
+                                                                    vk::ImageLayout::eColorAttachmentOptimal },
     vk::AttachmentReference{ 2, vk::ImageLayout::eColorAttachmentOptimal },
-    vk::AttachmentReference{ 3, vk::ImageLayout::eColorAttachmentOptimal }
-};
-constexpr std::array<vk::AttachmentReference, 4> kFourInputRefs{
-    vk::AttachmentReference{ 1, vk::ImageLayout::eShaderReadOnlyOptimal },
+    vk::AttachmentReference{ 3, vk::ImageLayout::eColorAttachmentOptimal } };
+constexpr std::array<vk::AttachmentReference, 4> kFourInputRefs{ vk::AttachmentReference{ 1,
+                                                                   vk::ImageLayout::eShaderReadOnlyOptimal },
     vk::AttachmentReference{ 2, vk::ImageLayout::eShaderReadOnlyOptimal },
     vk::AttachmentReference{ 3, vk::ImageLayout::eShaderReadOnlyOptimal },
-    vk::AttachmentReference{ 4, vk::ImageLayout::eShaderReadOnlyOptimal }
-};
+    vk::AttachmentReference{ 4, vk::ImageLayout::eShaderReadOnlyOptimal } };
 }// namespace
 
-static_assert(buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1), &kDepthRef)
-                .colorAttachmentCount
+static_assert(
+  buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1), &kDepthRef).colorAttachmentCount
     == 1U,
   "buildSubpassDescription must be usable in a constant expression");
 
@@ -71,9 +69,10 @@ TEST(SubpassDescriptionHelperUnit, DepthStencilAttachmentPointerRoundTrips)
 TEST(SubpassDescriptionHelperUnit, DepthStencilAttachmentIsNullWhenNoneIsPassed)
 {
     // The deferred lighting subpass has no depth attachment of its own.
-    const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&kColorRef, 1), nullptr,
-      std::span<const vk::AttachmentReference>(kFourInputRefs));
+    const vk::SubpassDescription subpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1),
+        nullptr,
+        std::span<const vk::AttachmentReference>(kFourInputRefs));
 
     EXPECT_EQ(subpass.pDepthStencilAttachment, nullptr);
 }
@@ -89,9 +88,10 @@ TEST(SubpassDescriptionHelperUnit, InputAttachmentCountIsZeroWhenTheDefaultedArg
 
 TEST(SubpassDescriptionHelperUnit, InputAttachmentCountIsFourForTheDeferredLightingShape)
 {
-    const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&kColorRef, 1), nullptr,
-      std::span<const vk::AttachmentReference>(kFourInputRefs));
+    const vk::SubpassDescription subpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1),
+        nullptr,
+        std::span<const vk::AttachmentReference>(kFourInputRefs));
 
     EXPECT_EQ(subpass.inputAttachmentCount, 4U);
     EXPECT_EQ(subpass.pInputAttachments, kFourInputRefs.data());
@@ -184,9 +184,10 @@ TEST(SubpassDescriptionHelperUnit, MatchesDeferredRasterizerGeometrySubpass)
 TEST(SubpassDescriptionHelperUnit, MatchesDeferredRasterizerLightingSubpass)
 {
     // Reads the G-buffers and depth back as input attachments, so it has no depth attachment of its own.
-    const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&kColorRef, 1), nullptr,
-      std::span<const vk::AttachmentReference>(kFourInputRefs));
+    const vk::SubpassDescription subpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(&kColorRef, 1),
+        nullptr,
+        std::span<const vk::AttachmentReference>(kFourInputRefs));
 
     EXPECT_EQ(subpass.colorAttachmentCount, 1U);
     EXPECT_EQ(subpass.pDepthStencilAttachment, nullptr);

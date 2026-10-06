@@ -47,9 +47,8 @@ inline void apply_keyboard_input(CameraControllerState state, std::span<const bo
     float const velocity = state.movement_speed * delta_time;
     float const turn = kKeyboardTurnDegreesPerSecond * delta_time;
 
-    auto pressed = [keys](int k) {
-        return static_cast<std::size_t>(k) < keys.size() && keys[static_cast<std::size_t>(k)];
-    };
+    auto pressed = [keys](
+                     int k) { return static_cast<std::size_t>(k) < keys.size() && keys[static_cast<std::size_t>(k)]; };
 
     if (pressed(GLFW_KEY_W)) { state.position += state.front * velocity; }
     if (pressed(GLFW_KEY_D)) { state.position += state.right * velocity; }
@@ -67,7 +66,7 @@ inline void apply_mouse_input(CameraControllerState state, float x_change, float
     y_change *= state.turn_speed;
 
     state.yaw += x_change;
-    state.pitch += y_change; // Y-axis aligned for look behavior
+    state.pitch += y_change;// Y-axis aligned for look behavior
 
     state.pitch = std::min(state.pitch, 89.0F);
     state.pitch = std::max(state.pitch, -89.0F);

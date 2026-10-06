@@ -2,11 +2,11 @@
 #include <memory>
 
 #include <cstdint>
+#include <spdlog/spdlog.h>
 #include <tuple>
 #include <utility>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
-#include <spdlog/spdlog.h>
 
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
@@ -85,12 +85,9 @@ void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_de
 
     const VkImageCreateInfo &c_image_create_info = static_cast<const VkImageCreateInfo &>(image_create_info);
     VkImage c_image = VK_NULL_HANDLE;
-    ASSERT_VULKAN(vmaCreateImage(device->getVmaAllocator(),
-                    &c_image_create_info,
-                    &allocation_create_info,
-                    &c_image,
-                    &allocation,
-                    nullptr),
+    ASSERT_VULKAN(
+      vmaCreateImage(
+        device->getVmaAllocator(), &c_image_create_info, &allocation_create_info, &c_image, &allocation, nullptr),
       "Failed to create image via VMA!");
 
     image = c_image;
@@ -115,8 +112,10 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
     // Through the command-buffer overload, so the barrier logic lives in one place.
     transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask, array_layers);
 
+    // clang-format off: BuildIntegrity reads a submit's result off the call's own line.
     bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       in_logical_device, command_pool, queue, command_buffer);
+    // clang-format on
     if (!transition_submitted) { spdlog::error("Failed to submit image layout transition commands."); }
 }
 

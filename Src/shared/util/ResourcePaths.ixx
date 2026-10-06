@@ -19,9 +19,9 @@ inline constexpr int kResourceSearchDepth = 8;
 // ancestor. `relative` containing ".." is rejected outright: without that
 // guard a caller-controlled fragment could walk the search to a path OUTSIDE
 // the tree it is meant to probe.
-inline auto searchAncestorsForRelative(
-  const std::filesystem::path &start, const std::filesystem::path &relative, int maxDepth)
-  -> std::optional<std::filesystem::path>
+inline auto searchAncestorsForRelative(const std::filesystem::path &start,
+  const std::filesystem::path &relative,
+  int maxDepth) -> std::optional<std::filesystem::path>
 {
     for (const auto &part : relative) {
         if (part == "..") { return std::nullopt; }
@@ -68,9 +68,7 @@ inline auto resolveResourceRelativePath(std::string_view relative) -> std::optio
 
 inline auto resourcesRootOrEmpty() -> std::filesystem::path
 {
-    if (const auto models = resolveResourceRelativePath("Models"); models.has_value()) {
-        return models->parent_path();
-    }
+    if (const auto models = resolveResourceRelativePath("Models"); models.has_value()) { return models->parent_path(); }
     return {};
 }
 #endif

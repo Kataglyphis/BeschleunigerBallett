@@ -1,16 +1,16 @@
 module;
-#include <memory>
+#include "shared/scene/ObjMaterial.hpp"
 #include <array>
 #include <filesystem>
+#include <glm/glm.hpp>
+#include <memory>
 #include <span>
+#include <spdlog/spdlog.h>
+#include <stb_image.h>
 #include <string>
 #include <system_error>
 #include <vector>
 #include <vulkan/vulkan.hpp>
-#include <stb_image.h>
-#include <spdlog/spdlog.h>
-#include <glm/glm.hpp>
-#include "shared/scene/ObjMaterial.hpp"
 
 #include "common/FramebufferHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
@@ -48,7 +48,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 {
     std::filesystem::path skybox_base_dir;
     if (const auto resolved = Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/DOOM2016");
-        resolved.has_value()) {
+      resolved.has_value()) {
         skybox_base_dir = *resolved;
     } else {
         std::error_code current_path_ec;
@@ -63,7 +63,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     cubeMapTexture = std::make_unique<Texture>();
 
     int width = 0, height = 0, bit_depth = 0;
-    std::vector<unsigned char*> face_data(6);
+    std::vector<unsigned char *> face_data(6);
     int face_widths[6] = {};
     int face_heights[6] = {};
 
@@ -91,7 +91,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}", width, height);
 
-    std::array<const unsigned char*, 6> faces = {
+    std::array<const unsigned char *, 6> faces = {
         face_data[0], face_data[1], face_data[2], face_data[3], face_data[4], face_data[5]
     };
     // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before post gamma-encodes.
@@ -112,10 +112,12 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
 {
     // Same upload path as the real faces, so a broken skybox renders black instead of binding nothing.
-    std::array<const unsigned char*, 6> faces = {
-        kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel
-    };
+    std::array<const unsigned char *, 6> faces = { kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel };
     if (!uploadCubeMapFaces(commandPool, 1, 1, faces)) {
         spdlog::error("SkyBox: fallback cubemap upload failed; leaving the cubemap descriptor unwritten.");
         return;
@@ -123,7 +125,10 @@ void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
     updateDescriptorSetForCubeMap();
 }
 
-bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uint32_t height, std::span<const unsigned char *const, 6> faceData)
+bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool,
+  uint32_t width,
+  uint32_t height,
+  std::span<const unsigned char *const, 6> faceData)
 {
     vk::DeviceSize const layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
     vk::DeviceSize const imageSize = layerSize * 6;
@@ -131,19 +136,32 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     // VUID-vkDestroyImage-image-01000: the old view must go before createImage() replaces its image.
     cubeMapTexture->releaseImageView();
 
-    cubeMapTexture->createImage(device, width, height, 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
+    cubeMapTexture->createImage(device,
+      width,
+      height,
+      1,
+      vk::Format::eR8G8B8A8Srgb,
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
+      6,
+      vk::ImageCreateFlagBits::eCubeCompatible);
 
     VulkanBuffer stagingBuffer;
-    stagingBuffer.create(device, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    stagingBuffer.create(device,
+      imageSize,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     // Host-visible buffers are persistently mapped by VMA.
-    void* mappedData = stagingBuffer.getMappedData();
+    void *mappedData = stagingBuffer.getMappedData();
     for (size_t i = 0; i < 6; i++) {
-        void* layerOffset = static_cast<char*>(mappedData) + i * layerSize;
+        void *layerOffset = static_cast<char *>(mappedData) + i * layerSize;
         std::memcpy(layerOffset, faceData[i], static_cast<size_t>(layerSize));
     }
 
-    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), commandPool);
     if (!commandBuffer) {
         spdlog::error("SkyBox::uploadCubeMapFaces: failed to begin command buffer, skipping cubemap upload.");
         stagingBuffer.cleanUp();
@@ -165,10 +183,11 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 6;
-    region.imageOffset = vk::Offset3D{0, 0, 0};
-    region.imageExtent = vk::Extent3D{width, height, 1};
+    region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+    region.imageExtent = vk::Extent3D{ width, height, 1 };
 
-    commandBuffer.copyBufferToImage(stagingBuffer.getBuffer(), cubeMapTexture->getImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
+    commandBuffer.copyBufferToImage(
+      stagingBuffer.getBuffer(), cubeMapTexture->getImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
     // The helper's eAllCommands destination strictly widens a fragment-only stage (see pipelineStageForLayout).
     cubeMapTexture->getVulkanImage().transitionImageLayout(commandBuffer,
@@ -184,11 +203,14 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     stagingBuffer.cleanUp();
 
     if (!submitted) {
-        spdlog::error("SkyBox::uploadCubeMapFaces: submit failed ({}x{}); leaving cubemap image unwritten.", width, height);
+        spdlog::error(
+          "SkyBox::uploadCubeMapFaces: submit failed ({}x{}); leaving cubemap image unwritten.", width, height);
         return false;
     }
 
+    // clang-format off: BuildIntegrity wants the call, its eColor aspect and the marker on one line.
     cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);// COLOR_ATTACHMENT_CHAIN_OK: cubemap-six-layers-cube-compatible
+    // clang-format on
     cubeMapTexture->createTextureSampler(device);
     return true;
 }
@@ -211,7 +233,7 @@ void SkyBox::createRenderPass(vk::Format format)
     const vk::AttachmentDescription colorAttachment =
       buildAttachmentDescription(format, vk::ImageLayout::eColorAttachmentOptimal);
 
-    std::array attachments = {colorAttachment};
+    std::array attachments = { colorAttachment };
 
     vk::AttachmentReference colorRef{};
     colorRef.attachment = 0;
@@ -255,9 +277,9 @@ void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint3
     framebufferHeight = height;
     framebuffers.resize(imageViews.size());
     for (size_t i = 0; i < imageViews.size(); i++) {
-        std::array attachments = {imageViews[i]};
-        const vk::FramebufferCreateInfo fbInfo = Kataglyphis::buildFramebufferCreateInfo(
-          renderPass, attachments, vk::Extent2D{ width, height });
+        std::array attachments = { imageViews[i] };
+        const vk::FramebufferCreateInfo fbInfo =
+          Kataglyphis::buildFramebufferCreateInfo(renderPass, attachments, vk::Extent2D{ width, height });
         auto fbResult = device->getLogicalDevice().createFramebuffer(fbInfo);
         ASSERT_VULKAN(fbResult.result, "Failed to create skybox framebuffer!");
         framebuffers[i] = fbResult.value;
@@ -278,7 +300,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
     std::array<vk::VertexInputAttributeDescription, 5> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
-    std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, cubemapDescriptors.getLayout()};
+    std::array<vk::DescriptorSetLayout, 2> combinedLayouts = { sharedLayout, cubemapDescriptors.getLayout() };
 
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eFragment;
@@ -286,7 +308,8 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     pushConstantRange.size = sizeof(uint32_t);
     const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
+      buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(layoutRes.result, "Failed to create skybox pipeline layout!");
@@ -317,25 +340,25 @@ void SkyBox::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 void SkyBox::createMesh(vk::CommandPool commandPool)
 {
     // Fullscreen quad indices
-    std::vector<unsigned int> indices = {
-        0, 1, 2,
-        2, 1, 3
-    };
+    std::vector<unsigned int> indices = { 0, 1, 2, 2, 1, 3 };
 
     // Fullscreen quad vertices with UVs
     std::vector<Vertex> vertices = {
         Vertex(glm::vec3(-1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 0.0F)),
-        Vertex(glm::vec3( 1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 0.0F)),
-        Vertex(glm::vec3(-1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 1.0F)),
-        Vertex(glm::vec3( 1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 1.0F))
+        Vertex(glm::vec3(1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 0.0F)),
+        Vertex(glm::vec3(-1.0F, 1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 1.0F)),
+        Vertex(glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 1.0F))
     };
 
-    std::vector<unsigned int> materialIndex = {0};
-    std::vector<ObjMaterial> materials = {ObjMaterial{}};
+    std::vector<unsigned int> materialIndex = { 0 };
+    std::vector<ObjMaterial> materials = { ObjMaterial{} };
     skyMesh = std::make_unique<Mesh>(device, commandPool, vertices, indices, materialIndex, materials);
 }
 
-void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, std::span<const vk::DescriptorSet> descriptorSets, bool skyboxEnabled)
+void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
+  uint32_t image_index,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  bool skyboxEnabled)
 {
     if (image_index >= framebuffers.size() || framebuffers.empty()) {
         spdlog::error("SkyBox: framebuffer not created or index out of range!");
@@ -347,13 +370,12 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
         return;
     }
 
-    spdlog::debug("SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
+    spdlog::debug(
+      "SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
 
-    std::array clearValues = {
-        vk::ClearValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}
-    };
+    std::array clearValues = { vk::ClearValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } } };
     const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
-      renderPass, framebuffers[image_index], vk::Extent2D{framebufferWidth, framebufferHeight}, clearValues);
+      renderPass, framebuffers[image_index], vk::Extent2D{ framebufferWidth, framebufferHeight }, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
@@ -361,11 +383,13 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = {descriptorSets[0], cubemapDescriptors.sets()[0]};
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
+    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = { descriptorSets[0], cubemapDescriptors.sets()[0] };
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
 
     uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
-    commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &skyboxEnabledVal);
+    commandBuffer.pushConstants(
+      pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &skyboxEnabledVal);
 
     const vk::Buffer vertex_buffer = skyMesh->getVertexBuffer();
     const vk::DeviceSize offset = 0;
@@ -385,13 +409,9 @@ void SkyBox::cleanUp()
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     cubemapDescriptors.cleanUp();
     Kataglyphis::destroyRenderPass(device->getLogicalDevice(), renderPass);
-    if (skyMesh) {
-        skyMesh->cleanUp();
-    }
+    if (skyMesh) { skyMesh->cleanUp(); }
     skyMesh.reset();
-    if (cubeMapTexture) {
-        cubeMapTexture->cleanUp();
-    }
+    if (cubeMapTexture) { cubeMapTexture->cleanUp(); }
     cubeMapTexture.reset();
 
     device.reset();
@@ -399,15 +419,10 @@ void SkyBox::cleanUp()
 
 SkyBox::~SkyBox() { cleanUp(); }
 
-void SkyBox::destroyFramebuffers()
-{
-    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
-}
+void SkyBox::destroyFramebuffers() { Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers); }
 
 // Does not destroy the old framebuffers: recreateSwapChain() must, while their swapchain images still exist.
 void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
-{
-    createFramebuffers(imageViews, width, height);
-}
+{ createFramebuffers(imageViews, width, height); }
 
-}
+}// namespace Kataglyphis

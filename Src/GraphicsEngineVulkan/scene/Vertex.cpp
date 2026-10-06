@@ -73,7 +73,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
 {
     if (firstIndex + 2 >= indices.size()) { return; }
 
-    // Size accumulators to the referenced range: called per primitive over the growing global array, full size is quadratic.
+    // Size accumulators to the referenced range: called per primitive over the growing array, full size is quadratic.
     unsigned int minCorner = indices[firstIndex];
     unsigned int maxCorner = indices[firstIndex];
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
@@ -112,7 +112,7 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
         }
     }
 
-    // A vertex's frame depends only on its accumulators, so `finalized` computes it once, not once per incident triangle.
+    // A vertex's frame depends only on its accumulators, so `finalized` computes it once, not per incident triangle.
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
         for (unsigned int corner : { indices[i + 0], indices[i + 1], indices[i + 2] }) {
             const std::size_t slot = corner - minCorner;

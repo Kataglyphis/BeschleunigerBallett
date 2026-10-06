@@ -61,12 +61,9 @@ void ParsingArbitraryGltfNeverCrashes(const std::vector<uint8_t> &bytes)
     }
 
     // In-memory data resolves only embedded buffers; a failed load is fine, but unloaded views must not be walked.
-    const bool buffers_loaded =
-      cgltf_load_buffers(&options, data, nullptr) == cgltf_result_success;
+    const bool buffers_loaded = cgltf_load_buffers(&options, data, nullptr) == cgltf_result_success;
 
-    for (cgltf_size i = 0; buffers_loaded && i < data->images_count; ++i) {
-        ExtractImageBytesSafely(&data->images[i]);
-    }
+    for (cgltf_size i = 0; buffers_loaded && i < data->images_count; ++i) { ExtractImageBytesSafely(&data->images[i]); }
 
     cgltf_free(data);
 }
@@ -74,5 +71,4 @@ void ParsingArbitraryGltfNeverCrashes(const std::vector<uint8_t> &bytes)
 }// namespace
 
 // The smallest valid glTF gives the fuzzer a parseable starting point.
-FUZZ_TEST(GltfParsing, ParsingArbitraryGltfNeverCrashes)
-  .WithSeeds({ std::vector<uint8_t>{} });
+FUZZ_TEST(GltfParsing, ParsingArbitraryGltfNeverCrashes).WithSeeds({ std::vector<uint8_t>{} });

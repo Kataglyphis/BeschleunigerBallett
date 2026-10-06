@@ -4,9 +4,9 @@
 
 #include "common/FormatHelper.hpp"
 
-static_assert(Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlagBits::eSampledImageFilterLinear
-                                                      | vk::FormatFeatureFlagBits::eBlitSrc
-                                                      | vk::FormatFeatureFlagBits::eBlitDst),
+static_assert(
+  Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlagBits::eSampledImageFilterLinear
+                                        | vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst),
   "supportsMipmapGeneration must be usable in a constant expression");
 
 static_assert(Kataglyphis::depthStencilTransitionAspect(vk::Format::eD32SfloatS8Uint)
@@ -18,7 +18,7 @@ namespace {
 TEST(FormatHelperUnit, AllThreeBlitCapabilitiesAreRequired)
 {
     vk::FormatFeatureFlags all = vk::FormatFeatureFlagBits::eSampledImageFilterLinear
-                                  | vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst;
+                                 | vk::FormatFeatureFlagBits::eBlitSrc | vk::FormatFeatureFlagBits::eBlitDst;
     EXPECT_TRUE(Kataglyphis::supportsMipmapGeneration(all));
 }
 
@@ -42,7 +42,8 @@ TEST(FormatHelperUnit, MissingBlitDstFails)
     EXPECT_FALSE(Kataglyphis::supportsMipmapGeneration(flags));
 }
 
-TEST(FormatHelperUnit, EmptyFlagsFail) { EXPECT_FALSE(Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlags{})); }
+TEST(FormatHelperUnit, EmptyFlagsFail)
+{ EXPECT_FALSE(Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlags{})); }
 
 TEST(FormatHelperUnit, CombinedDepthStencilFormatsReportStencil)
 {

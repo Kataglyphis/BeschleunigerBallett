@@ -16,8 +16,13 @@ constexpr vk::ImageMemoryBarrier buildImageMemoryBarrier(vk::Image image,
   uint32_t baseArrayLayer = 0,
   uint32_t layerCount = 1)
 {
-    return vk::ImageMemoryBarrier{ srcAccess, dstAccess, oldLayout, newLayout, vk::QueueFamilyIgnored,
-        vk::QueueFamilyIgnored, image,
+    return vk::ImageMemoryBarrier{ srcAccess,
+        dstAccess,
+        oldLayout,
+        newLayout,
+        vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored,
+        image,
         vk::ImageSubresourceRange{ aspect, baseMipLevel, levelCount, baseArrayLayer, layerCount } };
 }
 

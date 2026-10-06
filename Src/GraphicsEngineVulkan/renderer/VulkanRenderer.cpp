@@ -1,5 +1,4 @@
 module;
-#include <optional>
 #include "common/GuiModelTransform.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
@@ -10,6 +9,7 @@ module;
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include "spdlog/spdlog.h"
+#include <optional>
 
 #include <cstdint>
 #include <glm/ext/matrix_clip_space.hpp>
@@ -120,13 +120,21 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     initDescriptorResources();
 
-    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptors.getLayout() };
-    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_rasterizer = {
+        sharedRenderDescriptors.getLayout()
+    };
+    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = {
+        sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
+    };
 
     rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
 
-    clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    clouds.init(device,
+      graphics_command_pool,
+      sharedRenderDescriptors.getLayout(),
+      vulkanSwapChain.getSwapChainExtent().width,
+      vulkanSwapChain.getSwapChainExtent().height);
     // Same path as later shadow-setting changes, so the GUI default is the one source of truth.
     reinitShadowMapForCurrentSettings();
 
@@ -149,8 +157,8 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     skyBox.init(device, graphics_command_pool);
     skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat());
     skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout());
-    skyBox.createFramebuffers(swapchainImageViews(),
-        vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    skyBox.createFramebuffers(
+      swapchainImageViews(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
     scene->beginModelLoadAsync();
@@ -159,10 +167,8 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     create_object_description_buffer();
     updateAllDescriptorSets();
 
-    gui->initializeVulkanContext(device,
-      instance.getVulkanInstance(),
-      postStage.getRenderPass(),
-      vulkanSwapChain.getNumberSwapChainImages());
+    gui->initializeVulkanContext(
+      device, instance.getVulkanInstance(), postStage.getRenderPass(), vulkanSwapChain.getNumberSwapChainImages());
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }
 
@@ -177,10 +183,8 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     camera_data->set_fov(std::clamp(guiSceneSharedVars.camera_fov, 20.0F, 110.0F));
 
     globalUBO.view = camera_data->calculate_viewmatrix();
-    globalUBO.projection = makeVulkanProjection(camera_data->get_fov(),
-      aspect_ratio,
-      camera_data->get_near_plane(),
-      camera_data->get_far_plane());
+    globalUBO.projection = makeVulkanProjection(
+      camera_data->get_fov(), aspect_ratio, camera_data->get_near_plane(), camera_data->get_far_plane());
 
     fillSceneUboCamera(sceneUBO, camera_data->get_camera_position(), camera_data->get_camera_direction());
 
@@ -198,18 +202,20 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     sceneUBO.cascadedShadowIntensity = guiSceneSharedVars.cascaded_shadow_intensity;
 
     // Calculate CSM cascades
-    dirShadowMap.updateCascades(globalUBO.view, camera_data->get_fov(),
-        aspect_ratio,
-        camera_data->get_near_plane(), camera_data->get_far_plane(),
-        glm::vec3(sceneUBO.dirLight.direction),
-        guiSceneSharedVars.shadow_distance,
-        guiSceneSharedVars.cascade_split_lambda);
+    dirShadowMap.updateCascades(globalUBO.view,
+      camera_data->get_fov(),
+      aspect_ratio,
+      camera_data->get_near_plane(),
+      camera_data->get_far_plane(),
+      glm::vec3(sceneUBO.dirLight.direction),
+      guiSceneSharedVars.shadow_distance,
+      guiSceneSharedVars.cascade_split_lambda);
 
     // Inverses for the clouds compute shader (see GlobalUBO.hpp).
     globalUBO.inv_projection = glm::inverse(globalUBO.projection);
     globalUBO.inv_view = glm::inverse(globalUBO.view);
 
-    const auto& cascadeData = dirShadowMap.getCascadeData();
+    const auto &cascadeData = dirShadowMap.getCascadeData();
     const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES));
     std::array<float, MAX_CASCADES> cascadeSplitDepths{};
     std::array<glm::mat4, MAX_CASCADES> cascadeViewProjMatrices{};
@@ -239,9 +245,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
 }
 
 auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
-{
-    return device && device->supportsHardwareAcceleratedRRT();
-}
+{ return device && device->supportsHardwareAcceleratedRRT(); }
 
 void Kataglyphis::VulkanRenderer::finishModelLoad() { refreshAfterSceneChange(true); }
 
@@ -279,7 +283,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(GUISceneSharedVars &
 }
 
 void Kataglyphis::VulkanRenderer::handleShaderHotReloadRequest(
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+  Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
 {
     if (guiRendererSharedVars.shader_hot_reload_triggered) {
         shaderHotReload();
@@ -288,7 +292,7 @@ void Kataglyphis::VulkanRenderer::handleShaderHotReloadRequest(
 }
 
 void Kataglyphis::VulkanRenderer::handleRasterizationModeChange(
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+  Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
 {
     // The post pass's input image depends on the mode; waitIdle is fine for a rare UI event.
     if (guiRendererSharedVars.rasterizationMode != lastBoundRasterizationMode) {
@@ -308,22 +312,28 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
 
     // Clamp to the SceneUBO's MAX_CASCADES and to maxMultiviewViewCount, which bounds the shadow pass's viewMask.
     const auto device_view_limit = device->getMaxMultiviewViewCount();
-    const auto cascade_count = clampCascadeCount(
-      static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
+    const auto cascade_count = clampCascadeCount(static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades),
+      static_cast<uint32_t>(MAX_CASCADES),
+      device_view_limit);
     if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(MAX_CASCADES)) {
-        spdlog::warn(
-          "Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
-          device_view_limit, cascade_count);
+        spdlog::warn("Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
+          device_view_limit,
+          cascade_count);
     }
-    dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
+    dirShadowMap.init(device,
+      shadow_res,
+      shadow_res,
+      cascade_count,
+      sharedRenderDescriptors.getLayout(),
+      vulkanSwapChain.getNumberSwapChainImages(),
+      graphics_command_pool);
     dirShadowMap.createGraphicsPipeline();
 
     // The pipeline was seeded from stale cascadeData; re-seed every image once updateUniforms() has run.
     lightMatricesNeedFullReseed = true;
 }
 
-void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
-    GUISceneSharedVars &guiSceneSharedVars)
+void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(GUISceneSharedVars &guiSceneSharedVars)
 {
     if (guiSceneSharedVars.shadow_resolution_changed) {
         guiSceneSharedVars.shadow_resolution_changed = false;
@@ -337,15 +347,14 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
     }
 }
 
-void Kataglyphis::VulkanRenderer::handleModelTransformChange(
-    GUISceneSharedVars &guiSceneSharedVars)
+void Kataglyphis::VulkanRenderer::handleModelTransformChange(GUISceneSharedVars &guiSceneSharedVars)
 {
     if (guiSceneSharedVars.model_transform_changed) {
         guiSceneSharedVars.model_transform_changed = false;
 
-        const glm::mat4 modelMatrix = makeGuiModelTransform(
-          std::span<const float, 3>(guiSceneSharedVars.model_position),
-          std::span<const float, 3>(guiSceneSharedVars.model_rotation));
+        const glm::mat4 modelMatrix =
+          makeGuiModelTransform(std::span<const float, 3>(guiSceneSharedVars.model_position),
+            std::span<const float, 3>(guiSceneSharedVars.model_rotation));
 
         // selected_model_index indexes the file list, not the scene; reloadModel leaves the model at scene index 0.
         if (guiSceneSharedVars.selected_model_index >= 0) {
@@ -358,8 +367,7 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
     }
 }
 
-void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
-    GUISceneSharedVars &guiSceneSharedVars)
+void Kataglyphis::VulkanRenderer::handleModelReloadRequest(GUISceneSharedVars &guiSceneSharedVars)
 {
     if (guiSceneSharedVars.model_reload_requested) {
         guiSceneSharedVars.model_reload_requested = false;
@@ -389,8 +397,9 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
     rasterizer.shaderHotReload(descriptor_set_layouts);
 
-    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(),
-        gbufferDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = {
+        sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
+    };
     deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
@@ -468,8 +477,9 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     }
 
     uint32_t image_index = 0;
-    std::tie(result, image_index) = device->getLogicalDevice().acquireNextImageKHR(
-      vulkanSwapChain.getSwapChain(), std::numeric_limits<uint64_t>::max(), frameSync.imageAvailableSemaphore(),
+    std::tie(result, image_index) = device->getLogicalDevice().acquireNextImageKHR(vulkanSwapChain.getSwapChain(),
+      std::numeric_limits<uint64_t>::max(),
+      frameSync.imageAvailableSemaphore(),
       nullptr);
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
@@ -484,8 +494,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     }
 
     if (image_index >= frameSync.imagesInFlightFenceCount() || image_index >= command_buffers.size()) {
-        abort_frame_after_acquire(
-          fmt::format("Swapchain image index out of range: {}", image_index).c_str());
+        abort_frame_after_acquire(fmt::format("Swapchain image index out of range: {}", image_index).c_str());
         return;
     }
 
@@ -496,8 +505,8 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     }
 
     if (frameSync.imageInFlightFence(image_index)) {
-        result = device->getLogicalDevice().waitForFences(
-          1, &frameSync.imageInFlightFence(image_index), VK_TRUE, UINT64_MAX);
+        result =
+          device->getLogicalDevice().waitForFences(1, &frameSync.imageInFlightFence(image_index), VK_TRUE, UINT64_MAX);
         if (result != vk::Result::eSuccess) {
             abort_frame_with_fatal_error("Failed to wait for image in-flight fence!", result);
             return;
@@ -668,13 +677,14 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     postStage.recreateFrameResources();
     rasterizer.recreateFrameResources(graphics_command_pool);
     deferredRasterizer.recreateFrameResources();
-    clouds.recreateFrameResources(graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    clouds.recreateFrameResources(
+      graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // The accumulation history is extent-sized; recreating it also resets the frame counter.
     if (device->supportsHardwareAcceleratedRRT()) { createPathTracingAccumulationResources(); }
 
-    skyBox.recreateFrameResources(swapchainImageViews(),
-        vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    skyBox.recreateFrameResources(
+      swapchainImageViews(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // A new image count re-provisions every per-image resource, not just the descriptor pools.
     if (newImageCount != oldImageCount) {
@@ -743,9 +753,7 @@ void Kataglyphis::VulkanRenderer::updateAllDescriptorSets()
     updatePostDescriptorSets();
     updateGBufferDescriptorSets();
     updateTexturesInSharedRenderDescriptorSet();
-    if (device->supportsHardwareAcceleratedRRT()) {
-        updateRaytracingDescriptorSets();
-    }
+    if (device->supportsHardwareAcceleratedRRT()) { updateRaytracingDescriptorSets(); }
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpDescriptorResources()
@@ -769,9 +777,7 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
         return;
     }
 
-    if (!asManager.getTLAS()) {
-        return;
-    }
+    if (!asManager.getTLAS()) { return; }
 
     writeRaytracingDescriptorsForImage(image_index);
 }
@@ -782,7 +788,8 @@ void Kataglyphis::VulkanRenderer::writeRaytracingDescriptorsForImage(uint32_t im
     Texture &renderResult = activeOffscreenTexture(image_index);
 
     raytracingDescriptors.writeAccelerationStructure(image_index, TLAS_BINDING, vulkanTLAS);
-    raytracingDescriptors.writeImage(image_index, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
+    raytracingDescriptors.writeImage(
+      image_index, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
     raytracingDescriptors.writeImage(
       image_index, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
 }
@@ -791,7 +798,8 @@ auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Text
 {
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
-    return guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
+    return guiRendererSharedVars.rasterizationMode
+               == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
              ? rasterizer.getOffscreenTexture(index)
              : deferredRasterizer.getOffscreenTexture(index);
 }
@@ -873,10 +881,14 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
           gui->getGuiRendererSharedVars();
         if (guiSceneSharedVars.shadows_enabled) {
-            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
+            Kataglyphis::debug::ScopedCmdLabel const label(
+              commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
             write_pass_timestamp(GpuTimedPass::ShadowCascades, true);
-            dirShadowMap.recordCommands(
-              commandBuffer, image_index, scene, rasterizer_descriptor_sets, guiRendererSharedVars.frustum_culling_enabled);
+            dirShadowMap.recordCommands(commandBuffer,
+              image_index,
+              scene,
+              rasterizer_descriptor_sets,
+              guiRendererSharedVars.frustum_culling_enabled);
             write_pass_timestamp(GpuTimedPass::ShadowCascades, false);
             mutable_gui_vars.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
             mutable_gui_vars.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
@@ -943,18 +955,20 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
-    if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
+    if (guiRendererSharedVars.rasterizationMode
+        == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
         rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
-        const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
+        const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index],
+            gbufferDescriptors.sets()[image_index] };
         deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
     }
 
     // Publish only the path that recorded: the inactive one still holds pre-switch numbers.
-    const bool forward_active =
-      guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
+    const bool forward_active = guiRendererSharedVars.rasterizationMode
+                                == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
       gui->getGuiRendererSharedVars();
     mutable_gui_vars.visibility.meshes_drawn =
@@ -987,8 +1001,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     if (guiRendererSharedVars.raytracing) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
-        raytracingStage.recordCommands(
-          commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
+        raytracingStage.recordCommands(commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
     } else if (guiRendererSharedVars.pathTracing) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
@@ -1021,9 +1034,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
 }
 
 auto Kataglyphis::VulkanRenderer::supportsFrameCapture() const -> bool
-{
-    return device != nullptr && frameCapture.supportsCapture(vulkanSwapChain, device_lost_detected);
-}
+{ return device != nullptr && frameCapture.supportsCapture(vulkanSwapChain, device_lost_detected); }
 
 void Kataglyphis::VulkanRenderer::requestFrameCapture()
 {
@@ -1036,9 +1047,7 @@ void Kataglyphis::VulkanRenderer::requestFrameCapture()
 }
 
 auto Kataglyphis::VulkanRenderer::takeCapturedFrame(uint32_t &outWidth, uint32_t &outHeight) -> std::vector<uint8_t>
-{
-    return frameCapture.take(device, device_lost_detected, outWidth, outHeight);
-}
+{ return frameCapture.take(device, device_lost_detected, outWidth, outHeight); }
 
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
@@ -1141,9 +1150,8 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
 
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorResources()
 {
-    const vk::ShaderStageFlags raytracing_stages = vk::ShaderStageFlagBits::eRaygenKHR
-                                                   | vk::ShaderStageFlagBits::eClosestHitKHR
-                                                   | vk::ShaderStageFlagBits::eCompute;
+    const vk::ShaderStageFlags raytracing_stages =
+      vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
 
     raytracingDescriptors.addBinding(TLAS_BINDING, vk::DescriptorType::eAccelerationStructureKHR, 1, raytracing_stages)
       .addBinding(OUT_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages)
@@ -1173,8 +1181,10 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     }
     pathTracingAccumulation.getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
+    // clang-format off: BuildIntegrity reads a submit's result off the call's own line.
     bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+    // clang-format on
     if (!transition_submitted) {
         spdlog::error("Failed to submit path tracing accumulation image transition!");
         pathTracingAccumulation.cleanUp();
@@ -1218,9 +1228,8 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
               objectDescriptionBuffer,
               vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
               vk::MemoryPropertyFlagBits::eDeviceLocal,
-              std::vector<uint32_t>{0})) {
-            spdlog::error(
-              "VulkanRenderer::create_object_description_buffer: empty placeholder buffer upload failed.");
+              std::vector<uint32_t>{ 0 })) {
+            spdlog::error("VulkanRenderer::create_object_description_buffer: empty placeholder buffer upload failed.");
         }
     }
 
@@ -1242,9 +1251,7 @@ void Kataglyphis::VulkanRenderer::updateObjectDescriptionDescriptorSets()
 void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 {
     vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
-    if (!vulkanTLAS) {
-        return;
-    }
+    if (!vulkanTLAS) { return; }
 
     // The traced world changed, so history from the half-loaded scene must not stay in the mean.
     pathTracingAccumulatedFrames = 0;
@@ -1256,14 +1263,14 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
 {
     // Only a warning: MAX_TEXTURE_COUNT is a shader constant, so shrinking the host array would desync them.
     if (const uint32_t max_sampled_images = device->getMaxPerStageDescriptorSampledImages();
-        max_sampled_images < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
+      max_sampled_images < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
         spdlog::critical(
           "Device maxPerStageDescriptorSampledImages ({}) is below MAX_TEXTURE_COUNT ({}) - texture binding may fail.",
           max_sampled_images,
           MAX_TEXTURE_COUNT);
     }
     if (const uint32_t max_samplers = device->getMaxPerStageDescriptorSamplers();
-        max_samplers < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
+      max_samplers < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
         spdlog::critical(
           "Device maxPerStageDescriptorSamplers ({}) is below MAX_TEXTURE_COUNT ({}) - texture binding may fail.",
           max_samplers,
@@ -1285,11 +1292,11 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
         scene_ubo_stages |= vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
                             | vk::ShaderStageFlagBits::eCompute;
         object_description_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
-                                      | vk::ShaderStageFlagBits::eCompute;
-        sampler_stages |=
-          vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR | vk::ShaderStageFlagBits::eCompute;
-        textures_stages |=
-          vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR | vk::ShaderStageFlagBits::eCompute;
+                                     | vk::ShaderStageFlagBits::eCompute;
+        sampler_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
+                          | vk::ShaderStageFlagBits::eCompute;
+        textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
+                           | vk::ShaderStageFlagBits::eCompute;
     }
 
     sharedRenderDescriptors.addBinding(globalUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1, global_ubo_stages)
@@ -1356,9 +1363,7 @@ void Kataglyphis::VulkanRenderer::create_command_buffers()
 }
 
 void Kataglyphis::VulkanRenderer::createSynchronization()
-{
-    frameSync.create(device->getLogicalDevice(), vulkanSwapChain.getNumberSwapChainImages());
-}
+{ frameSync.create(device->getLogicalDevice(), vulkanSwapChain.getNumberSwapChainImages()); }
 
 void Kataglyphis::VulkanRenderer::create_uniform_buffers()
 {
@@ -1373,7 +1378,7 @@ void Kataglyphis::VulkanRenderer::create_uniform_buffers()
           sizeof(VulkanRendererInternals::GlobalUBO),
           vk::BufferUsageFlagBits::eUniformBuffer,
           vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        
+
         // Host-visible UBOs are persistently mapped by VMA.
         globalUBOMapped[i] = globalUBOBuffer[i].getMappedData();
 
@@ -1383,7 +1388,7 @@ void Kataglyphis::VulkanRenderer::create_uniform_buffers()
           vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
         sceneUBOMapped[i] = sceneUBOBuffer[i].getMappedData();
-        
+
         // Initial upload
         update_uniform_buffers(static_cast<uint32_t>(i));
     }
@@ -1391,13 +1396,11 @@ void Kataglyphis::VulkanRenderer::create_uniform_buffers()
 
 void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 {
-    if (sharedRenderDescriptors.sets().empty()) {
-        return;
-    }
+    if (sharedRenderDescriptors.sets().empty()) { return; }
 
     // Before the model early-returns: the shadow map exists without scene textures.
     if (Kataglyphis::Texture *shadow_map_array = dirShadowMap.getShadowMapArray();
-        shadow_map_array != nullptr && shadow_map_array->getSampler()) {
+      shadow_map_array != nullptr && shadow_map_array->getSampler()) {
         for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
             sharedRenderDescriptors.writeImage(i,
               SHADOW_MAP_BINDING,
@@ -1407,9 +1410,7 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         }
     }
 
-    if (scene->getModelCount() == 0) {
-        return;
-    }
+    if (scene->getModelCount() == 0) { return; }
 
     // Model order must match assignTextureOffsets; both read Scene::getTextureCountPerModel().
     const Kataglyphis::FlattenedTexturePlan plan = Kataglyphis::planFlattenedTextureSlots(
@@ -1456,7 +1457,8 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
         GBUFFER_NORMAL_BINDING, GBUFFER_ALBEDO_BINDING, GBUFFER_MATERIAL_BINDING, GBUFFER_DEPTH_BINDING
     };
     for (const uint32_t binding : kGBufferBindings) {
-        gbufferDescriptors.addBinding(binding, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
+        gbufferDescriptors.addBinding(
+          binding, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
     }
 
     if (!gbufferDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
@@ -1467,13 +1469,17 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 void Kataglyphis::VulkanRenderer::updateGBufferDescriptorSets()
 {
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        gbufferDescriptors.writeImage(i, GBUFFER_NORMAL_BINDING, deferredRasterizer.getGBufferNormal(i),
-                                       vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, GBUFFER_ALBEDO_BINDING, deferredRasterizer.getGBufferAlbedo(i),
-                                       vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, GBUFFER_MATERIAL_BINDING, deferredRasterizer.getGBufferMaterial(i),
-                                       vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, GBUFFER_DEPTH_BINDING, deferredRasterizer.getDepthBufferImageView(),
-                                       vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(
+          i, GBUFFER_NORMAL_BINDING, deferredRasterizer.getGBufferNormal(i), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(
+          i, GBUFFER_ALBEDO_BINDING, deferredRasterizer.getGBufferAlbedo(i), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i,
+          GBUFFER_MATERIAL_BINDING,
+          deferredRasterizer.getGBufferMaterial(i),
+          vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i,
+          GBUFFER_DEPTH_BINDING,
+          deferredRasterizer.getDepthBufferImageView(),
+          vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 }

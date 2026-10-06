@@ -11,10 +11,10 @@ static_assert(buildComputeShaderStageCreateInfo(vk::ShaderModule(nullptr)).stage
   "buildComputeShaderStageCreateInfo must be usable in a constant expression");
 
 // Handle operator== is not constexpr in this vulkan-hpp, so .flags proves the call is a constant expression.
-static_assert(
-  buildComputePipelineCreateInfo(buildComputeShaderStageCreateInfo(vk::ShaderModule(nullptr)), vk::PipelineLayout(nullptr))
-      .flags
-    == vk::PipelineCreateFlags{},
+static_assert(buildComputePipelineCreateInfo(buildComputeShaderStageCreateInfo(vk::ShaderModule(nullptr)),
+                vk::PipelineLayout(nullptr))
+                  .flags
+                == vk::PipelineCreateFlags{},
   "buildComputePipelineCreateInfo must be usable in a constant expression");
 
 namespace {

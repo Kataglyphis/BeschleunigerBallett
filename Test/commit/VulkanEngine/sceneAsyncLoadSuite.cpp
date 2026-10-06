@@ -51,8 +51,9 @@ TEST(BuildIntegrity, ReloadModelCancelsAPendingAsyncParse)
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
     for (std::size_t i = body_open; i < contents.size(); ++i) {
-        if (contents[i] == '{') { ++brace_depth; }
-        else if (contents[i] == '}') {
+        if (contents[i] == '{') {
+            ++brace_depth;
+        } else if (contents[i] == '}') {
             --brace_depth;
             if (brace_depth == 0) {
                 body_close = i;

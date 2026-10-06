@@ -22,10 +22,7 @@ using Kataglyphis::Shared::resolveResourceRelativePath;
 
 namespace {
 
-std::filesystem::path uniqueTempPath(const std::string &name)
-{
-    return std::filesystem::temp_directory_path() / name;
-}
+std::filesystem::path uniqueTempPath(const std::string &name) { return std::filesystem::temp_directory_path() / name; }
 
 // The working directory is process-global and resolveResourceRelativePath reads it, so always restore it.
 class ScopedWorkingDirectory
@@ -92,13 +89,31 @@ TEST(FileReaderUnit, ReadTextFileEmptyForDirectoryPath)
 // Opening a DOS device name such as "con" on Windows attaches the console and blocks the reader forever.
 TEST(FileReaderUnit, WindowsDeviceNamesAreRecognisedInEveryForm)
 {
-    for (const char *device : { "con", "CON", "Con.TXT", "shaders/con", "shaders\\con.spv", "con . ", "nul", "prn",
-           "aux", "com0", "com1", "COM9", "lpt3" }) {
+    for (const char *device : { "con",
+           "CON",
+           "Con.TXT",
+           "shaders/con",
+           "shaders\\con.spv",
+           "con . ",
+           "nul",
+           "prn",
+           "aux",
+           "com0",
+           "com1",
+           "COM9",
+           "lpt3" }) {
         EXPECT_TRUE(isWindowsReservedDeviceName(device)) << device << " is a Windows device name";
     }
 
     // Windows resolves only an exact stem, so names that merely contain a device name are ordinary files.
-    for (const char *ordinary : { "console", "connect.spv", "acon", "my.con", "com", "com10", "lpt", "",
+    for (const char *ordinary : { "console",
+           "connect.spv",
+           "acon",
+           "my.con",
+           "com",
+           "com10",
+           "lpt",
+           "",
            "Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv" }) {
         EXPECT_FALSE(isWindowsReservedDeviceName(ordinary)) << ordinary << " is an ordinary filename";
     }
@@ -144,7 +159,7 @@ TEST(FileReaderUnit, ReadBinaryFileRoundTripsEmbeddedNulAndCrlfBytes)
 
     const std::vector<char> read_back = readBinaryFile(path.string());
     EXPECT_EQ(read_back, contents) << "binary read must not do text translation "
-                                       "(CRLF collapsing / NUL truncation)";
+                                      "(CRLF collapsing / NUL truncation)";
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
@@ -195,25 +210,13 @@ TEST(FileReaderUnit, ReadTextFilePreservesEmbeddedNulByte)
     std::filesystem::remove(path, ec);
 }
 
-TEST(FileReaderUnit, GetBaseDirSlashOnly)
-{
-    EXPECT_EQ(getBaseDir("a/b/c.txt"), "a/b");
-}
+TEST(FileReaderUnit, GetBaseDirSlashOnly) { EXPECT_EQ(getBaseDir("a/b/c.txt"), "a/b"); }
 
-TEST(FileReaderUnit, GetBaseDirBackslashOnly)
-{
-    EXPECT_EQ(getBaseDir("a\\b\\c.txt"), "a\\b");
-}
+TEST(FileReaderUnit, GetBaseDirBackslashOnly) { EXPECT_EQ(getBaseDir("a\\b\\c.txt"), "a\\b"); }
 
-TEST(FileReaderUnit, GetBaseDirMixedSeparators)
-{
-    EXPECT_EQ(getBaseDir("a/b\\c.txt"), "a/b");
-}
+TEST(FileReaderUnit, GetBaseDirMixedSeparators) { EXPECT_EQ(getBaseDir("a/b\\c.txt"), "a/b"); }
 
-TEST(FileReaderUnit, GetBaseDirNoSeparatorReturnsEmpty)
-{
-    EXPECT_TRUE(getBaseDir("c.txt").empty());
-}
+TEST(FileReaderUnit, GetBaseDirNoSeparatorReturnsEmpty) { EXPECT_TRUE(getBaseDir("c.txt").empty()); }
 
 // Texture::loadTextureData is static and device-free, so it is tested here rather than in a GPU suite.
 TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)

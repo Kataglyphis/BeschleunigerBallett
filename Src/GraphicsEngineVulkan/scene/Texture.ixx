@@ -1,8 +1,8 @@
 module;
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <memory>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.texture;
@@ -21,7 +21,10 @@ class Texture
     Texture(Texture &&other) noexcept;
     Texture &operator=(Texture &&other) noexcept;
 
-    bool createFromFile(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &fileName, bool srgb = true);
+    bool createFromFile(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      const std::string &fileName,
+      bool srgb = true);
     /// Decodes an encoded image (PNG/JPG/...) already in memory and uploads it,
     /// for glTF's embedded / data-URI images which never touch the filesystem.
     /// Shares the upload path with createFromFile; returns false if the bytes
@@ -59,7 +62,12 @@ class Texture
       vk::ImageType image_type = vk::ImageType::e2D,
       uint32_t depth = 1);
 
-    void createImageView(const std::shared_ptr<VulkanDevice> &device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
+    void createImageView(const std::shared_ptr<VulkanDevice> &device,
+      vk::Format format,
+      vk::ImageAspectFlags aspect_flags,
+      uint32_t in_mip_levels,
+      vk::ImageViewType view_type = vk::ImageViewType::e2D,
+      uint32_t array_layers = 1);
 
     void createTextureSampler(const std::shared_ptr<VulkanDevice> &device,
       vk::Filter filter = vk::Filter::eLinear,
@@ -89,7 +97,8 @@ class Texture
     // byte count it reports sizes a staging buffer that is then memcpy'd into,
     // so a mismatch between the count and the returned allocation is a heap
     // overflow rather than a bad picture.
-    static unsigned char *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
+    static unsigned char *
+      loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
 
     ~Texture();
 
@@ -113,6 +122,6 @@ class Texture
     VulkanImage vulkanImage;
     VulkanImageView vulkanImageView;
     vk::Sampler textureSampler = nullptr;
-    std::shared_ptr<VulkanDevice>device = nullptr;
+    std::shared_ptr<VulkanDevice> device = nullptr;
 };
 }// namespace Kataglyphis

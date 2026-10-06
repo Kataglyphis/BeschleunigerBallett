@@ -1,7 +1,7 @@
-// Guards CameraControllerState's field mapping: a member reorder that rebinds right/up or yaw/pitch fails an axis check.
+// Guards CameraControllerState's field mapping: a reorder that rebinds right/up or yaw/pitch fails an axis check.
 
-#include <gtest/gtest.h>
 #include <glm/geometric.hpp>
+#include <gtest/gtest.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -181,7 +181,7 @@ TEST(CameraControllerUnit, AShortKeySpanIsIgnoredRatherThanReadPastTheEnd)
     const glm::vec3 start_position = rig.position;
     const float start_yaw = rig.yaw;
 
-    // Every movement key is at least 65, past this span's end; ASan catches a read there, so they must count as released.
+    // Every movement key is >= 65, past this span's end; ASan catches a read there, so they must count as released.
     const std::array<bool, 4> short_keys{ true, true, true, true };
     Kataglyphis::Frontend::apply_keyboard_input(state(rig), short_keys, 1.0F);
 

@@ -6,9 +6,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 namespace Kataglyphis::VulkanRendererInternals {
 
-struct DirectionalLightData {
+struct DirectionalLightData
+{
     vec4 direction;
-    vec4 color; // w = radiance
+    vec4 color;// w = radiance
 };
 
 struct SceneUBO
@@ -24,15 +25,14 @@ struct SceneUBO
     uint _pad_std140_0;
 
     // Cascaded shadow maps
-    vec4 cascadeSplits; // up to 4 cascades
-    static_assert(MAX_CASCADES <= 4,
-      "cascadeSplits is a single vec4 - a fourth-plus cascade would write past its end");
+    vec4 cascadeSplits;// up to 4 cascades
+    static_assert(MAX_CASCADES <= 4, "cascadeSplits is a single vec4 - a fourth-plus cascade would write past its end");
     mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
 
     // Camera: both .w are filler (SceneUboMarshal.hpp).
     vec4 view_dir;
     vec4 cam_pos;
-    
+
     // Clouds: see docs/clouds.md § UBO packing.
     vec4 cloudLightMarch;
     vec4 cloudMeshScale;

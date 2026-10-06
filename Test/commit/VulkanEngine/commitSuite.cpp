@@ -19,16 +19,14 @@ namespace {
 
 bool glfw_reports_vulkan_support()
 {
-    if (glfwInit() == 0) {
-        return false;
-    }
+    if (glfwInit() == 0) { return false; }
 
     const bool supports_vulkan = glfwVulkanSupported() != 0;
     glfwTerminate();
     return supports_vulkan;
 }
 
-} // namespace
+}// namespace
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
@@ -51,9 +49,7 @@ TEST(Integration, VulkanEngine)
 {
     EXPECT_EQ(7 * 6, 42);
 
-    if (!glfw_reports_vulkan_support()) {
-        GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system.";
-    }
+    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
 
     int window_width = 1200;
     int window_height = 768;

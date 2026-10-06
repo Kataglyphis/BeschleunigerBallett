@@ -85,8 +85,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
 
 Mesh::~Mesh() = default;
 
-void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool,
-  const std::vector<Vertex> &vertices)
+void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices)
 {
     if (!uploadDeviceLocalBuffer(transfer_command_pool,
           vertexBuffer,
@@ -96,8 +95,7 @@ void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool,
     }
 }
 
-void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
-  const std::vector<uint32_t> &indices)
+void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices)
 {
     if (!uploadDeviceLocalBuffer(transfer_command_pool,
           indexBuffer,
@@ -107,8 +105,7 @@ void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
     }
 }
 
-void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
-  const std::vector<unsigned int> &materialIndex)
+void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool, const std::vector<unsigned int> &materialIndex)
 {
     // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(
@@ -117,8 +114,7 @@ void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
     }
 }
 
-void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool,
-  const std::vector<ObjMaterial> &materials)
+void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool, const std::vector<ObjMaterial> &materials)
 {
     // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(

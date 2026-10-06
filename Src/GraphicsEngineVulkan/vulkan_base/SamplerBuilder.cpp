@@ -19,10 +19,10 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
 {
     // The desc overload sets addressModeW = addressModeU, which is addressMode here.
     return buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = addressMode,
-                                     .addressModeV = addressMode,
-                                     .magFilter = filter,
-                                     .minFilter = filter,
-                                     .mipmapMode = vk::SamplerMipmapMode::eLinear },
+                                    .addressModeV = addressMode,
+                                    .magFilter = filter,
+                                    .minFilter = filter,
+                                    .mipmapMode = vk::SamplerMipmapMode::eLinear },
       maxLod,
       anisotropyEnable,
       maxAnisotropy,
@@ -62,11 +62,10 @@ auto Kataglyphis::buildSamplerCreateInfo(const GltfSamplerDesc &desc,
 auto Kataglyphis::usesNearestFiltering(const GltfSamplerDesc &desc) -> bool
 {
     return desc.magFilter == vk::Filter::eNearest || desc.minFilter == vk::Filter::eNearest
-        || desc.mipmapMode == vk::SamplerMipmapMode::eNearest;
+           || desc.mipmapMode == vk::SamplerMipmapMode::eNearest;
 }
 
-auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key)
-  -> std::optional<std::size_t>
+auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key) -> std::optional<std::size_t>
 {
     // find_if, not find: works around microsoft/STL#6294 (find static_asserts on a 24-byte struct with defaulted ==).
     const auto it =

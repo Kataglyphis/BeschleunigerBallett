@@ -19,15 +19,11 @@ struct Crop
 
 // Excludes the ImGui overlay (the left ~72% plus thin top and bottom margins).
 inline Crop panel_free_crop(uint32_t w, uint32_t h)
-{
-    return Crop{(w * 18U) / 25U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U};
-}
+{ return Crop{ (w * 18U) / 25U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U }; }
 
 // Isolates the right-hand wall a second model puts in frame, for the texture-detail golden.
 inline Crop card_crop(uint32_t w, uint32_t h)
-{
-    return Crop{(w * 37U) / 50U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U};
-}
+{ return Crop{ (w * 37U) / 50U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U }; }
 
 // Rec. 709 luma of one RGBA8 pixel, on a 0..255 scale.
 inline double luminance_of(const std::vector<uint8_t> &rgba, size_t pixel)
@@ -52,8 +48,8 @@ inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t 
 }
 
 // Fraction of `crop` whose colour moves more than 5 levels on any channel between `a` and `b`.
-inline double swung_fraction(
-  const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h, Crop crop)
+inline double
+  swung_fraction(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h, Crop crop)
 {
     size_t swung = 0;
     size_t total = 0;
@@ -88,4 +84,4 @@ inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint
     return total > 0U ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
 }
 
-} // namespace Kataglyphis::Test::GoldenMetrics
+}// namespace Kataglyphis::Test::GoldenMetrics

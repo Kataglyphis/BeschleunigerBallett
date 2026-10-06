@@ -2,43 +2,43 @@ module;
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <limits>
 #include <span>
 #include <vector>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
 
 #include "common/LightDirection.hpp"
 
 module kataglyphis.vulkan.cascaded_shadow_map;
 
-// Own TU of the same module, so pure-math callers (perfSuite) never link Scene and its duplicate tinyobj implementation.
+// Own TU of the module, so pure-math callers (perfSuite) never link Scene and its duplicate tinyobj implementation.
 
 namespace Kataglyphis {
 
 namespace {
-// Free so computeCascadeData() runs in tests without a Vulkan device.
-std::array<glm::vec4, 8> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
-{
-    const auto inv = glm::inverse(proj * view);
+    // Free so computeCascadeData() runs in tests without a Vulkan device.
+    std::array<glm::vec4, 8> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
+    {
+        const auto inv = glm::inverse(proj * view);
 
-    std::array<glm::vec4, 8> frustumCorners{};
-    std::size_t index = 0;
-    for (unsigned int x = 0; x < 2; ++x) {
-        for (unsigned int y = 0; y < 2; ++y) {
-            for (unsigned int z = 0; z < 2; ++z) {
-                // NDC z runs 0..1, not -1..1: the engine builds with GLM_FORCE_DEPTH_ZERO_TO_ONE.
-                const glm::vec4 pt =
-                  inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
-                frustumCorners[index] = pt / pt.w;
-                ++index;
+        std::array<glm::vec4, 8> frustumCorners{};
+        std::size_t index = 0;
+        for (unsigned int x = 0; x < 2; ++x) {
+            for (unsigned int y = 0; y < 2; ++y) {
+                for (unsigned int z = 0; z < 2; ++z) {
+                    // NDC z runs 0..1, not -1..1: the engine builds with GLM_FORCE_DEPTH_ZERO_TO_ONE.
+                    const glm::vec4 pt =
+                      inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
+                    frustumCorners[index] = pt / pt.w;
+                    ++index;
+                }
             }
         }
-    }
 
-    return frustumCorners;
-}
+        return frustumCorners;
+    }
 }// namespace
 
 uint32_t clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit)
@@ -85,8 +85,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
     const uint32_t shadowMapResolution = params.shadowMapResolution;
 
     // Fit to shadowDistance, not the far plane, which wastes texels on empty space; 0 or less means the far plane.
-    const float shadowFar =
-      (shadowDistance > 0.0F) ? std::min(shadowDistance, farPlane) : farPlane;
+    const float shadowFar = (shadowDistance > 0.0F) ? std::min(shadowDistance, farPlane) : farPlane;
     const float shadowNear = std::min(nearPlane, shadowFar * 0.5F);
     const float lambda = std::clamp(splitLambda, 0.0F, 1.0F);
 
@@ -95,7 +94,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
         if (i == 0U) { return shadowNear; }
         // Exact, not blended: a float-short last cascade leaves a band that renders unshadowed.
         if (i >= numCascades) { return shadowFar; }
-        // Practical split scheme (Zhang et al.); lambda defaults to 0 because higher values only pay off for close subjects.
+        // Practical split scheme (Zhang et al.); lambda defaults to 0: higher values pay off only for close subjects.
         const float p = static_cast<float>(i) / static_cast<float>(numCascades);
         const float logSplit = shadowNear * std::pow(shadowFar / shadowNear, p);
         const float uniformSplit = shadowNear + ((shadowFar - shadowNear) * p);
@@ -115,24 +114,22 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
 
         // The radius puts the light eye far enough back that the whole cascade sits in front of it.
         float radius = 0.0F;
-        for (const auto &v : frustumCornerWorldSpace) {
-            radius = std::max(radius, glm::length(glm::vec3(v) - center));
-        }
+        for (const auto &v : frustumCornerWorldSpace) { radius = std::max(radius, glm::length(glm::vec3(v) - center)); }
 
         const glm::vec3 light_direction = normalizedLightDirection(lightDir);
         const glm::vec3 up_axis =
           (std::abs(light_direction.y) > 0.99F) ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
 
         if (shadowMapResolution > 0) {
-            // Stable edges need all three: a world-fixed basis, a radius-sized box, a texel-snapped center; near may go negative.
+            // Stable edges need a world-fixed basis, a radius-sized box, a texel-snapped center; near may go negative.
             glm::mat4 const light_basis = glm::lookAt(-light_direction, glm::vec3(0.0F), up_axis);
 
-            // One-texel pad measured on the padded box, or snap and projection grids drift; unsolvable for resolution <= 2.
+            // Pad one texel on the padded box, or the snap and projection grids drift; unsolvable at resolution <= 2.
             float half_extent = radius;
             float texel_world = 0.0F;
             if (shadowMapResolution > 2) {
-                half_extent = radius * static_cast<float>(shadowMapResolution)
-                              / static_cast<float>(shadowMapResolution - 2);
+                half_extent =
+                  radius * static_cast<float>(shadowMapResolution) / static_cast<float>(shadowMapResolution - 2);
                 texel_world = (2.0F * half_extent) / static_cast<float>(shadowMapResolution);
             }
             glm::vec3 center_ls = glm::vec3(light_basis * glm::vec4(center, 1.0F));
@@ -175,7 +172,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
         float minZ = std::numeric_limits<float>::max();
         float maxZ = std::numeric_limits<float>::lowest();
 
-        for (const auto& m : frustumCornerWorldSpace) {
+        for (const auto &m : frustumCornerWorldSpace) {
             glm::vec4 const v_light_view = light_view_matrix * m;
             minX = std::min(minX, v_light_view.x);
             maxX = std::max(maxX, v_light_view.x);
@@ -191,8 +188,7 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
         float far_distance = (-minZ) + zPadding;
         if (far_distance <= near_distance) { far_distance = near_distance + 1.0F; }
 
-        glm::mat4 const light_projection =
-          glm::ortho(minX, maxX, minY, maxY, near_distance, far_distance);
+        glm::mat4 const light_projection = glm::ortho(minX, maxX, minY, maxY, near_distance, far_distance);
 
         out[i].viewProjMatrix = light_projection * light_view_matrix;
         // Split depth is this cascade's far plane as a positive view-space distance.

@@ -26,7 +26,7 @@ inline vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::Surfac
         }
     }
 
-    // Last resort, and how a non-capturable format reaches runtime (see FormatHelper.hpp's isCapturableSwapchainFormat).
+    // Last resort, and how a non-capturable format reaches runtime (FormatHelper.hpp's isCapturableSwapchainFormat).
     return formats[0];
 }
 
@@ -42,9 +42,8 @@ inline vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::Prese
 }
 
 // The currentExtent short-circuit stays with the caller, which has the live window.
-inline vk::Extent2D clampSwapExtent(const vk::SurfaceCapabilitiesKHR &surface_capabilities,
-  uint32_t width,
-  uint32_t height)
+inline vk::Extent2D
+  clampSwapExtent(const vk::SurfaceCapabilitiesKHR &surface_capabilities, uint32_t width, uint32_t height)
 {
     vk::Extent2D new_extent{};
     new_extent.width = width;

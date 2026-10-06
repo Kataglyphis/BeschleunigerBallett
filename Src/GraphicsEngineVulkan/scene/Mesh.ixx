@@ -1,6 +1,6 @@
 ﻿module;
-#include <memory>
 #include <glm/glm.hpp>
+#include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -68,10 +68,7 @@ class Mesh
     VulkanBufferManager vulkanBufferManager;
 
     static constexpr uint64_t INVALID_ADDR = ~uint64_t(0);
-    ObjectDescription object_description{ INVALID_ADDR,
-        INVALID_ADDR,
-        INVALID_ADDR,
-        INVALID_ADDR };
+    ObjectDescription object_description{ INVALID_ADDR, INVALID_ADDR, INVALID_ADDR, INVALID_ADDR };
 
     VulkanBuffer vertexBuffer;
     VulkanBuffer indexBuffer;
@@ -88,17 +85,15 @@ class Mesh
     // See hasMaskedMaterial().
     bool has_masked_material{ false };
 
-    std::shared_ptr<VulkanDevice>device{ nullptr };
+    std::shared_ptr<VulkanDevice> device{ nullptr };
 
     void createVertexBuffer(vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices);
 
     void createIndexBuffer(vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices);
 
-    void createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
-      const std::vector<unsigned int> &materialIndex);
+    void createMaterialIDBuffer(vk::CommandPool transfer_command_pool, const std::vector<unsigned int> &materialIndex);
 
-    void createMaterialBuffer(vk::CommandPool transfer_command_pool,
-      const std::vector<ObjMaterial> &materials);
+    void createMaterialBuffer(vk::CommandPool transfer_command_pool, const std::vector<ObjMaterial> &materials);
 
     // Shared body of the four create*Buffer uploads: a device-local buffer,
     // eTransferDst plus the caller's `baseUsage` bit(s), and - when the device

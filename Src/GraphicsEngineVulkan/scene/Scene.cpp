@@ -26,19 +26,19 @@ namespace Kataglyphis {
 
 namespace {
 
-/// `.gltf`/`.glb` go to GltfLoader, everything else to ObjLoader.
-std::shared_ptr<Model> loadModelByExtension(const std::shared_ptr<VulkanDevice> &device,
-  vk::CommandPool commandPool,
-  const std::string &modelFile)
-{
-    if (isGltfModelPath(modelFile)) {
-        GltfLoader gltf_loader(device, commandPool);
-        return gltf_loader.loadModel(modelFile);
-    }
+    /// `.gltf`/`.glb` go to GltfLoader, everything else to ObjLoader.
+    std::shared_ptr<Model> loadModelByExtension(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      const std::string &modelFile)
+    {
+        if (isGltfModelPath(modelFile)) {
+            GltfLoader gltf_loader(device, commandPool);
+            return gltf_loader.loadModel(modelFile);
+        }
 
-    ObjLoader obj_loader(device, commandPool);
-    return obj_loader.loadModel(modelFile);
-}
+        ObjLoader obj_loader(device, commandPool);
+        return obj_loader.loadModel(modelFile);
+    }
 
 }// namespace
 
@@ -172,7 +172,9 @@ void Scene::cancelPendingModelLoad()
     spdlog::info("Discarded an in-flight asynchronous model parse; the scene is being replaced.");
 }
 
-void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &modelPath)
+void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device,
+  vk::CommandPool commandPool,
+  const std::string &modelPath)
 {
     cancelPendingModelLoad();
     cleanUp();
