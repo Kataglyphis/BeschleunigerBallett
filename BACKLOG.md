@@ -601,13 +601,12 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## Startup and build-time costs
 
-- **Build transfers dominate (~17 GB/build).** Incremental builds work
-  (~230 s vs ~360-480 s cold) but 8.5 GB moves each way. A long-lived build
-  container with source-only re-sync would remove both transfers entirely;
-  needs lifecycle handling and a way to extract executables for host tests.
-- **Outbound `Artifact extraction failed (exit 1)`** is still reported even
-  with the cargo subtree excluded. Artifacts do arrive (verified), but a real
-  failure here would leave stale host binaries — worth a proper fix.
+- ~~**Build transfers dominate (~17 GB/build)** / **outbound `Artifact extraction failed`**~~ -
+  **resolved** (checked 2026-10-06). `Build-Windows-Container.ps1` reuses `bb-build-persistent`
+  with its build tree, streams only sources in (pruning stale ones), and the hub's
+  `Invoke-RepoContainerBuild.ps1` streams the build trees back and verifies the delivery. A
+  `clangcl-debug` round trip today moved a 427 MB build tree out and printed "Verified 10
+  executable(s) delivered". Neither of today's two builds reported an extraction failure.
 - **sccache works; its real hazard is stale importers** (re-measured 2026-10-06; the July
   "every write fails, modules bypass it" no longer holds). In the reusable container the
   cache is the LAN WebDAV endpoint (`SCCACHE_WEBDAV_ENDPOINT`). A trivial TU missed, then hit,
