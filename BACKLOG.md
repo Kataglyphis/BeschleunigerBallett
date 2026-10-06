@@ -322,11 +322,11 @@ unconditional control capture before its output is believed.
   the drift shrink over time. **Owner decision, not an agent's.** Container
   builds run clang-tidy again since 2026-10-01 (hub CON10), but it only logs
   findings: `.clang-tidy` sets no `WarningsAsErrors`.
-- **clang-tidy still skips the module TUs** (S, hub). The image's clang-tidy reads
-  a clang-cl C++23 BMI (hub CON10, proven 2026-10-01), but the hub's
-  `Invoke-ClangTidyFixStep` still skips every TU that imports a `kataglyphis`
-  module, so tidy sees 12 of the 44 `.cpp` files under `Src/`. Lifting that skip
-  is a hub change; then measure how long the full set takes on a 4-vCPU runner.
+- **clang-tidy covers the module TUs** - done 2026-10-06. Hub 9b5e41b2 tidies in parallel
+  (`-ThrottleLimit`), and `Build-Windows.ps1` passes `-ModuleImportPattern '(?!)'` on x64, so
+  tidy sees all 43 compiled `Src` TUs instead of 12. In the local `:winamd64` container
+  build: the 32 module TUs exit 0, and the step takes 120 s on 32 cores (797 s serially for the
+  module TUs alone). The arm64 cross build keeps the skip until its aarch64 BMIs are proven.
 - **clang-cl coverage crashes the Debug suite at exit** (found 2026-10-02, S).
   `myproject_ENABLE_COVERAGE=ON` on `x64-ClangCL-Windows-Base` (hub CON9) builds
   and all 654 tests pass, then the process dies in the profile writer: with ASan
