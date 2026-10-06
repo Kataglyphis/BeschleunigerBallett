@@ -125,14 +125,6 @@ still needs the host.
   **Recommendation:** run the CPU suites on every push (about 35 min) and move the GPU arm
   to a weekly schedule, sharded to fit 6 h: the non-path-tracing tests in one job and one job
   per path-tracing test. OxidANT's riscv64 GPU suites already run weekly.
-- [b] **Run the Rust crate's `rustfmt`/`clippy` on this repo's Linux lane** (M, owner
-  decision). The crate is compiled here twice and linted zero times. The original blocker,
-  an unformatted pin, no longer holds: OxidANT's own lane gates fmt and clippy, so every
-  commit it publishes is clean. It runs the hub's `cargo_fmt_clippy.sh` with
-  `CARGO_CLIPPY_ARGS='--workspace --locked'` (`--all-features` does not build in the image).
-  Doing it means a thin `scripts/linux/run-cargo-lints.sh` next to `run-cargo-tests.sh`
-  (workspace-wide, no `-p`), a step after the tests in `reusable-linux.yml`'s `rust` job,
-  and the AGENTS.md wrapper-map row.
 - [b] **Close the slangc 2026.8 floor** (S, waiting on BB's OxidANT pin). The image's Vulkan
   SDK 1.4.357.0 ships slangc 2026.13.1. In `:latest`, `compile-slang-shaders.sh` emits the 10
   combined WGSL files, and since OxidANT b7e6a8c (2026-10-06) they match the checked-in

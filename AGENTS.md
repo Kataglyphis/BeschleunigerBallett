@@ -411,6 +411,7 @@ wrapper only supplies this project's payload.
 | `scripts/linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
 | `scripts/linux/wasm-size-budget.sh` / `scripts/windows/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
 | `scripts/linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
+| `scripts/linux/run-cargo-lints.sh` | `linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` |
 | `scripts/linux/run-lint-gates.sh` | `linux/scripts/run-lint-gates.sh` (→ `lint-shell.sh`, `lint-workflows.sh`, `lint-secrets.sh`, `01-core/gates.sh`) |
 | `scripts/linux/renovate-local.sh` | `linux/scripts/renovate-local.sh` (Renovate as a local CLI, plus the git half that applies what it can only detect) |
 | `scripts/linux/ci-image-ref.sh` | `linux/scripts/ci-image-ref.sh`; PowerShell twin `windows/scripts/modules/WindowsContainerImage.Common.psm1` → `Get-CiImageReference` |
@@ -909,6 +910,16 @@ this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree
 got no test signal until the submodule was pushed separately.
+
+The same job then lints the whole OxidANT workspace (since 2026-10-06):
+`scripts/linux/run-cargo-lints.sh` runs the hub's `cargo_fmt_clippy.sh`, `cargo fmt --all
+--check` plus `cargo clippy --all-targets -- -D warnings`, and it fails the job like the
+tests do. Its clippy scope is OxidANT's own lane's (`ci-container-steps.sh fmt-clippy`):
+`--workspace --locked` with the `gstreamer` and `onnxruntime` features, never
+`--all-features`, because `gui_unix` needs GTK4 and the image has none. A pin that OxidANT's
+lane passed therefore passes here, and an edit to any crate from this tree gets a lint signal
+before the submodule is pushed. At the 2026-10-06 pin its clippy took 46 s in `:latest` from a
+cold target directory on a 32-core host.
 
 ## Code Conventions (C++ engine)
 

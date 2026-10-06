@@ -395,6 +395,13 @@ jobs:
           script: bash ./scripts/linux/run-cargo-tests.sh
           log-file: output.log
 
+      # Gating like the tests: rustfmt + clippy -D warnings over the whole workspace, in OxidANT's own scope.
+      - name: Lint Rust renderer crate
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/run-cargo-lints.sh
+          log-file: output.log
+
   # Docs + wasm demo + deploy; doc_doxygen has no compiled dependencies, so no engine build
   docs:
     name: docs + wasm demo
