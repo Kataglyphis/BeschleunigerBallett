@@ -279,14 +279,16 @@ validation on for its own harness, so it holds on any lane with validation layer
 
 **Windows x64 validates too since 2026-10-06**, though its GPU suites run in Release.
 `Build-Windows.ps1 -StageTests` copies the image's `VkLayer_khronos_validation`
-(`$env:VULKAN_SDK\Bin`, 1.4.357) into `vulkan-layers\` beside the staged suite.
+for the target arch (`C:\runtime\vulkan-layers`, hub CON64; an older `:winamd64` has only
+`$env:VULKAN_SDK\Bin`, the same 1.4.357) into `vulkan-layers\` beside the staged suite.
 `Invoke-LavapipeTests.ps1` registers its JSON under `HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers`
 for the run (`HKCU` when not elevated): an elevated loader, as on the runner, ignores
 `VK_ADD_LAYER_PATH`. It sets
 `KATAGLYPHIS_VULKAN_VALIDATION=1` (the switch `validationLayersEnabled()` reads in a Release
 build) and `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1`. It fails a test whose captured output
-holds a `VUID-` or `SYNC-HAZARD` line. Windows arm64 runs unvalidated: the image carries no
-arm64 layer. On a host GPU, the manual run after touching render passes, barriers, or
+holds a `VUID-` or `SYNC-HAZARD` line. Windows arm64 validates the same way once `:winarm64`
+carries the hub's arm64 build of the layer (CON64); until then `-StageTests` warns and its
+suites run unvalidated. On a host GPU, the manual run after touching render passes, barriers, or
 frames-in-flight is:
 
 ```

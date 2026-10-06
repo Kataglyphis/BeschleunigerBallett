@@ -475,8 +475,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   - **Windows arm64 runs its GPU suites unvalidated.** Windows x64 validates its Release
     suite since 2026-10-06, sync included. `-StageTests` stages the image's
     `VkLayer_khronos_validation` beside it, and `KATAGLYPHIS_VULKAN_VALIDATION=1` turns
-    validation on in Release (`docs/gpu-golden-testing.md`). The image carries no arm64
-    layer.
+    validation on in Release (`docs/gpu-golden-testing.md`). No SDK the image can install
+    has an arm64 layer, so the hub builds one into `C:\runtime\vulkan-layers` (CON64, in source
+    2026-10-06). `-StageTests` already stages it from there on both arches, so arm64 validates
+    as soon as a republished `:winarm64` carries it; until then it warns.
   - By design, not gaps: TSan is Linux-only (clang-cl has none) and coverage is
     *measured* on Linux only (no Windows step reads the `.profraw` files), the
     Pester suites test Windows scripts on Windows x64, and
