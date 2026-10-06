@@ -1,4 +1,4 @@
-# riscv64: cross-built on amd64; the CPU suite under QEMU, then the GPU suites serially behind the fp16 shim (enabled by the owner 2026-10-03, AGENTS.md § The riscv64 lane).
+# riscv64: cross-built on amd64; the CPU suites under QEMU on every push, the GPU suites weekly in shards (owner decision 2026-10-06, AGENTS.md § The riscv64 lane).
 name: Linux riscv64 · cross build + test
 
 on:
@@ -10,11 +10,19 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main, develop]
+  # Serial on a 4-vCPU runner the GPU suites need ~14 h, so they never ride a push.
+  schedule:
+    - cron: '43 1 * * 6'
   workflow_dispatch:
+    inputs:
+      gpu-tests:
+        description: Run the weekly GPU shards instead of the CPU suites (each shard cross-builds; up to 6 h)
+        type: boolean
+        default: false
 
-# main is exempt from cancellation: its runs deploy and release.
+# main is exempt from cancellation: its runs deploy and release. The GPU run has its own group, so a push cannot cancel it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'schedule' || inputs.gpu-tests) && 'gpu' || 'cpu' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -22,6 +30,7 @@ permissions:
 
 jobs:
   build-riscv64:
+    if: ${{ github.event_name != 'schedule' && !inputs.gpu-tests }}
     uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-riscv64.yml@develop
     # No timeout-minutes: GitHub rejects it on a job that calls a reusable workflow.
     permissions:
@@ -31,6 +40,42 @@ jobs:
     with:
       script: bash -lc 'bash ./scripts/linux/run-riscv64-tests.sh'
       container-args: -e CARGO_HOME=/tmp/cargo-home
+      cache-lane: riscv64-clang-debug
+      cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
+      cache-env: 'SCCACHE_CACHE_SIZE=1500M'
+      timeout-minutes: 120
+    secrets:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
+
+  # The shard list lives in run-riscv64-tests.sh, so the matrix and the raster shard's exclusions cannot drift apart.
+  gpu-shards:
+    if: ${{ github.event_name == 'schedule' || inputs.gpu-tests }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.list.outputs.shards }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+      - name: List the GPU shards
+        id: list
+        run: echo "shards=$(bash ./scripts/linux/run-riscv64-tests.sh --list-gpu-shards)" >> "${GITHUB_OUTPUT}"
+
+  # Every shard cross-builds for itself (~20 min): the hub's reusable lane takes no build artifact.
+  gpu-riscv64:
+    needs: gpu-shards
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.gpu-shards.outputs.shards) }}
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-riscv64.yml@develop
+    permissions:
+      contents: read
+      actions: write
+    with:
+      script: bash -lc 'bash ./scripts/linux/run-riscv64-tests.sh'
+      container-args: -e CARGO_HOME=/tmp/cargo-home -e RISCV64_GPU_SHARD=${{ matrix.shard }}
+      # The push lane's key: a scheduled run restores its cache and, off a push, never saves.
       cache-lane: riscv64-clang-debug
       cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
       cache-env: 'SCCACHE_CACHE_SIZE=1500M'

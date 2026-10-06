@@ -3,6 +3,3 @@
 # third_party/ANTfrastructure/docs/code-quality-tooling.md#comment-size-comment-size
 
 scripts/agentic-loop/Run-AgenticLoop.sh	# ──────────────────────────────────────────────────────────
-# Kept 2026-10-03: the riscv64 GPU arm's measured numbers and its doubled-path incident stay in prose until the lane doc carries them; compress to one line when it does.
-scripts/linux/run-riscv64-tests.sh	# llvmpipe's ORC JIT calls the fp16 conversion helpers riscv
-scripts/linux/run-riscv64-tests.sh	# Every path in the arm is absolute: after ctest_run_main th

@@ -696,7 +696,7 @@ riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit th
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
-| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suite first, then the GPU suites serially behind the fp16 shim; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**` |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on every push, the GPU suites behind the fp16 shim in 11 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**`; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
 | Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43, plus the Profile perf suite and the Debug (ASan) suite the lane cross-builds too (its `/MDd` CRT and `ucrtbased.dll` come from the runner's own VS and SDK, neither is redistributable); the `gpu-suites` job runs the Release and perf suites on lavapipe from a checkout) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` | dda807b0 (ci(windows): the arm64 cross lane builds and runs the Debug (ASan) suite too)
 
 The top two are their own workflows rather than jobs inside the build lanes,
@@ -802,14 +802,39 @@ emulator wrapper. The mechanism is the hub's:
 - **What runs:** 657 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
   GLFW and Rust renderer bridge. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
-- **The GPU suites carry a shim since 2026-10-03.** `Integration.` and `GoldenRender.`
-  run AFTER the CPU suite, serially (`-j1`), under `xvfb-run` with the
-  `libkata_fp16_helpers.so` `LD_PRELOAD` built from `scripts/riscv64/fp16_helpers.c`
-  (cross gcc; riscv64 glibc lacks the fp16 conversion helpers llvmpipe's ORC JIT calls).
-  Measured with the shim: 35/40 pass, and the five 90-min-cap misses were `-j8`
-  contention - at `-j1` a heavy PathTracing test took 23 min, so the serial run fits the
-  workflow's raised 360-minute job. `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice`
-  stays excluded, and `RISCV64_GPU_TESTS=0` skips the whole arm.
+- **The GPU suites run weekly, in shards** (owner decision 2026-10-06). A push runs the
+  CPU suites only (about 30 min). `Integration.` and `GoldenRender.` run serially
+  (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so` `LD_PRELOAD` built from
+  `scripts/riscv64/fp16_helpers.c` (riscv64 glibc lacks the fp16 conversion helpers
+  llvmpipe's ORC JIT calls). On a 32-core host they pass (35/40 measured 2026-10-03 at
+  `-j8`, whose five misses were contention; a heavy path-tracing test took 23 min at
+  `-j1`). On a 4-vCPU runner serially they need about 14 h against the 6 h job limit:
+  run 37229293578 spent 28 min on the build and the CPU suites, about 95 min on the first
+  17 GPU tests, 6810 s on `PathTracingAccumulatesAndConverges`, then hit the 7200 s
+  ceiling on `PathTracingAntiAliasesGeometricEdges`. Every run from d977113a on was
+  cancelled, so the lane gave no signal at all.
+- **The shards.** `linux-riscv64.yml` has a `schedule:` (Saturdays 01:43 UTC) and a
+  `gpu-tests` input on `workflow_dispatch`. Either one skips the CPU job and fans out one
+  job per shard; `run-riscv64-tests.sh --list-gpu-shards` prints the matrix, so the list
+  has one home. `RISCV64_GPU_SHARD` picks the shard inside the container:
+  - `raster`: every GPU test that is not in another shard (32 today), 90 min per test;
+  - `clouds`: the two cloud goldens, 150 min per test;
+  - one solo shard each, 300 min, for the eight path-traced tests (the five
+    `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
+    `AddedModelAppearsInPathTracing`, `ReloadedModelIsVisibleInPathTracing`) and for
+    `RaytracingFrameSkipsTheRasterPass`, the costliest ray-traced one.
+
+  The split follows the x64 lane's times: under QEMU a raster test costs a few minutes
+  plus about 13x its x64 time, a compute-heavy one about 58x (6810 s against 118 s for
+  `PathTracingAccumulatesAndConverges`). By that ratio the clouds pair and
+  `RaytracingFrameSkipsTheRasterPass` alone would push one shared shard past 6 h.
+  Each shard cross-builds for itself (about 20 min), because the hub's reusable lane takes
+  no build artifact; the 11 jobs restore the push lane's `riscv64-clang-debug` cache and,
+  off a push, never save it. The CPU and GPU runs sit in different concurrency groups, so
+  a push cannot cancel the weekly run. `ctest --no-tests=error` fails a shard whose filter
+  matches nothing, and an unknown shard name stops before the build. `RISCV64_GPU_SHARD=all`
+  is the old serial lane (CPU suites, then every GPU test), for a local host.
+  `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` stays excluded everywhere.
   No ASan, UBSan, TSan or coverage: the cross clang has no riscv64 compiler-rt. That is
   also why `VulkanEngineCore`'s hard-wired Linux Debug `-fsanitize=address` skips a
   cross build (`CMAKE_CROSSCOMPILING`), and the fuzz targets, which need ASan, skip

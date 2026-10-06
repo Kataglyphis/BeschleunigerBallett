@@ -104,15 +104,13 @@ still needs the host.
   - By design, not gaps: TSan is Linux-only (clang-cl has none), coverage is measured on
     Linux only, the Pester suites test Windows scripts on Windows x64, and
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
-- [b] **The riscv64 lane has not finished since its GPU arm was enabled** (found 2026-10-06;
-  blocked on an owner decision). d977113a runs `Integration.*` and `GoldenRender.*` under
-  QEMU after the CPU suites. On a 4-vCPU runner the arm needs about 14 h, against the job's
-  6 h limit (run 37229293578: `PathTracingAccumulatesAndConverges` 6810 s,
-  `PathTracingAntiAliasesGeometricEdges` timed out at 7200 s). Every riscv64 run since has
-  been cancelled, so the lane gives no signal, the CPU suites' included.
-  **Recommendation:** run the CPU suites on every push (about 35 min) and move the GPU arm
-  to a weekly schedule, sharded to fit 6 h: the non-path-tracing tests in one job and one job
-  per path-tracing test. OxidANT's riscv64 GPU suites already run weekly.
+- [b] **Check the first weekly riscv64 GPU run against its shard ceilings** (S, waiting on
+  Saturday 2026-10-10's scheduled run, or a `gpu-tests` dispatch of `linux-riscv64.yml`).
+  Only 17 GPU tests and `PathTracingAccumulatesAndConverges` have riscv64 times; the other
+  shards' lengths are estimates from the x64 lane (AGENTS.md § The riscv64 lane). Read each
+  shard's time: the `raster` estimate is about 3.5 h, and whether
+  `PathTracingAntiAliasesGeometricEdges` finishes inside its 300 min is unknown. Rebalance
+  in `run-riscv64-tests.sh` if a shard comes close to its job's 6 h.
 - [b] **Close the slangc 2026.8 floor** (S, waiting on BB's OxidANT pin). The image's Vulkan
   SDK 1.4.357.0 ships slangc 2026.13.1. In `:latest`, `compile-slang-shaders.sh` emits the 10
   combined WGSL files, and since OxidANT b7e6a8c (2026-10-06) they match the checked-in
