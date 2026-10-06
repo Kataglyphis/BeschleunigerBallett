@@ -437,6 +437,23 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## CI and release gaps
 
+- [b] **The riscv64 lane has not finished since its GPU arm was enabled** (found 2026-10-06;
+  blocked on an owner decision). d977113a (owner, 2026-10-03) runs `Integration.*` and
+  `GoldenRender.*` under QEMU after the CPU suites, serially with a 7200 s per-test ceiling,
+  sized on a local measurement of 23 min per heavy path-tracing test. A 4-vCPU GitHub runner
+  is about five times slower. In run 37229293578, 18 GPU tests took 5.5 h before the job's
+  360 min limit: `PathTracingAccumulatesAndConverges` 6810 s, and
+  `PathTracingAntiAliasesGeometricEdges` timed out at 7200 s. The raster tests took 4-7 min
+  each, `Integration.RenderModesSelectableInGui` 1145 s. Extrapolated, the arm needs about
+  14 h: about 10 for the five path-tracing tests and 3.6 for the rest. Every riscv64 run
+  since has been cancelled, by its timeout or because the next push cancels in-progress
+  develop runs, so the lane gives no signal, the CPU suites' included.
+  **Recommendation:** run the CPU suites on every push (about 35 min, green before
+  2026-10-03) and move the GPU arm to a weekly schedule, sharded to fit 6 h: the
+  non-path-tracing tests in one job and one job per path-tracing test, each ceiling
+  raised. OxidANT's riscv64 GPU suites already run weekly. The alternative keeps the GPU
+  arm on push without path tracing, about 4.2 h a run, which a push still cancels.
+
 - [ ] **Every test on every arch lane** (owner goal 2026-10-01; what is left of it).
   Landed 2026-10-01: the shader-mtime `BuildIntegrity` checks run on every Linux and the
   riscv64 ctest; Linux arm64 runs the Rust renderer tests; Windows x64 runs
