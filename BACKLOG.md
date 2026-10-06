@@ -608,33 +608,21 @@ cleanUp+recreate pair at the four scene-changed sites.
 - **Outbound `Artifact extraction failed (exit 1)`** is still reported even
   with the cargo subtree excluded. Artifacts do arrive (verified), but a real
   failure here would leave stale host binaries — worth a proper fix.
-- **sccache: every write fails, and modules bypass it entirely** (measured
-  2026-07-20; corrects the previous "writes nothing (0 bytes)" note, which was
-  wrong - the cache holds 981 KiB and simply never grows).
-
-  Two independent problems, worth separating:
-
-  1. **Every attempted write errors.** Reproduced twice: 66 write errors from
-     66 misses in one build, then 1 from 1 in a single-file rebuild. The cache
-     size does not move between runs. Cause still unknown - `SCCACHE_ERROR_LOG`
-     and `SCCACHE_LOG` are now passed to the container (they were not), the
-     server was stopped so it would restart and pick them up, and **no error
-     log file appeared**. Next thing to try: run sccache by hand inside the
-     container against a trivial TU, outside the build orchestration, so the
-     failure is not buried in ninja output.
-  2. **C++23 module TUs never reach sccache at all.** Module BMI compiles
-     invoke `clang-cl.exe` directly rather than through
-     `CMAKE_CXX_COMPILER_LAUNCHER`, so most of this build is uncacheable
-     regardless of (1). Even a perfect fix to the write errors leaves the hit
-     rate bounded by the non-module surface. That reframes the whole item: it
-     is worth much less than "20 GiB cache, 0% hit rate" suggests.
-
-  Related gotcha found while trying to force a rebuild: **touching a source
-  file usually does NOT cause the container to recompile it.** One touch
-  produced a rebuild, three later ones produced none. That makes "touch and
-  rebuild" unreliable as a workflow here and is consistent with the tar
-  extraction issue already recorded below - worth pinning down, since it also
-  means a real edit could in principle be missed.
+- **sccache works; its real hazard is stale importers** (re-measured 2026-10-06; the July
+  "every write fails, modules bypass it" no longer holds). In the reusable container the
+  cache is the LAN WebDAV endpoint (`SCCACHE_WEBDAV_ENDPOINT`). A trivial TU missed, then hit,
+  with zero write errors. A clean `clangcl-debug` rebuild then served 96.75% of its C/C++
+  from it, 387 hits to 13 misses, in 209 s against 287 s cold, and `build.ninja` routes 738
+  compiles through the launcher. The 70 "multiple input files" calls are the module
+  interface units, which the released sccache refuses. It hashes an importer without the
+  BMIs it imports, so after an interface (`.ixx`) edit a warm cache can return an importer's
+  old object. The shared WebDAV cache widens that to every build that reads it. Until
+  mozilla/sccache#2876 ships in the image, rebuild after an interface edit with the cache
+  bypassed (hub `docs/windows-container-build-performance.md` § *sccache on a C++23 modules
+  build*).
+- **Touching a source file did not always recompile it in the container** (2026-07-20: one
+  touch rebuilt, three later ones did not). Consistent with the tar-extraction mtime issue
+  below; unverified since.
 - **`-FreshContainer` strands the build cache** on the wcifs fallback path:
   the next build takes 367 s instead of 44 s.
 - **Module dependency scanning** (`clang-scan-deps`) runs over all 53
