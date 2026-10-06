@@ -111,11 +111,6 @@ still needs the host.
   shard's time: the `raster` estimate is about 3.5 h, and whether
   `PathTracingAntiAliasesGeometricEdges` finishes inside its 300 min is unknown. Rebalance
   in `run-riscv64-tests.sh` if a shard comes close to its job's 6 h.
-- [b] **Close the slangc 2026.8 floor** (S, waiting on BB's OxidANT pin). The image's Vulkan
-  SDK 1.4.357.0 ships slangc 2026.13.1. In `:latest`, `compile-slang-shaders.sh` emits the 10
-  combined WGSL files, and since OxidANT b7e6a8c (2026-10-06) they match the checked-in
-  ones. Bump `third_party/OxidANT` to b7e6a8c or later once OxidANT's CI is green, then
-  delete this entry.
 
 ---
 
@@ -147,7 +142,7 @@ been committed to.
   `max(0.002 * (1 - N·L), 0.0005)` and `forward.slang` uses
   `clamp(0.002 * (1 - N·L) + 0.0005, 0.0005, 0.004)`, so the renderers disagree at grazing
   angles. Editing `forward.slang` regenerates the checked-in WGSL; the slangc floor that used
-  to block that is gone (the last sized entry above).
+  to block that is gone (OxidANT pin 5381dc1a).
 - **Drop the per-frame `update_raytracing_descriptor_set` call in `drawFrame`.** It runs on
   `.raytracing` only, and every state change that invalidates those descriptors already goes
   through `updateAllDescriptorSets`. Deleting it saves three descriptor writes per frame. CI
@@ -183,6 +178,13 @@ been committed to.
 
 ## Rust renderer ideas (OxidANT)
 
+- **A non-uniform instance scale shades differently from the same node scale.** OxidANT's
+  ignored test `a_non_uniform_instance_scale_shades_like_the_same_node_scale` differs in 987
+  pixels against a threshold of 40, reproduced on lavapipe. It is blocked in OxidANT because
+  the shader source lives here (`Resources/ShadersSlang/forward/forward.slang`). The vertex
+  stage's normal math reads right (the cofactor of the instance matrix times
+  `prim.normal_matrix`), so look past the normal transform first: the shadow pass, the
+  bounds. Fixing it here and dropping the `#[ignore]` in OxidANT closes OxidANT's BACKLOG row.
 - **Split `render_tonemapped`** (about 530 lines in `forward.rs`) and `ForwardRenderer::new`.
   It can silently reorder passes; `tests/headless.rs` and `tests/forward_ambient.rs` catch
   that, and they run on llvmpipe in OxidANT's lanes now.
