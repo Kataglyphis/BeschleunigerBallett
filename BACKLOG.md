@@ -11431,70 +11431,11 @@ task 4 is where most of that ratio comes from.
 
 ### Test and gate infrastructure
 
-- [ ] **(S) (refactor) Derive `EveryTunableGuiSceneVarHasAControl`'s member list from the header instead of hand-typing it, and cover `GUIRendererSharedVars` too** — the gate as written catches a control being deleted and cannot catch the thing it was created for: a new field with no control.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11372-11412` — the gate,
-    its `std::array<const char *, 24> kTunables` (23 when this was written;
-    task 1 added `camera_fov`) and the exemption comment
-    above it. Its own header comment says the list "must be kept in sync with
-    `GUISceneSharedVars.ixx`" — which is the hand-maintained claim this repo
-    gates everywhere else.
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:20-92` — the struct
-    to parse: plain `type name = value;` members, plus the
-    `available_shadow_map_resolutions` table and the `*_changed` /
-    `*_requested` latches that must stay exempt.
-  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx:74-110` —
-    `GUIRendererSharedVars`, which has no coverage gate at all. All nine
-    members are referenced in `GUI.cpp` today, so the new check passes on
-    arrival and exists to keep it that way.
-  - `Test/commit/VulkanEngine/RepoFiles.hpp` — `readFileText`/`readFileLines`
-    and `joinViolations`; use them rather than hand-rolling
-    (`dd375e1d` removed 102 hand-rolled copies of the join).
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:11048` —
-    `ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath`, an existing
-    "parse the struct, check every member" gate to copy the parsing shape from.
-
-  **Steps:**
-  1. Add a file-local helper that, given a header path and a struct name,
-     returns the declared member names between that struct's `{` and its
-     matching `}` — match `^\s*[\w:<>,\s\*&]+?\s+(\w+)\s*(=|;|\{)` per line,
-     skipping lines that start with `//`, `static_assert`, or a nested
-     `struct`/function. Assert the parse found a plausible count (`>= 20` for
-     `GUISceneSharedVars`) so a regex that silently matches nothing cannot
-     pass the gate.
-  2. Replace `kTunables` with that call plus an explicit
-     `kExempt` list carrying the existing rationale verbatim: the
-     `*_changed`/`*_requested` latches, `selected_model_index`, and
-     `available_shadow_map_resolutions`. A member that is neither found in
-     `GUI.cpp` nor in `kExempt` fails with a message telling the author to add
-     a control **or** an exemption with a reason.
-  3. Add the twin check for `GUIRendererSharedVars` against
-     `guiRendererSharedVars.` in `GUI.cpp`, exempting nothing initially
-     (`gpuTimings` and `visibility` are read by the panels at `GUI.cpp:248-268`).
-     Either a second `TEST` or a table-driven loop over both (struct, prefix)
-     pairs — one gate per struct reads better in failure output.
-  4. While in `GUI.cpp`, delete the dead commented-out
-     `// ImGui::Checkbox("Ray tracing", &guiRendererSharedVars.raytracing);`
-     at `:166` — superseded by the radio-button block at `:127-159`, which is
-     the single source of truth for the three render modes.
-
-  **Test:** the gate is the test. Verify both directions by hand before
-  committing: add a throwaway `float zzz_probe = 0.0F;` to each struct and
-  confirm each gate fails naming it, then remove.
-
-  **Build:** `clangcl-debug` (no `Src/` output changes if step 4 is the only
-  source edit, but `GUI.cpp` is compiled either way). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
-
-  **Context:** Land **after** task 1 (both edit `GUI.cpp` and this file, and
-  task 1's `camera_fov` is the first member the derived gate will check). Task 1
-  has landed: `camera_fov` is in `GUISceneSharedVars.ixx`, `GUI.cpp`'s
-  "Field of view" slider and `kTunables`.
-  This is the same lesson as `PerfBaselineCoversEveryRegisteredBenchmark` and
-  `ImprovementLogQuotesTheCurrentCommitSuiteTestCount`: a gate that reads a
-  hand-maintained list is a gate on the list, not on the thing.
+- **Done 2026-10-06:** `EveryTunableGuiSceneVarHasAControl` parses `GUISceneSharedVars`
+  from its header (five exemptions, each with its reason; a stale exemption fails too), and
+  `EveryGuiRendererSharedVarHasAControl` is its twin. Both share
+  `expect_every_member_has_a_gui_control`; the `SceneUBO`/`ObjMaterial` parsers share
+  `cpp_struct_body`. Step 4's dead checkbox was already gone.
 
 ### Not in this batch, recorded so it is not lost
 

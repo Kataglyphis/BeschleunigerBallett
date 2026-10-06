@@ -6784,32 +6784,49 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
 
 namespace {
 
-// Member names from SceneUBO's C++ text, as an unread member never reaches SPIR-V; _pad filler is skipped.
-std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_path)
+// The text between <decl>'s opening brace and its matching close, or nothing when either is missing.
+std::optional<std::string> cpp_struct_body(const std::string &text, const std::string &decl)
 {
-    const std::string text = readFileText(header_path).value_or(std::string{});
-
-    const std::size_t struct_pos = text.find("struct SceneUBO");
-    if (struct_pos == std::string::npos) { return {}; }
+    const std::size_t struct_pos = text.find(decl);
+    if (struct_pos == std::string::npos) { return std::nullopt; }
     const std::size_t open_brace = text.find('{', struct_pos);
-    if (open_brace == std::string::npos) { return {}; }
-
+    if (open_brace == std::string::npos) { return std::nullopt; }
     int depth = 1;
-    std::size_t close_brace = std::string::npos;
     for (std::size_t pos = open_brace + 1; pos < text.size(); ++pos) {
         if (text[pos] == '{') {
             ++depth;
-        } else if (text[pos] == '}') {
-            --depth;
-            if (depth == 0) {
-                close_brace = pos;
-                break;
-            }
+        } else if (text[pos] == '}' && --depth == 0) {
+            return text.substr(open_brace + 1, pos - open_brace - 1);
         }
     }
-    if (close_brace == std::string::npos) { return {}; }
+    return std::nullopt;
+}
 
-    const std::string body = text.substr(open_brace + 1, close_brace - open_brace - 1);
+// Declared member names of a plain C++ struct: the identifier before its initializer, array bound or semicolon.
+std::vector<std::string> parse_cpp_struct_member_names(const fs::path &header_path, const std::string &decl)
+{
+    const auto struct_body = cpp_struct_body(readFileText(header_path).value_or(std::string{}), decl);
+    if (!struct_body) { return {}; }
+    // A type of words, scopes, templates and pointers first: a static_assert or its continuation never matches.
+    static const std::regex kMemberDecl(R"(^\s*[\w:<>,\s\*&]+?\s+(\w+)\s*(=|;|\{|\[))");
+    std::vector<std::string> names;
+    std::istringstream body_stream(*struct_body);
+    std::string line;
+    while (std::getline(body_stream, line)) {
+        const auto comment_pos = line.find("//");
+        if (comment_pos != std::string::npos) { line.resize(comment_pos); }
+        std::smatch match;
+        if (std::regex_search(line, match, kMemberDecl)) { names.push_back(match[1].str()); }
+    }
+    return names;
+}
+
+// Member names from SceneUBO's C++ text, as an unread member never reaches SPIR-V; _pad filler is skipped.
+std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_path)
+{
+    const auto struct_body = cpp_struct_body(readFileText(header_path).value_or(std::string{}), "struct SceneUBO");
+    if (!struct_body) { return {}; }
+    const std::string &body = *struct_body;
     const std::regex array_suffix(R"(\[[^\]]*\])");
     // A declaration ends in a bare identifier; anything else, like a wrapped static_assert message, is skipped.
     const std::regex identifier(R"(^[A-Za-z_]\w*$)");
@@ -6839,29 +6856,9 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
 // Member names of scene_types.slang's scalar-layout ObjMaterial mirror, brace-matched like the SceneUBO parser.
 std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_types_path)
 {
-    const std::string text = readFileText(scene_types_path).value_or(std::string{});
-
-    const std::size_t struct_pos = text.find("struct ObjMaterial");
-    if (struct_pos == std::string::npos) { return {}; }
-    const std::size_t open_brace = text.find('{', struct_pos);
-    if (open_brace == std::string::npos) { return {}; }
-
-    int depth = 1;
-    std::size_t close_brace = std::string::npos;
-    for (std::size_t pos = open_brace + 1; pos < text.size(); ++pos) {
-        if (text[pos] == '{') {
-            ++depth;
-        } else if (text[pos] == '}') {
-            --depth;
-            if (depth == 0) {
-                close_brace = pos;
-                break;
-            }
-        }
-    }
-    if (close_brace == std::string::npos) { return {}; }
-
-    const std::string body = text.substr(open_brace + 1, close_brace - open_brace - 1);
+    const auto struct_body = cpp_struct_body(readFileText(scene_types_path).value_or(std::string{}), "struct ObjMaterial");
+    if (!struct_body) { return {}; }
+    const std::string &body = *struct_body;
     static const std::regex kMemberDecl(R"(\b(?:float3|float|int)\s+([A-Za-z_]\w*)\s*;)");
 
     std::vector<std::string> names;
@@ -9674,36 +9671,72 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
                                 << perf_suite_path.string() << " - delete the stale row(s):" << joinViolations(stale);
 }
 
-// Every tunable scene var needs a GUI control; a new member needs a list entry or a reason in the comment above it.
-TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
+namespace {
+
+// GUI.cpp must read or write every member of a GUI shared-vars struct, or the member has a reason in <exempt>.
+void expect_every_member_has_a_gui_control(const std::string &struct_name,
+  const std::string &header_rel,
+  const std::string &gui_prefix,
+  std::size_t min_members,
+  const std::map<std::string, std::string> &exempt)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
+    const fs::path header_path = repo_root / fs::path(header_rel);
     const fs::path gui_path = repo_root / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
     const auto gui_text = readFileText(gui_path);
     ASSERT_TRUE(gui_text.has_value()) << "could not open " << gui_path.string();
 
-    // Tunables only: not the *_changed or *_requested latches, selected_model_index, or the resolution labels.
-    static constexpr std::array<const char *, 24> kTunables{ "directional_light_radiance",
-        "directional_light_color", "directional_light_direction", "shadow_map_res_index", "num_shadow_cascades",
-        "pcf_radius", "cascaded_shadow_intensity", "shadow_distance", "cascade_split_lambda",
-        "cloud_num_march_steps", "cloud_num_march_steps_to_light", "cloud_density_multiplier",
-        "cloud_coverage_threshold", "cloud_pillowness", "cloud_cirrus_effect", "cloud_powder_effect",
-        "clouds_enabled", "cloud_mesh_scale", "cloud_mesh_offset", "shadows_enabled", "skybox_enabled",
-        "model_position", "model_rotation", "camera_fov" };
+    const std::vector<std::string> members = parse_cpp_struct_member_names(header_path, "struct " + struct_name);
+    // A regex that silently matches nothing would pass every member below.
+    ASSERT_GE(members.size(), min_members) << "parsed only " << members.size() << " member(s) of " << struct_name
+                                           << " from " << header_path.string() << " - the parse broke, not the GUI";
 
     std::vector<std::string> missing;
-    for (const char *member : kTunables) {
-        const std::string needle = std::string("guiSceneSharedVars.") + member;
-        if (gui_text->find(needle) == std::string::npos) { missing.emplace_back(member); }
+    for (const auto &member : members) {
+        if (exempt.contains(member)) { continue; }
+        if (gui_text->find(gui_prefix + member) == std::string::npos) { missing.push_back(member); }
+    }
+    std::vector<std::string> stale;
+    for (const auto &[name, reason] : exempt) {
+        if (std::find(members.begin(), members.end(), name) == members.end()) { stale.push_back(name + " (" + reason + ")"); }
     }
 
-    EXPECT_TRUE(missing.empty())
-      << gui_path.string()
-      << " does not read/write the following GUISceneSharedVars tunable(s) - add a control, or if it is not "
-         "meant to be user-facing, add it to the exemption list in this test:"
-      << joinViolations(missing);
+    EXPECT_TRUE(missing.empty()) << gui_path.string() << " does not read/write the following " << struct_name
+                                 << " member(s) - add a control, or an exemption with its reason in this test:"
+                                 << joinViolations(missing);
+    EXPECT_TRUE(stale.empty()) << "exempted member(s) no longer in " << struct_name << " - delete the exemption:"
+                               << joinViolations(stale);
+}
+
+}// namespace
+
+// Every tunable scene var needs a GUI control; the member list is the header's, so a new member is checked on arrival.
+TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
+{
+    const std::map<std::string, std::string> kExempt{
+        { "shadow_resolution_changed", "a latch the resolution combo raises for the renderer, not a tunable" },
+        { "model_reload_requested", "a latch the model picker raises, not a tunable" },
+        { "model_transform_changed", "a latch the transform controls raise, not a tunable" },
+        { "selected_model_index", "the model picker's selection, not a tunable" },
+        { "available_shadow_map_resolutions", "the resolution combo's labels, a constant table" },
+    };
+    expect_every_member_has_a_gui_control("GUISceneSharedVars",
+      "Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx",
+      "guiSceneSharedVars.",
+      20,
+      kExempt);
+}
+
+// The renderer's shared vars had no gate; all of them are read or written by the GUI today, and this keeps it so.
+TEST(BuildIntegrity, EveryGuiRendererSharedVarHasAControl)
+{
+    expect_every_member_has_a_gui_control("GUIRendererSharedVars",
+      "Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx",
+      "guiRendererSharedVars.",
+      8,
+      {});
 }
 
 // The key-bindings panel is a hand-written literal, so every bound key and button must map to prose in it.
