@@ -5,8 +5,10 @@
 .DESCRIPTION
   Provisions a pinned, SHA256-checked lavapipe and Khronos loader for the host's arch, registers the ICD, and runs every
   test -Filter selects from -RepoRoot, one process each as ctest runs them on Linux. Prints one
-  `TESTS: passed=<n> failed=<n> skipped=<n>` line; a failure, a skip or no pass at all exits 1. The Windows x64 lane's
-  host step and the arm64 lane's GPU job call it (AGENTS.md § What CI runs, docs/gpu-golden-testing.md).
+  `TESTS: passed=<n> failed=<n> skipped=<n>` line; a failure, a skip or no pass at all exits 1. With the validation layer
+  -StageTests puts in vulkan-layers\ beside the suite (x64), the Release suite validates, sync included, and a test that
+  logs a VUID or SYNC-HAZARD fails. The Windows x64 lane's host step and the arm64 lane's GPU job call it (AGENTS.md
+  § What CI runs, docs/gpu-golden-testing.md).
 #>
 [CmdletBinding()]
 param(
@@ -97,6 +99,16 @@ $summary = @(& (Join-Path $tools.LoaderDir 'vulkaninfo.exe') --summary 2>&1 | Fo
 $summary | Write-Host
 if (-not ($summary -match 'llvmpipe')) { throw 'vulkaninfo lists no llvmpipe device; the ICD registration did not take' }
 
+# The Release suite validates only with the layer Build-Windows.ps1 -StageTests puts beside it, sync validation included.
+$layerDir = Join-Path (Split-Path $suitePath) 'vulkan-layers'
+$validating = Test-Path -LiteralPath (Join-Path $layerDir 'VkLayer_khronos_validation.json')
+if ($validating) {
+  $env:VK_ADD_LAYER_PATH = $layerDir
+  $env:KATAGLYPHIS_VULKAN_VALIDATION = '1'
+  $env:VK_KHRONOS_VALIDATION_VALIDATE_SYNC = '1'
+}
+Write-Host "validation layer: $(if ($validating) { "$layerDir, sync validation on" } else { 'none staged; the suites run unvalidated' })"
+
 $listing = @(& $suitePath --gtest_list_tests "--gtest_filter=$Filter" 2>&1 | ForEach-Object { "$_" })
 if ($LASTEXITCODE -ne 0) { $listing | Write-Host; throw "listing the tests exited $LASTEXITCODE" }
 $tests = @(Get-TestName -Listing $listing)
@@ -114,13 +126,24 @@ try {
     Write-Host "=== $test"
     $clock = [Diagnostics.Stopwatch]::StartNew()
     $testArgs = @("--gtest_filter=$test", "--gtest_output=json:`"$json`"")
-    $process = Start-Process -FilePath $suitePath -ArgumentList $testArgs -NoNewWindow -PassThru
+    $stdout = [IO.Path]::ChangeExtension($json, '.out.txt')
+    $stderr = [IO.Path]::ChangeExtension($json, '.err.txt')
+    $process = Start-Process -FilePath $suitePath -ArgumentList $testArgs -NoNewWindow -PassThru `
+      -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     # Read once now: without it ExitCode stays empty for a process started this way.
     $null = $process.Handle
     if ($process.WaitForExit($TimeoutSeconds * 1000)) {
       $outcome = Get-TestOutcome -Json $json -ExitCode $process.ExitCode
     } else {
       $process.Kill($true)
+      $outcome = 'failed'
+    }
+    $output = @(foreach ($log in $stdout, $stderr) { if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log } })
+    $output | Write-Host
+    # Most tests ignore validation messages, so the captured output is where a VUID or a sync hazard surfaces.
+    $findings = @($output | Where-Object { $_ -match 'VUID-|SYNC-HAZARD' })
+    if ($findings.Count -gt 0 -and $outcome -eq 'passed') {
+      Write-Host "::error::$test logged $($findings.Count) validation message(s), first: $($findings[0])"
       $outcome = 'failed'
     }
     $counts[$outcome]++

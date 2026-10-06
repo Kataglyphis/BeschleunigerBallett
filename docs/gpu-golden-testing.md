@@ -277,8 +277,15 @@ Its first run found two WRITE-AFTER-WRITE classes, both fixed the same day:
 `GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards` pins both: it turns sync
 validation on for its own harness, so it holds on any lane with validation layers.
 
-On Windows the GPU suites run in Release, without validation layers, so there it is
-still a manual run after touching render passes, barriers, or frames-in-flight:
+**Windows x64 validates too since 2026-10-06**, though its GPU suites run in Release.
+`Build-Windows.ps1 -StageTests` copies the image's `VkLayer_khronos_validation`
+(`$env:VULKAN_SDK\Bin`, 1.4.357) into `vulkan-layers\` beside the staged suite.
+`Invoke-LavapipeTests.ps1` then sets `VK_ADD_LAYER_PATH` there,
+`KATAGLYPHIS_VULKAN_VALIDATION=1` (the switch `validationLayersEnabled()` reads in a Release
+build) and `VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1`. It fails a test whose captured output
+holds a `VUID-` or `SYNC-HAZARD` line. Windows arm64 runs unvalidated: the image carries no
+arm64 layer. On a host GPU, the manual run after touching render passes, barriers, or
+frames-in-flight is:
 
 ```
 pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1

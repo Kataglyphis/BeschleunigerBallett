@@ -16,9 +16,17 @@ namespace Kataglyphis {
         } \
     } while (false)
 
+// Debug always validates; a Release build when KATAGLYPHIS_VULKAN_VALIDATION is set, as the Windows lavapipe lane does.
+inline bool validationLayersEnabled()
+{
 #ifdef NDEBUG
-const bool ENABLE_VALIDATION_LAYERS = false;
+    static const bool enabled = [] {
+        const char *value = std::getenv("KATAGLYPHIS_VULKAN_VALIDATION");
+        return value != nullptr && *value != '\0';
+    }();
+    return enabled;
 #else
-const bool ENABLE_VALIDATION_LAYERS = true;
+    return true;
 #endif
+}
 }// namespace Kataglyphis

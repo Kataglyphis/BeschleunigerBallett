@@ -556,7 +556,8 @@ render (~32 FPS ImGui overlay).
   containing `VkLayer_khronos_validation.{dll,json}` (they can be extracted from
   the ANTfrastructure image under
   `C:\Users\ContainerAdministrator\scoop\apps\vulkan\current\Bin`).
-  Profile/Release builds run without validation layers.
+  Profile/Release builds run without validation layers, unless `KATAGLYPHIS_VULKAN_VALIDATION`
+  is set (the Windows x64 lane's lavapipe step does, with the layer staged beside the suite).
 - The ASAN debug binary needs `clang_rt.asan_dynamic-x86_64.dll`; the build
   copies it next to `GraphicsEngine.exe`, and the run helpers set `ASAN_OPTIONS`
   with a **relative** `log_path` (an absolute `C:\...` path breaks ASAN option

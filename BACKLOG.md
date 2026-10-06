@@ -237,8 +237,8 @@ that are *not* exercised that way and should be run periodically:
   any `SYNC-HAZARD`. The first run found two more classes, in the deferred render
   pass's dependencies and in back-to-back BLAS builds on one scratch buffer. Both are
   fixed and pinned by `GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards`
-  (`docs/gpu-golden-testing.md`). The Windows script stays a manual pass, since the
-  Windows GPU suites run in Release without validation layers.
+  (`docs/gpu-golden-testing.md`). Windows x64's lavapipe step validates the Release suite
+  the same way since 2026-10-06. The Windows script stays the host-GPU pass.
 - **Release build** — the only configuration with logging compiled out and
   validation layers absent; behavioral surprises hide there.
 
@@ -451,10 +451,11 @@ cleanUp+recreate pair at the four scene-changed sites.
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.
   - **The GUI input sweep** stays out of every CI lane for time (`docs/gpu-golden-testing.md`).
-  - **Windows runs the GPU suites in Release**, without the validation layers the Linux
-    Debug run has: a clean runner has none. Staging the image's `VkLayer_khronos_validation`
-    and registering it under `HKLM\SOFTWARE\Khronos\Vulkan\ExplicitLayers` would let x64 run
-    the Debug suite.
+  - **Windows arm64 runs its GPU suites unvalidated.** Windows x64 validates its Release
+    suite since 2026-10-06, sync included. `-StageTests` stages the image's
+    `VkLayer_khronos_validation` beside it, and `KATAGLYPHIS_VULKAN_VALIDATION=1` turns
+    validation on in Release (`docs/gpu-golden-testing.md`). The image carries no arm64
+    layer.
   - By design, not gaps: TSan is Linux-only (clang-cl has none) and coverage is
     *measured* on Linux only (no Windows step reads the `.profraw` files), the
     Pester suites test Windows scripts on Windows x64, and

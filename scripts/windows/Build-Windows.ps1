@@ -399,6 +399,15 @@ try {
         }
         Copy-Item -LiteralPath $staged -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
+        # The host runs the Release suite; the SDK's layer beside it lets Invoke-LavapipeTests.ps1 validate anyway (x64 only).
+        if (-not $isCross) {
+          $layerSource = Join-Path ([string]$env:VULKAN_SDK) 'Bin'
+          $layerFiles = @('VkLayer_khronos_validation.dll', 'VkLayer_khronos_validation.json') | ForEach-Object { Join-Path $layerSource $_ }
+          $missing = @($layerFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
+          if ($missing.Count -gt 0) { throw "No Vulkan validation layer to stage (VULKAN_SDK='$env:VULKAN_SDK'): $($missing -join ', ')" }
+          $layerDir = New-Item -ItemType Directory -Force -Path (Join-Path $tests 'vulkan-layers')
+          Copy-Item -LiteralPath $layerFiles -Destination $layerDir
+        }
         # The Debug (ASan) suite cannot run in the container on a cross build; it rides along, runtime DLLs beside it (the runner has no redist).
         if ($isCross -and (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations)) {
           $asanSuite = Join-Path $buildPathClangDebug 'commitTestSuite.exe'

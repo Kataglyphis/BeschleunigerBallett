@@ -83,7 +83,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     vk::DebugReportFlagsEXT const debugReportFlags =
       vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning;
-    if (Kataglyphis::ENABLE_VALIDATION_LAYERS) {
+    if (Kataglyphis::validationLayersEnabled()) {
         debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, nullptr);
     }
 
@@ -1104,7 +1104,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
         surface = nullptr;
     }
 
-    if (Kataglyphis::ENABLE_VALIDATION_LAYERS) { debug::freeDebugCallback(instance.getVulkanInstance()); }
+    if (Kataglyphis::validationLayersEnabled()) { debug::freeDebugCallback(instance.getVulkanInstance()); }
     instance.cleanUp();
 }
 
