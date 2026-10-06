@@ -280,9 +280,8 @@ try {
 
     if (-not $SkipTidy) {
       Invoke-BuildStep -Context $context -StepName 'clang-tidy --fix (Src)' -Critical -Script {
-        # x64 lifts the hub's module-TU skip with a never-matching pattern: the image's clang-tidy reads these BMIs (hub CON10).
-        $moduleSkip = if ($isCross) { '(?m)^\s*import\s+kataglyphis' } else { '(?!)' }
-        Invoke-ClangTidyFixStep -Context $context -WorkspacePath $workspacePath -BuildRoot $buildPathClangDebug -ModuleImportPattern $moduleSkip
+        # The hub's module-TU skip stays: one such TU peaks at ~10 GB in clang-tidy, past a 16 GB runner (BACKLOG).
+        Invoke-ClangTidyFixStep -Context $context -WorkspacePath $workspacePath -BuildRoot $buildPathClangDebug
       } | Out-Null
     }
 

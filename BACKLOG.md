@@ -322,11 +322,15 @@ unconditional control capture before its output is believed.
   the drift shrink over time. **Owner decision, not an agent's.** Container
   builds run clang-tidy again since 2026-10-01 (hub CON10), but it only logs
   findings: `.clang-tidy` sets no `WarningsAsErrors`.
-- **clang-tidy covers the module TUs** - done 2026-10-06. Hub 9b5e41b2 tidies in parallel
-  (`-ThrottleLimit`), and `Build-Windows.ps1` passes `-ModuleImportPattern '(?!)'` on x64, so
-  tidy sees all 43 compiled `Src` TUs instead of 12. In the local `:winamd64` container
-  build: the 32 module TUs exit 0, and the step takes 120 s on 32 cores (797 s serially for the
-  module TUs alone). The arm64 cross build keeps the skip until its aarch64 BMIs are proven.
+- **clang-tidy on the module TUs does not fit a CI runner** (measured 2026-10-06). The image's
+  clang-tidy reads the BMIs (hub CON10), and in the local `:winamd64` container all 32 module
+  TUs tidy with exit 0. Each one is expensive, though. Peak working set per clang-tidy:
+  `VulkanRenderer.cpp` 10.4 GB, `App.cpp` 9.6 GB, `DeferredRasterizer.cpp` 7.1 GB,
+  `SkyBox.cpp` 4.8 GB. The 11 TUs CI tidies peak at 0.2-1.4 GB, apart from
+  `CascadedShadowMapMath.cpp` at 5.3 GB. With the skip lifted, the 4-vCPU, 16 GB windows-2025
+  runner died with `LLVM ERROR: out of memory` on `App.cpp` (run 37466488394), so
+  `Build-Windows.ps1` keeps the hub's default skip. A host with RAM to spare can tidy them by
+  hand with `-ModuleImportPattern '(?!)'`; 120 s on 32 cores and 61 GB.
 - **clang-cl coverage crashes the Debug suite at exit** (found 2026-10-02, S).
   `myproject_ENABLE_COVERAGE=ON` on `x64-ClangCL-Windows-Base` (hub CON9) builds
   and all 654 tests pass, then the process dies in the profile writer: with ASan
