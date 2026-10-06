@@ -19,9 +19,9 @@ $debugDir = Join-Path $workspace 'build-clangcl-debug'
 $profileDir = Join-Path $workspace 'build-clangcl-profile'
 $failed = [System.Collections.Generic.List[string]]::new()
 
-# -SkipPerfTests: the perf suite runs below, where a missing executable fails instead of skipping.
+# -SkipPerfTests: the perf suite runs below and fails on a missing exe. No -SkipFormat: this lane gates clang-format.
 $buildArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'Build-Windows.ps1'),
-  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipFormat', '-SkipTests', '-SkipPerfTests', '-StageTests')
+  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipTests', '-SkipPerfTests', '-StageTests')
 & pwsh @buildArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "::error::Build-Windows.ps1 exited $LASTEXITCODE"; exit 1 }
 

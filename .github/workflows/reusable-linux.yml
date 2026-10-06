@@ -281,7 +281,7 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
-  # Static analysis (advisory: continue-on-error)
+  # Static analysis: the two analyzers are advisory (continue-on-error), the clang-format check gates
   static-analysis:
     name: clang static analysis
     runs-on: ${{ inputs.runner }}
@@ -291,6 +291,13 @@ jobs:
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
+
+      # The pinned LLVM's clang-format, the binary the Windows check uses, so both lanes grade the same bytes.
+      - name: Check clang-format
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/run-static-analysis-format.sh --only-format-check
+          log-file: output.log
 
       # Reads clang-tests' debug cache: same preset, same objects.
       - name: Restore compiler cache

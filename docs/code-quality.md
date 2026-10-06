@@ -57,29 +57,42 @@ image's clang-tidy (LLVM 23.1.1) reads a clang-cl C++23 BMI (hub CON10). It stil
 covers only the TUs that import no `kataglyphis` module: the hub's
 `Invoke-ClangTidyFixStep` skips the rest (upstream trap 2, below), and
 `.clang-tidy` sets no `WarningsAsErrors`, so a finding is logged, never fatal;
-only a TU tidy cannot parse fails the step. The clang-format check always runs
-too (the container script has no `-SkipFormat` to forward; host
-`Build-Windows.ps1` accepts it), and it has the failure mode upstream warns of:
-it reports its deviating count but never fails the build on it.
+only a TU tidy cannot parse fails the step.
+
+**The clang-format check is a failing gate** (since 2026-10-06, after the sweep
+below). On Windows it is `Build-Windows.ps1`'s *clang-format check* step, which
+the x64 lane's `Invoke-WindowsLane.ps1` runs since it stopped passing
+`-SkipFormat` (the arm64 cross lane still skips it: formatting does not depend
+on the target). On Linux it is the `static-analysis` job's first step,
+`run-static-analysis-format.sh --only-format-check`, over `Src`, `Test` and
+`scripts/riscv64`, the 217 files `Get-ProjectCppFiles` gives Windows. Both run
+`clang-format --dry-run -Werror` and fail on one deviating file, and both
+refuse a clang-format whose version is not the hub's `LLVM_RELEASE` (in
+`third_party/ANTfrastructure/linux/scripts/01-core/versions.env`): the fleet formats with the pinned LLVM
+(owner decision, 2026-10-06). Windows' PATH one already is
+(`C:\llvm-patched\bin\clang-format.exe`). Linux prefers
+`/usr/local/llvm-target/bin/clang-format` because the image's `/usr/bin` one is
+still the distro's 21.1.8 until the hub switches it, and 21.1.8 flags 41 of the
+swept files. A local rewrite: `Build-Windows.ps1 -ApplyFormat`, or the pinned
+binary's `-i` (`run-static-analysis-format.sh` uses it too).
 
 ## Known state (2026-10-06)
 
 <!-- format-drift-denominator: 216 -->
 
-**136 of 216** own sources under `Src/` and `Test/` differ from
-`.clang-format`. Measured 2026-10-06 in the Linux image with its
-`clang-format` 21.1.8 and `--dry-run -Werror` over the eight extensions
-`Get-ProjectCppFiles` walks, reading each file from the git index so a CRLF
-checkout cannot count. The denominator fell from 217 when the Kompute
-playground's generated `shader/my_shader.hpp` left the tree; 2026-09-29 had
-134 of 217. Earlier figures came from the Windows container's pair
-(`Get-ProjectCppFiles` + `Invoke-ClangFormatCheck`): 72 of 125 on 2026-07-19,
-140 of 215 on 2026-08-04 and 142 of 216 on 2026-08-05, so part of the drop to
-134 may be the other `clang-format` build rather than fixed files.
-`Invoke-ClangFormatCheck` (see the caveat above) reports this count on every
-container build and **never fails the build** on it — that is why it grew
-from 72 to 142 while every build stayed green.
-Reformatting them is a **decision, not a chore**: it touches most of the
-engine in one commit and will collide with in-flight work. Tracked in
-`BACKLOG.md` — do it deliberately, ideally right after a merge point, and
-add the commit to `.git-blame-ignore-revs` so history stays readable.
+**0 of 216** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 217 with `scripts/riscv64/fp16_helpers.c`), after the sweep in commit
+`d59d210f6f93254e131996dca666e582f3d3b40e`. The sweep ran clang-format **23.1.1** (LLVM commit
+`6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin` in
+`:latest`, the version `:winamd64` ships as `C:\llvm-patched`) over the 217
+files `Get-ProjectCppFiles` lists, reading each from the git index so a CRLF
+checkout cannot count. It reformatted 146 of them. 37 comments that ran past
+the 120-column limit were reflowed onto two lines, which the one-line comment
+rule forbids, so the sweep rewrote each as one shorter line. The commit is in
+`.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile
+.git-blame-ignore-revs` once per clone so `git blame` skips it.
+
+Before the sweep the drift only grew, because the check reported and never
+failed: 72 of 125 on 2026-07-19, 142 of 216 on 2026-08-05 (Windows), 134 of
+217 on 2026-09-29 and 136 of 216 on 2026-10-06 (Linux, distro 21.1.8), and 146
+of 217 by the pinned 23.1.1.

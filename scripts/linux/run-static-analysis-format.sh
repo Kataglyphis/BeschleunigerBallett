@@ -19,6 +19,7 @@ RUN_CLANG_ANALYZE_HTML="${RUN_CLANG_ANALYZE_HTML:-false}"
 
 RUN_FORMAT_AND_TIDY="${RUN_FORMAT_AND_TIDY:-true}"
 RUN_SCAN_BUILD="${RUN_SCAN_BUILD:-true}"
+RUN_FORMAT_CHECK="${RUN_FORMAT_CHECK:-false}"
 
 # Project defaults for the shared library
 CODE_QUALITY_PROJECT_ROOT="${ROOT_DIR}"
@@ -28,6 +29,9 @@ CPP_SOURCE_ROOTS=(Src Test)
 
 # clang++ --analyze only ever looked at Src.
 ANALYZE_SOURCE_ROOT="Src"
+
+# Plus the one C file outside them, so this gate grades the same files as the Windows check.
+FORMAT_SOURCE_ROOTS=(Src Test scripts/riscv64)
 ANALYZE_EXTRA_ARGS=(-DUSE_RUST=1)
 
 CODE_QUALITY_CMAKE_SEARCH_ROOT="."
@@ -35,6 +39,35 @@ CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './third_party
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
 # The hub's default bootstrap installs cmake-format from its pinned requirements, never this repo's requirements.txt.
+
+# The fleet formats with the pinned LLVM (owner, 2026-10-06); the image's PATH clang-format may still be the distro's.
+resolve_pinned_clang_format() {
+  local want candidate version
+  want="$(antfrastructure_version LLVM_RELEASE)"
+  for candidate in /usr/local/llvm-target/bin/clang-format "$(command -v clang-format || true)"; do
+    [[ -x "${candidate}" ]] || continue
+    version="$("${candidate}" --version)"
+    if grep -Eq "clang-format version ${want//./\\.}([^0-9.]|\$)" <<<"${version}"; then
+      PINNED_CLANG_FORMAT_DIR="$(dirname "${candidate}")"
+      info "clang-format: ${candidate} (${want}, the hub's LLVM_RELEASE)"
+      return 0
+    fi
+  done
+  err "No clang-format ${want} (the hub's LLVM_RELEASE) in /usr/local/llvm-target/bin or on PATH; another version formats differently"
+}
+
+# A failing gate since the 2026-10-06 sweep; the PATH prefix makes the hub's helper call the pinned binary.
+run_clang_format_check() {
+  resolve_pinned_clang_format
+  local files=()
+  mapfile -t files < <(code_quality_find_cpp_files "${FORMAT_SOURCE_ROOTS[@]}")
+  [[ ${#files[@]} -gt 0 ]] || err "No C/C++ file under ${FORMAT_SOURCE_ROOTS[*]}: the format gate would grade nothing"
+  PATH="${PINNED_CLANG_FORMAT_DIR}:${PATH}" code_quality_check_clang_format "${files[@]}"
+  if [[ "${CODE_QUALITY_CLANG_FORMAT_DEVIATIONS}" -gt 0 ]]; then
+    err "${CODE_QUALITY_CLANG_FORMAT_DEVIATIONS} file(s) deviate from .clang-format; rewrite them with ${PINNED_CLANG_FORMAT_DIR}/clang-format -i"
+  fi
+  return 0
+}
 
 run_format_and_tidy() {
   code_quality_ensure_cmake_format
@@ -69,7 +102,8 @@ run_format_and_tidy() {
   fi
 
   if [[ ${#cpp_files[@]} -gt 0 ]]; then
-    code_quality_run_clang_format "${cpp_files[@]}"
+    resolve_pinned_clang_format
+    PATH="${PINNED_CLANG_FORMAT_DIR}:${PATH}" code_quality_run_clang_format "${cpp_files[@]}"
   fi
 
   code_quality_prepare_compile_db "${BUILD_DIR}"
@@ -135,6 +169,7 @@ Options:
   --with-clang-analyze-html    Also run clang++ --analyze (HTML output)
 
   --only-format                Run only format + clang-tidy step
+  --only-format-check          Only check clang-format with the pinned LLVM; fail on any drift (CI)
   --only-scan-build            Run only scan-build step
   --only-clang-analyze-html    Run only clang++ --analyze HTML step
 
@@ -174,6 +209,12 @@ while [[ $# -gt 0 ]]; do
       RUN_SCAN_BUILD="true"
       shift
       ;;
+    --only-format-check)
+      RUN_FORMAT_AND_TIDY="false"
+      RUN_SCAN_BUILD="false"
+      RUN_FORMAT_CHECK="true"
+      shift
+      ;;
     --only-clang-analyze-html)
       RUN_FORMAT_AND_TIDY="false"
       RUN_SCAN_BUILD="false"
@@ -201,6 +242,9 @@ fi
 cd "${ROOT_DIR}"
 
 total_steps=0
+if [[ "${RUN_FORMAT_CHECK}" == "true" ]]; then
+  ((total_steps += 1))
+fi
 if [[ "${RUN_FORMAT_AND_TIDY}" == "true" ]]; then
   ((total_steps += 1))
 fi
@@ -216,6 +260,12 @@ if [[ ${total_steps} -eq 0 ]]; then
 fi
 
 step=1
+
+if [[ "${RUN_FORMAT_CHECK}" == "true" ]]; then
+  info "[${step}/${total_steps}] Checking clang-format with the pinned LLVM..."
+  run_clang_format_check
+  ((step += 1))
+fi
 
 if [[ "${RUN_FORMAT_AND_TIDY}" == "true" ]]; then
   info "[${step}/${total_steps}] Running format + clang-tidy..."

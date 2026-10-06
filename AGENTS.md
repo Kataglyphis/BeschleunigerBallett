@@ -659,6 +659,15 @@ runs, and clang-tidy too since hub CON10, over the TUs that import no module), a
 suggested cadence live in
 [`docs/code-quality.md`](docs/code-quality.md).
 
+**clang-format is a failing gate since 2026-10-06**, graded by the pinned LLVM's
+clang-format (the hub's `LLVM_RELEASE`, 23.1.1) on both lanes: the Windows x64 lane's
+`Build-Windows.ps1` step and the Linux `static-analysis` job's
+`run-static-analysis-format.sh --only-format-check`, which prefers
+`/usr/local/llvm-target/bin/clang-format` because the image's PATH one may still be the
+distro's 21.1.8 (it would flag 41 of the swept files). Both refuse any other version. The
+sweep commit is listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile
+.git-blame-ignore-revs` once per clone.
+
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast
 default, but `clangcl-profile` (optimized, and the only configuration where
 benchmarks mean anything) and a synchronization-validation pass each catch

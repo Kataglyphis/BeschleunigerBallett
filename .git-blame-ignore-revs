@@ -1,0 +1,4 @@
+# Formatting-only commits `git blame` should skip: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: clang-format sweep with the pinned LLVM's clang-format 23.1.1 (2026-10-06)
+d59d210f6f93254e131996dca666e582f3d3b40e

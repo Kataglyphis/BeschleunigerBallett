@@ -119,10 +119,6 @@ been committed to.
 
 ## Owner decisions
 
-- **The formatting sweep.** 134 of 217 own sources under `Src/` and `Test/` do not match
-  `.clang-format` (measured 2026-09-29; `docs/code-quality.md` "Known state"). Container
-  builds log the count without failing. Either one large commit right after a merge point
-  plus a `.git-blame-ignore-revs` entry, or format-on-touch only.
 - **`pointShadowMap`** was removed as dead allocation. Re-add it, or the whole omni pass,
   when the point-light shadow feature is built.
 - **Docs placement.** The root `docs/*.md` dev references (roadmaps,

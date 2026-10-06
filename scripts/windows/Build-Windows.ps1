@@ -225,7 +225,7 @@ try {
     } -RequiredTools @('cmake', 'ninja') -FailOnMissingRequiredTools
   } | Out-Null
 
-  # Report-only unless -ApplyFormat; hub-pinned cmake-format keeps both lanes equal; -Check would red the default build.
+  # -ApplyFormat rewrites; otherwise the clang-format check gates (since the 2026-10-06 sweep) and cmake-format stays out.
   if (-not $SkipFormat) {
     $cmakeFormatRequirements = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\cmake-format.requirements.txt'
     if ($ApplyFormat) {
@@ -237,8 +237,23 @@ try {
         Invoke-ClangFormatStep -Context $context -WorkspacePath $workspacePath
       } | Out-Null
     } else {
-      Invoke-BuildStep -Context $context -StepName 'clang-format check (report only)' -Critical -Script {
-        Invoke-ClangFormatCheck -Context $context -WorkspacePath $workspacePath
+      # The hub's check only reports, so the count is taken here; the pinned LLVM keeps Linux grading the same bytes.
+      Invoke-BuildStep -Context $context -StepName 'clang-format check' -Critical -Script {
+        $clangFormat = (Get-Command 'clang-format' -ErrorAction Stop).Source
+        $versionsEnv = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\01-core\versions.env'
+        $llvmRelease = ((Get-Content $versionsEnv | Where-Object { $_ -match '^LLVM_RELEASE=' }) -replace '^LLVM_RELEASE=', '').Trim()
+        $version = (& $clangFormat --version) -join ' '
+        if ($version -notmatch ('clang-format version {0}([^0-9.]|$)' -f [regex]::Escape($llvmRelease))) {
+          throw "$clangFormat reports '$version', not the hub's LLVM_RELEASE $llvmRelease"
+        }
+        # Via cmd.exe: the expected non-zero exit and stderr would otherwise throw under Stop.
+        $deviating = @(Get-ProjectCppFiles -WorkspacePath $workspacePath | Where-Object {
+            & cmd.exe /c ('"{0}" --dry-run -Werror "{1}" >nul 2>nul' -f $clangFormat, $_)
+            $LASTEXITCODE -ne 0
+          })
+        Write-BuildLog -Context $context -Message ("clang-format {0}: {1} file(s) deviate from .clang-format." -f $llvmRelease, $deviating.Count)
+        foreach ($file in ($deviating | Select-Object -First 20)) { Write-BuildLog -Context $context -Message "  deviates: $file" }
+        if ($deviating.Count -gt 0) { throw "$($deviating.Count) file(s) deviate from .clang-format; rewrite them with -ApplyFormat" }
       } | Out-Null
     }
   }
