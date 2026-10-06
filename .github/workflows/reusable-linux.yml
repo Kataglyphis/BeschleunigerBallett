@@ -64,6 +64,7 @@ jobs:
           mounts: 'sccache:/var/cache/sccache'
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
+      # The one lane that builds the Kompute playground, so its ctest entry runs it on llvmpipe and it cannot rot.
       - name: Prepare for unit/integration tests
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -72,6 +73,7 @@ jobs:
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
+            --configure-arg -DKATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON
           log-file: output.log
 
       - name: Save compiler cache

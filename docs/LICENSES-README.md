@@ -174,7 +174,7 @@ Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
 ## Hinweise
 
 - Entfernt gegenüber Stand 2026-03-26: **glad** (kein `third_party/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen unter `Src/`) und **KTX als Submodul** (jetzt Teil-Vendoring, siehe oben).
-- Kompute wird nur mit `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON` gebaut (Demo, nicht Teil der Engine).
+- Kompute wird nur mit `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON` gebaut (Demo, nicht Teil der Engine, in keinem Paket). Das tut seit 2026-10-06 nur der Linux-CI-Job `clang-tests`, der das Playground auch startet; Kompute holt dabei fmt 11.0.0 per FetchContent.
 - Die `build*/_deps/`-Pfade sind lokale Checkouts (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde. Für die Rust-Crates tritt an diese Stelle die Registry im damaligen `:latest-cross`-Container (Volume `cargo-cache`, `CARGO_HOME=/cargo-cache`), aus der `cargo metadata` am 2026-08-02 das `license`-Feld las, bzw. für die am 2026-09-25 nachgezogenen Zeilen der Registry-Cache des Hosts.
 
 ---

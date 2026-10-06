@@ -1,25 +1,23 @@
-cmake_minimum_required(VERSION 3.20)
-project(kompute_array_mult)
+# Not linked to myproject_options on purpose: kompute's headers throw, so this target keeps exceptions on.
 
-set(CMAKE_CXX_STANDARD 14)
+find_program(
+  KOMPUTE_PLAYGROUND_GLSLANG_VALIDATOR
+  NAMES glslangValidator
+  HINTS "$ENV{VULKAN_SDK}/bin" REQUIRED)
 
-# Options
-option(KOMPUTE_OPT_GIT_TAG "The tag of the repo to use for the example" v0.9.0)
-option(KOMPUTE_OPT_FROM_SOURCE "Whether to build example from source or from git fetch repo" ON)
+# Generated into the build tree, never the source tree, so the SPIR-V cannot go stale beside its GLSL.
+set(_kompute_playground_shader "${CMAKE_CURRENT_SOURCE_DIR}/shader/my_shader.comp")
+set(_kompute_playground_shader_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/shader")
+set(_kompute_playground_shader_header "${_kompute_playground_shader_dir}/my_shader.hpp")
+add_custom_command(
+  OUTPUT "${_kompute_playground_shader_header}"
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${_kompute_playground_shader_dir}"
+  COMMAND "${KOMPUTE_PLAYGROUND_GLSLANG_VALIDATOR}" -V --vn MY_SHADER_COMP_SPV -o "${_kompute_playground_shader_header}"
+          "${_kompute_playground_shader}"
+  DEPENDS "${_kompute_playground_shader}"
+  COMMENT "Compiling the Kompute playground shader to SPIR-V"
+  VERBATIM)
 
-# Shaders: one vulkan_compile_shader call per shader
-vulkan_compile_shader(
-  INFILE
-  shader/my_shader.comp
-  OUTFILE
-  shader/my_shader.hpp
-  NAMESPACE
-  "shader")
-
-# Then add it to the library, so you can access it later in your code
-add_library(shader INTERFACE "shader/my_shader.hpp")
-target_include_directories(shader INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-
-# Setting up main example code
-add_executable(kompute_array_mult src/main.cpp)
-target_link_libraries(kompute_array_mult PRIVATE shader kompute::kompute)
+add_executable(kompute_array_mult src/main.cpp "${_kompute_playground_shader_header}")
+target_include_directories(kompute_array_mult PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_link_libraries(kompute_array_mult PRIVATE kompute::kompute)

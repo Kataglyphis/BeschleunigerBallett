@@ -62,16 +62,17 @@ too (the container script has no `-SkipFormat` to forward; host
 `Build-Windows.ps1` accepts it), and it has the failure mode upstream warns of:
 it reports its deviating count but never fails the build on it.
 
-## Known state (2026-09-29)
+## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 217 -->
+<!-- format-drift-denominator: 216 -->
 
-**134 of 217** own sources under `Src/` and `Test/` differ from
-`.clang-format`. Measured 2026-09-29 in the Linux image with its
+**136 of 216** own sources under `Src/` and `Test/` differ from
+`.clang-format`. Measured 2026-10-06 in the Linux image with its
 `clang-format` 21.1.8 and `--dry-run -Werror` over the eight extensions
-`Get-ProjectCppFiles` walks; the 217th source,
-`Test/commit/VulkanEngine/lsanSuppressions.cpp`, was formatted before it
-landed. Earlier figures came from the Windows container's pair
+`Get-ProjectCppFiles` walks, reading each file from the git index so a CRLF
+checkout cannot count. The denominator fell from 217 when the Kompute
+playground's generated `shader/my_shader.hpp` left the tree; 2026-09-29 had
+134 of 217. Earlier figures came from the Windows container's pair
 (`Get-ProjectCppFiles` + `Invoke-ClangFormatCheck`): 72 of 125 on 2026-07-19,
 140 of 215 on 2026-08-04 and 142 of 216 on 2026-08-05, so part of the drop to
 134 may be the other `clang-format` build rather than fixed files.

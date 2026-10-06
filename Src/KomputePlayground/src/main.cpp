@@ -7,9 +7,12 @@
 #include "kompute/operations/OpSyncLocal.hpp"
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 
+// glslangValidator --vn output: a bare uint32_t array that relies on <cstdint> above.
 #include <shader/my_shader.hpp>
 
 auto main() -> int
@@ -22,8 +25,7 @@ auto main() -> int
 
     const std::vector<std::shared_ptr<kp::Memory>> params = { tensorInA, tensorInB, tensorOut };
 
-    const std::vector<uint32_t> shader =
-      std::vector<uint32_t>(shader::MY_SHADER_COMP_SPV.begin(), shader::MY_SHADER_COMP_SPV.end());
+    const std::vector<uint32_t> shader(std::begin(MY_SHADER_COMP_SPV), std::end(MY_SHADER_COMP_SPV));
     std::shared_ptr<kp::Algorithm> const algo = mgr.algorithm(params, shader);
 
     mgr.sequence()

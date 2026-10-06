@@ -133,9 +133,6 @@ been committed to.
 - **The PCF radius slider is 1..20** (`GUI.cpp`), and `cascaded_shadow.slang` loops
   `(2r+1)^2` taps, up to 1681 per shadowed fragment. With hardware 2x2 comparison filtering
   the useful range is much smaller, but narrowing a user-facing slider is the owner's call.
-- **`Src/KomputePlayground`** cannot configure when turned on: its `CMakeLists.txt` has the
-  kompute acquisition commented out while still linking `kompute::kompute`, and
-  `src/main.cpp` throws `std::runtime_error` without `<stdexcept>`. Repair it or delete it.
 - **`pointShadowMap`** was removed as dead allocation. Re-add it, or the whole omni pass,
   when the point-light shadow feature is built.
 - **Docs placement.** The root `docs/*.md` dev references (roadmaps,

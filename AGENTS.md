@@ -921,6 +921,14 @@ lane passed therefore passes here, and an edit to any crate from this tree gets 
 before the submodule is pushed. At the 2026-10-06 pin its clippy took 46 s in `:latest` from a
 cold target directory on a 32-core host.
 
+`clang-tests` (both arches) is also the only build of `Src/KomputePlayground` (since
+2026-10-06): it configures with `-DKATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON`, and its ctest step
+runs `KomputePlayground.ArrayMultiply` on llvmpipe with the other suites, so the demo cannot
+rot unseen again. Kompute comes from the `third_party/KOMPUTE` submodule and keeps exceptions
+on (its headers throw; the playground links neither `myproject_options` nor its
+`-fno-exceptions`), and the SDK's `glslangValidator` compiles the GLSL shader into the build
+tree. Every other build leaves the option OFF, so none of them fetches Kompute's `fmt`.
+
 ## Code Conventions (C++ engine)
 
 - **Exceptions are disabled project-wide** (`/EHs-`, `-fno-exceptions` in
