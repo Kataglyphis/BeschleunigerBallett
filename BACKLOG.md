@@ -48,18 +48,6 @@ still needs the host.
   on the host. Once it passes, retire the "Known issue" section of
   `docs/gpu-golden-testing.md`, together with the `excluded=3` count and the
   `--gtest_filter` line that `buildIntegritySuite.cpp` pins in it.
-- [ ] **(S) Collapse the two cloud-output image barriers and the rationale comment written
-  twice** (`VulkanRenderer.cpp`, `cloud_output_war_barrier` and `cloud_output_barrier`).
-  The two `eGeneral -> eGeneral` colour barriers differ only in stage and access masks. Add
-  a file-local helper that takes the image plus those masks, and call it twice: once
-  `eFragmentShader -> eComputeShader`, `{} -> eShaderWrite` before `recordComputeCommands`,
-  and once `eComputeShader -> eFragmentShader`, `eShaderWrite -> eShaderRead` after it. Do
-  not change any mask; the goldens must not move. Keep the cross-frame WAR rationale once.
-  Keep the 2026-08-01 sync-validation measurement and the reason this barrier is hand-written
-  rather than `VulkanImage::transitionImageLayout`'s overload, which would cost
-  `eAllCommands -> eAllCommands`.
-  Test: `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice` stays green, and the Linux
-  lane's sync-validated run reports no `SYNC-HAZARD`.
 - **glTF loader gaps** (M/L): MASK alpha and `KHR_texture_transform` are done. What is left:
   - *BLEND and sorting* (L): a sorted transparent pass through `PipelineBuilder`'s existing
     src-alpha blend state, with back-to-front ordering and a second draw list. Until then a

@@ -8501,7 +8501,6 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
     static const std::map<std::string, std::size_t> kBarrierBudgets = {
         { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
         { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
-        { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp", 2 },
     };
 
     const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
@@ -8554,7 +8553,6 @@ TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
     static const std::map<std::string, std::size_t> kBarrierBudgets = {
         { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
         { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
-        { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp", 2 },
     };
 
     const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");

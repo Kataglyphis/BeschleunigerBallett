@@ -103,8 +103,10 @@ and consumed entirely on the graphics family - `Clouds.cpp` dispatches it on
 queue-family mismatch: `getComputeQueue()`/`createCommandPool`).
 
 `cloudOutputTexture` is a **single** image, not duplicated per
-frame-in-flight, so `VulkanRenderer::recordComputeCommands` orders access to
-it with two explicit barriers around `clouds.recordComputeCommands`:
+frame-in-flight, so `VulkanRenderer::record_commands` orders access to
+it with two explicit barriers around `clouds.recordComputeCommands`. Both are
+`eGeneral` -> `eGeneral` colour barriers recorded by one file-local helper,
+`recordCloudOutputBarrier`, and differ only in their stage and access masks:
 
 1. A fragment-shader -> compute-shader barrier *before* the dispatch, closing
    the cross-frame write-after-read gap against the *previous* frame's
@@ -117,6 +119,20 @@ it with two explicit barriers around `clouds.recordComputeCommands`:
    (`PostStage`'s own subpass dependency only covers
    `eColorAttachmentOutput` -> `eColorAttachmentOutput` and cannot order a
    compute-shader write).
+
+The helper names its stages by hand rather than going through
+`VulkanImage::transitionImageLayout`'s `eGeneral` -> `eGeneral` overload: that
+one derives both stages from the layout alone, which gives `eAllCommands` ->
+`eAllCommands`, a full pipeline stall every frame, for what needs one edge.
+
+Measured 2026-08-01 with the first barrier in place (RX 9070 XT,
+`Invoke-SyncValidation.ps1`, `khronos_validation.validate_sync=true`): no
+`SYNC-HAZARD` across `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
+(30+ frames with clouds on), nor in the frames the all-maximum case of the GUI
+input sweep completed before the path-tracing device loss of that time. The
+state before the fix was not measured under sync validation, so the barrier
+closes a spec gap rather than a hazard that was seen and then fixed. The Linux
+lane has validated the same test on llvmpipe on every push since 2026-10-06.
 
 ## UBO packing
 

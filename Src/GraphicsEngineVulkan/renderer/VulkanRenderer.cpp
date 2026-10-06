@@ -1,6 +1,7 @@
 module;
 #include <optional>
 #include "common/GuiModelTransform.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
@@ -72,6 +73,23 @@ import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.window;
 import kataglyphis.vulkan.color_attachment;
+
+namespace {
+
+// Not transitionImageLayout's eGeneral overload: it derives eAllCommands -> eAllCommands, a full stall every frame.
+void recordCloudOutputBarrier(vk::CommandBuffer commandBuffer,
+  vk::Image image,
+  vk::PipelineStageFlags srcStage,
+  vk::PipelineStageFlags dstStage,
+  vk::AccessFlags srcAccess,
+  vk::AccessFlags dstAccess)
+{
+    const vk::ImageMemoryBarrier barrier = Kataglyphis::buildImageMemoryBarrier(
+      image, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, srcAccess, dstAccess);
+    commandBuffer.pipelineBarrier(srcStage, dstStage, {}, nullptr, nullptr, barrier);
+}
+
+}// namespace
 
 Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
   Scene *scene,
@@ -831,48 +849,22 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         write_pass_timestamp(GpuTimedPass::Clouds, true);
 
         // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
-        vk::ImageMemoryBarrier cloud_output_war_barrier{};
-        cloud_output_war_barrier.oldLayout = vk::ImageLayout::eGeneral;
-        cloud_output_war_barrier.newLayout = vk::ImageLayout::eGeneral;
-        cloud_output_war_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        cloud_output_war_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        cloud_output_war_barrier.image = clouds.getCloudOutputTexture()->getImage();
-        cloud_output_war_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        cloud_output_war_barrier.subresourceRange.baseMipLevel = 0;
-        cloud_output_war_barrier.subresourceRange.levelCount = 1;
-        cloud_output_war_barrier.subresourceRange.baseArrayLayer = 0;
-        cloud_output_war_barrier.subresourceRange.layerCount = 1;
-        cloud_output_war_barrier.srcAccessMask = {};
-        cloud_output_war_barrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+        recordCloudOutputBarrier(commandBuffer,
+          clouds.getCloudOutputTexture()->getImage(),
+          vk::PipelineStageFlagBits::eFragmentShader,
           vk::PipelineStageFlagBits::eComputeShader,
           {},
-          nullptr,
-          nullptr,
-          cloud_output_war_barrier);
+          vk::AccessFlagBits::eShaderWrite);
 
         clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
 
-        // By hand: PostStage cannot order a compute write, and the layout helper would stall on eAllCommands.
-        vk::ImageMemoryBarrier cloud_output_barrier{};
-        cloud_output_barrier.oldLayout = vk::ImageLayout::eGeneral;
-        cloud_output_barrier.newLayout = vk::ImageLayout::eGeneral;
-        cloud_output_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        cloud_output_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        cloud_output_barrier.image = clouds.getCloudOutputTexture()->getImage();
-        cloud_output_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-        cloud_output_barrier.subresourceRange.baseMipLevel = 0;
-        cloud_output_barrier.subresourceRange.levelCount = 1;
-        cloud_output_barrier.subresourceRange.baseArrayLayer = 0;
-        cloud_output_barrier.subresourceRange.layerCount = 1;
-        cloud_output_barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-        cloud_output_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+        // PostStage's subpass dependency cannot order this compute write before the post pass samples it.
+        recordCloudOutputBarrier(commandBuffer,
+          clouds.getCloudOutputTexture()->getImage(),
+          vk::PipelineStageFlagBits::eComputeShader,
           vk::PipelineStageFlagBits::eFragmentShader,
-          {},
-          nullptr,
-          nullptr,
-          cloud_output_barrier);
+          vk::AccessFlagBits::eShaderWrite,
+          vk::AccessFlagBits::eShaderRead);
 
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
