@@ -858,6 +858,11 @@ bash ./scripts/linux/run-lint-gates.sh            # the six always-on gates
 bash ./scripts/linux/run-lint-gates.sh --ratchets # + doc-links and the eight measurement gates
 ```
 
+The hub's consumer hook runs the first line on every commit once a clone opts in with
+`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`.
+It skips the ratchets, so run the second line before pushing a comment, size or shell change:
+the comment-size ratchet once failed `Lint gates` that way (run 37486873828).
+
 That is the whole `lint` job; CI passes `--ratchets` too. The wrapper hands this repo's root to
 ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns the six gates
 (shell, workflows + CI image refs, secrets, python, shared-config drift,
