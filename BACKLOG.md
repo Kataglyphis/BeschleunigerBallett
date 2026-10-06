@@ -336,16 +336,12 @@ unconditional control capture before its output is believed.
   `compileTestSuite.exe` exit 1 (run 36997000491). Coverage is OFF again; no
   Windows step reads `.profraw`. Revisit when the runtime matches the compiler or
   value profiling can be turned off.
-- **clang-tidy 23.1.1 segfaults on `buildIntegritySuite.cpp`** (found
-  2026-09-30, unsized). `run-static-analysis-format.sh --only-format` in the
-  amd64 `:latest` stops at file 73 of 108 with exit 139: LLVM's dataflow
-  `transfer()` crashes inside `bugprone-unchecked-optional-access` on the
-  `reinit_span->first` access (`Test/commit/VulkanEngine/buildIntegritySuite.cpp`
-  ~line 3455). Identical with and without the retired `--gcc-toolchain`
-  extra-arg, so it is the tool, not the toolchain. The other 35 files tidy
-  normally when run one by one, and #73 does with that check disabled. Options:
-  a `NOLINT` on the line, disabling the check for `Test/`, or waiting for an LLVM
-  fix; no CI job runs clang-tidy, so nothing is red.
+- **clang-tidy 23.1.1 segfaulted on `buildIntegritySuite.cpp`** (found 2026-09-30) - handled
+  2026-10-06. The crash is in `bugprone-unchecked-optional-access`'s dataflow on gtest
+  bodies: rewriting the first crashing test only moved it to the next one (line 9181).
+  `Test/.clang-tidy` inherits the root config and drops that one check. Every optional
+  there sits behind an `ASSERT`. The full check set then tidies the file (rc 0, 91 s).
+  Re-enable the check once an LLVM release fixes the crash.
 
 ### Deep code-review pass (2026-07-23)
 

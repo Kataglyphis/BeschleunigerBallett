@@ -1,0 +1,4 @@
+---
+# clang-tidy 23.1.1 segfaults in this check's dataflow on gtest bodies (BACKLOG); every optional here sits behind an ASSERT.
+InheritParentConfig: true
+Checks: -bugprone-unchecked-optional-access

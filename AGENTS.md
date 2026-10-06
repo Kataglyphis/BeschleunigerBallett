@@ -896,7 +896,9 @@ design, so its findings are fixed, never frozen.
 Both Linux legs (x64 and arm64, since 2026-10-01) also run the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
 kataglyphis_webgpu_renderer`) in their own `rust` job of `reusable-linux.yml`; its GPU tests
-find the image's lavapipe, which runs 8-lane subgroups through the image's `LP_NATIVE_VECTOR_WIDTH=256`. Before
+find the image's lavapipe. On arm64 the script sets `LP_NATIVE_VECTOR_WIDTH=128` (since 2026-10-06): the
+image's 256 (hub CON44) serves this repo's BVH builds, and LLVM's AArch64 JIT aborted OxidANT's renderer
+tests on it about one run in five (`LLVM ERROR: Do not know how to split this operator's operand!`). Before
 this, the crate was compiled twice in this repo (the Rust bridge and the wasm
 demo) but its ~150 tests only ran in `OxidANT`'s own
 workflow — so edits made to `crates/webgpu_renderer` from this working tree

@@ -19,6 +19,9 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 export CARGO_HOME="${CARGO_HOME:-/tmp/cargo-home}"
 mkdir -p "${CARGO_HOME}"
 
+# Not this repo's C++ goldens: OxidANT needs no 256-bit BVH sort (hub CON44), on which LLVM's AArch64 JIT aborts.
+if [[ "$(uname -m)" == aarch64 ]]; then export LP_NATIVE_VECTOR_WIDTH=128; fi
+
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
 
 info "=== Rust renderer test suite (kataglyphis_webgpu_renderer) ==="
