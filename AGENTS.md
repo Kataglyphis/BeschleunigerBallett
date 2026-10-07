@@ -505,6 +505,16 @@ builds green. `git submodule update --checkout --recursive` restores every pin. 
 drifted submodule is what you actually want, update the gitlink AND fix the fallout in
 the same change.
 
+The opposite move, for local work on the newest code, is
+`bash third_party/ANTfrastructure/linux/scripts/git-sync-branches.sh` (`--dry-run`
+first): this repo and every submodule, third-party ones included, go to the tip
+of their `branch =`, fast-forward only; `--owned-only` leaves the third-party ones
+pinned. It commits no gitlink, so what it moved shows as `+` until the gitlinks are
+committed, innermost repo first, and the next `git submodule update` puts it back.
+FUZZTEST stays on a release because `.gitmodules` declares
+`branch = release_<date>` for it; move that line to take a newer one.
+Details: [`adopting-in-a-new-project.md` § *Putting every checkout on its branch*](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#putting-every-checkout-on-its-branch).
+
 Known coupling to watch when bumping pins:
 
 - `third_party/FUZZTEST` pins its own Abseil LTS (`absl_TAG` in
