@@ -65,7 +65,7 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 
 | Projekt | URL | Pin | Lizenz | Geprüfte Quelle |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | ed0493c2 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | 3faeb3a1 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
 | ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 57ca2b14 | MIT laut `LICENSE` (Copyright (c) 2024 Jonas Heinle); 275 eigene Dateien tragen `SPDX-License-Identifier: MIT`, **25 wieder `Apache-2.0`** (siehe „Unverifiziert — zu prüfen“); OCI-Label `org.opencontainers.image.licenses="MIT"` in den drei Image-Definitionen, die eines setzen (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX-Header + OCI-Labels |
 
 ## Rust-Crate-Abhängigkeiten (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
@@ -106,7 +106,7 @@ Hosts (`scoop/persist/rustup/.cargo/registry/src`) bzw., für den gepatchten
 | wgpu | 30.0.1 | MIT OR Apache-2.0 | `Cargo.toml` der exakten Lock-Version (Host-Cache, 2026-09-25) |
 | winit | 0.30.13 | Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
 | pollster | 1.0.1 | Apache-2.0/MIT | `Cargo.toml` der exakten Lock-Version (Host-Cache, 2026-09-25) |
-| glam | 0.33.7 | MIT OR Apache-2.0 | `Cargo.toml` der exakten Lock-Version (Host-Cache, 2026-09-25) |
+| glam | 0.34.1 | MIT OR Apache-2.0 | `license`-Feld der exakten Lock-Version auf crates.io (2026-10-07) |
 | gltf | 1.4.1 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
 | bevy_mikktspace | 1.0.0 | Zlib AND (MIT OR Apache-2.0) | `cargo metadata` (exakte Lock-Version, Container) |
 | egui | 0.36.2 | MIT OR Apache-2.0 | `Cargo.toml` von 0.36.1 (Host-Cache, 2026-09-25); 0.36.2 selbst nicht gelesen |
@@ -178,4 +178,4 @@ Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
 - Die `build*/_deps/`-Pfade sind lokale Checkouts (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde. Für die Rust-Crates tritt an diese Stelle die Registry im damaligen `:latest-cross`-Container (Volume `cargo-cache`, `CARGO_HOME=/cargo-cache`), aus der `cargo metadata` am 2026-08-02 das `license`-Feld las, bzw. für die am 2026-09-25 nachgezogenen Zeilen der Registry-Cache des Hosts.
 
 ---
-Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02 — die Rust-Crate-Lizenzen zusätzlich gegen `cargo metadata --format-version 1 --locked` im `:latest-cross`-Container (vollständige crates.io-Registry) am 2026-08-02. Am 2026-09-25 die seither bewegten Pins (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) und Crate-Versionen (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) nachgezogen und deren Lizenzangaben erneut von der Festplatte gelesen; die übrigen Zeilen sind unverändert. Am 2026-10-07 die Pins imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp und Microsoft GSL nachgezogen; die Lizenzdateien der vier Submodule sind über die bewegten Bereiche unverändert (`git diff` leer).
+Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02 — die Rust-Crate-Lizenzen zusätzlich gegen `cargo metadata --format-version 1 --locked` im `:latest-cross`-Container (vollständige crates.io-Registry) am 2026-08-02. Am 2026-09-25 die seither bewegten Pins (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) und Crate-Versionen (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) nachgezogen und deren Lizenzangaben erneut von der Festplatte gelesen; die übrigen Zeilen sind unverändert. Am 2026-10-07 die Pins imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp, Microsoft GSL und OxidANT sowie glam 0.34.1 nachgezogen; die Lizenzdateien der vier Submodule sind über die bewegten Bereiche unverändert (`git diff` leer).
