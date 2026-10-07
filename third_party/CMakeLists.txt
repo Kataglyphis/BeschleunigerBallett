@@ -372,7 +372,7 @@ FetchContent_Declare(
   GSL
   GIT_REPOSITORY "https://github.com/microsoft/GSL"
   # renovate: datasource=github-tags depName=microsoft/GSL
-  GIT_TAG "v4.2.2")
+  GIT_TAG "v5.0.1")
 FetchContent_MakeAvailable(GSL)
 
 # set all glfw dependencies
