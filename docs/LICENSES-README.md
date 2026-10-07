@@ -8,13 +8,13 @@ Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigk
 |---|---|---|---|---|
 | tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `third_party/TINY_OBJ_LOADER/LICENSE` |
 | glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `third_party/GLM/copying.txt` |
-| imgui | https://github.com/ocornut/imgui | v1.92.9b-59-ge0a2f6dea | MIT | `third_party/IMGUI/LICENSE.txt` |
+| imgui | https://github.com/ocornut/imgui | v1.92.9b-112-gf502f9c98 | MIT | `third_party/IMGUI/LICENSE.txt` |
 | stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT oder Public Domain (nach Wahl) | `third_party/STB/LICENSE` |
 | glfw | https://github.com/glfw/glfw | 3.5.1-1-g92dcf4ce | Zlib/libpng-Lizenztext | `third_party/GLFW/LICENSE.md` |
 | Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT-Lizenztext (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
-| nlohmann/json | https://github.com/nlohmann/json | v3.11.3-525-gaa391dc0a | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
-| google/benchmark | https://github.com/google/benchmark | v1.9.5-124-gf15d047 | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
-| spdlog | https://github.com/gabime/spdlog | v1.17.0-44-g57cb5fb7 | MIT; enthält gebündeltes {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
+| nlohmann/json | https://github.com/nlohmann/json | v3.11.3-690-gef570827e | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
+| google/benchmark | https://github.com/google/benchmark | v1.9.5-143-g39a78e3 | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
+| spdlog | https://github.com/gabime/spdlog | v1.17.0-53-gd6c93f38 | MIT; enthält gebündeltes {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
 | google/fuzztest | https://github.com/google/fuzztest | 704efb34 (2026-06-29) | Apache-2.0; zusätzliche Lucent-Notiz für `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
 | kompute (nur optionales Playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-99-g267e019 | Apache-2.0 | `third_party/KOMPUTE/LICENSE` |
 | cgltf | https://github.com/jkuhlmann/cgltf | v1.15-11-g85cd623 | MIT-Lizenztext (Copyright Johannes Kuhlmann) | `third_party/cgltf/LICENSE` |
@@ -54,9 +54,9 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 
 | Projekt | URL | Pin | Lizenz (laut Lizenzdatei) | Geprüfte Datei |
 |---|---|---|---|---|
-| abseil-cpp | https://github.com/abseil/abseil-cpp | 20260526.0 (`ABSL_TAG`) | Apache-2.0 | `build-clangcl-profile/_deps/abseil-cpp-src/LICENSE` |
+| abseil-cpp | https://github.com/abseil/abseil-cpp | 20260817.0 (`ABSL_TAG`) | Apache-2.0 | `build-clangcl-profile/_deps/abseil-cpp-src/LICENSE` |
 | googletest (nur `BUILD_TESTING`) | https://github.com/google/googletest | v1.18.0 (Tag-Archiv) | BSD-3-Clause-Lizenztext (Copyright Google Inc.) | `build-clangcl-profile/_deps/googletest-src/LICENSE` |
-| Microsoft GSL | https://github.com/microsoft/GSL | v4.2.1 | MIT | `build-clangcl-profile/_deps/gsl-src/LICENSE` |
+| Microsoft GSL | https://github.com/microsoft/GSL | v4.2.2 | MIT | `build-clangcl-profile/_deps/gsl-src/LICENSE` |
 | Corrosion (nur `RUST_FEATURES`, Build-Tool) | https://github.com/corrosion-rs/corrosion | c4786e7a (Commit; v0.6.1 fehlen spätere Fixes) | MIT | `build-clangcl-profile/_deps/corrosion-src/LICENSE` |
 | ANTLR4 C++ Runtime (transitiv via FuzzTest) | https://github.com/antlr/antlr4 | von FuzzTest gepinnt | BSD-3-Clause-Lizenztext (The ANTLR Project) | `build-linux-local/_deps/antlr_cpp-src/LICENSE.txt` |
 | RE2 (transitiv via FuzzTest) | https://github.com/google/re2 | von FuzzTest gepinnt | BSD-3-Clause-Lizenztext (The RE2 Authors) | `build-linux-local/_deps/re2-src/LICENSE` |
@@ -178,4 +178,4 @@ Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
 - Die `build*/_deps/`-Pfade sind lokale Checkouts (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde. Für die Rust-Crates tritt an diese Stelle die Registry im damaligen `:latest-cross`-Container (Volume `cargo-cache`, `CARGO_HOME=/cargo-cache`), aus der `cargo metadata` am 2026-08-02 das `license`-Feld las, bzw. für die am 2026-09-25 nachgezogenen Zeilen der Registry-Cache des Hosts.
 
 ---
-Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02 — die Rust-Crate-Lizenzen zusätzlich gegen `cargo metadata --format-version 1 --locked` im `:latest-cross`-Container (vollständige crates.io-Registry) am 2026-08-02. Am 2026-09-25 die seither bewegten Pins (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) und Crate-Versionen (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) nachgezogen und deren Lizenzangaben erneut von der Festplatte gelesen; die übrigen Zeilen sind unverändert.
+Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02 — die Rust-Crate-Lizenzen zusätzlich gegen `cargo metadata --format-version 1 --locked` im `:latest-cross`-Container (vollständige crates.io-Registry) am 2026-08-02. Am 2026-09-25 die seither bewegten Pins (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) und Crate-Versionen (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) nachgezogen und deren Lizenzangaben erneut von der Festplatte gelesen; die übrigen Zeilen sind unverändert. Am 2026-10-07 die Pins imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp und Microsoft GSL nachgezogen; die Lizenzdateien der vier Submodule sind über die bewegten Bereiche unverändert (`git diff` leer).

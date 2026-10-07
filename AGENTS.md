@@ -521,7 +521,8 @@ Known coupling to watch when bumping pins:
   `cmake/BuildDependencies.cmake`); this repo's `ABSL_TAG` in
   `third_party/CMakeLists.txt` is declared first and wins, so it must stay >= the
   FuzzTest pin or configure fails with missing `absl::*` targets (observed:
-  `absl::random_mocking_access`). Both are `20260526.0` today.
+  `absl::random_mocking_access`). This repo is at `20260817.0`, FuzzTest at
+  `20260526.0` (2026-10-07).
 
 Drift itself is guarded by ANTfrastructure's repo-agnostic suite,
 `third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1`, run

@@ -187,7 +187,7 @@ endmacro()
 # first and wins, and older LTS releases lack targets FuzzTest links against
 # (e.g. absl::random_mocking_access).
 # renovate: datasource=github-tags depName=abseil/abseil-cpp versioning=loose
-set(ABSL_TAG 20260526.0)
+set(ABSL_TAG 20260817.0)
 FetchContent_Declare(
   abseil-cpp
   GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
@@ -372,7 +372,7 @@ FetchContent_Declare(
   GSL
   GIT_REPOSITORY "https://github.com/microsoft/GSL"
   # renovate: datasource=github-tags depName=microsoft/GSL
-  GIT_TAG "v4.2.1")
+  GIT_TAG "v4.2.2")
 FetchContent_MakeAvailable(GSL)
 
 # set all glfw dependencies
