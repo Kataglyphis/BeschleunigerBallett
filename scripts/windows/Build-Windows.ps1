@@ -237,23 +237,11 @@ try {
         Invoke-ClangFormatStep -Context $context -WorkspacePath $workspacePath
       } | Out-Null
     } else {
-      # The hub's check only reports, so the count is taken here; the pinned LLVM keeps Linux grading the same bytes.
+      # The pinned LLVM keeps Linux grading the same bytes.
       Invoke-BuildStep -Context $context -StepName 'clang-format check' -Critical -Script {
-        $clangFormat = (Get-Command 'clang-format' -ErrorAction Stop).Source
         $versionsEnv = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\01-core\versions.env'
         $llvmRelease = ((Get-Content $versionsEnv | Where-Object { $_ -match '^LLVM_RELEASE=' }) -replace '^LLVM_RELEASE=', '').Trim()
-        $version = (& $clangFormat --version) -join ' '
-        if ($version -notmatch ('clang-format version {0}([^0-9.]|$)' -f [regex]::Escape($llvmRelease))) {
-          throw "$clangFormat reports '$version', not the hub's LLVM_RELEASE $llvmRelease"
-        }
-        # Via cmd.exe: the expected non-zero exit and stderr would otherwise throw under Stop.
-        $deviating = @(Get-ProjectCppFiles -WorkspacePath $workspacePath | Where-Object {
-            & cmd.exe /c ('"{0}" --dry-run -Werror "{1}" >nul 2>nul' -f $clangFormat, $_)
-            $LASTEXITCODE -ne 0
-          })
-        Write-BuildLog -Context $context -Message ("clang-format {0}: {1} file(s) deviate from .clang-format." -f $llvmRelease, $deviating.Count)
-        foreach ($file in ($deviating | Select-Object -First 20)) { Write-BuildLog -Context $context -Message "  deviates: $file" }
-        if ($deviating.Count -gt 0) { throw "$($deviating.Count) file(s) deviate from .clang-format; rewrite them with -ApplyFormat" }
+        Invoke-ClangFormatCheck -Context $context -WorkspacePath $workspacePath -FailOnDeviation -ExpectedVersion $llvmRelease
       } | Out-Null
     }
   }

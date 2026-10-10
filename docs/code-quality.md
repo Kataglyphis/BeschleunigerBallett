@@ -53,7 +53,7 @@ Linux equivalent: `scripts/linux/run-static-analysis-format.sh`.
 **Caveat worth knowing:** containerized builds run clang-tidy again since
 2026-10-01: neither `scripts/windows/Build-Windows-Container.ps1` nor the Windows
 x64 lane's `Invoke-WindowsLane.ps1` passes `-SkipTidy` any more, because the
-image's clang-tidy (LLVM 23.1.1) reads a clang-cl C++23 BMI (hub CON10). It still
+image's clang-tidy (LLVM 23.1.1 when hub CON10 proved it) reads a clang-cl C++23 BMI (hub CON10). It still
 covers only the TUs that import no `kataglyphis` module: the hub's
 `Invoke-ClangTidyFixStep` skips the rest (upstream trap 2, below), and
 `.clang-tidy` sets no `WarningsAsErrors`, so a finding is logged, never fatal;
@@ -96,3 +96,6 @@ Before the sweep the drift only grew, because the check reported and never
 failed: 72 of 125 on 2026-07-19, 142 of 216 on 2026-08-05 (Windows), 134 of
 217 on 2026-09-29 and 136 of 216 on 2026-10-06 (Linux, distro 21.1.8), and 146
 of 217 by the pinned 23.1.1.
+
+The hub pin of 2026-10-10 moved the gate to 23.1.3, which reads the same: 0 of 217 in
+`:winamd64` and in `:latest`.

@@ -348,13 +348,13 @@ carries that GCC's runtime. clang-tidy included: since the 2026-09-30
 LibTooling, which looks beside the compile DB's `/usr/bin/clang++`, selects
 `/opt/gcc-16.2.0` too and `run-static-analysis-format.sh` passes it nothing.
 
-**sccache runs through the hub's guarded launcher on Linux** (since 2026-10-06). The
-hub's `Cache.cmake` sets both compiler launchers to the bare `sccache` it finds, and a
+**sccache runs through the hub's guarded launcher on Linux** (since 2026-10-06). A
 bare sccache fails every compile once its server is unreachable: run 37509585546's
 profiling job died with `sccache: error: Connection to server timed out` on each one.
-`myproject_local_options` (`cmake/ProjectOptions.cmake`) therefore swaps both launchers
-for the hub's `linux/scripts/01-core/sccache-launcher.sh`, which retries once and then
-compiles directly, and says so in the log. That covers every Linux CMake build, the
+The hub's `Cache.cmake` therefore hands both compiler launchers its
+`linux/scripts/01-core/sccache-launcher.sh`, which retries once and then compiles
+directly, and says so in the log. BB did that swap itself in `cmake/ProjectOptions.cmake`
+until 2026-10-10; the hub has done it since 5710cf9e. That covers every Linux CMake build, the
 riscv64 cross build included. The GCC presets use ccache, and Windows keeps
 `sccache.exe`: the hub has no guarded launcher for either.
 
@@ -671,7 +671,7 @@ suggested cadence live in
 [`docs/code-quality.md`](docs/code-quality.md).
 
 **clang-format is a failing gate since 2026-10-06**, graded by the pinned LLVM's
-clang-format (the hub's `LLVM_RELEASE`, 23.1.1) on both lanes: the Windows x64 lane's
+clang-format (the hub's `LLVM_RELEASE`, 23.1.3 since 2026-10-10) on both lanes: the Windows x64 lane's
 `Build-Windows.ps1` step and the Linux `static-analysis` job's
 `run-static-analysis-format.sh --only-format-check`, which prefers
 `/usr/local/llvm-target/bin/clang-format` because the image's PATH one may still be the

@@ -129,26 +129,6 @@ macro(myproject_local_options)
 
   myproject_apply_unity_pch_cache(myproject_options)
 
-  # Cache.cmake hands CMake the bare sccache, which fails every compile once its server is gone (run 37509585546).
-  if(NOT WIN32 AND CMAKE_CXX_COMPILER_LAUNCHER MATCHES "(^|/)sccache$")
-    cmake_path(
-      SET
-      _myproject_guarded_sccache
-      NORMALIZE
-      "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}/../linux/scripts/01-core/sccache-launcher.sh")
-    if(NOT EXISTS "${_myproject_guarded_sccache}")
-      message(FATAL_ERROR "The hub's guarded sccache launcher is missing: ${_myproject_guarded_sccache}")
-    endif()
-    set(CMAKE_C_COMPILER_LAUNCHER
-        "${_myproject_guarded_sccache}"
-        CACHE STRING "C compiler cache launcher" FORCE)
-    set(CMAKE_CXX_COMPILER_LAUNCHER
-        "${_myproject_guarded_sccache}"
-        CACHE STRING "CXX compiler cache launcher" FORCE)
-    message(STATUS "sccache runs through the guarded launcher ${_myproject_guarded_sccache}")
-    unset(_myproject_guarded_sccache)
-  endif()
-
   if(NOT
      CMAKE_BUILD_TYPE
      STREQUAL
