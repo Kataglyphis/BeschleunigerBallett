@@ -97,20 +97,22 @@ still needs the host.
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.
   - **The GUI input sweep** stays out of every CI lane for time (`docs/gpu-golden-testing.md`).
-  - **Windows arm64 runs its GPU suites unvalidated.** `-StageTests` stages the image's
-    validation layer from `C:\runtime\vulkan-layers` on both arches. The hub builds the
-    arm64 layer there (CON64, in source 2026-10-06), so arm64 validates once a republished
-    `:winarm64` carries it; until then it warns.
+  - **Three path-tracing tests do not finish on riscv64** (the weekly run below).
   - By design, not gaps: TSan is Linux-only (clang-cl has none), coverage is measured on
     Linux only, the Pester suites test Windows scripts on Windows x64, and
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
-- [b] **Check the first weekly riscv64 GPU run against its shard ceilings** (S, waiting on
-  Saturday 2026-10-10's scheduled run, or a `gpu-tests` dispatch of `linux-riscv64.yml`).
-  Only 17 GPU tests and `PathTracingAccumulatesAndConverges` have riscv64 times; the other
-  shards' lengths are estimates from the x64 lane (AGENTS.md § The riscv64 lane). Read each
-  shard's time: the `raster` estimate is about 3.5 h, and whether
-  `PathTracingAntiAliasesGeometricEdges` finishes inside its 300 min is unknown. Rebalance
-  in `run-riscv64-tests.sh` if a shard comes close to its job's 6 h.
+- [b] **Three riscv64 GPU shards outrun a job; owner decision** (M). The first weekly run
+  (2026-10-10, run 38015523987) timed three solo shards out at ctest's 18000 s, the most a
+  6 h job leaves: `PathTracedMaskCardShowsItsCutout`, `PathTracingPassesTheWhiteFurnaceTest`
+  and `AddedModelAppearsInPathTracing` (job times 333, 327 and 327 min). Every other shard
+  passed: `raster` 166 min, `PathTracingAntiAliasesGeometricEdges` 168, `PathTracingRespondsToTheDirectionalLight`
+  94, `PathTracingAccumulatesAndConverges` 92, `clouds` 90, `ReloadedModelIsVisibleInPathTracing`
+  84, `PathTracingHonorsTheQualityControls` 77, `RaytracingFrameSkipsTheRasterPass` 59.
+  Longer ceilings are not on offer, so the choice is the owner's:
+  - Measure how far each of the three gets, then give it a smaller riscv64 workload (fewer
+    samples or a smaller image) with its own references.
+  - Or run them on a native riscv64 board instead of QEMU.
+  - Or list them as by-design riscv64 gaps, with the measurement as the reason.
 
 ---
 

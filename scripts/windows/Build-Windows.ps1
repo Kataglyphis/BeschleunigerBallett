@@ -403,20 +403,13 @@ try {
         }
         Copy-Item -LiteralPath $staged -Destination $tests
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
-        # The image's layer for the target arch lets Invoke-LavapipeTests.ps1 validate the Release suite (hub CON64).
+        # The image's layer for the target arch lets Invoke-LavapipeTests.ps1 validate the Release suite; both images carry it (hub CON64).
         $layerSource = 'C:\runtime\vulkan-layers'
-        # A :winamd64 older than CON64 has only the SDK's copy, the same version.
-        if (-not $isCross -and -not (Test-Path -LiteralPath (Join-Path $layerSource 'VkLayer_khronos_validation.json'))) { $layerSource = Join-Path ([string]$env:VULKAN_SDK) 'Bin' }
         $layerFiles = @('VkLayer_khronos_validation.dll', 'VkLayer_khronos_validation.json') | ForEach-Object { Join-Path $layerSource $_ }
         $missing = @($layerFiles | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
-        if ($missing.Count -eq 0) {
-          $layerDir = New-Item -ItemType Directory -Force -Path (Join-Path $tests 'vulkan-layers')
-          Copy-Item -LiteralPath $layerFiles -Destination $layerDir
-        } elseif ($isCross) {
-          Write-Warning "No $TargetArch validation layer in this image ($layerSource): its GPU suites run unvalidated until :winarm64 carries one (hub CON64)."
-        } else {
-          throw "No Vulkan validation layer to stage (VULKAN_SDK='$env:VULKAN_SDK'): $($missing -join ', ')"
-        }
+        if ($missing.Count -gt 0) { throw "No $packageArch Vulkan validation layer in this image to stage: $($missing -join ', '); pull a :winamd64 or :winarm64 published on or after 2026-10-08" }
+        $layerDir = New-Item -ItemType Directory -Force -Path (Join-Path $tests 'vulkan-layers')
+        Copy-Item -LiteralPath $layerFiles -Destination $layerDir
         # The Debug (ASan) suite cannot run in the container on a cross build; it rides along, runtime DLLs beside it (the runner has no redist).
         if ($isCross -and (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations)) {
           $asanSuite = Join-Path $buildPathClangDebug 'commitTestSuite.exe'
