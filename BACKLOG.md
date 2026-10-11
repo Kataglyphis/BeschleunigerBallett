@@ -103,14 +103,20 @@ still needs the host.
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
 - [b] **Three riscv64 GPU shards outrun a job; owner decision** (M). The first weekly run
   (2026-10-10, run 38015523987) timed three solo shards out at ctest's 18000 s, the most a
-  6 h job leaves: `PathTracedMaskCardShowsItsCutout`, `PathTracingPassesTheWhiteFurnaceTest`
-  and `AddedModelAppearsInPathTracing` (job times 333, 327 and 327 min). Every other shard
-  passed: `raster` 166 min, `PathTracingAntiAliasesGeometricEdges` 168, `PathTracingRespondsToTheDirectionalLight`
-  94, `PathTracingAccumulatesAndConverges` 92, `clouds` 90, `ReloadedModelIsVisibleInPathTracing`
-  84, `PathTracingHonorsTheQualityControls` 77, `RaytracingFrameSkipsTheRasterPass` 59.
-  Longer ceilings are not on offer, so the choice is the owner's:
-  - Measure how far each of the three gets, then give it a smaller riscv64 workload (fewer
-    samples or a smaller image) with its own references.
+  6 h job leaves: `PathTracedMaskCardShowsItsCutout`, `AddedModelAppearsInPathTracing` and
+  `PathTracingPassesTheWhiteFurnaceTest` (jobs of 334, 328 and 327 min). The other eight
+  shards passed; their times, and the per-frame cost behind all eleven, are in AGENTS.md
+  § The riscv64 lane. How far the three got, read from their log timestamps:
+  - the mask card went in after 173 min (69 frames at 148 s each), and the test stopped
+    about 12 frames (30 min) short of its 133;
+  - the added model went in after 221 min (69 frames at 189 s each), 39 frames (2 h) short;
+  - the furnace (86 frames at 16 bounces) logs nothing between its BLAS and the timeout.
+
+  On the run's fastest runner they would take 180-220 min, on its slowest 350-425 min, so no
+  ceiling fixes them: the runner a shard lands on decides. The choice is the owner's:
+  - A smaller riscv64 workload with its own references. At about 190 s a frame on a slow
+    runner, 300 min hold about 90 path-traced frames. The x64 lane renders the same
+    estimator at about 1 s a frame, so a reduced variant's margins can be measured there.
   - Or run them on a native riscv64 board instead of QEMU.
   - Or list them as by-design riscv64 gaps, with the measurement as the reason.
 

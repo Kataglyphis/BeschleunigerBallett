@@ -827,44 +827,74 @@ container half, `scripts/linux/run-riscv64-tests.sh`, calls the hub's `riscv64_c
 precompiles the Slang shaders on the host, builds the `linux-riscv64-cross` preset (Debug,
 `$env{RISCV64_CMAKE_TOOLCHAIN_FILE}`, `Rust_CARGO_TARGET=riscv64gc-unknown-linux-gnu`) and
 runs ctest. binfmt executes the riscv64 binaries, so gtest discovery and ctest need no
-emulator wrapper. The mechanism is the hub's:
+emulator wrapper: the hub toolchain's `CMAKE_CROSSCOMPILING_EMULATOR` is a pass-through
+`/usr/bin/env`. The mechanism is the hub's:
 [`riscv64-cross-test-lanes.md`](third_party/ANTfrastructure/docs/riscv64-cross-test-lanes.md).
 
-- **What runs:** 657 of the 699 Debug tests, against the image's riscv64 Vulkan loader,
-  GLFW and Rust renderer bridge. Measured 2026-10-01 on a 32-core host: 13 min end to end
-  from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
-- **The GPU suites run weekly, in shards** (owner decision 2026-10-06). A push runs the
-  CPU suites only (about 30 min). `Integration.` and `GoldenRender.` run serially
-  (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so` `LD_PRELOAD` built from
-  `scripts/riscv64/fp16_helpers.c` (riscv64 glibc lacks the fp16 conversion helpers
-  llvmpipe's ORC JIT calls). On a 32-core host they pass (35/40 measured 2026-10-03 at
-  `-j8`, whose five misses were contention; a heavy path-tracing test took 23 min at
-  `-j1`). On a 4-vCPU runner serially they need about 14 h against the 6 h job limit:
-  run 37229293578 spent 28 min on the build and the CPU suites, about 95 min on the first
-  17 GPU tests, 6810 s on `PathTracingAccumulatesAndConverges`, then hit the 7200 s
-  ceiling on `PathTracingAntiAliasesGeometricEdges`. Every run from d977113a on was
-  cancelled, so the lane gave no signal at all.
+- **What runs:** 700 of the 703 Debug tests, against the image's riscv64 Vulkan loader,
+  GLFW and Rust renderer bridge; the GUI input sweep is excluded everywhere and two goldens
+  are disabled. A push runs the 658 CPU tests (523 s of ctest, 32 min end to end in run
+  38165366757), the weekly shards the 42 GPU tests. Measured 2026-10-01 on a 32-core host:
+  13 min end to end from a cold build at `-j8`, of which ctest is 415 s (serial, as in the
+  x64 lane).
+- **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
+  `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
+  `LD_PRELOAD` built from `scripts/riscv64/fp16_helpers.c` (riscv64 glibc lacks the fp16
+  conversion helpers llvmpipe's ORC JIT calls). A shard log's `cannot be preloaded` lines
+  are noise from the x86_64 `ctest` and that `env`; the riscv64 test loads the shim. On a
+  32-core host the suites pass (35/40 measured 2026-10-03 at `-j8`, whose five misses were
+  contention; a heavy path-tracing test took 23 min at `-j1`). One 4-vCPU runner would need
+  about a day: the eight shards that pass below add up to 10.4 h of ctest. The serial lane
+  before the shards hit its 7200 s ceiling on `PathTracingAntiAliasesGeometricEdges` after
+  5 h (run 37229293578), and every run from d977113a on was cancelled, so the lane gave no
+  signal at all.
 - **The shards.** `linux-riscv64.yml` has a `schedule:` (Saturdays 01:43 UTC) and a
   `gpu-tests` input on `workflow_dispatch`. Either one skips the CPU job and fans out one
   job per shard; `run-riscv64-tests.sh --list-gpu-shards` prints the matrix, so the list
   has one home. `RISCV64_GPU_SHARD` picks the shard inside the container:
-  - `raster`: every GPU test that is not in another shard (32 today), 90 min per test;
+  - `raster`: every GPU test that is not in another shard (33 today, two of them
+    disabled), 90 min per test;
   - `clouds`: the two cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the eight path-traced tests (the five
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
     `AddedModelAppearsInPathTracing`, `ReloadedModelIsVisibleInPathTracing`) and for
     `RaytracingFrameSkipsTheRasterPass`, the costliest ray-traced one.
 
-  The split follows the x64 lane's times: under QEMU a raster test costs a few minutes
-  plus about 13x its x64 time, a compute-heavy one about 58x (6810 s against 118 s for
-  `PathTracingAccumulatesAndConverges`). By that ratio the clouds pair and
-  `RaytracingFrameSkipsTheRasterPass` alone would push one shared shard past 6 h.
-  Each shard cross-builds for itself (about 20 min), because the hub's reusable lane takes
-  no build artifact; the 11 jobs restore the push lane's `riscv64-clang-debug` cache and,
-  off a push, never save it. The CPU and GPU runs sit in different concurrency groups, so
-  a push cannot cancel the weekly run. `ctest --no-tests=error` fails a shard whose filter
-  matches nothing, and an unknown shard name stops before the build. `RISCV64_GPU_SHARD=all`
-  is the old serial lane (CPU suites, then every GPU test), for a local host.
+  The first weekly run (38015523987, 2026-10-10, at 40d485f8), against a 360 min job:
+
+  | Shard | ctest | Job | Result |
+  | --- | --- | --- | --- |
+  | `PathTracingAntiAliasesGeometricEdges` | 145 min | 168 min | passed |
+  | `raster` (31 tests) | 134 min | 167 min | passed |
+  | `PathTracingRespondsToTheDirectionalLight` | 71 min | 95 min | passed |
+  | `PathTracingAccumulatesAndConverges` | 68 min | 93 min | passed |
+  | `clouds` | 66 min | 90 min | passed |
+  | `ReloadedModelIsVisibleInPathTracing` | 58 min | 84 min | passed |
+  | `PathTracingHonorsTheQualityControls` | 50 min | 77 min | passed |
+  | `RaytracingFrameSkipsTheRasterPass` | 32 min | 60 min | passed |
+  | `PathTracedMaskCardShowsItsCutout` | 300 min | 334 min | timed out |
+  | `AddedModelAppearsInPathTracing` | 300 min | 328 min | timed out |
+  | `PathTracingPassesTheWhiteFurnaceTest` | 300 min | 327 min | timed out |
+
+  Under QEMU a raster golden costs 11-24x its x64 time, or one to five minutes when it does
+  little but start up; `RaytracingFrameSkipsTheRasterPass` cost 17x, the clouds 22-28x and
+  the path-traced tests 32-200x. The path-traced frame is what does not fit: on the shadow
+  rig (1200x768, 8 samples, up to 8 bounces) one took 98-189 s, against about 1 s on x64.
+  The runner decides where in that range. On the four shards whose frames can be timed, a
+  frame took 0.23-0.27 times that runner's own ninja build, and the same 693 build steps
+  ran 391-731 s across the eleven runners. A ceiling therefore has to assume about 190 s a
+  frame, and 300 min then hold about 90 frames: `PathTracingAntiAliasesGeometricEdges`
+  renders 87 (145 min here, about 280 projected on the slowest runner). The three that time
+  out render 133 frames, or 86 at 16 bounces for the furnace, so they would pass on the
+  fastest runners (180-220 min) and cannot on the slowest (350-425 min); what to do about
+  them is open in [`BACKLOG.md`](BACKLOG.md).
+  Each shard cross-builds for itself (23-33 min before ctest starts), because the hub's
+  reusable lane takes no build artifact; the 11 jobs restore the push lane's
+  `riscv64-clang-debug` cache and, off a push, never save it. The CPU and GPU runs sit in
+  different concurrency groups, so a push cannot cancel the weekly run.
+  `ctest --no-tests=error` fails a shard whose filter matches nothing, and an unknown shard
+  name stops before the build. `RISCV64_GPU_SHARD=all` is the old serial lane (CPU suites,
+  then every GPU test), for a local host.
   `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` stays excluded everywhere.
   No ASan, UBSan, TSan or coverage: the cross clang has no riscv64 compiler-rt. That is
   also why `VulkanEngineCore`'s hard-wired Linux Debug `-fsanitize=address` skips a
