@@ -1616,7 +1616,7 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     harness.render_frame();
 
     // Shallow history looks "in between" from noise alone, which would pass vacuously.
-    harness.render_frames(path_traced_history(80, 50));
+    harness.render_frames(path_traced_history(80, 25));
 
     uint32_t width = 0;
     uint32_t height = 0;

@@ -119,7 +119,7 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
 | `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
 | `PathTracingPassesTheWhiteFurnaceTest` | 80 → 40 | mean 231.87, 1.0 within ±6 | 231.83, 1.0 | 225.6-237.6, 0.98 | albedo 0.9: 228.19, 0.869, fails |
-| `PathTracingAntiAliasesGeometricEdges` | 80 → 50 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0 of 312, fails |
+| `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
   outside the card stretch its bounding box (0.139). From 16 on it finds the full variant's box.
@@ -127,7 +127,9 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   0.055 at 24, 0.016 at 60. The furnace stays at 1.0 within ±6 from a history of 10, and the
   anti-aliasing golden separates at any depth: on one stream 249 of 312 columns blend in a
   2-frame accumulation against 62 through the pixel centre, 302 against 8 at 9 frames, and 312
-  against 0 from 25.
+  against 0 from 25. Its light history is therefore 25, not the 50 it started with: on riscv64
+  the 50-frame test alone took 2 h 12 min under QEMU (run 38210484163), and over the five
+  streams at 25 the jittered kernel blends 312 of 312 columns and the pixel-centred one 0-1.
 - **Why five streams.** riscv64's llvmpipe follows a different sample path wherever its floating
   point differs, so a margin has to hold across streams, not on one. The four extra streams (a
   seed offset in `path_tracing.slang`, not committed) give the light column's ranges.
@@ -143,7 +145,7 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   edge pixel is slab without jitter: per column it sits 0-3 levels inside the 42-44-level step,
   and 5-11 with jitter. More than 4 counts as blended, and more than half the columns must blend.
   Measured over the five streams, both variants: 312 of 312 columns jittered, 0 of 312 through
-  the pixel centre.
+  the pixel centre (0-1 at the light variant's 25 frames).
 - **Why not every edge.** The old oracle counted a partial pixel on any edge in the crop, and
   asked for 15 %: 81.4-82.4 % with jitter, 48.8-49.4 % without, so a kernel without jitter
   passed. Penumbrae on the ground (y 362 and 425) and a 1-px row of distant ground under the
