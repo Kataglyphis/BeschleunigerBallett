@@ -99,3 +99,8 @@ of 217 by the pinned 23.1.1.
 
 The hub pin of 2026-10-10 moved the gate to 23.1.3, which reads the same: 0 of 217 in
 `:winamd64` and in `:latest`.
+
+Since hub 0b774f12 (2026-10-12) `.clang-format` sets `ReflowComments: Never`, so clang-format
+leaves comments as written and a long one stays one line. It also stopped aligning a `//` line
+under the trailing comment above it, so the three such pairs in `VulkanDevice.cpp` and
+`VulkanInstance.cpp` became one line each. 0 of 217 deviate in `:latest`.

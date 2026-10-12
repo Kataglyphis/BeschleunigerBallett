@@ -55,8 +55,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     // Setup extensions the instance will use
     uint32_t glfw_extensions_count = 0;// GLFW may require multiple extensions
-    const char **glfw_extensions = nullptr;// Extensions passed as array of cstrings, so
-                                           // need pointer(array) to pointer
+    const char **glfw_extensions = nullptr;// an array of C strings, so a pointer to pointer
 
     // set GLFW extensions
     glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);

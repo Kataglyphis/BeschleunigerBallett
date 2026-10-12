@@ -81,7 +81,7 @@ ObjCBlockIndentWidth: 7
 ObjCSpaceAfterProperty: true
 ObjCSpaceBeforeProtocolList: false
 PointerAlignment: Right
-ReflowComments: true
+ReflowComments: Never
 SortIncludes: true
 SortUsingDeclarations: false
 SpaceAfterCStyleCast: false

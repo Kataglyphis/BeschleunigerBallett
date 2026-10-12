@@ -294,8 +294,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
           static_cast<uint32_t>(queue_family_index);// the index of the family to create a queue from
         queue_create_info.queueCount = 1;// number of queues to create
         queue_create_info.pQueuePriorities =
-          &queue_priorities[priority_index];// Vulkan needs to know how to handle multiple queues, so
-                                            // decide priority (1 = highest)
+          &queue_priorities[priority_index];// Vulkan schedules multiple queues by priority (1 = highest)
 
         queue_create_infos.push_back(queue_create_info);
         ++priority_index;
@@ -495,8 +494,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     vk::DeviceCreateInfo device_create_info{};
     device_create_info.queueCreateInfoCount =
       static_cast<uint32_t>(queue_create_infos.size());// number of queue create infos
-    device_create_info.pQueueCreateInfos = queue_create_infos.data();// list of queue create infos so device can
-                                                                     // create required queues
+    device_create_info.pQueueCreateInfos = queue_create_infos.data();// the device creates its queues from these
     device_create_info.enabledExtensionCount =
       static_cast<uint32_t>(extensions.size());// number of enabled logical device extensions
     device_create_info.ppEnabledExtensionNames = extensions.data();// list of enabled logical device extensions
