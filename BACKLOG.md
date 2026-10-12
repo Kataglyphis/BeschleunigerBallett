@@ -97,28 +97,19 @@ still needs the host.
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.
   - **The GUI input sweep** stays out of every CI lane for time (`docs/gpu-golden-testing.md`).
-  - **Three path-tracing tests do not finish on riscv64** (the weekly run below).
   - By design, not gaps: TSan is Linux-only (clang-cl has none), coverage is measured on
-    Linux only, the Pester suites test Windows scripts on Windows x64, and
-    `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only.
-- [b] **Three riscv64 GPU shards outrun a job; owner decision** (M). The first weekly run
-  (2026-10-10, run 38015523987) timed three solo shards out at ctest's 18000 s, the most a
-  6 h job leaves: `PathTracedMaskCardShowsItsCutout`, `AddedModelAppearsInPathTracing` and
-  `PathTracingPassesTheWhiteFurnaceTest` (jobs of 334, 328 and 327 min). The other eight
-  shards passed; their times, and the per-frame cost behind all eleven, are in AGENTS.md
-  § The riscv64 lane. How far the three got, read from their log timestamps:
-  - the mask card went in after 173 min (69 frames at 148 s each), and the test stopped
-    about 12 frames (30 min) short of its 133;
-  - the added model went in after 221 min (69 frames at 189 s each), 39 frames (2 h) short;
-  - the furnace (86 frames at 16 bounces) logs nothing between its BLAS and the timeout.
-
-  On the run's fastest runner they would take 180-220 min, on its slowest 350-425 min, so no
-  ceiling fixes them: the runner a shard lands on decides. The choice is the owner's:
-  - A smaller riscv64 workload with its own references. At about 190 s a frame on a slow
-    runner, 300 min hold about 90 path-traced frames. The x64 lane renders the same
-    estimator at about 1 s a frame, so a reduced variant's margins can be measured there.
-  - Or run them on a native riscv64 board instead of QEMU.
-  - Or list them as by-design riscv64 gaps, with the measurement as the reason.
+    Linux only, the Pester suites test Windows scripts on Windows x64,
+    `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only, and
+    riscv64 runs four path-traced goldens in their light variant: a shorter history, the
+    same thresholds (AGENTS.md § The riscv64 lane).
+- [ ] **Confirm the riscv64 light variant on its first runs** (S). The four light shards
+  (`PathTracedMaskCardShowsItsCutout`, `AddedModelAppearsInPathTracing`,
+  `PathTracingPassesTheWhiteFurnaceTest`, `PathTracingAntiAliasesGeometricEdges`) went out as
+  an `only-shards` dispatch of `linux-riscv64.yml` on 2026-10-12, and the weekly run takes
+  them from then on. Each must pass and log `path-traced variant: light`; its ctest should
+  take about 100 min on the fastest runners and 185-200 on the slowest (AGENTS.md § The
+  riscv64 lane). Drop this entry when they do. A shard over 250 min wants a shorter history,
+  measured on x64 first (docs/gpu-golden-testing.md § The riscv64 light variant).
 
 ---
 
@@ -206,6 +197,15 @@ been committed to.
 
 ## Testing and performance
 
+- **`PathTracingAntiAliasesGeometricEdges` passes without jitter.** On x64 lavapipe a kernel
+  that sends the primary ray through the pixel centre still has a partial pixel on 49 % of
+  its silhouette edges, against 82 % with jitter, and the test asks for 15 %, in the full
+  variant and the riscv64 light one alike. The other partial pixels are 1-px rows of the
+  scene (y 320, 362 and 425 of the 1200x768 frame), not blended silhouettes
+  (docs/gpu-golden-testing.md § The riscv64 light variant). A threshold near 65 % separates
+  the two; counting only the slab's silhouette against the sky (the row at y 56: 311 of 312
+  partial with jitter, 0 of 624 without) would not depend on the rest of the scene. Prove
+  either with the no-jitter control on every lane.
 - **Headless assertions for the shadow path** beyond the single darkened-pixel ratio, and for
   the post-processing chain. Both need careful oracle design (`docs/gpu-golden-testing.md`
   on why the tonemap is hard to isolate).

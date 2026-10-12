@@ -131,9 +131,10 @@ lifting the UNORM ceiling widened several of them dramatically):
 - `RaytracedWorldFollowsTheModelTransform` - a GUI move must change the
   traced image: 0.397 vs exactly 0 on a stale TLAS.
 - `PathTracingPassesTheWhiteFurnaceTest` - furnace-mode crop converges to
-  mean luminance ~205 (matching `aces_tonemap(1.0) * 255`) with >98% of
-  pixels within +-6 of that value; a biased estimator either drifts off
-  205 or leaves visible geometry in the (supposedly uniform) image.
+  mean luminance ~231.6 (`linear_to_srgb(aces_tonemap(1.0)) * 255`, since
+  `post.slang` encodes for the UNORM swapchain) with >98% of pixels within
+  +-6 of that value; a biased estimator either drifts off 231.6 or leaves
+  visible geometry in the (supposedly uniform) image.
 - `RaytracedLargeMeshDoesNotLoseTheDevice` - the RT pipeline must survive
   10 frames against the shipped large dinosaur-mesh debug scene; a
   diagnostic/regression guard scoping the `VK_ERROR_DEVICE_LOST` the PT

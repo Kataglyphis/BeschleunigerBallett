@@ -101,6 +101,49 @@ does it for either arch:
 (`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `glfwInit()` on X11 leaks
 libX11's locale state, which failed every GPU test in an ASan build.
 
+## The riscv64 light variant
+
+Under QEMU one path-traced frame costs up to about 190 s (AGENTS.md § The riscv64 lane), so
+four path-traced goldens accumulate a shorter history on riscv64.
+`KATAGLYPHIS_PT_GOLDEN_VARIANT=light` selects it, and only `scripts/linux/run-riscv64-tests.sh`
+sets it: every other lane runs the full variant. Any value but `full` or `light` fails the test.
+Each of the four logs the variant it ran, for example
+`path-traced variant: light, 24-frame history (full 60, light 24)`, and the riscv64 lane runs
+ctest with `-V`, so a passing shard shows the line too.
+
+The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, Debug clang build,
+2026-10-12:
+
+| Test | History, full → light | Full | Light, five RNG streams | Threshold | Light, property broken |
+| --- | --- | --- | --- | --- | --- |
+| `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
+| `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
+| `PathTracingPassesTheWhiteFurnaceTest` | 80 → 40 | mean 231.87, 1.0 within ±6 | 231.83, 1.0 | 225.6-237.6, 0.98 | albedo 0.9: 228.19, 0.869, fails |
+| `PathTracingAntiAliasesGeometricEdges` | 80 → 50 | 81.8 % partial | 81.2-82.1 % | 15 % | no jitter: 48.7 %, passes |
+
+- **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
+  outside the card stretch its bounding box (0.139). From 16 on it finds the full variant's box.
+  The added model's control picks up noise as the history shortens: 0.111 at 8, 0.078 at 16,
+  0.055 at 24, 0.016 at 60. The furnace stays at 1.0 within ±6 from a history of 10, and the
+  anti-aliasing fraction stays at 80-82 % from 20 to 80.
+- **Why five streams.** riscv64's llvmpipe follows a different sample path wherever its floating
+  point differs, so a margin has to hold across streams, not on one. The four extra streams (a
+  seed offset in `path_tracing.slang`, not committed) give the light column's ranges.
+- **The controls** are one-line edits, measured and reverted: the path tracer commits every
+  candidate without its alpha test, `addModel` skips the AS rebuild, the furnace albedo is 0.9,
+  and the primary ray goes through the pixel centre. The full variant fails the first three the
+  same way. The furnace band is wide: albedo 0.95 passes both variants (mean 230.1).
+- **The anti-aliasing golden does not catch a kernel without jitter, in either variant** (full:
+  49.2 %). Its other partial pixels are 1-px rows of the scene, at y 320, 362 and 425 of the
+  1200x768 frame, not blended silhouettes. BACKLOG.md has it.
+
+Locally:
+
+```bash
+KATAGLYPHIS_PT_GOLDEN_VARIANT=light bash ./scripts/linux/run-ctest.sh --virtual-display \
+  --build-dir build -- -V -R '^GoldenRender\.(PathTracedMaskCardShowsItsCutout|AddedModelAppearsInPathTracing|PathTracingPassesTheWhiteFurnaceTest|PathTracingAntiAliasesGeometricEdges)$'
+```
+
 ## Running them on the host GPU
 
 The container build delivers the built test executable back into the working

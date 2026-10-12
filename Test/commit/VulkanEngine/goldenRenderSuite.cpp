@@ -310,6 +310,19 @@ class ScopedGpuTimingJsonPath
     }
 };
 
+// run-riscv64-tests.sh sets "light", a QEMU frame budget; docs/gpu-golden-testing.md § The riscv64 light variant.
+int path_traced_history(int full_frames, int light_frames)
+{
+    const char *value = std::getenv("KATAGLYPHIS_PT_GOLDEN_VARIANT");
+    const std::string variant = (value == nullptr || *value == '\0') ? "full" : value;
+    EXPECT_TRUE(variant == "full" || variant == "light")
+      << "KATAGLYPHIS_PT_GOLDEN_VARIANT='" << variant << "' is neither 'full' nor 'light'";
+    const int frames = variant == "light" ? light_frames : full_frames;
+    GTEST_LOG_(INFO) << "path-traced variant: " << variant << ", " << frames << "-frame history (full " << full_frames
+                     << ", light " << light_frames << ")";
+    return frames;
+}
+
 #define SKIP_WITHOUT_GPU()                                                                                            \
     do {                                                                                                              \
         if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; } \
@@ -1600,7 +1613,7 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     harness.render_frame();
 
     // Shallow history looks "in between" from noise alone, which would pass vacuously.
-    harness.render_frames(80);
+    harness.render_frames(path_traced_history(80, 50));
 
     uint32_t width = 0;
     uint32_t height = 0;
@@ -2235,7 +2248,8 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     // Both captures get the same accumulated history, or PT noise alone changes pixels across the card's band.
-    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + 60);
+    const int history = path_traced_history(60, 24);
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + history);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
     // A: the base scene, before the card is added.
@@ -2254,7 +2268,7 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
     const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
-    harness.render_frames(SETTLE_FRAMES + 60);
+    harness.render_frames(SETTLE_FRAMES + history);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     // B: with the card.
@@ -2557,7 +2571,8 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     // The control gets the same accumulated history as the capture after the add, so noise reads alike in both.
-    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + 60);
+    const int history = path_traced_history(60, 24);
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES + history);
 
     uint32_t width = 0;
     uint32_t height = 0;
@@ -2568,7 +2583,7 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     ASSERT_TRUE(added.has_value()) << "adding the card failed";
     // The AS rebuild resets history; deepen it so noise does not swamp the detail.
     harness.render_frames(SETTLE_FRAMES);
-    harness.render_frames(60);
+    harness.render_frames(history);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     const std::vector<uint8_t> frame = harness.capture_frame(width, height);
@@ -2744,7 +2759,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     harness.render_frames(WARMUP_FRAMES);
 
     // Accumulate deep so per-frame noise is averaged well below the band.
-    harness.render_frames(80);
+    harness.render_frames(path_traced_history(80, 40));
 
     uint32_t width = 0;
     uint32_t height = 0;

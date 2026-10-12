@@ -851,7 +851,9 @@ emulator wrapper: the hub toolchain's `CMAKE_CROSSCOMPILING_EMULATOR` is a pass-
 - **The shards.** `linux-riscv64.yml` has a `schedule:` (Saturdays 01:43 UTC) and a
   `gpu-tests` input on `workflow_dispatch`. Either one skips the CPU job and fans out one
   job per shard; `run-riscv64-tests.sh --list-gpu-shards` prints the matrix, so the list
-  has one home. `RISCV64_GPU_SHARD` picks the shard inside the container:
+  has one home. A dispatch's `only-shards` input (comma-separated names from that list)
+  keeps only the shards it names, and a name off the list fails the step before any shard
+  starts. `RISCV64_GPU_SHARD` picks the shard inside the container:
   - `raster`: every GPU test that is not in another shard (33 today, two of them
     disabled), 90 min per test;
   - `clouds`: the two cloud goldens, 150 min per test;
@@ -883,11 +885,28 @@ emulator wrapper: the hub toolchain's `CMAKE_CROSSCOMPILING_EMULATOR` is a pass-
   The runner decides where in that range. On the four shards whose frames can be timed, a
   frame took 0.23-0.27 times that runner's own ninja build, and the same 693 build steps
   ran 391-731 s across the eleven runners. A ceiling therefore has to assume about 190 s a
-  frame, and 300 min then hold about 90 frames: `PathTracingAntiAliasesGeometricEdges`
-  renders 87 (145 min here, about 280 projected on the slowest runner). The three that time
-  out render 133 frames, or 86 at 16 bounces for the furnace, so they would pass on the
-  fastest runners (180-220 min) and cannot on the slowest (350-425 min); what to do about
-  them is open in [`BACKLOG.md`](BACKLOG.md).
+  frame, and 300 min then hold about 90 frames. In that run
+  `PathTracingAntiAliasesGeometricEdges` rendered 87 (145 min, about 280 projected on the
+  slowest runner), and the three that timed out render 133, or 86 at 16 bounces for the
+  furnace: they pass on the fastest runners (180-220 min) and cannot on the slowest
+  (350-425 min).
+
+  **So four path-traced goldens run a light variant on riscv64** (owner decision
+  2026-10-12). `run-riscv64-tests.sh` exports `KATAGLYPHIS_PT_GOLDEN_VARIANT=light` for the
+  GPU suites and runs ctest with `-V`; each of the four logs the variant it ran, and no
+  other lane sets it. They accumulate a shorter history and keep their thresholds:
+
+  | Shard | Frames, full → light | Slowest runner, light |
+  | --- | --- | --- |
+  | `PathTracedMaskCardShowsItsCutout` | 133 → 61 | about 200 min |
+  | `AddedModelAppearsInPathTracing` | 133 → 61 | about 200 min |
+  | `PathTracingPassesTheWhiteFurnaceTest` | 86 → 46 | about 195 min |
+  | `PathTracingAntiAliasesGeometricEdges` | 87 → 57 | about 185 min |
+
+  The projection takes 190 s a frame, and 1.3 times that for a furnace frame at 16 bounces
+  (the x64 ratio); the fastest runners need about half. The x64 measurements behind each
+  depth, with a negative control per test, are in
+  [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) § The riscv64 light variant.
   Each shard cross-builds for itself (23-33 min before ctest starts), because the hub's
   reusable lane takes no build artifact; the 11 jobs restore the push lane's
   `riscv64-clang-debug` cache and, off a push, never save it. The CPU and GPU runs sit in

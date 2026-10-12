@@ -2,7 +2,7 @@
 # run-riscv64-tests.sh - the riscv64 lane: Debug cross build on the amd64 image, ctest under QEMU; CPU suites per push, one GPU shard per weekly job (owner 2026-10-06).
 set -euo pipefail
 
-# Path-traced, ray-traced and cloud tests run ~58x their x64 time under QEMU, so each solo test is a weekly job of its own.
+# Under QEMU the path-traced tests cost 32-200x their x64 time and the ray-traced one 17x, so each is a weekly job of its own.
 RISCV64_GPU_SOLO_TESTS=(
   PathTracingAccumulatesAndConverges
   PathTracingAntiAliasesGeometricEdges
@@ -19,9 +19,17 @@ RISCV64_GPU_SWEEP_TEST='GuiInputSweepNeverCrashesOrLosesTheDevice'
 
 # The weekly matrix reads its shards here, before any hub library loads, so the list has one home.
 if [[ "${1:-}" == "--list-gpu-shards" ]]; then
-  printf '["raster","clouds"'
-  printf ',"%s"' "${RISCV64_GPU_SOLO_TESTS[@]}"
-  printf ']\n'
+  shards=(raster clouds "${RISCV64_GPU_SOLO_TESTS[@]}")
+  # A dispatch may name a subset (comma-separated); a name off the list fails before any job starts.
+  if [[ -n "${2:-}" ]]; then
+    IFS=',' read -r -a wanted <<<"${2// /}"
+    for name in "${wanted[@]}"; do
+      [[ " ${shards[*]} " == *" ${name} "* ]] || { echo "unknown GPU shard '${name}'" >&2; exit 2; }
+    done
+    shards=("${wanted[@]}")
+  fi
+  json="$(printf '"%s",' "${shards[@]}")"
+  printf '[%s]\n' "${json%,}"
   exit 0
 fi
 
@@ -38,7 +46,7 @@ BUILD_DIR="build-riscv64"
 CTEST_GPU_SUITES='^(Integration|GoldenRender)\.'
 RISCV64_GPU_SHARD="${RISCV64_GPU_SHARD:-}"
 
-# Ceilings leave a solo test ~5 h of the 6 h job after the ~20 min cross build; the measured times are in AGENTS.md.
+# Ceilings leave a solo test 300 of the job's 360 min after the 23-33 min cross build; the measured times are in AGENTS.md.
 riscv64_gpu_shard_args() {
   local shard="$1" solo_tests
   solo_tests="$(IFS='|'; printf '%s' "${RISCV64_GPU_SOLO_TESTS[*]}")"
@@ -92,8 +100,11 @@ mkdir -p "${GPU_SHIM_DIR}"
 info "[gpu] building the fp16 shim for shard ${RISCV64_GPU_SHARD}"
 "${RISCV64_CROSS_BIN}/riscv64-linux-gnu-clang" -shared -fPIC -O2 "${SCRIPT_DIR}/../riscv64/fp16_helpers.c" -o "${GPU_SHIM_DIR}/libkata_fp16_helpers.so"
 test -f "${GPU_SHIM_DIR}/libkata_fp16_helpers.so" || { err "[gpu] the shim did not build - refusing an unshimmed run"; exit 1; }
-# --no-tests=error: a shard whose filter matches nothing must fail, not pass empty.
+# The full path-traced histories outrun 300 min on a slow runner; docs/gpu-golden-testing.md § The riscv64 light variant.
+export KATAGLYPHIS_PT_GOLDEN_VARIANT="${KATAGLYPHIS_PT_GOLDEN_VARIANT:-light}"
+info "[gpu] path-traced goldens: KATAGLYPHIS_PT_GOLDEN_VARIANT=${KATAGLYPHIS_PT_GOLDEN_VARIANT}"
+# --no-tests=error: a shard whose filter matches nothing must fail, not pass empty; -V keeps a passing test's log, variant line included.
 xvfb-run -a -s "-screen 0 1920x1080x24" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \
   ctest --test-dir "${TEST_DIR}" -C Debug -j1 "${CTEST_GPU_ARGS[@]}" \
-    --no-tests=error --output-on-failure
+    --no-tests=error --output-on-failure -V

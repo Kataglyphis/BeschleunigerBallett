@@ -10,7 +10,7 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main, develop]
-  # Serial on a 4-vCPU runner the GPU suites need ~14 h, so they never ride a push.
+  # Serial on one 4-vCPU runner the GPU suites need about a day (AGENTS.md § The riscv64 lane), so they never ride a push.
   schedule:
     - cron: '43 1 * * 6'
   workflow_dispatch:
@@ -19,6 +19,10 @@ on:
         description: Run the weekly GPU shards instead of the CPU suites (each shard cross-builds; up to 6 h)
         type: boolean
         default: false
+      only-shards:
+        description: With gpu-tests, only these shards (comma-separated names from --list-gpu-shards; empty runs all)
+        type: string
+        default: ''
 
 # main is exempt from cancellation: its runs deploy and release. The GPU run has its own group, so a push cannot cancel it.
 concurrency:
@@ -59,9 +63,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: List the GPU shards
         id: list
-        run: echo "shards=$(bash ./scripts/linux/run-riscv64-tests.sh --list-gpu-shards)" >> "${GITHUB_OUTPUT}"
+        env:
+          ONLY_SHARDS: ${{ inputs.only-shards }}
+        # Its own assignment, so an unknown shard name fails the step instead of an empty matrix.
+        run: |
+          shards="$(bash ./scripts/linux/run-riscv64-tests.sh --list-gpu-shards "${ONLY_SHARDS}")"
+          echo "shards=${shards}" >> "${GITHUB_OUTPUT}"
 
-  # Every shard cross-builds for itself (~20 min): the hub's reusable lane takes no build artifact.
+  # Every shard cross-builds for itself (23-33 min): the hub's reusable lane takes no build artifact.
   gpu-riscv64:
     needs: gpu-shards
     strategy:
