@@ -1,9 +1,12 @@
 // CPU-only pixel metrics for the goldens, so goldenMetricsSuite.cpp can test them without a GPU.
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 namespace Kataglyphis::Test::GoldenMetrics {
@@ -82,6 +85,43 @@ inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint
         }
     }
     return total > 0U ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
+}
+
+// Measured on the shadow rig: the slab is 42-44 levels off the sky, a jittered edge pixel 5-11 inside, a centred 0-3.
+constexpr double SKY_SILHOUETTE_STEP = 20.0;
+constexpr double SKY_SILHOUETTE_BLEND_MARGIN = 4.0;
+
+// The first silhouette below the sky, per column: `columns` crossed it, `blended` had a pixel between sky and object.
+struct SkySilhouette
+{
+    size_t columns = 0;
+    size_t blended = 0;
+    uint32_t first_row = std::numeric_limits<uint32_t>::max();
+    uint32_t last_row = 0;
+};
+
+// Walks down from the crop's top, which must be sky; a step there is geometry, never a shadow or texture edge.
+inline SkySilhouette sky_silhouette(const std::vector<uint8_t> &rgba, uint32_t w, Crop crop)
+{
+    SkySilhouette result;
+    for (uint32_t x = crop.x0; x < crop.x1; ++x) {
+        const auto lum = [&](uint32_t y) { return luminance_of(rgba, static_cast<size_t>(y) * w + x); };
+        uint32_t row = crop.y0 + 1U;
+        while (row + 2U < crop.y1 && std::abs(lum(row) - lum(row - 1U)) <= SKY_SILHOUETTE_BLEND_MARGIN) { ++row; }
+        if (row + 2U >= crop.y1) { continue; }
+        const double sky = lum(row - 1U);
+        // Two rows down: past a blend that straddles two rows, and still on the object.
+        const double object = lum(row + 2U);
+        if (std::abs(object - sky) <= SKY_SILHOUETTE_STEP) { continue; }
+        ++result.columns;
+        result.first_row = std::min(result.first_row, row);
+        result.last_row = std::max(result.last_row, row);
+        const double edge = lum(row);
+        const double lo = std::min(sky, object);
+        const double hi = std::max(sky, object);
+        if (edge > lo + SKY_SILHOUETTE_BLEND_MARGIN && edge < hi - SKY_SILHOUETTE_BLEND_MARGIN) { ++result.blended; }
+    }
+    return result;
 }
 
 }// namespace Kataglyphis::Test::GoldenMetrics

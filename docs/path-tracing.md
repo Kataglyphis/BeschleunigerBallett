@@ -118,11 +118,14 @@ lifting the UNORM ceiling widened several of them dramatically):
 - `PathTracingAccumulatesAndConverges` - consecutive-frame changed-pixel
   fraction in a GUI-free crop: 7.6e-3 early, 3.1e-5 late; the
   frame-invariant seed measures exactly 0 early and fails.
-- `PathTracingAntiAliasesGeometricEdges` - triples of pixels straddling a
-  shadow-rig silhouette edge in a GUI-free crop must sometimes have a
-  middle pixel strictly between the two flat luminances either side (a
-  jittered, accumulated primary ray blends fg/bg at the boundary); a
-  pixel-centre-only kernel gives hard transitions with no partial pixel.
+- `PathTracingAntiAliasesGeometricEdges` - the shadow rig's slab against
+  the sky, found per column of a GUI-free crop as the first step below the
+  sky: a jittered, accumulated primary ray leaves a pixel between sky and
+  slab on that edge in 312 of 312 columns, and a pixel-centre-only kernel
+  in none, so it fails. Every edge in the crop was the oracle until
+  2026-10-12, and a pixel-centre kernel passed it: penumbrae and a 1-px
+  row of distant ground sit between their neighbours without jitter too
+  (`gpu-golden-testing.md` § The riscv64 light variant).
 - `PathTracingRespondsToTheDirectionalLight` - radiance 10 vs 0 on the
   shadow rig: swung fraction 0.751 (0.027 pre-HDR - the ceiling hid three
   quarters of the response) vs exactly 0 for the pre-NEE kernel.

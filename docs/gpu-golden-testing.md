@@ -119,23 +119,38 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
 | `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
 | `PathTracingPassesTheWhiteFurnaceTest` | 80 → 40 | mean 231.87, 1.0 within ±6 | 231.83, 1.0 | 225.6-237.6, 0.98 | albedo 0.9: 228.19, 0.869, fails |
-| `PathTracingAntiAliasesGeometricEdges` | 80 → 50 | 81.8 % partial | 81.2-82.1 % | 15 % | no jitter: 48.7 %, passes |
+| `PathTracingAntiAliasesGeometricEdges` | 80 → 50 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0 of 312, fails |
 
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
   outside the card stretch its bounding box (0.139). From 16 on it finds the full variant's box.
   The added model's control picks up noise as the history shortens: 0.111 at 8, 0.078 at 16,
   0.055 at 24, 0.016 at 60. The furnace stays at 1.0 within ±6 from a history of 10, and the
-  anti-aliasing fraction stays at 80-82 % from 20 to 80.
+  anti-aliasing golden separates at any depth: on one stream 249 of 312 columns blend in a
+  2-frame accumulation against 62 through the pixel centre, 302 against 8 at 9 frames, and 312
+  against 0 from 25.
 - **Why five streams.** riscv64's llvmpipe follows a different sample path wherever its floating
   point differs, so a margin has to hold across streams, not on one. The four extra streams (a
   seed offset in `path_tracing.slang`, not committed) give the light column's ranges.
 - **The controls** are one-line edits, measured and reverted: the path tracer commits every
   candidate without its alpha test, `addModel` skips the AS rebuild, the furnace albedo is 0.9,
-  and the primary ray goes through the pixel centre. The full variant fails the first three the
-  same way. The furnace band is wide: albedo 0.95 passes both variants (mean 230.1).
-- **The anti-aliasing golden does not catch a kernel without jitter, in either variant** (full:
-  49.2 %). Its other partial pixels are 1-px rows of the scene, at y 320, 362 and 425 of the
-  1200x768 frame, not blended silhouettes. BACKLOG.md has it.
+  and the primary ray goes through the pixel centre. The full variant fails all four the same
+  way. The furnace band is wide: albedo 0.95 passes both variants (mean 230.1).
+- **The anti-aliasing golden reads one edge: the slab's top against the sky** (owner decision
+  2026-10-12), at y 56 of the 1200x768 frame. `sky_silhouette` (`GoldenMetrics.hpp`) walks each
+  column of the panel-free crop down from the sky to its first step of more than 20 levels, so
+  the measurement follows the edge if the framing moves, and the test fails when fewer than half
+  the columns cross one. The sky is analytic and the slab's front face is seen head-on, so the
+  edge pixel is slab without jitter: per column it sits 0-3 levels inside the 42-44-level step,
+  and 5-11 with jitter. More than 4 counts as blended, and more than half the columns must blend.
+  Measured over the five streams, both variants: 312 of 312 columns jittered, 0 of 312 through
+  the pixel centre.
+- **Why not every edge.** The old oracle counted a partial pixel on any edge in the crop, and
+  asked for 15 %: 81.4-82.4 % with jitter, 48.8-49.4 % without, so a kernel without jitter
+  passed. Penumbrae on the ground (y 362 and 425) and a 1-px row of distant ground under the
+  sky (y 320) sit between their neighbours with or without jitter.
+- **The no-jitter control stays in the suite.** `GoldenMetrics.SkySilhouetteRejectsAPixelCentredEdge`
+  runs `sky_silhouette` over a frame with the levels measured here and a pixel-centred edge pixel,
+  and must find none blended; it needs no GPU, so every lane runs it.
 
 Locally:
 

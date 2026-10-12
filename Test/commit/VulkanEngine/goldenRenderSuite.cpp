@@ -56,6 +56,9 @@ using Kataglyphis::Test::GoldenMetrics::detail_fraction;
 using Kataglyphis::Test::GoldenMetrics::luminance_of;
 using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
 using Kataglyphis::Test::GoldenMetrics::panel_free_crop;
+using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
+using Kataglyphis::Test::GoldenMetrics::SKY_SILHOUETTE_STEP;
+using Kataglyphis::Test::GoldenMetrics::SkySilhouette;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
 
 constexpr int WINDOW_WIDTH = 1200;
@@ -1621,48 +1624,25 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(frame.empty());
 
-    // Triples take fg and bg from the same local edge; columns too, since the rig's edges are mostly horizontal.
+    // Only the slab's top edge against the sky: penumbrae and the ground's 1-px far-edge row sit in between unjittered.
     const Crop crop = panel_free_crop(width, height);
-    constexpr double EDGE_JUMP = 40.0;
-    constexpr double PARTIAL_MARGIN = 6.0;
-    size_t edges_found = 0;
-    size_t edges_with_partial_pixel = 0;
-    const auto classify_triple = [&](double before, double mid, double after) {
-        const double lo = std::min(before, after);
-        const double hi = std::max(before, after);
-        if (hi - lo <= EDGE_JUMP) { return; }
-        ++edges_found;
-        if (mid > lo + PARTIAL_MARGIN && mid < hi - PARTIAL_MARGIN) { ++edges_with_partial_pixel; }
-    };
-    for (uint32_t y = crop.y0; y < crop.y1; ++y) {
-        for (uint32_t x = crop.x0 + 1U; x + 1U < crop.x1; ++x) {
-            classify_triple(luminance_of(frame, static_cast<size_t>(y) * width + (x - 1U)),
-              luminance_of(frame, static_cast<size_t>(y) * width + x),
-              luminance_of(frame, static_cast<size_t>(y) * width + (x + 1U)));
-        }
-    }
-    for (uint32_t x = crop.x0; x < crop.x1; ++x) {
-        for (uint32_t y = crop.y0 + 1U; y + 1U < crop.y1; ++y) {
-            classify_triple(luminance_of(frame, static_cast<size_t>(y - 1U) * width + x),
-              luminance_of(frame, static_cast<size_t>(y) * width + x),
-              luminance_of(frame, static_cast<size_t>(y + 1U) * width + x));
-        }
-    }
+    const SkySilhouette silhouette = sky_silhouette(frame, width, crop);
+    const size_t crop_columns = crop.x1 - crop.x0;
+    GTEST_LOG_(INFO) << "slab-vs-sky silhouette: rows " << silhouette.first_row << "-" << silhouette.last_row << ", "
+                     << silhouette.columns << " of " << crop_columns << " columns, " << silhouette.blended
+                     << " with a blended pixel";
 
-    ASSERT_GT(edges_found, 0U)
-      << "No silhouette edge (a >40-level luminance jump between neighbours) found in the panel-free "
-         "crop - the shadow rig's box/ground/sky boundary should always produce one; check the crop or rig.";
+    ASSERT_GE(silhouette.columns * 2U, crop_columns)
+      << "The slab's top edge against the sky (a step of more than " << SKY_SILHOUETTE_STEP
+      << " levels below the sky at the top of the panel-free crop) crosses only " << silhouette.columns << " of "
+      << crop_columns << " columns; check the crop, the rig or the golden framing.";
 
-    const double partial_fraction = static_cast<double>(edges_with_partial_pixel) / static_cast<double>(edges_found);
-    GTEST_LOG_(INFO) << "silhouette edges found: " << edges_found
-                     << ", with a partial (intermediate-luminance) pixel: " << edges_with_partial_pixel << " ("
-                     << (partial_fraction * 100.0) << "%)";
-
-    // Measured: wide margin between the jittered kernel and a pixel-centre-only revert.
-    EXPECT_GT(partial_fraction, 0.15)
-      << "Almost none of this frame's silhouette edges have a partial (blended) pixel between the "
-         "foreground and background luminance - the primary ray is landing on the exact pixel centre "
-         "every sample instead of being jittered across the pixel's area.";
+    const double blended_fraction = static_cast<double>(silhouette.blended) / static_cast<double>(silhouette.columns);
+    // Measured on x64 lavapipe: about 1.0 jittered, 0.0 through the pixel centre, in both variants.
+    EXPECT_GT(blended_fraction, 0.5)
+      << "Only " << (blended_fraction * 100.0)
+      << "% of the slab's silhouette against the sky has a blended pixel between sky and slab - the primary ray "
+         "lands on the exact pixel centre every sample instead of being jittered across the pixel's area.";
 }
 
 // Path tracing does NEE toward the GUI light, so zero radiance must darken the GUI-free right edge hard.

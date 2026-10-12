@@ -197,15 +197,6 @@ been committed to.
 
 ## Testing and performance
 
-- **`PathTracingAntiAliasesGeometricEdges` passes without jitter.** On x64 lavapipe a kernel
-  that sends the primary ray through the pixel centre still has a partial pixel on 49 % of
-  its silhouette edges, against 82 % with jitter, and the test asks for 15 %, in the full
-  variant and the riscv64 light one alike. The other partial pixels are 1-px rows of the
-  scene (y 320, 362 and 425 of the 1200x768 frame), not blended silhouettes
-  (docs/gpu-golden-testing.md § The riscv64 light variant). A threshold near 65 % separates
-  the two; counting only the slab's silhouette against the sky (the row at y 56: 311 of 312
-  partial with jitter, 0 of 624 without) would not depend on the rest of the scene. Prove
-  either with the no-jitter control on every lane.
 - **Headless assertions for the shadow path** beyond the single darkened-pixel ratio, and for
   the post-processing chain. Both need careful oracle design (`docs/gpu-golden-testing.md`
   on why the tonemap is hard to isolate).
