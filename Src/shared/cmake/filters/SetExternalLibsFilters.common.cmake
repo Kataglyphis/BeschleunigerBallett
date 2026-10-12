@@ -17,6 +17,8 @@ if(NOT COMMAND kataglyphis_set_imgui_filter)
         "${_kataglyphis_imgui_root}backends/imgui_impl_glfw.cpp"
         ${ARGN})
 
-    set(IMGUI_FILTER "${_kataglyphis_imgui_filter}" PARENT_SCOPE)
+    set(IMGUI_FILTER
+        "${_kataglyphis_imgui_filter}"
+        PARENT_SCOPE)
   endfunction()
 endif()

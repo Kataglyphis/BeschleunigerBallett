@@ -28,11 +28,14 @@ target_link_libraries(
 # Gates on the suite running, not on time: wall-clock thresholds are toothless or flaky, so the JSON is compared.
 add_test(
   NAME perf_suite_runs
-  COMMAND
-    ${PERF_TEST_SUITE} --benchmark_min_time=0.05s
-    --benchmark_out=${CMAKE_BINARY_DIR}/perf-results.json
-    --benchmark_out_format=json
+  COMMAND ${PERF_TEST_SUITE} --benchmark_min_time=0.05s --benchmark_out=${CMAKE_BINARY_DIR}/perf-results.json
+          --benchmark_out_format=json
   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
 # Large-asset benchmarks run far longer than unit tests.
-set_tests_properties(perf_suite_runs PROPERTIES TIMEOUT 900 LABELS "perf")
+set_tests_properties(
+  perf_suite_runs
+  PROPERTIES TIMEOUT
+             900
+             LABELS
+             "perf")

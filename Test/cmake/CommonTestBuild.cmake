@@ -15,11 +15,8 @@ function(kataglyphis_configure_common_test_target test_target)
 endfunction()
 
 function(kataglyphis_add_imgui_test_sources test_target)
-  target_sources(
-    ${test_target}
-    PRIVATE
-      # IMGUI object library - excluded from static analysis
-      $<TARGET_OBJECTS:IMGUI>)
+  target_sources(${test_target} PRIVATE # IMGUI object library - excluded from static analysis
+                                        $<TARGET_OBJECTS:IMGUI>)
 endfunction()
 
 function(kataglyphis_enable_windows_vulkan_delay_load test_target)

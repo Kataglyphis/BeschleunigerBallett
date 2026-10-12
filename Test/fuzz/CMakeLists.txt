@@ -2,28 +2,36 @@
 set(_kataglyphis_fuzz_unit_mode OFF)
 if(CMAKE_BUILD_TYPE STREQUAL "Release" AND KATAGLYPHIS_RELEASE_FUZZ_TESTS)
   set(_kataglyphis_fuzz_unit_mode ON)
-elseif(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+elseif(
+  NOT
+  CMAKE_BUILD_TYPE
+  STREQUAL
+  "Debug")
   message(STATUS "Skipping fuzz tests: build type is '${CMAKE_BUILD_TYPE}', requires Debug.")
   return()
 endif()
 
-if(NOT CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+if(NOT
+   CMAKE_CXX_COMPILER_ID
+   MATCHES
+   ".*Clang")
   message(STATUS "Skipping fuzz tests: requires Clang or clang-cl.")
   return()
 endif()
 
-if(NOT(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (WIN32 AND MSVC AND (KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE OR _kataglyphis_fuzz_unit_mode))))
+if(NOT
+   (CMAKE_SYSTEM_NAME STREQUAL "Linux"
+    OR (WIN32
+        AND MSVC
+        AND (KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE OR _kataglyphis_fuzz_unit_mode))))
   message(STATUS "Skipping fuzz tests: supported on Linux Clang and Windows clang-cl fuzzing or unit mode.")
   return()
 endif()
 
 # Abseil's raw_hash_set layout follows ASan, so ASan on the fuzz targets alone is an ODR violation that SEGVs.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT myproject_ENABLE_SANITIZER_ADDRESS)
-  message(
-    STATUS
-      "Skipping fuzz tests: they need myproject_ENABLE_SANITIZER_ADDRESS=ON so "
-      "abseil and the fuzz targets agree on container layout. Use the "
-      "linux-debug-asan-clang preset.")
+  message(STATUS "Skipping fuzz tests: they need myproject_ENABLE_SANITIZER_ADDRESS=ON so "
+                 "abseil and the fuzz targets agree on container layout. Use the " "linux-debug-asan-clang preset.")
   return()
 endif()
 
@@ -63,12 +71,7 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
               -fsanitize-coverage=trace-cmp)
   endif()
 
-  target_compile_definitions(
-    ${fuzz_target}
-    PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-            ADDRESS_SANITIZER)
-
-
+  target_compile_definitions(${fuzz_target} PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION ADDRESS_SANITIZER)
 
   if(FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer")
     target_compile_options(${fuzz_target} PRIVATE -fsanitize=fuzzer-no-link)
@@ -108,11 +111,8 @@ target_sources(
          ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
 # Same values kataglyphis_apply_runtime_compile_definitions gives the engine, so paths and clip conventions match.
-target_compile_definitions(
-  scene_config_fuzz_test
-  PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE
-          GLM_FORCE_RADIANS
-          RELATIVE_RESOURCE_PATH="/../Resources/")
+target_compile_definitions(scene_config_fuzz_test PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS
+                                                          RELATIVE_RESOURCE_PATH="/../Resources/")
 
 # Every shader load reads through this module; it is compiled straight in, with no renderer linked.
 kataglyphis_add_fuzz_test(shader_file_reader_fuzz_test shader_file_reader_fuzz_test.cpp)

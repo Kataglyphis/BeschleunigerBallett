@@ -9,7 +9,11 @@ endif()
 include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 
 # Build trees persist between container builds, so without CONFIGURE_DEPENDS a new test file never compiles.
-file(GLOB RENDERER_COMPILE_TEST_FILTER CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+file(
+  GLOB
+  RENDERER_COMPILE_TEST_FILTER
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
   message(STATUS "Render compile test suite files are: ${RENDERER_COMPILE_TEST_FILTER}")

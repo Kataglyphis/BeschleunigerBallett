@@ -145,5 +145,3 @@ target_sources(
 
 # Since CMake 3.28 the PUBLIC CXX_MODULES file set makes the modules importable here.
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
-
-

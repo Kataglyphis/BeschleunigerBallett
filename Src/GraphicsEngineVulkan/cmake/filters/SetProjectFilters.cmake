@@ -19,18 +19,9 @@ kataglyphis_append_prefixed_files(
   PostStage.cpp
   PostStage.ixx
   CommandBufferManager.cpp)
-kataglyphis_append_prefixed_files(
-  RENDERER_FILTER
-  "${PROJECT_INCLUDE_DIR}renderer/"
-  GlobalUBO.hpp)
-kataglyphis_append_prefixed_files(
-  RENDERER_FILTER
-  "${PROJECT_SRC_DIR}renderer/"
-  GUIRendererSharedVars.ixx)
-kataglyphis_append_prefixed_files(
-  RENDERER_FILTER
-  "${PROJECT_INCLUDE_DIR}renderer/"
-  SceneUBO.hpp)
+kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_INCLUDE_DIR}renderer/" GlobalUBO.hpp)
+kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_SRC_DIR}renderer/" GUIRendererSharedVars.ixx)
+kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_INCLUDE_DIR}renderer/" SceneUBO.hpp)
 
 kataglyphis_append_prefixed_files(
   PC_FILTER
@@ -40,19 +31,13 @@ kataglyphis_append_prefixed_files(
   PushConstantRasterizer.ixx
   PushConstantRayTracing.ixx)
 
-kataglyphis_append_prefixed_files(
-  AS_FILTER
-  "${PROJECT_SRC_DIR}renderer/accelerationStructures/"
-  ASManager.ixx)
+kataglyphis_append_prefixed_files(AS_FILTER "${PROJECT_SRC_DIR}renderer/accelerationStructures/" ASManager.ixx)
 kataglyphis_append_prefixed_files(
   AS_FILTER
   "${PROJECT_INCLUDE_DIR}renderer/accelerationStructures/"
   BottomLevelAccelerationStructure.hpp
   TopLevelAccelerationStructure.hpp)
-kataglyphis_append_prefixed_files(
-  AS_FILTER
-  "${PROJECT_SRC_DIR}renderer/accelerationStructures/"
-  ASManager.cpp)
+kataglyphis_append_prefixed_files(AS_FILTER "${PROJECT_SRC_DIR}renderer/accelerationStructures/" ASManager.cpp)
 
 kataglyphis_append_prefixed_files(
   VULKAN_BASE_FILTER
@@ -88,20 +73,14 @@ kataglyphis_append_prefixed_files(
   Texture.cpp
   Vertex.cpp
   Camera.ixx)
-kataglyphis_append_prefixed_files(
-  SCENE_FILTER
-  "${PROJECT_SRC_DIR}scene/"
-  Vertex.ixx)
+kataglyphis_append_prefixed_files(SCENE_FILTER "${PROJECT_SRC_DIR}scene/" Vertex.ixx)
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
   "${PROJECT_SRC_DIR}scene/"
   SceneConfig.ixx
   GUISceneSharedVars.ixx
   ObjectDescription.ixx)
-kataglyphis_append_prefixed_files(
-  SCENE_FILTER
-  "${PROJECT_INCLUDE_DIR}scene/"
-  Texture.hpp)
+kataglyphis_append_prefixed_files(SCENE_FILTER "${PROJECT_INCLUDE_DIR}scene/" Texture.hpp)
 
 kataglyphis_append_prefixed_files(
   WINDOW_FILTER

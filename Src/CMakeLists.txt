@@ -18,7 +18,8 @@ function(_myproject_configure_windows_rust_crate rust_target)
   endif()
 
   set(_RUST_WINDOWS_CXXFLAGS
-      "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>")
+      "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>"
+  )
   set(_RUST_WINDOWS_CFLAGS "$<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG>")
 
   corrosion_set_env_vars(${rust_target} "CXXFLAGS=${_RUST_WINDOWS_CXXFLAGS}" "CFLAGS=${_RUST_WINDOWS_CFLAGS}")

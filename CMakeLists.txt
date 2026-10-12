@@ -47,7 +47,11 @@ if(NOT EXISTS "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}/Sanitizers.cmake")
       "ANTfrastructure submodule not checked out: ${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR} has no CMake modules. "
       "Run: git submodule update --init --recursive")
 endif()
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake" "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}")
+list(
+  APPEND
+  CMAKE_MODULE_PATH
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
+  "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}")
 
 include(PreventInSourceBuilds)
 include(ProjectOptions)
@@ -140,9 +144,7 @@ set(_myproject_imgui_fonts
     third_party/IMGUI/misc/fonts/ProggyTiny.ttf
     third_party/IMGUI/misc/fonts/Roboto-Medium.ttf)
 
-install(
-  FILES ${_myproject_imgui_fonts}
-  DESTINATION third_party/IMGUI/misc/fonts/)
+install(FILES ${_myproject_imgui_fonts} DESTINATION third_party/IMGUI/misc/fonts/)
 if(UNIX AND NOT APPLE)
   install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION usr/share/applications)
   install(

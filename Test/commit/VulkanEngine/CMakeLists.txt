@@ -3,7 +3,11 @@ include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 set(COMMIT_TEST_SUITE commitTestSuite)
 
 # CONFIGURE_DEPENDS: build trees persist between container builds, so a new test file would never be globbed.
-file(GLOB RENDERER_COMMIT_TEST_FILTER CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+file(
+  GLOB
+  RENDERER_COMMIT_TEST_FILTER
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
   message(STATUS "Render commit test filter is: ${RENDERER_COMMIT_TEST_FILTER}")
