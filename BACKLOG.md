@@ -102,13 +102,6 @@ still needs the host.
     `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only, and
     riscv64 runs four path-traced goldens in their light variant: a shorter history, the
     same thresholds (AGENTS.md § The riscv64 lane).
-- [ ] **Prove the anti-aliasing golden's new oracle on riscv64** (S). Run 38210484163
-  (2026-10-12, at e209157f) passed all four light shards, each logging `path-traced variant:
-  light`, with ctest times of 126 min (furnace), 132 (anti-aliasing, 50 frames), 194 (mask
-  card) and 194 (added model), all under the 250-min line. That run predates the sky-silhouette
-  oracle (8fe140a7) and the 25-frame light history (d64c64bd), so only the
-  `PathTracingAntiAliasesGeometricEdges` shard is left: dispatch 38232793922. Drop this entry
-  when it passes with `312 of 312 columns` and `light, 25-frame history` in its log.
 
 ---
 

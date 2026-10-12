@@ -130,6 +130,7 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   against 0 from 25. Its light history is therefore 25, not the 50 it started with: on riscv64
   the 50-frame test alone took 2 h 12 min under QEMU (run 38210484163), and over the five
   streams at 25 the jittered kernel blends 312 of 312 columns and the pixel-centred one 0-1.
+  On riscv64 the 25-frame test blends 312 of 312 too, in 60 min of ctest (run 38232793922).
 - **Why five streams.** riscv64's llvmpipe follows a different sample path wherever its floating
   point differs, so a margin has to hold across streams, not on one. The four extra streams (a
   seed offset in `path_tracing.slang`, not committed) give the light column's ranges.
