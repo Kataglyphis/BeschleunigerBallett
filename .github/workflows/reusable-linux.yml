@@ -292,8 +292,8 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
-      # The pinned LLVM's clang-format, the binary the Windows check uses, so both lanes grade the same bytes.
-      - name: Check clang-format
+      # The pinned LLVM's clang-format, the binary the Windows check uses, so both lanes grade the same bytes; cmake-format beside it.
+      - name: Check clang-format and cmake-format
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-static-analysis-format.sh --only-format-check

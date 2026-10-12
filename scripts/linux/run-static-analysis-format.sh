@@ -35,7 +35,7 @@ FORMAT_SOURCE_ROOTS=(Src Test scripts/riscv64)
 ANALYZE_EXTRA_ARGS=(-DUSE_RUST=1)
 
 CODE_QUALITY_CMAKE_SEARCH_ROOT="."
-CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './third_party/*')
+CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build*/*' './.venv/*' './third_party/*')
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
 # The hub's default bootstrap installs cmake-format from its pinned requirements, never this repo's requirements.txt.
@@ -67,6 +67,15 @@ run_clang_format_check() {
     err "${CODE_QUALITY_CLANG_FORMAT_DEVIATIONS} file(s) deviate from .clang-format; rewrite them with ${PINNED_CLANG_FORMAT_DIR}/clang-format -i"
   fi
   return 0
+}
+
+# Checks, never rewrites: the full mode's in-place pass let 11 files drift while CI stayed green (2026-10-12).
+run_cmake_format_check() {
+  code_quality_ensure_cmake_format
+  local files=()
+  mapfile -t files < <(code_quality_find_cmake_files)
+  [[ ${#files[@]} -gt 0 ]] || err "No CMake file found: the cmake-format gate would grade nothing"
+  code_quality_run_cmake_format --check "${files[@]}" || err "CMake file(s) deviate from .cmake-format.yaml; rewrite them with cmake-format -c .cmake-format.yaml -i"
 }
 
 run_format_and_tidy() {
@@ -169,7 +178,7 @@ Options:
   --with-clang-analyze-html    Also run clang++ --analyze (HTML output)
 
   --only-format                Run only format + clang-tidy step
-  --only-format-check          Only check clang-format with the pinned LLVM; fail on any drift (CI)
+  --only-format-check          Only check clang-format (pinned LLVM) and cmake-format; fail on any drift (CI)
   --only-scan-build            Run only scan-build step
   --only-clang-analyze-html    Run only clang++ --analyze HTML step
 
@@ -262,8 +271,9 @@ fi
 step=1
 
 if [[ "${RUN_FORMAT_CHECK}" == "true" ]]; then
-  info "[${step}/${total_steps}] Checking clang-format with the pinned LLVM..."
+  info "[${step}/${total_steps}] Checking clang-format with the pinned LLVM, and cmake-format..."
   run_clang_format_check
+  run_cmake_format_check
   ((step += 1))
 fi
 

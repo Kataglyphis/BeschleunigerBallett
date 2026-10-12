@@ -2,3 +2,6 @@
 
 # style: clang-format sweep with the pinned LLVM's clang-format 23.1.1 (2026-10-06)
 d59d210f6f93254e131996dca666e582f3d3b40e
+
+# style: cmake-format 0.6.13 over the 11 drifted CMake files (2026-10-12)
+5de14bb7ebdcc852fdd6cf1c0adb326064bdcc31

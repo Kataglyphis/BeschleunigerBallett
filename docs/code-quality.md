@@ -76,6 +76,13 @@ still the distro's 21.1.8 until the hub switches it, and 21.1.8 flags 41 of the
 swept files. A local rewrite: `Build-Windows.ps1 -ApplyFormat`, or the pinned
 binary's `-i` (`run-static-analysis-format.sh` uses it too).
 
+**cmake-format is a failing gate too** (since 2026-10-12), in the same
+`--only-format-check` step: the hub's pinned cmake-format checks every CMake file
+outside `build*/`, `.venv/` and `third_party/` against `.cmake-format.yaml`. Until
+then only the full mode ran it, in place, so it rewrote the CI checkout and never
+failed; 11 of 18 files had drifted, and the sweep that fixed them is in
+`.git-blame-ignore-revs`.
+
 ## Known state (2026-10-06)
 
 <!-- format-drift-denominator: 216 -->
