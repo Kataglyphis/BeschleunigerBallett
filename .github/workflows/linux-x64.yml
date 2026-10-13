@@ -11,6 +11,11 @@ on:
     branches: [main, develop]
   # Tests a docs-only fix the suite pins (docs/gpu-golden-testing.md's golden counts), which paths-ignore skips.
   workflow_dispatch:
+    inputs:
+      split-jobs:
+        description: Run the bundled jobs as their parts again
+        type: boolean
+        default: false
 
 # main is exempt from cancellation: its runs deploy and release.
 concurrency:
@@ -29,6 +34,7 @@ jobs:
       # The reusable build's compiler-cache writers delete their key's older entries.
       actions: write
     with:
+      split-jobs: ${{ inputs.split-jobs || false }}
       runner: ubuntu-26.04
     secrets:
       SERVER: ${{ secrets.SERVER }}

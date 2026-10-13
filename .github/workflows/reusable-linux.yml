@@ -6,6 +6,13 @@ on:
       runner:
         required: true
         type: string
+      split-jobs:
+        description: >-
+          Run the four bundled jobs as their parts again (11 jobs on x64 instead of 6):
+          more image pulls, a shorter critical path. Each part runs the same steps.
+        required: false
+        type: boolean
+        default: false
     secrets:
       SERVER:
         required: true
@@ -97,9 +104,13 @@ jobs:
 
   # ASan + UBSan with the fuzz seeds (which SEGV without project-wide ASan, Test/fuzz/CMakeLists.txt), then TSan: one image pull for both
   sanitizers:
-    name: AddressSanitizer + fuzz seeds, ThreadSanitizer
+    name: ${{ matrix.part == 'asan' && 'AddressSanitizer + fuzz seeds' || matrix.part == 'tsan' && 'ThreadSanitizer' || 'AddressSanitizer + fuzz seeds, ThreadSanitizer' }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.split-jobs && '["asan","tsan"]' || '["all"]') }}
     permissions:
       contents: read
       # compiler-cache-save deletes this key's older cache entries.
@@ -114,7 +125,7 @@ jobs:
       # x64 only: the 10 GB cache quota cannot hold every preset on both arches.
       - name: Restore compiler cache (ASan)
         id: cc-asan
-        if: runner.arch == 'X64'
+        if: runner.arch == 'X64' && matrix.part != 'tsan'
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-asan
@@ -122,6 +133,7 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
       - name: Configure/build with AddressSanitizer
+        if: matrix.part != 'tsan'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc-asan.outputs.docker-args }}
@@ -139,6 +151,7 @@ jobs:
 
       # EveryRegisteredFuzzTargetRunsInCi parses the loop line: keep it one line, never quote it in a comment.
       - name: Run fuzzer tests
+        if: matrix.part != 'tsan'
         timeout-minutes: 15
         run: |
           image="$(bash ./scripts/linux/ci-image-ref.sh)"
@@ -166,6 +179,7 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
+        if: matrix.part != 'tsan'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: >-
@@ -180,7 +194,7 @@ jobs:
 
       # One cache directory per job: the TSan key must not save ASan objects, and the TSan half never reads the ASan tree.
       - name: Free the ASan half's compiler cache and build tree
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part == 'all' }}
         env:
           CACHE_PATH: ${{ steps.cc-asan.outputs.path }}
         run: |
@@ -190,7 +204,7 @@ jobs:
       # The TSan half runs whatever the ASan half did, so each sanitizer reports its own result.
       - name: Restore compiler cache (TSan)
         id: cc-tsan
-        if: ${{ !cancelled() && runner.arch == 'X64' }}
+        if: ${{ !cancelled() && runner.arch == 'X64' && matrix.part != 'asan' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-tsan
@@ -199,7 +213,7 @@ jobs:
 
       - name: Configure/build with ThreadSanitizer
         id: tsan-build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part != 'asan' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc-tsan.outputs.docker-args }}
@@ -235,9 +249,13 @@ jobs:
 
   # Format check (gating), one debug build for the analyzers (advisory) and coverage, then the Rust renderer crate; each part runs and reports alone
   static-analysis:
-    name: static analysis + coverage + Rust renderer tests
+    name: ${{ matrix.part == 'format' && 'format check' || matrix.part == 'analysis' && 'static analysis + coverage' || matrix.part == 'rust' && 'Rust renderer tests' || 'static analysis + coverage + Rust renderer tests' }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.split-jobs && '["format","analysis","rust"]' || '["all"]') }}
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -247,6 +265,7 @@ jobs:
 
       # The pinned LLVM's clang-format, the binary the Windows check uses, so both lanes grade the same bytes; cmake-format beside it.
       - name: Check clang-format and cmake-format
+        if: matrix.part == 'all' || matrix.part == 'format'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-static-analysis-format.sh --only-format-check
@@ -255,7 +274,7 @@ jobs:
       # Reads clang-tests' debug cache: same preset, same objects.
       - name: Restore compiler cache
         id: cc
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'analysis') }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-debug
@@ -265,7 +284,7 @@ jobs:
       # One tree for both: the analyzers read ${BUILD_DIR}/compile_commands.json, coverage runs its compileTestSuite.
       - name: Configure/build for analysis and coverage
         id: debug-build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'analysis') }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc.outputs.docker-args }}
@@ -323,7 +342,7 @@ jobs:
 
       # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches.
       - name: Run Rust renderer tests
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'rust') }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-cargo-tests.sh
@@ -331,7 +350,7 @@ jobs:
 
       # Gating like the tests: rustfmt + clippy -D warnings over the whole workspace, in OxidANT's own scope.
       - name: Lint Rust renderer crate
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'rust') }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-cargo-lints.sh
@@ -339,9 +358,13 @@ jobs:
 
   # Profiling builds + perf suite, clang then gcc; each wipes the build directory, so the two run in turn
   profiling:
-    name: profiling + benchmarks (clang, gcc)
+    name: ${{ matrix.part == 'all' && 'profiling + benchmarks (clang, gcc)' || format('profiling + benchmarks ({0})', matrix.part) }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.split-jobs && '["clang","gcc"]' || '["all"]') }}
     permissions:
       contents: read
       # compiler-cache-save deletes this key's older cache entries.
@@ -355,7 +378,7 @@ jobs:
 
       - name: Restore compiler cache
         id: cc
-        if: runner.arch == 'X64'
+        if: runner.arch == 'X64' && matrix.part != 'gcc'
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-profile
@@ -363,6 +386,7 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
+        if: matrix.part != 'gcc'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc.outputs.docker-args }}
@@ -380,6 +404,7 @@ jobs:
           key: ${{ runner.arch }}-clang-profile
 
       - name: Run performance benchmarks
+        if: matrix.part != 'gcc'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
@@ -388,7 +413,7 @@ jobs:
       # The gcc half runs whatever the clang half did; no compiler cache, since neither cache handles -fmodules-ts TUs.
       - name: Configure/build CMake for Profiling (gcc)
         id: gcc-profile-build
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.part != 'clang' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
@@ -450,9 +475,13 @@ jobs:
 
   # Release build + packages, then on x64 the docs + wasm demo + deploy
   release:
-    name: ${{ inputs.runner == 'ubuntu-26.04' && 'release + package, docs + wasm demo' || 'release + package' }}
+    name: ${{ matrix.part == 'docs' && 'docs + wasm demo' || (matrix.part == 'all' && inputs.runner == 'ubuntu-26.04') && 'release + package, docs + wasm demo' || 'release + package' }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        part: ${{ fromJSON(inputs.split-jobs && inputs.runner == 'ubuntu-26.04' && '["release","docs"]' || '["all"]') }}
     # No compiler cache: it saved the least per GB, and the 10 GB quota holds only five presets.
     steps:
       - name: Prepare host
@@ -462,6 +491,7 @@ jobs:
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
+        if: matrix.part != 'docs'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
@@ -472,6 +502,7 @@ jobs:
           log-file: output.log
 
       - name: Package
+        if: matrix.part != 'docs'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
@@ -482,6 +513,7 @@ jobs:
           log-file: output.log
 
       - name: Upload Linux Packages (Clang only)
+        if: matrix.part != 'docs'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-packages
@@ -496,7 +528,7 @@ jobs:
       # The docs run whatever the release did; doc_doxygen has no compiled dependencies, so no engine build.
       - name: Generate Doxygen XML
         id: doxygen
-        if: ${{ !cancelled() && inputs.runner == 'ubuntu-26.04' }}
+        if: ${{ !cancelled() && inputs.runner == 'ubuntu-26.04' && matrix.part != 'release' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-

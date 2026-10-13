@@ -837,6 +837,12 @@ against the three runs before it: x64 run 38424781404 took 215 job-minutes (was 
 them prologue (was 106-114); arm64 run 38424781448 took 173 (was 204-207), 39 of them prologue
 (was 64-68). The longest merged job (33.8 min, arm64 `sanitizers`) stays well under `clang-tests`.
 
+**The old layout is one switch away.** Dispatching `linux-x64.yml` or `linux-arm64.yml` with
+`split-jobs` runs each merged job as a matrix of its parts: `asan`/`tsan`,
+`format`/`analysis`/`rust`, `clang`/`gcc`, and on x64 `release`/`docs`. That is eleven jobs on x64
+and ten on arm64, through the same steps. A push runs the merged jobs, whose matrix is the
+single part `all`.
+
 ### The riscv64 lane
 
 **Cross-built on amd64, tested under QEMU** (owner decision 2026-10-01, hub CON48): an
