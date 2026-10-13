@@ -832,7 +832,10 @@ the eleven jobs did less work than that, so they share jobs now, and nothing was
 - `release` adds the docs, the wasm demo and their deploy on x64.
 
 Each part after the first runs whatever the one before it did (`if: !cancelled()`), and checks
-its own build's outcome, so a red step still names the check that failed.
+its own build's outcome, so a red step still names the check that failed. Measured on a5dccbfb
+against the three runs before it: x64 run 38424781404 took 215 job-minutes (was 248-255), 53 of
+them prologue (was 106-114); arm64 run 38424781448 took 173 (was 204-207), 39 of them prologue
+(was 64-68). The longest merged job (33.8 min, arm64 `sanitizers`) stays well under `clang-tests`.
 
 ### The riscv64 lane
 
