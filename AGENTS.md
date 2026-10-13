@@ -209,7 +209,7 @@ profile writer: with ASan active the profile runtime comes from Microsoft's ASan
 DLL, `initializeValueProfRuntimeRecord` dereferences a bad pointer
 (`InstrProfilingValue.c:327`), and `commitTestSuite.exe`/`compileTestSuite.exe`
 exited 1 after all 654 tests had passed (run 36997000491). No Windows step reads
-the `.profraw` files; the Linux lanes' coverage job is where coverage is measured.
+the `.profraw` files; the Linux lanes' `static-analysis` job is where coverage is measured.
 Revisit when the profile runtime matches the compiler or value profiling can be
 turned off. Profile keeps it OFF (`x64-ClangCL-Windows-RelWithDebInfo-Base`, so
 benchmarks stay uninstrumented) and Release never instruments
@@ -818,6 +818,22 @@ Linux `clang-tests` job (both arches) runs the golden suites on llvmpipe (a CPU 
 [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md)), both Windows lanes on lavapipe on
 the runner, and synchronization validation stays host-only.
 
+**Six Linux jobs per architecture, not eleven** (2026-10-13). Every job pays the host
+prologue before it builds anything: disk cleanup plus the image pull, 8-9 min on x64 and
+6-7 min on arm64 (runs 38402811139, 38368740921, 38265932848 and their arm64 twins). Six of
+the eleven jobs did less work than that, so they share jobs now, and nothing was dropped:
+
+- `clang-tests`, `gcc` and the release build keep their own jobs.
+- `sanitizers` runs ASan + the fuzz seeds, then TSan. It empties the one compiler-cache
+  directory between the halves, so `X64-clang-asan` and `X64-clang-tsan` stay apart.
+- `static-analysis` runs the format check, one `linux-debug-clang` build for both coverage and
+  the analyzers (two jobs used to build that tree), then the Rust renderer tests and lints.
+- `profiling` runs the clang profiling build and its benchmarks, then the gcc ones.
+- `release` adds the docs, the wasm demo and their deploy on x64.
+
+Each part after the first runs whatever the one before it did (`if: !cancelled()`), and checks
+its own build's outcome, so a red step still names the check that failed.
+
 ### The riscv64 lane
 
 **Cross-built on amd64, tested under QEMU** (owner decision 2026-10-01, hub CON48): an
@@ -1007,7 +1023,7 @@ design, so its findings are fixed, never frozen.
 
 Both Linux legs (x64 and arm64, since 2026-10-01) also run the Rust renderer crate's
 own test suite (`scripts/linux/run-cargo-tests.sh`, `cargo test -p
-kataglyphis_webgpu_renderer`) in their own `rust` job of `reusable-linux.yml`; its GPU tests
+kataglyphis_webgpu_renderer`) in the `static-analysis` job of `reusable-linux.yml`; its GPU tests
 find the image's lavapipe. On arm64 the script sets `LP_NATIVE_VECTOR_WIDTH=128` (since 2026-10-06): the
 image's 256 (hub CON44) serves this repo's BVH builds, and LLVM's AArch64 JIT aborted OxidANT's renderer
 tests on it about one run in five (`LLVM ERROR: Do not know how to split this operator's operand!`). Before

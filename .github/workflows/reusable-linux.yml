@@ -93,10 +93,11 @@ jobs:
             --ctest-exclude "^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
           log-file: output.log
 
-  # AddressSanitizer + UBSan and the fuzz seeds, which SEGV without project-wide ASan (Test/fuzz/CMakeLists.txt)
-  asan:
-    name: AddressSanitizer + fuzz seeds
+  # ASan + UBSan with the fuzz seeds (which SEGV without project-wide ASan, Test/fuzz/CMakeLists.txt), then TSan: one image pull for both
+  sanitizers:
+    name: AddressSanitizer + fuzz seeds, ThreadSanitizer
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
     permissions:
       contents: read
       # compiler-cache-save deletes this key's older cache entries.
@@ -109,8 +110,8 @@ jobs:
           registry-password: ${{ secrets.GHCR_PAT }}
 
       # x64 only: the 10 GB cache quota cannot hold every preset on both arches.
-      - name: Restore compiler cache
-        id: cc
+      - name: Restore compiler cache (ASan)
+        id: cc-asan
         if: runner.arch == 'X64'
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
@@ -121,15 +122,15 @@ jobs:
       - name: Configure/build with AddressSanitizer
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
+          extra-args: ${{ steps.cc-asan.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-asan-clang"
             --build-dir "build-asan-clang"
           log-file: output-asan.log
 
-      - name: Save compiler cache
-        if: always() && steps.cc.outputs.path != ''
+      - name: Save compiler cache (ASan)
+        if: always() && steps.cc-asan.outputs.path != ''
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
         with:
           key: ${{ runner.arch }}-clang-asan
@@ -175,24 +176,19 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\."
           log-file: output-asan.log
 
-  # ThreadSanitizer
-  tsan:
-    name: ThreadSanitizer
-    runs-on: ${{ inputs.runner }}
-    permissions:
-      contents: read
-      # compiler-cache-save deletes this key's older cache entries.
-      actions: write
-    steps:
-      - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
-        with:
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GHCR_PAT }}
+      # One cache directory per job: the TSan key must not save ASan objects, and the TSan half never reads the ASan tree.
+      - name: Free the ASan half's compiler cache and build tree
+        if: ${{ !cancelled() }}
+        env:
+          CACHE_PATH: ${{ steps.cc-asan.outputs.path }}
+        run: |
+          rm -rf build-asan-clang
+          if [ -n "${CACHE_PATH}" ]; then rm -rf "${CACHE_PATH}"; fi
 
-      - name: Restore compiler cache
-        id: cc
-        if: runner.arch == 'X64'
+      # The TSan half runs whatever the ASan half did, so each sanitizer reports its own result.
+      - name: Restore compiler cache (TSan)
+        id: cc-tsan
+        if: ${{ !cancelled() && runner.arch == 'X64' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-tsan
@@ -200,26 +196,30 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
       - name: Configure/build with ThreadSanitizer
+        id: tsan-build
+        if: ${{ !cancelled() }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
+          extra-args: ${{ steps.cc-tsan.outputs.docker-args }}
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-tsan-clang"
             --build-dir "build-tsan"
           log-file: output-tsan.log
 
-      - name: Save compiler cache
-        if: always() && steps.cc.outputs.path != ''
+      - name: Save compiler cache (TSan)
+        if: always() && steps.cc-tsan.outputs.path != ''
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-save@develop
         with:
           key: ${{ runner.arch }}-clang-tsan
 
       # TSan's fixed shadow ranges collide with 32 bits of ASLR entropy, and it cannot re-exec inside the container.
       - name: Lower ASLR entropy for ThreadSanitizer
+        if: ${{ !cancelled() && steps.tsan-build.outcome == 'success' }}
         run: sudo sysctl -w vm.mmap_rnd_bits=28
 
       - name: Run tests under ThreadSanitizer
+        if: ${{ !cancelled() && steps.tsan-build.outcome == 'success' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: >-
@@ -231,60 +231,11 @@ jobs:
             --ctest-exclude "^(Integration|GoldenRender)\."
           log-file: output-tsan.log
 
-  # Coverage: builds its own tree, since build-coverage-llvm.sh runs compileTestSuite
-  coverage:
-    name: coverage + codecov
-    runs-on: ${{ inputs.runner }}
-    steps:
-      - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
-        with:
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GHCR_PAT }}
-
-      # Reads clang-tests' debug cache: same preset, same objects.
-      - name: Restore compiler cache
-        id: cc
-        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
-        with:
-          key: ${{ runner.arch }}-clang-debug
-          mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
-
-      - name: Build for coverage
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
-          script: >-
-            bash ./scripts/linux/cmake-configure-build.sh
-            --preset "linux-debug-clang"
-            --build-dir "${{ env.BUILD_DIR }}"
-          log-file: output.log
-
-      - name: Build Code Coverage
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          extra-args: ${{ steps.cc.outputs.docker-args }}
-          script: >-
-            bash ./scripts/linux/build-coverage-llvm.sh
-            --build-dir "${{ env.BUILD_DIR }}"
-            --coverage-json "${{ env.COVERAGE_JSON }}"
-          log-file: output.log
-
-      - name: Codecov
-        if: ${{ inputs.runner == 'ubuntu-26.04' }}
-        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{ env.COVERAGE_JSON }}
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          verbose: false
-
-  # Static analysis: the two analyzers are advisory (continue-on-error), the clang-format check gates
+  # Format check (gating), one debug build for the analyzers (advisory) and coverage, then the Rust renderer crate; each part runs and reports alone
   static-analysis:
-    name: clang static analysis
+    name: static analysis + coverage + Rust renderer tests
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -302,14 +253,17 @@ jobs:
       # Reads clang-tests' debug cache: same preset, same objects.
       - name: Restore compiler cache
         id: cc
+        if: ${{ !cancelled() }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
         with:
           key: ${{ runner.arch }}-clang-debug
           mounts: 'sccache:/var/cache/sccache'
           env: 'SCCACHE_CACHE_SIZE=1500M'
 
-      # run-static-analysis-format.sh needs ${BUILD_DIR}/compile_commands.json.
-      - name: Configure/build for analysis
+      # One tree for both: the analyzers read ${BUILD_DIR}/compile_commands.json, coverage runs its compileTestSuite.
+      - name: Configure/build for analysis and coverage
+        id: debug-build
+        if: ${{ !cancelled() }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc.outputs.docker-args }}
@@ -319,8 +273,32 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # No --gcc-toolchain needed: the image's <triple>-clang++.cfg selects its GCC for a bare clang++.
+      # Before the analyzers, so it reads the tree exactly as built.
+      - name: Build Code Coverage
+        id: coverage
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
+          script: >-
+            bash ./scripts/linux/build-coverage-llvm.sh
+            --build-dir "${{ env.BUILD_DIR }}"
+            --coverage-json "${{ env.COVERAGE_JSON }}"
+          log-file: output.log
+
+      - name: Codecov
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' && inputs.runner == 'ubuntu-26.04' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ env.COVERAGE_JSON }}
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: false
+
+      # The two analyzers are advisory (continue-on-error); no --gcc-toolchain needed: the image's <triple>-clang++.cfg selects its GCC.
       - name: Run Clang static analysis (HTML)
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
         continue-on-error: true
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -330,6 +308,7 @@ jobs:
           log-file: output.log
 
       - name: Run Clang static analysis (scan-build)
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
         continue-on-error: true
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -340,10 +319,27 @@ jobs:
             --preset "linux-debug-clang"
           log-file: output.log
 
-  # clang profiling build + perf suite
+      # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches.
+      - name: Run Rust renderer tests
+        if: ${{ !cancelled() }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/run-cargo-tests.sh
+          log-file: output.log
+
+      # Gating like the tests: rustfmt + clippy -D warnings over the whole workspace, in OxidANT's own scope.
+      - name: Lint Rust renderer crate
+        if: ${{ !cancelled() }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/run-cargo-lints.sh
+          log-file: output.log
+
+  # Profiling builds + perf suite, clang then gcc; each wipes the build directory, so the two run in turn
   profiling:
-    name: clang profiling + benchmarks
+    name: profiling + benchmarks (clang, gcc)
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
     permissions:
       contents: read
       # compiler-cache-save deletes this key's older cache entries.
@@ -387,74 +383,26 @@ jobs:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-  # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches
-  rust:
-    name: Rust renderer tests
-    runs-on: ${{ inputs.runner }}
-    steps:
-      - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
-        with:
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GHCR_PAT }}
-
-      - name: Run Rust renderer tests
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          script: bash ./scripts/linux/run-cargo-tests.sh
-          log-file: output.log
-
-      # Gating like the tests: rustfmt + clippy -D warnings over the whole workspace, in OxidANT's own scope.
-      - name: Lint Rust renderer crate
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          script: bash ./scripts/linux/run-cargo-lints.sh
-          log-file: output.log
-
-  # Docs + wasm demo + deploy; doc_doxygen has no compiled dependencies, so no engine build
-  docs:
-    name: docs + wasm demo
-    if: ${{ inputs.runner == 'ubuntu-26.04' }}
-    runs-on: ${{ inputs.runner }}
-    steps:
-      - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
-        with:
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GHCR_PAT }}
-
-      - name: Generate Doxygen XML
+      # The gcc half runs whatever the clang half did; no compiler cache, since neither cache handles -fmodules-ts TUs.
+      - name: Configure/build CMake for Profiling (gcc)
+        id: gcc-profile-build
+        if: ${{ !cancelled() }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
             bash ./scripts/linux/cmake-configure-build.sh
-            --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
-            --build-target doc_doxygen
+            --preset "${{ env.GCC_PROFILE_PRESET }}"
+            --clean-build-dir true
           log-file: output.log
 
-      - name: Build web page
+      # In the container: the binary links the image's /opt/gcc libstdc++, which the host lacks.
+      - name: Run performance benchmarks (gcc)
+        if: ${{ !cancelled() && steps.gcc-profile-build.outcome == 'success' }}
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
-          script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
-
-      - name: Enforce wasm demo size budget
-        # Fatal on purpose: a wasm bloat regression must block the deploy below.
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          script: bash ./scripts/linux/wasm-size-budget.sh
-
-      - name: 📂 Sync files to domain
-        uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@develop
-        # A manual dispatch (any branch) never deploys.
-        if: github.event_name != 'workflow_dispatch'
-        # A flaky docs FTP upload must not fail the build+test lane.
-        continue-on-error: true
-        with:
-          server: ${{ secrets.SERVER }}
-          username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PW }}
-          local-dir: "./docs/build/html/"
+          script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
+          log-file: output.log
 
   # gcc: build, tests, coverage; no compiler cache, since neither ccache nor sccache caches -fmodules-ts TUs
   gcc:
@@ -496,38 +444,11 @@ jobs:
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
 
-  # gcc profiling + benchmarks: its own job because it wipes the build directory
-  gcc-profiling:
-    name: gcc profiling + benchmarks
-    runs-on: ${{ inputs.runner }}
-    steps:
-      - name: Prepare host
-        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
-        with:
-          registry-username: ${{ github.actor }}
-          registry-password: ${{ secrets.GHCR_PAT }}
-
-      - name: Configure/build CMake for Profiling (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          script: >-
-            bash ./scripts/linux/cmake-configure-build.sh
-            --build-dir "${{ env.BUILD_DIR }}"
-            --preset "${{ env.GCC_PROFILE_PRESET }}"
-            --clean-build-dir true
-          log-file: output.log
-
-      # In the container: the binary links the image's /opt/gcc libstdc++, which the host lacks.
-      - name: Run performance benchmarks (gcc)
-        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
-        with:
-          script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
-          log-file: output.log
-
-  # Release build + packages
+  # Release build + packages, then on x64 the docs + wasm demo + deploy
   release:
-    name: release + package
+    name: ${{ inputs.runner == 'ubuntu-26.04' && 'release + package, docs + wasm demo' || 'release + package' }}
     runs-on: ${{ inputs.runner }}
+    timeout-minutes: 120
     # No compiler cache: it saved the least per GB, and the 10 GB quota holds only five presets.
     steps:
       - name: Prepare host
@@ -566,3 +487,43 @@ jobs:
             ${{ env.BUILD_RELEASE_DIR }}/*.deb
             ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
             ${{ env.BUILD_RELEASE_DIR }}/*.flatpak
+
+      # The docs run whatever the release did; doc_doxygen has no compiled dependencies, so no engine build.
+      - name: Generate Doxygen XML
+        id: doxygen
+        if: ${{ !cancelled() && inputs.runner == 'ubuntu-26.04' }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: >-
+            bash ./scripts/linux/cmake-configure-build.sh
+            --preset "linux-debug-clang"
+            --build-dir "${{ env.BUILD_DIR }}"
+            --build-target doc_doxygen
+          log-file: output.log
+
+      - name: Build web page
+        id: web
+        if: ${{ !cancelled() && steps.doxygen.outcome == 'success' }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
+
+      - name: Enforce wasm demo size budget
+        id: wasm-budget
+        # Fatal on purpose: a wasm bloat regression must block the deploy below.
+        if: ${{ !cancelled() && steps.web.outcome == 'success' }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: bash ./scripts/linux/wasm-size-budget.sh
+
+      - name: 📂 Sync files to domain
+        uses: Kataglyphis/ANTfrastructure/.github/actions/deploy-over-ftp@develop
+        # A manual dispatch (any branch) never deploys.
+        if: ${{ !cancelled() && steps.wasm-budget.outcome == 'success' && github.event_name != 'workflow_dispatch' }}
+        # A flaky docs FTP upload must not fail the build+test lane.
+        continue-on-error: true
+        with:
+          server: ${{ secrets.SERVER }}
+          username: ${{ secrets.USERNAME }}
+          password: ${{ secrets.PW }}
+          local-dir: "./docs/build/html/"

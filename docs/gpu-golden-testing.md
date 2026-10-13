@@ -48,7 +48,7 @@ What that does not cover:
   its `ENV` once the image's Mesa carries that. The Windows lavapipe run
   (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
 - **Only that one Linux job runs them.** They cost ~20 minutes of llvmpipe on a
-  32-core host (~55 on a 4-vCPU runner); the ASan, TSan and gcc jobs keep
+  32-core host (~55 on a 4-vCPU runner); the sanitizer and gcc jobs keep
   excluding them.
 - **The Windows container run excludes them** (`$gpuOnlySuites`) - the runner runs
   them instead, below - although the hub image carries lavapipe since 2026-10-04
