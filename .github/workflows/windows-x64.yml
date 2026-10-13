@@ -50,6 +50,8 @@ jobs:
 
   pester-tests:
     runs-on: windows-2025
+    # About a minute per run.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:

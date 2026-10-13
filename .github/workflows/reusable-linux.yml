@@ -44,6 +44,8 @@ jobs:
   clang-tests:
     name: clang debug + tests
     runs-on: ${{ inputs.runner }}
+    # 47-68 min on x64 and 54-56 on arm64 (last five runs); the rest is room for a cold debug cache.
+    timeout-minutes: 150
     permissions:
       contents: read
       # compiler-cache-save deletes this key's older cache entries.
@@ -408,6 +410,8 @@ jobs:
   gcc:
     name: gcc + tests + coverage
     runs-on: ${{ inputs.runner }}
+    # 30-41 min on x64 and 24-26 on arm64 (last five runs), with no compiler cache to go cold.
+    timeout-minutes: 90
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -487,6 +491,7 @@ jobs:
             ${{ env.BUILD_RELEASE_DIR }}/*.deb
             ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
             ${{ env.BUILD_RELEASE_DIR }}/*.flatpak
+          if-no-files-found: error
 
       # The docs run whatever the release did; doc_doxygen has no compiled dependencies, so no engine build.
       - name: Generate Doxygen XML
