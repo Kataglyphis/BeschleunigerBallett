@@ -28,12 +28,13 @@ kataglyphis_cpack_common(
   "GraphicsEngine.desktop"
   APPIMAGE_ICON_NAME
   "Engine_logo"
-  # The packages bundle neither glibc nor the Vulkan loader: they need the image's base, Ubuntu 26.04, or newer.
+  # glibc travels (LOADER below); the Vulkan loader and its drivers must be the machine's.
   DEBIAN_DEPENDS
-  "libc6 (>= 2.43), libvulkan1")
+  "libvulkan1")
 
-# The compiler's libstdc++: GCC 16.2's GLIBCXX_3.4.36 is newer than any distro's.
+# The compiler's libstdc++ and the image's glibc: GCC 16.2's and glibc 2.43 are newer than Debian 13's.
 kataglyphis_install_linux_closure(
+  LOADER
   PRIVATE_DIR
   graphicsengine
   TARGETS
