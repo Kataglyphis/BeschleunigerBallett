@@ -12,6 +12,8 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-16
+
 ### Changed
 
 - 2026-10-16 — **A push runs Linux x64 and the gates; Linux arm64, Linux riscv64, Windows x64 and
