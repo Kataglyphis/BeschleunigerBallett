@@ -12,6 +12,18 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-10-16 — **The Linux packages start outside the build image.** 1.5.0's `.deb`, tarball and
+  AppImage need GCC 16.2's `libstdc++` (`GLIBCXX_3.4.36`, newer than any distro's) and carry
+  none; the `.deb` claimed `libstdc++6 (>= 13.1)`. ANTfrastructure's
+  `kataglyphis_install_linux_closure` now puts the compiler's runtime in `lib/graphicsengine/`, and
+  the `.deb` declares glibc 2.43 and the Vulkan loader. The packages run on Ubuntu 26.04 and
+  newer; Debian 13 and Ubuntu 24.04 have an older glibc (ANTfrastructure BACKLOG CON97).
+- 2026-10-16 — **A clean-host job proves it**: after each Linux lane, `ubuntu-26.04` and
+  `ubuntu-26.04-arm` install the `.deb` with apt, check every installed ELF with `ldd`, and start
+  `GraphicsEngine --version` from the `.deb`, the unpacked tarball and the AppImage.
+
 ## [1.5.0] - 2026-10-16
 
 ### Changed

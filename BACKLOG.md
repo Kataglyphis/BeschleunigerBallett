@@ -28,6 +28,12 @@ still needs the host.
 
 ### C++ Vulkan engine
 
+- [ ] **The `.deb` installs its desktop entry where no desktop looks** (S) — found 2026-10-16:
+  `CMakeLists.txt` installs `GraphicsEngine.desktop`, the AppStream file and the icons to the
+  relative `usr/share/...`, which the `/usr` prefix turns into `/usr/usr/share/applications`, and
+  `Resources/`, `images/` and the fonts land in `/usr/Resources` and the like. The tarball and the
+  AppImage want that layout; the `.deb` wants `share/...` under `/usr`. Done when the installed
+  `.deb` shows the app in a desktop's menu and the clean-host job still starts all three formats.
 - [b] **Renderer-level RAII cleanup consolidation** (M, **blocked on being testable**) —
   the stage-level work landed 2026-07-19. `VulkanRenderer`'s hand-ordered `cleanUp()` and
   the device-lost special case in `App.cpp` are left: `App.cpp` skips `scene->cleanUp()` and

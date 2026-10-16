@@ -35,3 +35,21 @@ jobs:
       PW: ${{ secrets.PW }}
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
+
+  # Inside the image every library is present; the bare image base shows a missing one (hub linux-build-basics.md).
+  clean-host-arm64:
+    name: Packages on a clean Ubuntu 26.04 (arm64)
+    needs: build-arm
+    runs-on: ubuntu-26.04-arm
+    timeout-minutes: 15
+    steps:
+      - name: Install and start the packages
+        uses: Kataglyphis/ANTfrastructure/.github/actions/clean-host-package-check@develop
+        with:
+          artifact: linux-packages-arm64
+          deb: '*.deb'
+          deb-command: GraphicsEngine --version
+          tarball: '*.tar.gz'
+          tarball-command: ./bin/GraphicsEngine --version
+          appimage: '*.AppImage'
+          appimage-command: '"$APPIMAGE" --version'
