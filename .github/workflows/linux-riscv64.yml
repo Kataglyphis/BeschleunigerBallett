@@ -1,15 +1,8 @@
-# riscv64: cross-built on amd64; the CPU suites under QEMU on every push, the GPU suites weekly in shards (owner decision 2026-10-06, AGENTS.md § The riscv64 lane).
+# riscv64: cross-built on amd64; the CPU suites under QEMU on request, the GPU suites weekly in shards (owner decision 2026-10-06, AGENTS.md § The riscv64 lane).
 name: Linux riscv64 · cross build + test
 
+# On request only (https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md): on-request.yml or by hand; the weekly GPU run keeps its schedule.
 on:
-  push:
-    branches: [main, develop]
-    # A docs-only commit must neither spend a build nor cancel an in-flight code run.
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main, develop]
   # Serial on one 4-vCPU runner the GPU suites need about a day (AGENTS.md § The riscv64 lane), so they never ride a push.
   schedule:
     - cron: '43 1 * * 6'
@@ -23,10 +16,11 @@ on:
         description: With gpu-tests, only these shards (comma-separated names from --list-gpu-shards; empty runs all)
         type: string
         default: ''
+  workflow_call:
 
-# main is exempt from cancellation: its runs deploy and release. The GPU run has its own group, so a push cannot cancel it.
+# Per lane and caller (github.workflow is the caller's name when called), the GPU run in its own; main's runs are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ (github.event_name == 'schedule' || inputs.gpu-tests) && 'gpu' || 'cpu' }}
+  group: linux-riscv64-${{ github.ref }}-${{ github.workflow }}-${{ (github.event_name == 'schedule' || inputs.gpu-tests) && 'gpu' || 'cpu' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

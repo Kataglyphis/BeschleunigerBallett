@@ -1,0 +1,68 @@
+# The lanes a push to develop does not run on its own, when a commit message asks: [ci <lane>] (https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md).
+name: On request · [ci <lane>] in a commit message
+
+on:
+  push:
+    branches: ["develop"]
+  workflow_dispatch:
+    inputs:
+      lanes:
+        description: 'all, or lane words such as "windows", "arm64", "riscv64"'
+        required: true
+        default: all
+        type: string
+
+permissions: {}
+
+# No concurrency here: each lane's own group lets a newer request for it replace an older one.
+jobs:
+  # Skipped, so no runner starts, unless a dispatch or a commit of the push carries "[ci " (contains() ignores case).
+  request:
+    name: Which lanes
+    if: github.event_name == 'workflow_dispatch' || contains(join(github.event.commits.*.message, ' '), '[ci ')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    outputs:
+      lanes: ${{ steps.pick.outputs.lanes }}
+    steps:
+      - name: Read the [ci ...] tokens
+        id: pick
+        uses: Kataglyphis/ANTfrastructure/.github/actions/requested-lanes@develop
+        with:
+          lanes: linux-arm64 linux-riscv64 windows-x64 windows-arm64-cross
+          request: ${{ inputs.lanes }}
+
+  # Each calling job grants what its lane's jobs ask for; less makes GitHub reject the whole run.
+  linux-arm64:
+    needs: request
+    if: contains(needs.request.outputs.lanes, ' linux-arm64 ')
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/linux-arm64.yml
+    secrets: inherit
+
+  linux-riscv64:
+    needs: request
+    if: contains(needs.request.outputs.lanes, ' linux-riscv64 ')
+    permissions:
+      contents: read
+      actions: write
+    uses: ./.github/workflows/linux-riscv64.yml
+    secrets: inherit
+
+  windows-x64:
+    needs: request
+    if: contains(needs.request.outputs.lanes, ' windows-x64 ')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-x64.yml
+    secrets: inherit
+
+  windows-arm64-cross:
+    needs: request
+    if: contains(needs.request.outputs.lanes, ' windows-arm64-cross ')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-arm64-cross.yml
+    secrets: inherit

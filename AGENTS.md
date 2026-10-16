@@ -20,7 +20,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
-| Pushing and expecting CI to tell you something | Every lane runs on every push/PR; the four platform lanes skip docs-only commits — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
+| Pushing and expecting CI to tell you something | A push or PR runs Linux x64 (not on a docs-only commit) and the gates; the other four platform lanes run when a commit message asks with the ci token, or by hand — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): [`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md), which the pin bump to `ee7e5a1b` made reachable in this checkout; [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) for a reader without the submodule |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
 
@@ -714,20 +714,27 @@ them from the templates after an upstream change; never edit them here.
 
 ## What CI runs, and what it does not
 
-Every lane runs on every push/PR to `main`/`develop`. The `[build-win]` and
-`[build-arm]` commit-message opt-ins are gone (owner decision 2026-09-24: Linux
-x64, Linux arm64 and Windows x64 always run; Windows arm64 joined on 2026-09-25, Linux
-riscv64 on 2026-10-01). The five platform lanes still skip a docs-only commit through `paths-ignore`:
+**A push or PR runs Linux x64 and the gates; the other four platform lanes run on request**
+(owner rule 2026-10-15 for the whole family, ANTfrastructure's
+[`branch-and-release-strategy.md`](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md); this repo since 2026-10-16).
+`on-request.yml` reads `[ci <lane>]` in the pushed commit messages: `[ci windows]` runs both
+Windows lanes, `[ci arm64]` both arm64 ones, `[ci riscv64]` the riscv64 lane, `[ci all]` all
+four; each lane's Run workflow button (or `gh workflow run <lane>.yml --ref <branch>`) starts
+one by hand. A token in a commit message starts lanes, so never quote one in prose. Each
+lane's concurrency group is `<lane>-${{ github.ref }}-${{ github.workflow }}`, one per lane
+and caller, and a lane's badge shows only its runs started by hand. From 2026-09-24 to
+2026-10-16 every lane ran on every push; the `[build-win]` and `[build-arm]` opt-ins before
+that are gone. Linux x64 still skips a docs-only commit through `paths-ignore`:
 
 | Lane | Workflow | Trigger |
 | --- | --- | --- |
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | always, minus `'**.md'`/`docs/**` |
-| Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**`; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
-| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on every push, the GPU suites behind the fp16 shim in 11 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | always, minus `'**.md'`/`docs/**`; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
-| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43, plus the Profile perf suite and the Debug (ASan) suite the lane cross-builds too (its `/MDd` CRT and `ucrtbased.dll` come from the runner's own VS and SDK, neither is redistributable); the `gpu-suites` job runs the Release and perf suites on lavapipe from a checkout) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | always, minus `'**.md'`/`docs/**` | dda807b0 (ci(windows): the arm64 cross lane builds and runs the Debug (ASan) suite too)
+| Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
+| Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | on request (`on-request.yml`) or by hand; deploys nothing (the deploy jobs need `runner == 'ubuntu-26.04'`) |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 11 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
+| Windows ARM64 (cross build in the arm64 bundle, then a run on `windows-11-arm`, plus the Release commit suite there: `-StageTests` builds it with `KATAGLYPHIS_RELEASE_COMMIT_TESTS`, stages it with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in `dist\windows-arm64-tests`, and the hub's `Invoke-StagedTests.ps1` runs it minus the GPU suites and the source-reading `BuildIntegrity.*` checks, hub CON43, plus the Profile perf suite and the Debug (ASan) suite the lane cross-builds too (its `/MDd` CRT and `ucrtbased.dll` come from the runner's own VS and SDK, neither is redistributable); the `gpu-suites` job runs the Release and perf suites on lavapipe from a checkout) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | on request (`on-request.yml`) or by hand | dda807b0 (ci(windows): the arm64 cross lane builds and runs the Debug (ASan) suite too)
 
 The top two are their own workflows rather than jobs inside the build lanes,
 and that is what makes "always" true. As tenants they inherited their host's
@@ -985,16 +992,18 @@ driver's public parameter contract. The file says so at the job.
 **One command, and it is the same one CI runs:**
 
 ```bash
-bash ./scripts/linux/run-lint-gates.sh            # the six always-on gates
-bash ./scripts/linux/run-lint-gates.sh --ratchets # + doc-links and the eight measurement gates
+bash ./scripts/linux/run-lint-gates.sh   # CI's seven: the six always-on gates, doc-links and the eight measurement gates
 ```
 
-The hub's consumer hook runs the first line on every commit once a clone opts in with
-`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`.
-It skips the ratchets, so run the second line before pushing a comment, size or shell change:
-the comment-size ratchet once failed `Lint gates` that way (run 37486873828).
+The wrapper passes `--ratchets` itself since 2026-10-16; before that it ran six of the seven,
+and a local pass could still fail CI. The hub's consumer hook runs only the six always-on
+gates on every commit (the hub's script without `--ratchets`) once a clone opts in with
+`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`,
+so run the wrapper before pushing a comment, size or shell change: the comment-size ratchet
+once failed `Lint gates` that way (run 37486873828). The doc-link gate reads the
+submodules, so a fresh clone needs `git submodule update --init` first.
 
-That is the whole `lint` job; CI passes `--ratchets` too. The wrapper hands this repo's root to
+That is the whole `lint` job, ratchets included. The wrapper hands this repo's root to
 ANTfrastructure's `linux/scripts/run-lint-gates.sh`, which owns the six gates
 (shell, workflows + CI image refs, secrets, python, shared-config drift,
 consumer pin-forwarding — the list and scopes are in that script's header) and

@@ -1,5 +1,7 @@
 name: Linux x64 · build + test
 
+# The one build lane every push runs (https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md).
+
 on:
   push:
     branches: [main, develop]
@@ -17,9 +19,9 @@ on:
         type: boolean
         default: false
 
-# main is exempt from cancellation: its runs deploy and release.
+# Per lane and caller (github.workflow is the caller's name when called); main's runs are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: linux-x64-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

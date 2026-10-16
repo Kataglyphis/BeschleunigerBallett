@@ -2,23 +2,18 @@ name: Windows arm64 · cross build + test
 
 # Release, Profile and the ASan (Debug) suite: the aarch64 ASan runtime ships since 2026-10-03; see third_party/ANTfrastructure/docs/windows-cross-builds.md.
 
+
+# On request only (https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md): on-request.yml or by hand.
 on:
-  push:
-    branches: [main, develop]
-    # Same rule as windows-x64.yml: a docs-only commit does not rebuild the engine.
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
-# Same rule as windows-x64.yml: superseded runs are cancelled, except on main.
+# Per lane and caller (github.workflow is the caller's name when called); main's runs are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: windows-arm64-cross-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

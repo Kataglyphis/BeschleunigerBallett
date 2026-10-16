@@ -6,5 +6,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/antfrastructure.sh
 source "${SCRIPT_DIR}/lib/antfrastructure.sh"
 
-# The root is explicit: one derived upstream would grade ANTfrastructure's own tree and report green.
-antfrastructure_exec linux/scripts/run-lint-gates.sh "${KATAGLYPHIS_REPO_ROOT}" "$@"
+# Explicit root (one derived upstream grades the hub's tree), and --ratchets as lint-gates.yml passes it.
+antfrastructure_exec linux/scripts/run-lint-gates.sh "${KATAGLYPHIS_REPO_ROOT}" --ratchets "$@"

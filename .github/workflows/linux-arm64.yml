@@ -1,24 +1,18 @@
 name: Linux arm64 · build + test
 
+# On request only (https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/branch-and-release-strategy.md): on-request.yml or by hand.
 on:
-  push:
-    branches: [main, develop]
-    # A docs-only commit must neither spend a build nor cancel an in-flight code run.
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
     inputs:
       split-jobs:
         description: Run the bundled jobs as their parts again
         type: boolean
         default: false
+  workflow_call:
 
-# main is exempt from cancellation: its runs deploy and release.
+# Per lane and caller (github.workflow is the caller's name when called); main's runs are never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: linux-arm64-${{ github.ref }}-${{ github.workflow }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
