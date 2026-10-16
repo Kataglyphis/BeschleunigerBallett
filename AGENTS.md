@@ -20,6 +20,7 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | "My build produced nothing" / "my deleted file still builds" | [Container reuse and delivery](#containerized-windows-builds-stevedore) — `-FreshContainer`, and the delivery check that fails the build |
 | Writing a script, module, or general-purpose doc | Probably belongs upstream — [Rule: Reusable Work Belongs in ANTfrastructure](#rule-reusable-work-belongs-in-antfrastructure). Check [What ANTfrastructure owns](#what-antfrastructure-owns--links-only) before writing a procedure that may already exist |
 | Bumping a submodule pin, or any dependency | `bash ./scripts/linux/renovate-local.sh` from WSL — see [Dependency upgrades](#dependency-upgrades-renovate-as-a-local-cli). Never a bare `git submodule update --remote` |
+| Releasing | A push to `main` releases `VERSION.txt`'s version once every lane is green; first raise it and give it a `CHANGELOG.md` section — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Pushing and expecting CI to tell you something | A push or PR runs Linux x64 (not on a docs-only commit) and the gates; the other four platform lanes run when a commit message asks with the ci token, or by hand — see [What CI runs](#what-ci-runs-and-what-it-does-not) |
 | Changing the Rust WebGPU renderer | `third_party/OxidANT/crates/webgpu_renderer` — that repo owns the renderer's docs too (decision D6): [`webgpu-renderer-roadmap.md`](third_party/OxidANT/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md), which the pin bump to `ee7e5a1b` made reachable in this checkout; [on the web](https://github.com/Kataglyphis/OxidANT/blob/HEAD/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) for a reader without the submodule |
 | Touching the clouds subsystem | Pipeline shape, estimator, UBO/constants tables, queue ownership — [`docs/clouds.md`](docs/clouds.md) |
@@ -722,7 +723,12 @@ Windows lanes, `[ci arm64]` both arm64 ones, `[ci riscv64]` the riscv64 lane, `[
 four; each lane's Run workflow button (or `gh workflow run <lane>.yml --ref <branch>`) starts
 one by hand. A token in a commit message starts lanes, so never quote one in prose. Each
 lane's concurrency group is `<lane>-${{ github.ref }}-${{ github.workflow }}`, one per lane
-and caller, and a lane's badge shows only its runs started by hand. From 2026-09-24 to
+and caller, and a lane's badge shows only its runs started by hand. **Every push to `main` is a
+release** (`release.yml`): a version check (`VERSION.txt`'s version has a `CHANGELOG.md` section and
+no release yet), all five lanes once more, then `v<version>` with every lane's packages
+(`scripts/linux/collect-release-assets.sh`, its suite a job of `linux-x64.yml`), only when every lane
+is green; `gh workflow run release.yml --ref develop -f dry-run=true` proves it on `develop` without
+publishing. From 2026-09-24 to
 2026-10-16 every lane ran on every push; the `[build-win]` and `[build-arm]` opt-ins before
 that are gone. Linux x64 still skips a docs-only commit through `paths-ignore`:
 

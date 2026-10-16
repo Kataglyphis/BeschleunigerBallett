@@ -516,7 +516,7 @@ jobs:
         if: matrix.part != 'docs'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: linux-packages
+          name: linux-packages-${{ inputs.runner == 'ubuntu-26.04-arm' && 'arm64' || 'x64' }}
           path: |
             ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
             ${{ env.BUILD_RELEASE_DIR }}/*.tgz
