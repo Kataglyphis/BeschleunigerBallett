@@ -290,7 +290,7 @@ in the container through the hub's `container-ci-windows.yml`).
 here. When you do not know which document owns a topic, start at
 [`third_party/ANTfrastructure/docs/INDEX.md`](third_party/ANTfrastructure/docs/INDEX.md),
 which maps topic → owning document; linking through it keeps these references
-valid when upstream reorganises. For this section, two documents cover it:
+valid when upstream reorganises. For this section, three documents cover it:
 
 - [`third_party/ANTfrastructure/docs/windows-builds.md`](third_party/ANTfrastructure/docs/windows-builds.md)
   — the image itself: build sequence, Stevedore setup, invariants.
@@ -301,6 +301,11 @@ valid when upstream reorganises. For this section, two documents cover it:
   CMake build directory, the Windows path limit that silently truncates tar
   transfers, `docker exec` bypassing the entrypoint, and the wcifs teardown
   lock.
+- [`third_party/ANTfrastructure/docs/windows-build-resources.md` § Two cache levels](third_party/ANTfrastructure/docs/windows-build-resources.md#two-cache-levels)
+  — sccache shared with the other build hosts: this host's dufs plus an S3 bucket, handed
+  to the reusable container's `docker exec` by name, so the key reaches no command line,
+  and the fallback when the bucket stalls. The bucket's server:
+  [`linux/sccache-s3/README.md`](third_party/ANTfrastructure/linux/sccache-s3/README.md).
 
 What you need in hand to not get burned:
 
