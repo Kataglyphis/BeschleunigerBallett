@@ -12,6 +12,8 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10-17
+
 ### Added
 - **Windows arm64 ships a setup `.exe` too** (2026-10-17), as x64 always did. NSIS has no arm64 stub,
   so it is the same x86 stub, which Windows on Arm runs emulated; the arm64 build used to drop it
