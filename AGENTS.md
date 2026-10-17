@@ -57,8 +57,9 @@ tracked them: 633 MiB tracked, 518 MiB of it the 14 scene directories; after, 11
   `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other twelve for the model picker, and
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` fetches nothing (the tests that read a scene then skip or fail).
 - **Without a configure**, `cmake -P cmake/FetchAssets.cmake` does the same. `Build-Windows-Container.ps1`
-  runs it on the host, so a run from the repo root finds the scenes, and both Windows lanes run it
-  before their host-side `Invoke-LavapipeTests.ps1`.
+  runs it on the host, so a run from the repo root finds the scenes, and the arm64 lane runs it
+  before its host-side lavapipe suites; x64's comes from the container's configure, whose
+  bind-mounted workspace the host reads (the `windows-2025` runner has no `cmake` on `PATH`).
 - **A fetched directory holds `.assetant-sha256`**: the archive's hash and how many files it
   extracted. Only a stamp matching both makes the fetch a no-op, so a tree whose files went while
   the ignored stamp stayed is extracted again (checking out a commit that still tracked the scenes
