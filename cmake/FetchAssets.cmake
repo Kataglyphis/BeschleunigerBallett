@@ -93,7 +93,10 @@ function(
     file(READ "${_stamp}" _have)
     string(STRIP "${_have}" _have)
     # The count catches files gone under a kept stamp, as after checking out a commit that still tracked the scene.
-    file(GLOB_RECURSE _files LIST_DIRECTORIES false "${_target}/*")
+    file(
+      GLOB_RECURSE _files
+      LIST_DIRECTORIES false
+      "${_target}/*")
     list(REMOVE_ITEM _files "${_stamp}")
     list(LENGTH _files _count)
     if(_have STREQUAL "${sha} ${_count}")
@@ -147,7 +150,10 @@ function(
   if(NOT IS_DIRECTORY "${_target}")
     message(FATAL_ERROR "FetchAssets: ${_archive} does not unpack to ${name}/, as every AssetANT archive does.")
   endif()
-  file(GLOB_RECURSE _files LIST_DIRECTORIES false "${_target}/*")
+  file(
+    GLOB_RECURSE _files
+    LIST_DIRECTORIES false
+    "${_target}/*")
   list(LENGTH _files _count)
   file(WRITE "${_stamp}" "${sha} ${_count}\n")
   message(STATUS "FetchAssets: ${name} extracted into ${_target}")
