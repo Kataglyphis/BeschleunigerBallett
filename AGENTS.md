@@ -77,9 +77,9 @@ tracked them: 633 MiB tracked, 518 MiB of it the 14 scene directories; after, 11
   build without `wasm-bindgen` publishes the docs without the demo (a warning in CI) instead of
   the 8 MiB snapshot that was committed until 2026-10-17.
 
-What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`) and
-`images/` (11 MiB, README and homepage screenshots), frozen with the rest in `large-files.allow`
-for the hub's `large-files` gate.
+What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`), frozen
+with two test fixtures in `large-files.allow` for the hub's `large-files` gate. The engine screenshots
+under `images/` (11 MiB), which nothing linked, went on 2026-10-17 (owner).
 
 **The history is rewritten next; LFS is still out.** The owner reversed the 2026-09-15 "no
 rewrite" on 2026-10-17: binary blobs of 500 KB and more that no branch tip holds leave the history
