@@ -12,6 +12,8 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10-17
+
 ### Fixed
 
 - 2026-10-16 — **The Linux packages start outside the build image.** 1.5.0's `.deb`, tarball and
@@ -20,7 +22,8 @@ the GitHub releases themselves.
   `kataglyphis_install_linux_closure` now puts the compiler's runtime in `lib/graphicsengine/`
   together with the image's loader and glibc 2.43, and `bin/GraphicsEngine` is a launcher that
   starts the program through them (`LOADER`), so an older glibc (Debian 13, Ubuntu 24.04) is no
-  obstacle. The `.deb` takes only the Vulkan loader from the distro. GraphicsEngine finds its
+  obstacle: the arm64 `.deb`, tarball and AppImage start on a Debian 13 Raspberry Pi 5 (measured
+  2026-10-17). The `.deb` takes only the Vulkan loader from the distro. GraphicsEngine finds its
   resources from the working directory, which the launcher leaves alone.
 - 2026-10-16 — **A clean-host job proves it**: after each Linux lane, `ubuntu-26.04` and
   `ubuntu-26.04-arm` install the `.deb` with apt, check every installed ELF with `ldd`, and start
