@@ -47,7 +47,12 @@ jobs:
         if ($sha -ne '0A51A619525E0C7A156125C4F80C4F591C494CEF9FF59DC4481735779A9A280C') { throw "$rt.zip is $sha, not the pinned build" }
         Expand-Archive -LiteralPath $zip -DestinationPath $env:RUNNER_TEMP -Force
         $env:PATH = "$(Join-Path $env:RUNNER_TEMP $rt);$env:PATH"
+        # The installed copy below needs the same loader.
+        Add-Content -LiteralPath $env:GITHUB_PATH -Value (Join-Path $env:RUNNER_TEMP $rt)
         ./bundle/bin/GraphicsEngine.exe --version
+      # The same engine, as the setup .exe installed it (the hub installs it, grades every binary ARM64, then uninstalls).
+      installed-run-command: |
+        ./bin/GraphicsEngine.exe --version
       # The commit suite (Release), the ASan suite (Debug, /MDd) and the perf suite (Profile), run natively; filter and list in tests.json (hub CON43).
       test-artifact-dir: dist/windows-arm64-tests
       test-command: |

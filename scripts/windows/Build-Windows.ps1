@@ -366,11 +366,9 @@ try {
       if (Test-Path $packages) { Remove-BuildRoot -Context $context -Path $packages | Out-Null }
       New-Item -ItemType Directory -Force -Path $packages | Out-Null
       $installers = @(Get-ChildItem -LiteralPath $buildPathClangRelease -File | Where-Object { $_.Extension -in '.msi', '.zip' })
-      if (-not $isCross) {
-        # x64 only (NSIS's stub is x86); it names its installer like the MSI, the other .exe files are tests.
-        $installers += @($installers | ForEach-Object { Join-Path $buildPathClangRelease "$($_.BaseName).exe" } |
-            Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Get-Item)
-      }
+      # NSIS names its installer like the MSI, the other .exe files are tests; arm64's is the same x86 stub, installed by the device job.
+      $installers += @($installers | ForEach-Object { Join-Path $buildPathClangRelease "$($_.BaseName).exe" } |
+          Select-Object -Unique | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Get-Item)
       $installers | Copy-Item -Destination $packages
       Write-BuildLog -Context $context -Message "Portable bundle $bundle; DLL closure: $(@($copied | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
     } | Out-Null

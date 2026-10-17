@@ -12,6 +12,15 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Added
+- **Windows arm64 ships a setup `.exe` too** (2026-10-17), as x64 always did. NSIS has no arm64 stub,
+  so it is the same x86 stub, which Windows on Arm runs emulated; the arm64 build used to drop it
+  because the hub's arch gate refused that stub. The gate now reports an NSIS installer instead of
+  failing it, and the `windows-11-arm` job installs it silently, checks that every installed binary
+  is ARM64, starts `bin/GraphicsEngine.exe --version` from the install directory and uninstalls it again
+  (`installed-run-command`). The hub moves to 4cfaabcb. Owner rule of the same day: every release ships
+  Windows arm64 installers next to the x64 ones.
+
 ## [1.5.1] - 2026-10-17
 
 ### Fixed
