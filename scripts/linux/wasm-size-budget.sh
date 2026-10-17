@@ -22,7 +22,7 @@ info "Budget: ${BUDGET_BYTES} bytes ($(( BUDGET_BYTES / 1024 / 1024 )) MiB)"
 info "Ensuring wasm32-unknown-unknown target is installed"
 # No wasm target is an environment gap, not a size regression: skip with a warning that never reads as a pass.
 if ! ensure_wasm32_target; then
-  echo "::warning::Wasm size budget SKIPPED - this toolchain cannot build wasm32-unknown-unknown (no rustup, no wasm32 std in the image). Nothing was weighed; the committed demo snapshot is unchanged. Fix ANTfrastructure's install-rust.sh to restore the target."
+  echo "::warning::Wasm size budget SKIPPED - this toolchain cannot build wasm32-unknown-unknown (no rustup, no wasm32 std in the image). Nothing was weighed. Fix ANTfrastructure's install-rust.sh to restore the target."
   info "=== Wasm Size Budget Test: SKIPPED (no wasm32 toolchain) ==="
   exit 0
 fi

@@ -172,3 +172,6 @@ Resources/**/*.obj
 
 # gtest discovery writes CMakeFiles/googletest_discovery_*.json into the tests' working directory, the repo root.
 /CMakeFiles/
+
+# Built by scripts/linux/docs-build-web.sh for every docs build, never tracked.
+/docs/source/_webgpu_demo/

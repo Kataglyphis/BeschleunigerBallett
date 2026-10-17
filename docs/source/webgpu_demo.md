@@ -30,6 +30,6 @@ Open the demo full-page ↗
   culling, and more) is `webgpu-renderer-roadmap.md` in the repository that owns
   the renderer, under `third_party/OxidANT/crates/webgpu_renderer/docs/`.
 - **Rebuild the demo**: `scripts/linux/docs-build-web.sh` compiles
-  `kataglyphis_webgpu_renderer` to wasm32, runs `wasm-bindgen`, and refreshes
-  this folder before Sphinx runs; the CI docs deploy runs it automatically,
-  so the deployed demo always tracks the current renderer.
+  `kataglyphis_webgpu_renderer` to wasm32, runs `wasm-bindgen`, and writes the
+  demo next to these pages before Sphinx runs (it is not tracked); the CI docs
+  deploy runs it, so the deployed demo always tracks the current renderer.

@@ -69,12 +69,17 @@ tracked them: 633 MiB tracked, 518 MiB of it the 14 scene directories; after, 11
   changes, and the fetch deletes a download whose hash differs and stops.
 - **What stays tracked**: the test fixtures (`GltfTest/`, `ShadowTest/`, `Plane/`, `VikingRoom/`,
   and the loose `plane` and `suzanne` the perf suite parses) and `Resources/Textures/`, which the
-  packages install whole. The renderer loads only `Skybox/DOOM2016` from it; `Loading_Screen/`, the
-  duplicated `space` skybox, `brick.png` and `dirt.png` (12 MiB) are read by nothing.
+  packages install whole: `Skybox/DOOM2016`, the one skybox the renderer loads, and the three
+  1-pixel defaults (1.4 MiB). `Loading_Screen/`, the duplicated `space` skybox, `brick.png` and
+  `dirt.png` (12.6 MiB, read by nothing) went on 2026-10-17.
+- **The WebGPU demo is built, not tracked**: `scripts/linux/docs-build-web.sh` compiles it into
+  the ignored `docs/source/_webgpu_demo/` for every docs build, which CI's docs deploy runs. A
+  build without `wasm-bindgen` publishes the docs without the demo (a warning in CI) instead of
+  the 8 MiB snapshot that was committed until 2026-10-17.
 
-What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`),
-`Resources/Textures/` (14 MiB), `images/` (11 MiB, README and homepage screenshots) and the WebGPU
-demo's prebuilt `kataglyphis_webgpu_renderer_bg.wasm` (8 MiB).
+What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`) and
+`images/` (11 MiB, README and homepage screenshots), frozen with the rest in `large-files.allow`
+for the hub's `large-files` gate.
 
 **No history rewrite and no LFS** (owner decision, 2026-09-15) still holds. `filter-repo`,
 `filter-branch` and BFG all invalidate every existing clone, fork and open branch; the scenes left

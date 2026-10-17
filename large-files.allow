@@ -1,0 +1,12 @@
+# Data files over 500 KiB this repo must track, frozen for ANTfrastructure's large-files gate:
+# https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/data-repositories.md  <path> | <KiB> | <reason>
+Documents/GGD_Kit_milestone_document.pdf | 16199 | the project's milestone document (linguist-vendored); a move to DocumANTation is the owner's call
+Resources/Models/VikingRoom/textures/viking_room.png | 939 | test fixture: the VikingRoom scene the render suites load offline
+Resources/Models/suzanne.obj | 986 | test fixture: the perf suite parses it
+images/OpenGLEngine/Screenshot.png | 1012 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/OpenGLEngine/Screenshot1.png | 764 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/OpenGLEngine/Screenshot2.png | 664 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/VulkanEngine/Screenshot.png | 1770 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/VulkanEngine/Screenshot1.png | 1482 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/VulkanEngine/Screenshot2.png | 3577 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
+images/VulkanEngine/Screenshot3.png | 1664 | portfolio screenshot; no tracked page links it, kept until the owner says the homepage does not either
