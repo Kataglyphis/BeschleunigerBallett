@@ -94,6 +94,11 @@ jobs:
           Copy-Item -Recurse -Force dist/windows-arm64-tests/Resources/ShadersSlang/build Resources/ShadersSlang/build
           Get-ChildItem -Recurse -File Resources/ShadersSlang/build | ForEach-Object { $_.LastWriteTime = Get-Date }
 
+      # A checkout tracks no scenes; the goldens read the default ones from AssetANT, as a configure fetches them.
+      - name: Fetch the scenes
+        shell: pwsh
+        run: cmake -P cmake/FetchAssets.cmake
+
       - name: Run them natively
         shell: pwsh
         run: >-

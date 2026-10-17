@@ -54,6 +54,15 @@ list(
   "${KATAGLYPHIS_ANTFRASTRUCTURE_CMAKE_DIR}")
 
 include(PreventInSourceBuilds)
+
+# The scenes are AssetANT release assets now (Resources/assets.lock), so a configure fetches what the build reads.
+option(KATAGLYPHIS_FETCH_ASSETS "Fetch the locked scenes into Resources/Models (cmake/FetchAssets.cmake)" ON)
+option(KATAGLYPHIS_FETCH_ALL_ASSETS "Fetch every locked scene, not only the ones the code, tests and packages read" OFF)
+if(KATAGLYPHIS_FETCH_ASSETS)
+  include(FetchAssets)
+  kataglyphis_fetch_assets()
+endif()
+
 include(ProjectOptions)
 
 myproject_setup_options()
@@ -132,8 +141,12 @@ set(_myproject_runtime_resource_dirs
     Resources/Textures
     Resources/Models/crytek-sponza)
 
+# The fetch stamp is checkout state, not a resource.
 foreach(_myproject_resource_dir IN LISTS _myproject_runtime_resource_dirs)
-  install(DIRECTORY ${_myproject_resource_dir}/ DESTINATION ${_myproject_resource_dir}/)
+  install(
+    DIRECTORY ${_myproject_resource_dir}/
+    DESTINATION ${_myproject_resource_dir}/
+    PATTERN ".assetant-sha256" EXCLUDE)
 endforeach()
 
 set(_myproject_imgui_fonts

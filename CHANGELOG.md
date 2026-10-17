@@ -21,6 +21,18 @@ the GitHub releases themselves.
   (`installed-run-command`). The hub moves to 4cfaabcb. Owner rule of the same day: every release ships
   Windows arm64 installers next to the x64 ones.
 
+### Changed
+
+- 2026-10-17 — **The scenes are AssetANT release assets, not tracked files.** The fourteen scene
+  directories under `Resources/Models` (518 of the 633 MiB HEAD tracked) left the tree for
+  [AssetANT](https://github.com/Kataglyphis/AssetANT), one reproducible `<name>.tar.xz` per release.
+  `Resources/assets.lock` pins each by SHA-256 and URL, and `cmake/FetchAssets.cmake` extracts
+  `crytek-sponza` and `Dinosaurs` into `Resources/Models` at configure time through a per-user cache,
+  so the paths the engine loads did not move. `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches all
+  fourteen, and `cmake -P cmake/FetchAssets.cmake` fetches without a configure. The test fixtures
+  (`GltfTest`, `ShadowTest`, `Plane`, `VikingRoom`, `plane.obj`, `suzanne.obj`) and
+  `Resources/Textures` stay tracked, and the history keeps every scene: nothing was rewritten.
+
 ## [1.5.1] - 2026-10-17
 
 ### Fixed

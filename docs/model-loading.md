@@ -240,9 +240,9 @@ The `\`-to-`/` normalisation is a deliberate deviation from "as written in
 the `.mtl`": a Windows-authored relative path (`textures\wood.png`) must
 still resolve when the `.mtl` is loaded on a platform where `\` is just
 another filename character. Relative-to-the-`.mtl` first is what the OBJ/MTL
-format actually specifies; the `textures/` retry exists because every OBJ
-shipped in `Resources/Models` (`crytek-sponza`, `Pillum`, `Sulo`/`WolfStahl`,
-`VikingRoom`) puts its textures in a `textures/` sibling directory and
+format actually specifies; the `textures/` retry exists because every textured
+OBJ in `Resources/Models` (`VikingRoom`, and the AssetANT scenes `crytek-sponza`,
+`Pillum` and `Sulo`/`WolfStahl`) puts its textures in a `textures/` sibling directory and
 references them by bare filename, not by the format's own convention. A path
 that resolves to neither candidate degrades silently to the untextured
 default (Vulkan) or a missing image (glTF) rather than failing the whole load

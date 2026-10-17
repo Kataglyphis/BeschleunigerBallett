@@ -179,7 +179,10 @@ cd <repo root>
 via *cwd-relative* paths (e.g. `Resources/ShadersSlang/build/spirv/...`). Running
 from `build-clangcl-debug/` fails with an access violation /
 empty-`codeSize` `vkCreateShaderModule` — that is a wrong cwd, **not** a code
-bug. Run from the repo root, where `Resources/` resolves.
+bug. Run from the repo root, where `Resources/` resolves. The default scenes
+must be there too: a configure fetches them from AssetANT, `Build-Windows-Container.ps1`
+does it on the host before a container build, and `cmake -P cmake/FetchAssets.cmake`
+does it anywhere else (AGENTS.md § Large tracked assets).
 
 The executable carries AddressSanitizer/UBSan (the debug config's flags); it
 runs fine on the host.

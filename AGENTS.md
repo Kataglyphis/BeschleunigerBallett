@@ -37,38 +37,55 @@ these; the [Docs](#docs) table at the end is the full ownership index.
 | `third_party/OxidANT/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
 | `third_party/ANTfrastructure/` | The submodule that owns every reusable script, module and doc (see the rule below) |
 | `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ANTfrastructure drivers + this project's payload |
-| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`. The reusable modules live in ANTfrastructure — see [CMake modules](#cmake-modules-antfrastructure-first-local-override-wins) |
+| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`, `FetchAssets.cmake` (the scenes, see [Large tracked assets](#large-tracked-assets)). The reusable modules live in ANTfrastructure — see [CMake modules](#cmake-modules-antfrastructure-first-local-override-wins) |
 
 ### Large tracked assets
 
-**This repository is large on purpose and it is not going to be rewritten.**
-Measured 2026-09-15, outside `third_party/`: **582 MiB across 580 tracked
-files**, of which **37 files account for 556 MiB** — 95% of the weight in 6% of
-the files. Where it sits:
+**The scenes are not tracked; they are [AssetANT](https://github.com/Kataglyphis/AssetANT)
+release assets** (owner, 2026-10-17). AssetANT keeps each scene's metadata in git (origin, license,
+credit, the archive's SHA-256) and publishes its files as one reproducible `<name>.tar.xz` per
+release, `<name>-v<N>`. `Resources/assets.lock` pins each archive by SHA-256 and URL, and
+`cmake/FetchAssets.cmake` extracts it into `Resources/Models/<name>` at configure time, through a
+per-user cache (`KATAGLYPHIS_ASSET_CACHE`, else `kataglyphis-assets` under `%LOCALAPPDATA%` or
+`~/.cache`). The paths the engine loads did not move. Measured at `c610c76f`, the last commit that
+tracked them: 633 MiB tracked, 518 MiB of it the 14 scene directories; after, 116 MiB, 62 of them
+`third_party/KTX`'s vendored test images.
 
-| What | Size | Why it is tracked |
-| --- | --- | --- |
-| 33 Wavefront meshes under `Resources/Models/` | 402 MiB | The scene library the engine's model picker offers. Three of them are test fixtures (`ShadowTest/shadow_rig.obj`, `VikingRoom/viking_room.obj`, `Dinosaurs/dinosaurs.obj`), as is the glTF `GltfTest/cube.glb` beside them; `crytek-sponza/` is the only one the Release install ships. The rest are what makes a fresh clone render something without an asset-download step. |
-| `Resources/Models/Sulo/New_0.9.blend` | 66 MiB | The editable source for the Sulo meshes beside it. Nothing in the build reads it; it is here so the exported `.obj` files are reproducible. |
-| Textures under `Resources/` (PNG/JPG, plus one 16 MiB `.tif`) | ~87 MiB | Runtime material and IBL inputs; `Resources/Textures/` is installed with the Release build. |
-| `Documents/GGD_Kit_milestone_document.pdf` | 16 MiB | Reference document, `linguist-vendored`. |
-| `images/` | 11 MiB | README and homepage screenshots. |
-| `docs/source/_webgpu_demo/.../kataglyphis_webgpu_renderer_bg.wasm` | 8 MiB | The prebuilt WebGPU demo the Sphinx site serves. |
+- **A configure fetches two**: `crytek-sponza` (the Release default, the one scene the packages
+  install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, four `ObjParseUnit`
+  fixtures, the renderer comparisons). `KATAGLYPHIS_DEFAULT_ASSETS` in the module names them;
+  `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other twelve for the model picker, and
+  `-DKATAGLYPHIS_FETCH_ASSETS=OFF` fetches nothing (the tests that read a scene then skip or fail).
+- **Without a configure**, `cmake -P cmake/FetchAssets.cmake` does the same. `Build-Windows-Container.ps1`
+  runs it on the host, so a run from the repo root finds the scenes, and both Windows lanes run it
+  before their host-side `Invoke-LavapipeTests.ps1`.
+- **A fetched directory holds `.assetant-sha256`**: the archive's hash and how many files it
+  extracted. Only a stamp matching both makes the fetch a no-op, so a tree whose files went while
+  the ignored stamp stayed is extracted again (checking out a commit that still tracked the scenes
+  does exactly that). A scene directory without a stamp stops the configure instead of being
+  overwritten. The packages leave the stamp out.
+- **A changed scene is a new AssetANT release and a new lock line.** A published archive never
+  changes, and the fetch deletes a download whose hash differs and stops.
+- **What stays tracked**: the test fixtures (`GltfTest/`, `ShadowTest/`, `Plane/`, `VikingRoom/`,
+  and the loose `plane` and `suzanne` the perf suite parses) and `Resources/Textures/`, which the
+  packages install whole. The renderer loads only `Skybox/DOOM2016` from it; `Loading_Screen/`, the
+  duplicated `space` skybox, `brick.png` and `dirt.png` (12 MiB) are read by nothing.
 
-The five largest single files: `buddha.obj` (89 MiB),
-`Sulo/SuloLongDongLampe.obj` (82 MiB), `StanfordDragon/dragon.obj` (71 MiB),
-`Sulo/New_0.9.blend` (66 MiB), `bmw/bmw.obj` (30 MiB).
+What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`),
+`Resources/Textures/` (14 MiB), `images/` (11 MiB, README and homepage screenshots) and the WebGPU
+demo's prebuilt `kataglyphis_webgpu_renderer_bg.wasm` (8 MiB).
 
-**No history rewrite and no LFS** (owner decision, 2026-09-15). `filter-repo`,
-`filter-branch` and BFG all invalidate every existing clone, fork and open
-branch to reclaim bytes that a clone pays for once; LFS trades that for a second
-thing that has to be provisioned before a checkout can build. What *is* done is
-this note plus the **large-asset gate** at the bottom of `.gitignore`: DCC
-project files, archives and video are ignored repo-wide, heavy image formats are
-ignored under `Resources/`, and `Resources/**/*.obj` is ignored with the 33
-tracked meshes listed back individually — so a 34th has to be typed rather than
-swept in by `git add .`. An asset that genuinely belongs: `git add -f <path>`,
-then a `!` line in `.gitignore` and a row here.
+**No history rewrite and no LFS** (owner decision, 2026-09-15) still holds. `filter-repo`,
+`filter-branch` and BFG all invalidate every existing clone, fork and open branch; the scenes left
+HEAD, not history, so a full clone still downloads them once, and the history is what AssetANT's
+release workflow packs them from.
+
+The **large-asset gate** at the bottom of `.gitignore` stays: DCC project files, archives and video
+are ignored repo-wide, heavy image formats under `Resources/`, and `Resources/**/*.obj` with the
+five tracked meshes listed back. Every directory under `Resources/Models/` is ignored except the four
+fixture directories, which also keeps the fetched scenes out of `git status`. A fixture that
+genuinely belongs: `git add -f <path>`, then a `!` line in `.gitignore` and a mention here; a scene
+goes to AssetANT.
 
 Two earlier passes already removed what was removable without touching history:
 a Blender autosave twin, a duplicate `dinosaurs.obj` and a 2022 Doxygen snapshot
@@ -461,6 +478,9 @@ mechanism:
   fallback). It composes the upstream modules; it does not duplicate them.
 - `cmake/CPackOptions.cmake` — packaging metadata and branding.
 - `cmake/SystemLibDependencies.cmake` — this engine's system dependencies.
+- `cmake/FetchAssets.cmake` — this engine's scenes: its lock, its default set, its destination. The
+  cached download-verify-extract half would serve any consumer of AssetANT, so it moves to
+  ANTfrastructure's `cmake/` when a second one appears.
 
 **The clang-cl `-fms-compatibility-version` pin moved upstream** into
 `CompilerBuildFlags.cmake` as `MYPROJECT_CLANG_CL_MS_COMPATIBILITY_VERSION`

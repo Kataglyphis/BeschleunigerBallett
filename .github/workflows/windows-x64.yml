@@ -30,6 +30,8 @@ jobs:
       artifact-dir: dist/windows-x64
       # The GPU suites on lavapipe: the host takes one (the hub image ships its own since CON50, but these run outside the container).
       host-command: |
+        # The container's configure fetched the scenes into this workspace; here the fetch only finds them.
+        cmake -P cmake/FetchAssets.cmake
         ./scripts/windows/Invoke-LavapipeTests.ps1 -Suite dist/windows-x64-tests/commitTestSuite.exe
       # Build and container tests ~1.5 h, then about an hour of lavapipe on the runner's 4 vCPUs.
       timeout-minutes: 240

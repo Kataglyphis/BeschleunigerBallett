@@ -48,7 +48,7 @@ BeschleunigerBallett is a renderer and graphics-engine playground used to explor
 | Path | Purpose |
 | --- | --- |
 | `Src/` | Engine and renderer source code |
-| `Resources/` | Shaders and runtime assets |
+| `Resources/` | Shaders, textures, test models, and `assets.lock`, which pins the scenes (see [Scenes](#scenes)) |
 | `cmake/` | This project's CMake policy on top of ANTfrastructure's modules |
 | `scripts/linux/` | Linux build, test, coverage, analysis, and docs helpers |
 | `scripts/windows/` | Windows build, run and validation helpers |
@@ -131,6 +131,26 @@ Shaders are written in [Slang](https://shader-slang.com/) under
 `scripts/windows/Build-SlangShaders.ps1` / `scripts/linux/compile-slang-shaders.sh`
 to SPIR-V and WGSL. See `docs/shader-build-pipeline.md` and AGENTS.md §
 Shaders, which walks the full pipeline.
+
+## Scenes
+
+The scenes are [AssetANT](https://github.com/Kataglyphis/AssetANT) release archives, not files in
+this repository: `Resources/assets.lock` pins each by SHA-256 and URL, and a configure fetches the
+two that the code, the tests and the packages read into `Resources/Models`, where the engine has
+always loaded them. `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches all fourteen for the model picker,
+and `cmake -P cmake/FetchAssets.cmake` fetches without configuring; details in
+[docs/source/getting_started.md](docs/source/getting_started.md#scenes). Each fetched scene carries
+its credit in `ATTRIBUTION.txt`, and AssetANT's `assets/<name>/asset.json` records where it came
+from and how its license was established.
+
+| Scene | Where | License |
+| --- | --- | --- |
+| `crytek-sponza` | AssetANT; fetched by default and installed with the packages | CC BY 3.0: © 2010 Frank Meinl, Crytek, after Marko Dabrovic's Sponza; corrections by Morgan McGuire |
+| `Dinosaurs` | AssetANT; fetched by default | unknown; the Triceratops mesh is named after joel3d.com |
+| `Sulo` | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS` | modelled by [Sulo456](https://github.com/Sulo456), published with his permission |
+| the other eleven | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS` | per scene, in AssetANT's README |
+| `VikingRoom` | tracked, a test fixture | CC BY 4.0: "Viking room" by nigelgoh on Sketchfab, the Vulkan Tutorial's copy with its material renamed |
+| `GltfTest`, `ShadowTest`, `Plane`, `plane.obj`, `suzanne.obj` | tracked, test fixtures | — |
 
 ## Docker and Build Environments
 

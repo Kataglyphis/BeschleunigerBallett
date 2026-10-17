@@ -1,0 +1,18 @@
+# The scenes this repo renders, never tracked: AssetANT release archives (https://github.com/Kataglyphis/AssetANT),
+# extracted into Resources/Models/<name> by cmake/FetchAssets.cmake, which checks each SHA-256. A changed scene is
+# a new release <name>-v<N+1> and a new line here, never a replaced archive.
+# sha256                                                          file                     url
+c9ef71cd8921d9ec681ed7e0d35f468c644bfb3ccf1e511a3f32b6112841a23b  Ajax.tar.xz              https://github.com/Kataglyphis/AssetANT/releases/download/Ajax-v1/Ajax.tar.xz
+57819c3f3032d075a4d6bd0be11c1ffe8650b82d758a8cb22765f63a7f92f67f  bmw.tar.xz               https://github.com/Kataglyphis/AssetANT/releases/download/bmw-v1/bmw.tar.xz
+76d5c7d93b9d167e70bc5e8bdeb82ad09f1a6ac4e2c5117ecaefc4cbd4564086  buddha.tar.xz            https://github.com/Kataglyphis/AssetANT/releases/download/buddha-v1/buddha.tar.xz
+c213b41b0b24b7a54f4a209e25642b357581af15df760bef35140b97732a70ab  bunny.tar.xz             https://github.com/Kataglyphis/AssetANT/releases/download/bunny-v1/bunny.tar.xz
+272a0fe8ad780f56e796abee97f2766b194b1accdb8f70c9200422d45abda040  CornellBox.tar.xz        https://github.com/Kataglyphis/AssetANT/releases/download/CornellBox-v1/CornellBox.tar.xz
+3d0f157a4e54c653c7c5d8241f083bbf7aeb6dab44c98e7682e0b16485b1a821  crytek-sponza.tar.xz     https://github.com/Kataglyphis/AssetANT/releases/download/crytek-sponza-v1/crytek-sponza.tar.xz
+56a738cd4d79f6e0461901cf0a7cf133c5a706c0791015bd838f503fbf4dc18d  Dinosaurs.tar.xz         https://github.com/Kataglyphis/AssetANT/releases/download/Dinosaurs-v1/Dinosaurs.tar.xz
+496046c4bef97177da619ce1e6dde8d4e840a06fce30f543cc5f23410d765775  JurassicPark.tar.xz      https://github.com/Kataglyphis/AssetANT/releases/download/JurassicPark-v1/JurassicPark.tar.xz
+e311d1d68e4873e4e6b560eff29fad3fa83971ebaa90a1f723b22533258fa24a  mori_knob.tar.xz         https://github.com/Kataglyphis/AssetANT/releases/download/mori_knob-v1/mori_knob.tar.xz
+92131f93031b85ed51c0dbfdc2ae652e7ac1bb487bc47094472bc0ffea87ed5d  Pillum.tar.xz            https://github.com/Kataglyphis/AssetANT/releases/download/Pillum-v1/Pillum.tar.xz
+7e2f9f8a0fc41c5ed7a3c0e7006645bf90579095bd9fd2e5a3e8737584a92567  sibenik.tar.xz           https://github.com/Kataglyphis/AssetANT/releases/download/sibenik-v1/sibenik.tar.xz
+1103b4c8c98bfc0a300949f22babd9c959155e7aaad3c396693e879c328dcf4b  sportsCar.tar.xz         https://github.com/Kataglyphis/AssetANT/releases/download/sportsCar-v1/sportsCar.tar.xz
+276c7f60e69f14204a4f32717acc7ca6387e0794140bd0171646bdeb94fe5bf5  StanfordDragon.tar.xz    https://github.com/Kataglyphis/AssetANT/releases/download/StanfordDragon-v1/StanfordDragon.tar.xz
+8e14675411f6357953cb07542e74203f320bee551630b69ba8091a7fd65d1f2a  Sulo.tar.xz              https://github.com/Kataglyphis/AssetANT/releases/download/Sulo-v1/Sulo.tar.xz

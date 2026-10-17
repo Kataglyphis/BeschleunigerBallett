@@ -10,6 +10,7 @@ Make sure these tools are available before you build the project:
 - a Vulkan SDK installation for Vulkan-enabled builds
 - Python plus the packages from `requirements.txt` for the docs build (the formatting steps install their own pinned `cmake-format` from ANTfrastructure)
 - optionally Rust if you want to enable the experimental Rust path
+- network access for the first configure, which downloads the default scenes (see below)
 
 ## Clone the Repository
 
@@ -38,6 +39,20 @@ the file itself, or the Windows configurations table in
 instead.
 On Windows, prefer `scripts/windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.
+
+### Scenes
+
+The scenes are not in the repository: `Resources/assets.lock` pins each one as an
+[AssetANT](https://github.com/Kataglyphis/AssetANT) release archive by URL and SHA-256, and a
+configure extracts the two the code, the tests and the packages read (`crytek-sponza` and
+`Dinosaurs`, about 33 MB) into `Resources/Models` through a per-user cache
+(`KATAGLYPHIS_ASSET_CACHE`, else `%LOCALAPPDATA%\kataglyphis-assets` or
+`~/.cache/kataglyphis-assets`). The paths the engine loads did not change.
+
+- `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches every locked scene, for the model picker.
+- `cmake -P cmake/FetchAssets.cmake` fetches without configuring (add the same `-D` before `-P` for all).
+- Offline, put each archive in the cache as `<sha256>-<name>.tar.xz`, or configure with
+  `-DKATAGLYPHIS_FETCH_ASSETS=OFF` and go without the scenes and the tests that read them.
 
 ## Linux Workflow
 

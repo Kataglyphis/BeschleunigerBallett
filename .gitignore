@@ -119,7 +119,6 @@ Testing/
 
 # DCC project files: nothing in this tree reads them.
 *.blend
-!Resources/Models/Sulo/New_0.9.blend
 *.fbx
 *.max
 *.ma
@@ -155,43 +154,21 @@ Resources/**/*.exr
 Resources/**/*.hdr
 Resources/**/*.tga
 Resources/**/*.dds
-!Resources/Models/Sulo/WolfStahl/textures/MetalSpottyDiscoloration001_DISP16_4K_METALNESS.tif
 
 # Wavefront meshes: the tracked ones are listed back so a new one has to be typed, not swept in.
 Resources/**/*.obj
-!Resources/Models/Ajax/statue.obj
-!Resources/Models/CornellBox/CornellBox-Empty-CO.obj
-!Resources/Models/CornellBox/CornellBox-Empty-RG.obj
-!Resources/Models/CornellBox/CornellBox-Empty-Squashed.obj
-!Resources/Models/CornellBox/CornellBox-Empty-White.obj
-!Resources/Models/CornellBox/CornellBox-Glossy-Floor.obj
-!Resources/Models/CornellBox/CornellBox-Glossy.obj
-!Resources/Models/CornellBox/CornellBox-Mirror.obj
-!Resources/Models/CornellBox/CornellBox-Original.obj
-!Resources/Models/CornellBox/CornellBox-Sphere.obj
-!Resources/Models/CornellBox/CornellBox-Water.obj
-!Resources/Models/CornellBox/water.obj
-!Resources/Models/Dinosaurs/dinosaurs.obj
-!Resources/Models/JurassicPark/JurassicPark.obj
-!Resources/Models/Pillum/PilumPainting_Export.obj
 !Resources/Models/Plane/plane.obj
 !Resources/Models/ShadowTest/shadow_rig.obj
-!Resources/Models/StanfordDragon/dragon.obj
-!Resources/Models/Sulo/SuloLongDongLampe.obj
-!Resources/Models/Sulo/SuloLongDongLampe_v2.obj
-!Resources/Models/Sulo/SuloLongDongLampe_v2_fix.obj
-!Resources/Models/Sulo/Weinglas_Vol.obj
-!Resources/Models/Sulo/WolfStahl/Wolf-Stahl.obj
 !Resources/Models/VikingRoom/viking_room.obj
-!Resources/Models/bmw/bmw.obj
-!Resources/Models/buddha/buddha.obj
-!Resources/Models/bunny/bunny.obj
-!Resources/Models/crytek-sponza/sponza_triag.obj
-!Resources/Models/mori_knob/testObj.obj
 !Resources/Models/plane.obj
-!Resources/Models/sibenik/sibenik.obj
-!Resources/Models/sportsCar/sportsCar.obj
 !Resources/Models/suzanne.obj
+
+# Scenes are AssetANT release assets that configure extracts (cmake/FetchAssets.cmake); only test fixtures are tracked.
+/Resources/Models/*/
+!/Resources/Models/GltfTest/
+!/Resources/Models/Plane/
+!/Resources/Models/ShadowTest/
+!/Resources/Models/VikingRoom/
 
 # gtest discovery writes CMakeFiles/googletest_discovery_*.json into the tests' working directory, the repo root.
 /CMakeFiles/

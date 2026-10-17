@@ -33,6 +33,16 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $runner = Join-Path $repoRoot 'third_party\ANTfrastructure\windows\scripts\build\Invoke-RepoContainerBuild.ps1'
 if (-not (Test-Path -LiteralPath $runner)) { throw "Required script not found: $runner (run: git submodule update --init --recursive third_party/ANTfrastructure)" }
 
+# Fetched on the host as well, so a run from the repo root finds the scenes; the container gets them with the streamed tree.
+$cmakeExe = @(Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty Source)
+if ($cmakeExe.Count -eq 0 -and (Test-Path -LiteralPath 'C:\Program Files\CMake\bin\cmake.exe')) { $cmakeExe = @('C:\Program Files\CMake\bin\cmake.exe') }
+if ($cmakeExe.Count -gt 0) {
+  & $cmakeExe[0] -P (Join-Path $repoRoot 'cmake\FetchAssets.cmake')
+  if ($LASTEXITCODE -ne 0) { throw "cmake -P cmake/FetchAssets.cmake exited $LASTEXITCODE" }
+} else {
+  Write-Warning 'No host cmake: the container fetches its own scenes, but a run from this checkout needs cmake -P cmake/FetchAssets.cmake first.'
+}
+
 Write-Host "Configurations: $Configurations"
 $configurationList = @($Configurations -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
