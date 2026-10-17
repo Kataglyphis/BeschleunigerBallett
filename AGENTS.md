@@ -81,10 +81,11 @@ What is left large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguis
 `images/` (11 MiB, README and homepage screenshots), frozen with the rest in `large-files.allow`
 for the hub's `large-files` gate.
 
-**No history rewrite and no LFS** (owner decision, 2026-09-15) still holds. `filter-repo`,
-`filter-branch` and BFG all invalidate every existing clone, fork and open branch; the scenes left
-HEAD, not history, so a full clone still downloads them once, and the history is what AssetANT's
-release workflow packs them from.
+**The history is rewritten next; LFS is still out.** The owner reversed the 2026-09-15 "no
+rewrite" on 2026-10-17: binary blobs of 500 KB and more that no branch tip holds leave the history
+of all ten family repositories once the pending patch releases are out, the scenes among them.
+AssetANT's published archives are then their only copy (its `source.commit` stops resolving), and
+a checkout follows with the hub's `git-adopt-rewritten-history.sh`.
 
 The **large-asset gate** at the bottom of `.gitignore` stays: DCC project files, archives and video
 are ignored repo-wide, heavy image formats under `Resources/`, and `Resources/**/*.obj` with the
