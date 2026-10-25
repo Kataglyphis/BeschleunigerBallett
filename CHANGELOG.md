@@ -12,6 +12,11 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Added
+
+- Shared CI quality reports, Ruff/ty analysis, PowerShell lint and complexity reporting,
+  and a manual Python refactor preview. Generated reports stay under ignored `logs/`.
+
 ### Fixed
 
 - Annotate the shared Slang source-root array consumed by the hub driver so

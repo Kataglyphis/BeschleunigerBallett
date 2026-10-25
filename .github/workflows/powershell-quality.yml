@@ -1,0 +1,24 @@
+name: Windows x64 · PowerShell quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: Fail on analyzer and complexity findings
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/powershell-quality.yml@develop
+    with:
+      lint-path: scripts
+      strict: ${{ inputs.strict == true }}
+      analyzer-strict: ${{ inputs.strict == true }}

@@ -1,0 +1,19 @@
+name: Python · refactor preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: One tracked repository-relative Python file
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/python-refactor.yml@develop
+    with:
+      path: ${{ inputs.path }}
+      ratchets: true

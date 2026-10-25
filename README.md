@@ -66,6 +66,7 @@ Prerequisites, both platforms, the scenes, packaging and troubleshooting:
 | Volumetric clouds | [docs/source/clouds.md](docs/source/clouds.md) |
 | GPU golden tests and synchronization validation | [docs/source/gpu-golden-testing.md](docs/source/gpu-golden-testing.md) |
 | clang-format, clang-tidy, cmake-format | [docs/source/code-quality.md](docs/source/code-quality.md) |
+| CI quality reports, Ruff/ty, PowerShell checks and refactor previews | [Shared quality tooling](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/code-quality-tooling.md) |
 | The container build's transports and caches | [docs/source/container-build-caching.md](docs/source/container-build-caching.md) |
 | The C++ engine's change log | [docs/source/cpp-renderer-improvements.md](docs/source/cpp-renderer-improvements.md) |
 | Colour-space audit | [docs/source/webgpu-srgb-audit.md](docs/source/webgpu-srgb-audit.md) |
