@@ -439,8 +439,8 @@ actually want, update the gitlink AND fix the fallout in the same change.
 
 The opposite move, for local work on the newest code, is the hub's `git-sync-branches.sh`
 ([adopting § Putting every checkout on its branch](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#putting-every-checkout-on-its-branch)).
-FUZZTEST stays on a release there because `.gitmodules` declares `branch = release_<date>` for it;
-move that line to take a newer one.
+That command keeps FUZZTEST on its declared release branch. The Renovate wrapper instead checks
+every direct submodule against its remote default branch, including FUZZTEST.
 
 **Coupling to watch when bumping pins:** `third_party/FUZZTEST` pins its own Abseil LTS (`absl_TAG`
 in `cmake/BuildDependencies.cmake`); this repo's `ABSL_TAG` in `third_party/CMakeLists.txt` is
@@ -471,12 +471,17 @@ bash ./scripts/linux/renovate-local.sh --apply --dry-run  # the plan
 bash ./scripts/linux/renovate-local.sh --apply            # move the gitlinks
 ```
 
-Run it from WSL: there is no node on the Windows host. `--apply` moves the gitlinks of submodules
-that declare a `branch =` and rewrites the other values the report names, `requirements.txt`, the
-workflows' actions and the CMake pins in `third_party/CMakeLists.txt` included; a manager it has no
-exact locator for is refused by name, and nothing is staged or committed. `.github/renovate.json`
-is read by this CLI and nothing else (owner decision, 2026-09-09: no Renovate GitHub App in this
-family). CI verifies the wrapper and config; it never applies upgrades. How it works:
+Run it from WSL: there is no node on the Windows host. The wrapper initializes an absent
+ANTfrastructure tooling submodule only for a real `--apply`; reports and plans need it checked out.
+The default run checks every direct `.gitmodules` entry against its remote default branch.
+`--apply` initializes missing direct checkouts and moves their gitlinks to those exact tips,
+regardless of `branch =` overrides or Renovate report rows. It also rewrites the other values
+the report names, including
+`requirements.txt`, workflow actions and the CMake pins in `third_party/CMakeLists.txt`; a manager
+it has no exact locator for is refused by name, and nothing is staged or committed.
+`.github/renovate.json` is read by this CLI and nothing else (owner decision, 2026-09-09: no
+Renovate GitHub App in this family). CI verifies the wrapper and config; it never applies upgrades.
+How it works:
 [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
 ## Running on the Host (Windows)

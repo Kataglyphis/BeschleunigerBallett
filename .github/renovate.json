@@ -3,47 +3,14 @@
   "description": [
     "BeschleunigerBallett's Renovate config. Everything shared lives in the preset at ANTfrastructure's repository root (default.json); the `extends` line below is the whole adoption, exactly as in OmniAccelerANT and jotrockenmitlocken.",
     "The part this repo cannot get any other way is the git-submodules manager, which Renovate DISABLES by default. This repo carries fifteen gitlinks - two owned (third_party/ANTfrastructure and third_party/OxidANT, both tracking `develop`) and thirteen vendored - and not one of them has ever had a bump proposed by anything. The hub gitlink is the expensive one: the Linux and Windows lanes run the gates that live behind that pin, so a stale gitlink means CI grades this tree with whatever the hub looked like the last time someone moved it by hand.",
-    "The manager bumps a gitlink to the tip of the branch named in .gitmodules, falling back to the remote's DEFAULT branch when none is named. Every submodule here names its branch explicitly; third_party/FUZZTEST names its frozen release_<date> line, and the packageRule below holds a line change to dashboard approval.",
+    "The local Renovate driver checks every direct gitlink against its remote default branch and applies its exact tip, regardless of the .gitmodules branch setting or Renovate report rows. FUZZTEST's release branch setting remains for the separate git-sync-branches.sh command.",
     "Actions: the preset's helpers:pinGitHubActionDigests pins the third-party actions by digest, the version as a trailing comment (applied 2026-10-07: actions/checkout v7.0.1, actions/upload-artifact v7.0.1, actions/download-artifact v8.0.1, codecov/codecov-action v7.1.1), while a preset rule explicitly leaves the six Kataglyphis/ANTfrastructure composite actions and its three reusable workflows at @develop for the upstream-first change flow.",
     "Unlike the three sibling consumers, this repo has never carried a .github/dependabot.yml, so adopting the preset is a pure addition here - there is no hand-over to sequence and nothing to delete afterwards.",
     "Renovate resolves `github>Kataglyphis/ANTfrastructure` from ANTfrastructure's DEFAULT BRANCH, not from the pin in third_party/ANTfrastructure, so a preset change reaches this repo only after it is merged there. And the Renovate GitHub App is NOT installed on this repository and will not be (owner decision, 2026-09-09), so no bot will ever author a commit here. That does not make this file idle: ANTfrastructure's linux/scripts/renovate-local.sh reads exactly it.",
-    "The CMake pins in third_party/CMakeLists.txt are read by the PRESET's customManagers since 2026-10-01 (hub CON46), so the one manager below is for .gitmodules only: a second CMake manager here would report every pin twice, and `renovate-local.sh --apply` refuses a pin reported twice. abseil-cpp (ABSL_TAG, versioning=loose for its LTS dates) and microsoft/GSL are read through the `# renovate:` annotation above each; googletest through its release-tag archive URL. Corrosion is pinned to a commit because v0.6.1 lacks fixes this build needs, so nothing tracks it until the next tag.",
+    "The CMake pins in third_party/CMakeLists.txt are read by the PRESET's customManagers since 2026-10-01 (hub CON46); a second CMake manager here would report every pin twice, and `renovate-local.sh --apply` refuses a pin reported twice. abseil-cpp (ABSL_TAG, versioning=loose for its LTS dates) and microsoft/GSL are read through the `# renovate:` annotation above each; googletest through its release-tag archive URL. Corrosion is pinned to a commit because v0.6.1 lacks fixes this build needs, so nothing tracks it until the next tag.",
     "Keep the ABSL_TAG comment above the pin in mind when taking a bump: the tag must stay >= the one FUZZTEST pins in third_party/FUZZTEST/cmake/BuildDependencies.cmake. Moving abseil UP is always safe for that constraint; moving it down is not."
   ],
   "extends": [
     "github>Kataglyphis/ANTfrastructure"
-  ],
-  "packageRules": [
-    {
-      "description": [
-        "third_party/FUZZTEST now NAMES its branch (release_2026-06-29 in .gitmodules), so the git-submodules manager tracks that line and the old fallback onto main cannot happen. Measured 2026-09-10: the pin 704efb34 is byte-identical to both refs/tags/2026-06-29 and refs/heads/release_2026-06-29, so this submodule is UP TO DATE on its line; main sits at d1dc1347, 81 commits away on a line this pin was never taken from.",
-        "Approval is kept for the LINE CHANGE itself. Moving from one dated release to the next is a deliberate act -- the customManager above surfaces the new date, and a human decides when to take it.",
-        "The depName for the git-submodules manager is the submodule PATH, which is why the match is on `third_party/FUZZTEST`."
-      ],
-      "matchManagers": [
-        "git-submodules"
-      ],
-      "matchDepNames": [
-        "third_party/FUZZTEST"
-      ],
-      "dependencyDashboardApproval": true
-    }
-  ],
-  "customManagers": [
-    {
-      "customType": "regex",
-      "description": [
-        "third_party/FUZZTEST follows google/fuzztest's DATED RELEASE LINE, not its default branch. The line is named in .gitmodules as `branch = release_<date>`, and this manager is what keeps that name current: it reads the date out of the branch name and compares it against the repo's tags, which upstream publishes as bare dates (2024-10-25 ... 2026-06-29, eight of them so far) alongside identically named release_<date> branches.",
-        "The regex versioning maps a date onto major.minor.patch so the ordering is the calendar's. Without it a bare `2026-06-29` is unparseable and every tag would look equally new.",
-        "Why this and not a bare `branch =`: pinning the line stops the walk onto main, but nothing would then tell you a NEWER line exists. This does."
-      ],
-      "managerFilePatterns": [
-        "/^\\.gitmodules$/"
-      ],
-      "matchStrings": [
-        "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s*\\n\\s*branch = release_(?<currentValue>\\S+)"
-      ],
-      "versioningTemplate": "regex:^(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})$"
-    }
   ]
 }

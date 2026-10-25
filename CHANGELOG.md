@@ -63,6 +63,10 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The shared Renovate driver now checks every direct submodule against its remote default branch
+  and initializes missing checkouts when applying. FUZZTEST's release branch remains for the
+  separate branch-sync command; its old Renovate approval and release-line rules were removed.
+  The wrapper can bootstrap an absent tooling hub for a real apply.
 - Shared shader math and WebGPU Slang sources now belong to OxidANT. The Vulkan build imports
   its pinned manifest and source tree through ANTfrastructure's Slang drivers; source-integrity
   gates inspect both owners without retaining local source copies.

@@ -34,19 +34,10 @@
 	path = third_party/SPDLOG
 	url = https://github.com/gabime/spdlog
 	branch = v1.x
-# third_party/FUZZTEST follows google/fuzztest's dated release line, not main:
-# `branch =` names the FROZEN release_<date> line the pin was taken from, so
-# `git submodule update --remote -- third_party/FUZZTEST` cannot walk it onto
-# main (81 commits away on a line this pin was never taken from). A frozen
-# branch never produces a bump by itself; the regex customManager in
-# .github/renovate.json reads the date out of the branch name and surfaces a
-# newer release_<date> when upstream cuts one - moving to it is a deliberate
-# line change (dashboard approval there). Never run a bare
-# `git submodule update --remote` in this repo; pass explicit paths.
+# This branch keeps git-sync-branches.sh on the release line; Renovate follows upstream's default branch.
 [submodule "third_party/FUZZTEST"]
 	path = third_party/FUZZTEST
 	url = https://github.com/google/fuzztest
-# renovate: datasource=git-tags depName=https://github.com/google/fuzztest
 	branch = release_2026-06-29
 [submodule "third_party/KOMPUTE"]
 	path = third_party/KOMPUTE

@@ -7,5 +7,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/antfrastructure.sh
 source "${SCRIPT_DIR}/lib/antfrastructure.sh"
 
-# The repo root is explicit: upstream defaults to $PWD and would grade a subdirectory instead.
-antfrastructure_exec linux/scripts/renovate-local.sh "${KATAGLYPHIS_REPO_ROOT}" "$@"
+# The repo root is explicit; the bootstrap initializes an absent hub only for a real apply.
+antfrastructure_renovate_exec linux/scripts/renovate-local.sh "${KATAGLYPHIS_REPO_ROOT}" "$@"

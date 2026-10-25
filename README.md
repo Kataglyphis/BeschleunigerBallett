@@ -27,7 +27,9 @@
 BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines a C++23-modules Vulkan engine, a companion Rust WebGPU renderer (native + browser), build automation, packaging, testing, documentation, and Rust integration.
 
 Dependency updates: run `bash scripts/linux/renovate-local.sh` to report, `--apply --dry-run` to plan,
-and `--apply` to update. CI checks the wrapper and config; see
+and `--apply` to update. It checks every direct submodule against its remote default branch and
+initializes missing checkouts when applying, including the tooling hub when needed. CI checks the
+wrapper and config; see
 [the shared Renovate guide](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/dependency-updates.md).
 
 ## Highlights
