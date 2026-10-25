@@ -476,7 +476,7 @@ that declare a `branch =` and rewrites the other values the report names, `requi
 workflows' actions and the CMake pins in `third_party/CMakeLists.txt` included; a manager it has no
 exact locator for is refused by name, and nothing is staged or committed. `.github/renovate.json`
 is read by this CLI and nothing else (owner decision, 2026-09-09: no Renovate GitHub App in this
-family). How it works:
+family). CI verifies the wrapper and config; it never applies upgrades. How it works:
 [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md).
 
 ## Running on the Host (Windows)

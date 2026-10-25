@@ -14,6 +14,7 @@ the GitHub releases themselves.
 
 ### Added
 
+- Verify the Renovate wrapper and shared config in CI without applying updates.
 - Shared CI quality reports, Ruff/ty analysis, PowerShell lint and complexity reporting,
   and a manual Python refactor preview. Generated reports stay under ignored `logs/`.
 
