@@ -29,6 +29,39 @@
 # ─────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
+_agentic_template_usage() {
+  cat <<'HELP'
+# ─────────────────────────────────────────────────────────────────────────
+# TEMPLATE - copy to <your-repo>/scripts/agentic-loop/Run-AgenticLoop.sh.
+#
+# Agentic loop (Linux). Thin wrapper: sources the reusable library from the
+# ANTfrastructure submodule, parses flags into the env vars the library reads,
+# and calls run_agentic_loop. Task prompts default to ANTfrastructure's
+# shared/agentic-loop/prompts/*.md - do not hard-code prompt text here.
+#
+# Engines (config .engine, or --engine / AGENTIC_ENGINE):
+#   claude   — Claude Code CLI; models come from the config
+#   opencode — OpenCode v2 CLI (v1 is refused); models come from the config
+#
+# Usage:
+#   ./scripts/agentic-loop/Run-AgenticLoop.sh [options]
+#
+# Options:
+#   --config PATH        Config JSON path (default: AgenticLoop.config.json)
+#   --engine NAME        Engine override: claude | opencode
+#   --dry-run            Print actions without invoking agents or builds
+#   --max-iterations N   Override max iterations (0 = unlimited)
+#   --skip-build         Skip the build phase
+#   --skip-tests         Skip the test phase
+#   --skip-quality       Skip clang-tidy / cmake-format
+#   --planner-only       Run the planner once and exit
+#   --executor-only      Drain the current queue and exit
+#   --help               Show this help
+# ─────────────────────────────────────────────────────────────────────────
+HELP
+}
+
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
@@ -51,7 +84,7 @@ while [[ $# -gt 0 ]]; do
     --planner-only)   export PLANNER_ONLY=true; shift ;;
     --executor-only)  export EXECUTOR_ONLY=true; shift ;;
     --help|-h)
-      head -29 "$0" | tail -28
+      _agentic_template_usage
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
