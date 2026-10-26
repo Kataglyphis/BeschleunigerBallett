@@ -84,6 +84,10 @@ Other helpers: `scripts/linux/run-ctest.sh`, `scripts/linux/build-coverage-gcovr
 
 `Build-Windows.ps1` runs configuration, build, formatting, clang-tidy, tests and packaging from one entry point. Configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
 
+ANTfrastructure's `Get-BuildWorkspaceConfig` chooses `BUILD_WINDOWS_CONFIG` and the
+workspace-root environment override; this driver still validates the selected root with
+`Resolve-WorkspacePath` before it computes project-specific build directories.
+
 ```pwsh
 # single configuration
 pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 -Configurations clangcl-debug

@@ -67,12 +67,12 @@ see [GPU testing](docs/source/gpu-golden-testing.md).
 | The C++ API reference (Doxygen, on the docs site) | [api/library_root](https://beschleunigerballette.jonasheinle.de/api/library_root.html) |
 | The WebGPU demo in the browser | [docs/source/webgpu_demo.md](docs/source/webgpu_demo.md) |
 | WSL2 with an NVIDIA GPU | [docs/source/wsl2_vulkan.rst](docs/source/wsl2_vulkan.rst) |
-| Shaders: the Slang to SPIR-V and WGSL build, including module-name collisions | [docs/source/shader-build-pipeline.md](docs/source/shader-build-pipeline.md) |
+| Shaders: Slang to SPIR-V/WGSL, module names and ARM source/output proof | [docs/source/shader-build-pipeline.md](docs/source/shader-build-pipeline.md) |
 | One Slang source for both renderers | [docs/source/shader-sharing.md](docs/source/shader-sharing.md) |
 | Model loading | [docs/source/model-loading.md](docs/source/model-loading.md) |
 | Path tracing | [docs/source/path-tracing.md](docs/source/path-tracing.md) |
 | Volumetric clouds | [docs/source/clouds.md](docs/source/clouds.md) |
-| GPU golden tests and synchronization validation | [docs/source/gpu-golden-testing.md](docs/source/gpu-golden-testing.md) |
+| GPU golden tests, pixel checks and synchronization validation | [docs/source/gpu-golden-testing.md](docs/source/gpu-golden-testing.md) |
 | clang-format, clang-tidy, cmake-format | [docs/source/code-quality.md](docs/source/code-quality.md) |
 | CI quality reports, Ruff/ty, PowerShell checks and refactor previews | [Shared quality tooling](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/code-quality-tooling.md) |
 | The container build's transports and caches | [docs/source/container-build-caching.md](docs/source/container-build-caching.md) |
@@ -81,7 +81,7 @@ see [GPU testing](docs/source/gpu-golden-testing.md).
 | The Rust WebGPU renderer's roadmap (OxidANT) | [webgpu-renderer-roadmap.md](https://github.com/Kataglyphis/OxidANT/blob/develop/crates/webgpu_renderer/docs/webgpu-renderer-roadmap.md) |
 | Third-party licences | [docs/source/LICENSES-README.md](docs/source/LICENSES-README.md) |
 | Literature: tutorials and papers behind the renderer | [docs/source/literature.md](docs/source/literature.md) |
-| Rules for agents and contributors, and every topic's one home | [AGENTS.md](AGENTS.md) |
+| Rules for agents and contributors, including shared Bash/PowerShell and Windows build reuse | [AGENTS.md](AGENTS.md) |
 | What CI runs, and what it does not | [AGENTS.md § What CI runs](AGENTS.md#what-ci-runs-and-what-it-does-not) |
 | Build images, CI actions and shared scripts (ANTfrastructure) | [docs/INDEX.md](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/INDEX.md) |
 | Known work | [BACKLOG.md](BACKLOG.md) |

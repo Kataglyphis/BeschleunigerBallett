@@ -4,6 +4,12 @@ Guidance for AI agents and new contributors working in BeschleunigerBallett
 (a Vulkan graphics-engine playground with a Rust WebGPU sibling renderer:
 C++23/C17, CMake presets, Rust through Corrosion).
 
+**Reuse before adding Bash or PowerShell code.** Search this repository and every direct
+submodule, including `third_party/ANTfrastructure`, for an existing implementation. Call or
+extend its canonical owner, passing project-specific values as arguments. For new behavior
+needed by multiple consumers, create or extend one shared owner module and call it here.
+Keep unique product logic in this repository.
+
 ## Start here: routing
 
 Find your task, do the first action, read the doc. [Docs](#docs) and
@@ -204,6 +210,9 @@ directories via `scripts/windows/Build-Windows.config.psd1`:
 | `msvc-debug` | `x64-MSVC-Windows-Debug` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
 | `msvc-release` | `x64-MSVC-Windows-Release` | `build-msvc-release` | MSVC (cl) builds, optional steps |
 
+The hub's `Get-BuildWorkspaceConfig` selects that file and the workspace-root override;
+keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
+
 - `x64-ClangCL-Windows-Debug-ASan`: AddressSanitizer without the fuzzing-mode extras; not wired
   into `Build-Windows.config.psd1`.
 - Windows test presets (`test-<configure-preset>`) exist for three ClangCL configurations only:
@@ -214,6 +223,8 @@ directories via `scripts/windows/Build-Windows.config.psd1`:
   builds on `x64-ClangCL-Windows-Release`.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
+- The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
+  keep Ballett's shader list, mutation and path assertions in this repo.
 
 **Coverage stays OFF for the ClangCL presets** (`myproject_ENABLE_COVERAGE` in
 `x64-ClangCL-Windows-Base`). Switched ON on 2026-10-01 (hub CON9: the image ships
@@ -519,7 +530,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   `Compare-RendererTimings.ps1` are local comparison tools. The lane's `Invoke-WindowsLane.ps1` runs
   the two renderer comparisons in validation-only mode, where both exit 2 when they found nothing to
   check (a warning on a GPU-less runner, never a pass); `Compare-PerfBaseline.ps1` is not in CI at
-  all.
+  all. The pixel comparison applies one structural verdict to each available renderer; preserve
+  its three thresholds, renderer-specific messages, and failure exit code.
 - **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
   `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module
@@ -678,6 +690,11 @@ On `windows-11-arm` the commit suite runs whole, in two halves:
 - This repo's `gpu-suites` job checks the repo out, puts the staged shaders in it and runs the
   Release suite's GPU suites on lavapipe plus the source-reading `BuildIntegrity.*` checks through
   `Invoke-LavapipeTests.ps1`; its own job, because the hub's stops at 30 minutes.
+- The cross build snapshots pinned OxidANT WGSL before compilation, clears mapped combined
+  outputs, compares every new output to that snapshot, and stages them with both source trees.
+  The ARM host compares
+  all mapped outputs and sources by content; downloaded artifact and checkout mtimes are unrelated.
+  The local single-tree mtime guard remains active. Upload a crash dump only when one exists.
 
 The image's runtime bundle as a whole (GStreamer, WebRTC, HailoRT, the Python wheels) is not this
 lane's to gate: since 2026-10-11 the hub proves it in its own `windows-arm64.yml`, so an image

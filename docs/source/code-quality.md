@@ -5,6 +5,19 @@ generic and live upstream:
 [`ANTfrastructure / code-quality-tooling.md`](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/code-quality-tooling.md).
 Read that first; this page carries only what is specific to **this** repo.
 
+Before adding Bash or PowerShell behavior, search this repository and its direct submodules,
+including ANTfrastructure. Call or extend the shared owner with project-specific arguments;
+the contributor rule is in [AGENTS.md](../../AGENTS.md).
+
+`Compare-RendererPixels.ps1` checks C++ and Rust frames with the same structural verdict:
+standard deviation above 2, more than 5% lit pixels, and more than eight luminance buckets.
+The local Pester suite runs generated PNGs through both renderer paths and checks their labels,
+messages and exit codes; it does not exercise GPU capture.
+
+The ARM64 shader source suite uses ANTfrastructure's `Get-TestSourceCopyLoopText` and
+`Invoke-TestSourceCopyLoop` to parse and run one staging loop. Its own fixture files,
+expected paths and omitted-shader mutants remain here; it does not compile ARM64 code.
+
 The configs (`.clang-format`, `.clang-tidy`, `gcovr.cfg`) are ANTfrastructure's
 too, copied in; `.antfrastructure-shared.manifest` lists the nine assets this
 repo takes. Edit them upstream in `shared/config/`, then run

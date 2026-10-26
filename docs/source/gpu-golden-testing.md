@@ -75,6 +75,10 @@ arch:
   The ARM64 test artifact includes the local `Resources/ShadersSlang/` source tree and OxidANT's
   pinned tree under `third_party/OxidANT/shaders/`: `RepoFilesUnit` runs from that artifact and
   resolves both source roots relative to it, not the separate checkout.
+  The same artifact carries freshly generated WGSL. Artifact download rewrites mtimes,
+  so `BuildIntegrity` compares its normalized WGSL and source-tree inputs with the host
+  checkout; the local single-tree test still checks timestamps. An assertion failure has no crash
+  dump; the workflow uploads a dump only when Windows created one.
 - **Release frames the same view.** A Release app opens on crytek-sponza from inside, a Debug one
   on Dinosaurs from (0, 6, 26) (`Camera.cpp`, `SceneConfig.cpp`), and the goldens were calibrated
   on the latter: the first Release run failed 14 of 40 on framing alone (cards out of view, 13 of

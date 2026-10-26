@@ -79,6 +79,19 @@ behind and the per-shader gate still reports it stale. Fixing that needs a
 content stamp from the compile scripts themselves (upstream in
 ANTfrastructure), not a smarter mtime comparison here.
 
+The Windows ARM64 GPU job uses two separate checkouts: the x64 cross build
+snapshots pinned OxidANT WGSL before the compiler overwrites it, clears old
+combined outputs, and requires every new emit to match that snapshot. The ARM
+host checks out the pinned OxidANT tree again. Their
+checkout mtimes cannot be compared. The cross build stages the freshly emitted
+WGSL with its Slang source trees. Artifact download also rewrites mtimes, so
+`CheckedInWgslIsNotOlderThanItsSlangSource` compares every emitted WGSL body
+with the host's checked-in file after CRLF/LF normalization. It also
+compares every staged `.slang` source and both manifests with the host checkout,
+so an artifact from another source revision cannot satisfy the proof. Missing
+outputs or changed shader code fail. Local runs keep the source-to-output mtime
+check in their own single checkout.
+
 ## The manifest is data, in one place
 
 `Resources/ShadersSlang/shader-manifest.json` owns the Vulkan list and imports

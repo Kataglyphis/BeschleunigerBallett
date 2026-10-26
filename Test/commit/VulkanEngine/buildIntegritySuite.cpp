@@ -10,8 +10,10 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -1848,17 +1850,129 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
       << kRefreshHint << "): " << joinViolations(dead_baseline_rows);
 }
 
-// Local guard (a clone resets mtimes): WGSL must not predate its source or imports; byte-identical re-emits stay stale.
+// Git may rewrite checkout line endings while the staged compiler output keeps its original spelling.
+std::string normalize_crlf(std::string text)
+{
+    for (auto pos = text.find("\r\n"); pos != std::string::npos; pos = text.find("\r\n", pos)) { text.erase(pos, 1); }
+    return text;
+}
+
+bool same_text_ignoring_crlf(std::string checked_in, std::string emitted)
+{ return normalize_crlf(std::move(checked_in)) == normalize_crlf(std::move(emitted)); }
+
+// The artifact and checkout are distinct trees, so every mapped output must have a readable counterpart.
+std::vector<std::string>
+  staged_wgsl_differences(const ShaderManifestData &manifest, const fs::path &repo_root, const fs::path &generated_root)
+{
+    std::vector<std::string> differences;
+    for (const auto &mapping : manifest.wgsl_map) {
+        const fs::path checked_in = repo_root / mapping.dst_dir / mapping.wgsl_file;
+        const fs::path emitted = generated_root / mapping.wgsl_file;
+        const auto checked_text = readFileText(checked_in);
+        const auto emitted_text = readFileText(emitted);
+        if (!checked_text || !emitted_text || !same_text_ignoring_crlf(*checked_text, *emitted_text)) {
+            differences.push_back(fs::relative(checked_in, repo_root).string() + " differs from " + emitted.string()
+                                  + (!checked_text   ? " (checked-in file missing or unreadable)"
+                                     : !emitted_text ? " (generated file missing or unreadable)"
+                                                     : " (content differs)"));
+        }
+    }
+    return differences;
+}
+
+// Both trees must name the same inputs; build outputs do not belong to the source closure.
+std::set<fs::path> slang_input_paths(const fs::path &root, std::vector<std::string> &differences)
+{
+    std::set<fs::path> paths;
+    std::error_code error;
+    if (!fs::is_directory(root, error)) {
+        differences.push_back("source directory missing: " + root.string());
+        return paths;
+    }
+    for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+        const bool directory = it->is_directory(error);
+        if (error) { break; }
+        if (directory && it->path().filename() == "build") {
+            it.disable_recursion_pending();
+            continue;
+        }
+        const bool regular = it->is_regular_file(error);
+        if (error) { break; }
+        if (!regular) { continue; }
+        const fs::path path = it->path();
+        if (path.extension() == ".slang" || path.filename() == "shader-manifest.json") {
+            paths.insert(path.lexically_relative(root));
+        }
+    }
+    if (error) { differences.push_back("cannot enumerate " + root.string() + ": " + error.message()); }
+    return paths;
+}
+
+// Source and manifest bytes prove the emitted artifact belongs to this checkout's pinned inputs.
+std::vector<std::string>
+  staged_source_differences(const fs::path &repo_root, const fs::path &artifact_root, int &checked)
+{
+    std::vector<std::string> differences;
+    checked = 0;
+    for (const auto &relative_root : { fs::path("Resources/ShadersSlang"), fs::path("third_party/OxidANT/shaders") }) {
+        const fs::path host_root = repo_root / relative_root;
+        const fs::path staged_root = artifact_root / relative_root;
+        const auto host_paths = slang_input_paths(host_root, differences);
+        const auto staged_paths = slang_input_paths(staged_root, differences);
+        checked += static_cast<int>(host_paths.size());
+        for (const auto &relative : host_paths) {
+            const fs::path host_file = host_root / relative;
+            const fs::path staged_file = staged_root / relative;
+            if (!staged_paths.contains(relative)) {
+                differences.push_back("staged source missing: " + staged_file.string());
+                continue;
+            }
+            const auto host_text = readFileText(host_file);
+            const auto staged_text = readFileText(staged_file);
+            if (!host_text || !staged_text || !same_text_ignoring_crlf(*host_text, *staged_text)) {
+                differences.push_back(
+                  fs::relative(host_file, repo_root).string() + " differs from " + staged_file.string());
+            }
+        }
+        for (const auto &relative : staged_paths) {
+            if (!host_paths.contains(relative)) {
+                differences.push_back("unexpected staged source: " + (staged_root / relative).string());
+            }
+        }
+    }
+    return differences;
+}
+
+// Artifact download rewrites mtimes, so CI proves content while local checkouts keep the timestamp guard.
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path slang_root = slangRoot();
-
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
+    if (const char *generated_root_env = std::getenv("KATAGLYPHIS_STAGED_WGSL_ROOT")) {
+        ASSERT_NE(*generated_root_env, '\0') << "staged WGSL root is empty";
+        const fs::path generated_root = generated_root_env;
+        const fs::path artifact_root = generated_root.parent_path();
+        std::error_code error;
+        ASSERT_TRUE(fs::is_directory(generated_root, error)) << "generated WGSL root missing: " << generated_root;
+        ASSERT_GE(manifest->wgsl_map.size(), 8u) << "staged WGSL comparison has too few manifest rows";
+        int checked_sources = 0;
+        const auto source_differences = staged_source_differences(repo_root, artifact_root, checked_sources);
+        ASSERT_GT(checked_sources, 40) << "staged source comparison covered only " << checked_sources
+                                       << " source/manifest file(s)";
+        EXPECT_TRUE(source_differences.empty())
+          << source_differences.size() << " staged Slang source/manifest file(s) differ from the host checkout: "
+          << joinViolations(source_differences);
+        const auto differences = staged_wgsl_differences(*manifest, repo_root, generated_root);
+        EXPECT_TRUE(differences.empty()) << differences.size()
+                                         << " checked-in WGSL file(s) differ from the cross-build's fresh emit: "
+                                         << joinViolations(differences);
+        return;
+    }
+
+    const fs::path slang_root = slangRoot();
     std::vector<std::string> stale;
     int checked = 0;
     for (const auto &mapping : manifest->wgsl_map) {
@@ -1901,6 +2015,54 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
                                   "shared common/ import) that generates them (regenerate via "
                                   "Build-SlangShaders.ps1/.sh): "
                                << joinViolations(stale);
+}
+
+// A changed shader body must fail even if checkout and compiler line endings differ.
+TEST(BuildIntegrity, WgslContentComparisonRejectsChangedCode)
+{
+    EXPECT_TRUE(same_text_ignoring_crlf("fn shader() {\r\n}\r\n", "fn shader() {\n}\n"));
+    EXPECT_FALSE(same_text_ignoring_crlf("fn shader() {\n}\n", "fn changed() {\n}\n"));
+    EXPECT_FALSE(same_text_ignoring_crlf("fn shader() {\r}", "fn shader() {}"));
+}
+
+// This fixture checks file identity, not whether slangc compiled the shader correctly.
+TEST(BuildIntegrity, StagedWgslSourceAuditRejectsAlteredAndExtraSources)
+{
+    std::error_code error;
+    const fs::path root =
+      fs::temp_directory_path(error)
+      / ("ballett-wgsl-source-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    ASSERT_FALSE(error);
+    const fs::path host = root / "host";
+    const fs::path artifact = root / "artifact";
+    for (const auto &relative : { fs::path("Resources/ShadersSlang"), fs::path("third_party/OxidANT/shaders") }) {
+        fs::create_directories(host / relative, error);
+        ASSERT_FALSE(error);
+        fs::create_directories(artifact / relative, error);
+        ASSERT_FALSE(error);
+    }
+    const fs::path relative = "Resources/ShadersSlang/forward.slang";
+    std::ofstream(host / relative) << "float4 color = 1;\r\n";
+    std::ofstream(artifact / relative) << "float4 color = 1;\n";
+    int checked = 0;
+    EXPECT_TRUE(staged_source_differences(host, artifact, checked).empty());
+    EXPECT_EQ(checked, 1);
+    fs::create_directories(artifact / "Resources/ShadersSlang/build", error);
+    ASSERT_FALSE(error);
+    std::ofstream(artifact / "Resources/ShadersSlang/build/ignored.slang") << "build artifact\n";
+    EXPECT_TRUE(staged_source_differences(host, artifact, checked).empty());
+    std::ofstream(artifact / relative) << "float4 color = 2;\n";
+    const auto differences = staged_source_differences(host, artifact, checked);
+    EXPECT_EQ(differences.size(), 1u);
+    if (!differences.empty()) { EXPECT_NE(differences.front().find("forward.slang"), std::string::npos); }
+    std::ofstream(artifact / relative) << "float4 color = 1;\n";
+    const fs::path extra = "third_party/OxidANT/shaders/extra.slang";
+    std::ofstream(artifact / extra) << "float4 unexpected = 1;\n";
+    const auto extra_differences = staged_source_differences(host, artifact, checked);
+    EXPECT_EQ(extra_differences.size(), 1u);
+    if (!extra_differences.empty()) { EXPECT_NE(extra_differences.front().find("extra.slang"), std::string::npos); }
+    fs::remove_all(root, error);
+    EXPECT_FALSE(error);
 }
 
 // WGSL has no string literals and the backend emits no comments, so any "//" is a hand-edit the next regenerate drops.

@@ -112,13 +112,25 @@ jobs:
 
       - name: Run them natively
         shell: pwsh
+        env:
+          KATAGLYPHIS_STAGED_WGSL_ROOT: ${{ github.workspace }}/dist/windows-arm64-tests/generated-wgsl
         run: >-
           ./scripts/windows/Invoke-LavapipeTests.ps1
           -Suite dist/windows-arm64-tests/commitTestSuite.exe
           -Filter 'GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment:-GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice'
 
-      - name: Upload the crash dump
+      - name: Detect a crash dump
+        id: crash_dump
         if: failure()
+        shell: pwsh
+        run: |
+          $dumps = Join-Path $env:RUNNER_TEMP 'dumps'
+          if (Get-ChildItem -LiteralPath $dumps -Filter '*.dmp' -File -ErrorAction SilentlyContinue | Select-Object -First 1) {
+            'present=true' | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Upload the crash dump
+        if: ${{ failure() && steps.crash_dump.outputs.present == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: arm64-lavapipe-crash-dump-${{ github.run_attempt }}

@@ -94,6 +94,32 @@ function Get-FrameMetrics {
     }
 }
 
+function Test-FrameStructure {
+    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)][hashtable]$Metrics)
+
+    $passed = $true
+    # These thresholds match the GoldenRender tests.
+    if ($Metrics.stddev -le 2.0) {
+        Write-Host "FAIL [$Label] Frame is essentially uniform (stddev $($Metrics.stddev))." -ForegroundColor Red
+        $passed = $false
+    } else {
+        Write-Host "OK   [$Label] Frame has structure (stddev $($Metrics.stddev))." -ForegroundColor Green
+    }
+    if ($Metrics.lit_fraction -le 0.05) {
+        Write-Host "FAIL [$Label] Frame is too dark (lit $($Metrics.lit_fraction * 100)% of pixels)." -ForegroundColor Red
+        $passed = $false
+    } else {
+        Write-Host "OK   [$Label] Frame is well-lit (lit $($Metrics.lit_fraction * 100)%)." -ForegroundColor Green
+    }
+    if ($Metrics.buckets -le 8) {
+        Write-Host "FAIL [$Label] Too few luminance buckets ($($Metrics.buckets))." -ForegroundColor Red
+        $passed = $false
+    } else {
+        Write-Host "OK   [$Label] Good luminance variety ($($Metrics.buckets) buckets)." -ForegroundColor Green
+    }
+    return $passed
+}
+
 # Target paths (validation mode may override them)
 $cppPng = Join-Path $OutDir 'cpp-vulkan.png'
 $rustPng = Join-Path $OutDir 'rust-webgpu.png'
@@ -221,48 +247,8 @@ if (-not $cppMetrics -and -not $rustMetrics) {
 Write-Host ''
 Write-Host '=== Assertions ===' -ForegroundColor Cyan
 
-if ($cppMetrics) {
-    # These thresholds match the GoldenRender tests.
-    if ($cppMetrics.stddev -le 2.0) {
-        Write-Host "FAIL [C++] Frame is essentially uniform (stddev $($cppMetrics.stddev))." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [C++] Frame has structure (stddev $($cppMetrics.stddev))." -ForegroundColor Green
-    }
-    if ($cppMetrics.lit_fraction -le 0.05) {
-        Write-Host "FAIL [C++] Frame is too dark (lit $($cppMetrics.lit_fraction * 100)% of pixels)." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [C++] Frame is well-lit (lit $($cppMetrics.lit_fraction * 100)%)." -ForegroundColor Green
-    }
-    if ($cppMetrics.buckets -le 8) {
-        Write-Host "FAIL [C++] Too few luminance buckets ($($cppMetrics.buckets))." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [C++] Good luminance variety ($($cppMetrics.buckets) buckets)." -ForegroundColor Green
-    }
-}
-
-if ($rustMetrics) {
-    if ($rustMetrics.stddev -le 2.0) {
-        Write-Host "FAIL [Rust] Frame is essentially uniform (stddev $($rustMetrics.stddev))." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [Rust] Frame has structure (stddev $($rustMetrics.stddev))." -ForegroundColor Green
-    }
-    if ($rustMetrics.lit_fraction -le 0.05) {
-        Write-Host "FAIL [Rust] Frame is too dark (lit $($rustMetrics.lit_fraction * 100)% of pixels)." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [Rust] Frame is well-lit (lit $($rustMetrics.lit_fraction * 100)%)." -ForegroundColor Green
-    }
-    if ($rustMetrics.buckets -le 8) {
-        Write-Host "FAIL [Rust] Too few luminance buckets ($($rustMetrics.buckets))." -ForegroundColor Red
-        $exitCode = 1
-    } else {
-        Write-Host "OK   [Rust] Good luminance variety ($($rustMetrics.buckets) buckets)." -ForegroundColor Green
-    }
-}
+if ($cppMetrics -and -not (Test-FrameStructure -Label 'C++' -Metrics $cppMetrics)) { $exitCode = 1 }
+if ($rustMetrics -and -not (Test-FrameStructure -Label 'Rust' -Metrics $rustMetrics)) { $exitCode = 1 }
 
 # Cross-renderer comparison (only when both frames are available)
 if ($cppMetrics -and $rustMetrics) {

@@ -44,15 +44,16 @@ Import-BuildModule @(
   'WindowsWebDav.Common',
   'WindowsMsix.Common',
   'WindowsMsix.Signing',
+  'WindowsSlang.Common',
   'WindowsCMake.Common',
   'WindowsFormatting.Common',
   'WindowsTesting.Common',
   'WindowsTargetArch.Common'
 )
 # An older hub lacks the exported CMake target builder, so fail before starting the long build.
-$hubFloor = 'This build needs ANTfrastructure 4e4adafb (2026-10-26) or later; move third_party/ANTfrastructure to it.'
+$hubFloor = 'This build needs ANTfrastructure d96e08e5 (2026-10-26) or later; move third_party/ANTfrastructure to it.'
 try { Import-BuildModule @('WindowsCrossBundle.Common') } catch { throw "$hubFloor ($($_.Exception.Message))" }
-$missingHubCommands = @('Get-BuildConfigurationRow', 'New-PortableBundle', 'Get-PackageVersion', 'Get-CmakeBuildArgs') | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
+$missingHubCommands = @('Get-BuildConfigurationRow', 'New-PortableBundle', 'Get-PackageVersion', 'Get-CmakeBuildArgs', 'Get-SlangShaderManifest', 'Copy-SlangPinnedWgslSnapshot', 'Assert-SlangWgslOutputsMatch') | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if (-not $missingHubCommands -and -not (Get-Command Get-PackageVersion).Parameters.ContainsKey('VersionFile')) { $missingHubCommands = @('Get-PackageVersion -VersionFile') }
 if (-not $missingHubCommands -and -not (Get-Command Get-CmakeBuildArgs).Parameters.ContainsKey('Target')) { $missingHubCommands = @('Get-CmakeBuildArgs -Target') }
 if ($missingHubCommands) { throw "$hubFloor Missing: $($missingHubCommands -join ', ')." }
@@ -60,18 +61,10 @@ $TargetArch = Get-WindowsTargetArch -Arch $TargetArch
 $isCross = Test-WindowsCrossTarget -Arch $TargetArch
 $packageArch = Get-WindowsPackageArch -Arch $TargetArch
 
-$defaultConfigPath = Join-Path $PSScriptRoot 'Build-Windows.config.psd1'
-$configPath = Get-OrDefault $env:BUILD_WINDOWS_CONFIG $defaultConfigPath
-if (-not (Test-Path $configPath)) {
-  throw "Build config not found: $configPath"
-}
-$config = Import-PowerShellDataFile -Path $configPath
-
-$workspaceRootEnvVar = Get-OrDefault $env:WORKSPACE_ROOT_ENV (Get-ConfigValue -Config $config -Path 'Build.WorkspaceRootEnv')
-$workspaceEnvItem = Get-Item -Path "Env:$workspaceRootEnvVar" -ErrorAction SilentlyContinue
-$workspaceRootFromEnv = if ($null -ne $workspaceEnvItem) { $workspaceEnvItem.Value } else { $null }
-$workspaceRoot = Get-OrDefault $workspaceRootFromEnv $repoRoot
-$workspacePath = Resolve-WorkspacePath -Path $workspaceRoot
+$buildSettings = Get-BuildWorkspaceConfig -DefaultConfigPath (Join-Path $PSScriptRoot 'Build-Windows.config.psd1') -RepoRoot $repoRoot
+$configPath = $buildSettings.ConfigPath
+$config = $buildSettings.Config
+$workspacePath = Resolve-WorkspacePath -Path $buildSettings.WorkspaceRoot
 
 $logDir = Get-OrDefault $env:BUILD_LOG_DIR (Get-ConfigValue -Config $config -Path 'Build.LogDir')
 
@@ -113,6 +106,7 @@ if ($SkipBuild) {
 }
 
 $script:clangClVersionLogged = $false
+$script:verifiedWgslOutputs = @()
 
 function Invoke-ConfiguredBuild {
   param(
@@ -131,12 +125,43 @@ function Invoke-SlangShaderPrecompile {
 
   $compileSlangScript = Join-Path $PSScriptRoot 'Build-SlangShaders.ps1'
   if (-not (Test-Path $compileSlangScript)) {
+    if ($StageTests) { throw "Slang shader compile script not found: $compileSlangScript" }
     Write-BuildLogWarning -Context $context -Message "Slang shader compile script not found: $compileSlangScript"
     return
   }
 
   Write-BuildLog -Context $context -Message "Precompiling Slang shaders ($BuildLabel)"
-  & $compileSlangScript
+  $snapshotRoot = $null
+  if ($StageTests) {
+    $script:verifiedWgslOutputs = @()
+    $manifestPath = Join-Path $repoRoot 'Resources\ShadersSlang\shader-manifest.json'
+    $wgslMappings = @((Get-SlangShaderManifest -Path $manifestPath).wgslMap)
+    if ($wgslMappings.Count -eq 0) { throw "No WGSL destinations in $manifestPath" }
+    $combinedOutputDir = Join-Path $repoRoot 'Resources\ShadersSlang\build'
+    $snapshotRoot = Join-Path (Join-Path $repoRoot 'logs') ("wgsl-pinned-" + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $snapshotRoot) { throw "WGSL snapshot root already exists: $snapshotRoot" }
+  }
+  try {
+    if ($StageTests) {
+      Copy-SlangPinnedWgslSnapshot -Mappings $wgslMappings -DestinationRoot $repoRoot -SnapshotRoot $snapshotRoot
+      # A skipped compiler cannot inherit prior outputs, but unrelated combined files stay cached.
+      foreach ($mapping in $wgslMappings) {
+        $name = [string]$mapping.out
+        $old = Join-Path $combinedOutputDir "combined_$name"
+        if (Test-Path -LiteralPath $old -PathType Leaf) { Remove-Item -LiteralPath $old -Force }
+      }
+    }
+    & $compileSlangScript
+    if ($StageTests) {
+      $script:verifiedWgslOutputs = @(Assert-SlangWgslOutputsMatch -Mappings $wgslMappings `
+        -CombinedOutputDir $combinedOutputDir -DestinationRoot $snapshotRoot)
+      Write-BuildLog -Context $context -Message "Verified $($script:verifiedWgslOutputs.Count) regenerated WGSL file(s) against the pinned precompile snapshot"
+    }
+  } finally {
+    if ($snapshotRoot -and (Test-Path -LiteralPath $snapshotRoot)) {
+      Remove-Item -LiteralPath $snapshotRoot -Recurse -Force
+    }
+  }
 }
 
 function Assert-ClangClAvailable {
@@ -372,6 +397,11 @@ try {
         foreach ($rel in 'Resources\Models\plane.obj', 'Resources\Models\plane.mtl', 'Resources\Models\suzanne.obj', 'Resources\Models\suzanne.mtl') {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Force
         }
+        if ($script:verifiedWgslOutputs.Count -eq 0) { throw 'No verified WGSL emissions to stage with the source tests' }
+        $generatedWgslDir = New-Item -ItemType Directory -Force -Path (Join-Path $tests 'generated-wgsl')
+        foreach ($proof in $script:verifiedWgslOutputs) {
+          Copy-Item -LiteralPath $proof.Generated -Destination (Join-Path $generatedWgslDir.FullName $proof.Name) -Force
+        }
         Copy-Item -LiteralPath (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Invoke-StagedTests.ps1') -Destination $tests
         ConvertTo-Json -InputObject @($manifest) | Set-Content -LiteralPath (Join-Path $tests 'tests.json') -Encoding utf8
         Write-BuildLog -Context $context -Message "Staged $(@($staged | ForEach-Object { Split-Path $_ -Leaf }) -join ', ') in $tests with $($closure.Count) closure DLL(s): $(@($closure | ForEach-Object { Split-Path $_ -Leaf }) -join ', ')"
@@ -403,7 +433,7 @@ try {
       Copy-Item -Path (Join-Path $distArch 'bundle') -Destination $msixStaging -Recurse
 
       $manifestTemplateRel = Get-ConfigValue -Config $config -Path 'Msix.ManifestTemplate'
-      $manifestTemplatePath = if ([System.IO.Path]::IsPathRooted($manifestTemplateRel)) { $manifestTemplateRel } else { Join-Path $workspacePath $manifestTemplateRel }
+      $manifestTemplatePath = Resolve-PathFromRoot -Root $workspacePath -Path $manifestTemplateRel
       if (-not (Test-Path $manifestTemplatePath)) {
         throw "MSIX manifest template not found: $manifestTemplatePath"
       }

@@ -20,6 +20,13 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Replace the ARM GPU job's cross-checkout shader mtime false positive with a required
+  generated-WGSL and source-provenance check; keep the local mtime guard and upload a crash
+  dump only after a real crash created one.
+- Reuse ANTfrastructure's Windows build config and source-copy test helpers while keeping
+  this repo's path validation, shader fixture and mutation assertions.
+- Share C++ and Rust pixel structure verdicts while preserving each renderer's messages,
+  thresholds and failure status; test both paths with generated frames.
 - Stage local and OxidANT-owned Slang sources beside ARM64 test binaries so native source checks
   resolve `rasterizer/rasterizer.slang` and `forward/forward.slang` from the downloaded artifact.
 - Give the local cloud-volume shader a distinct module name so the dual-target
@@ -72,6 +79,8 @@ the GitHub releases themselves.
 
 ### Changed
 
+- Search this repository and its direct submodules for a Bash or PowerShell helper before
+  adding one; shared behavior belongs in its upstream owner.
 - Use the shared Windows Git helper for WSL Renovate runs on Windows checkouts, so CRLF
   `.gitmodules` does not block the hub bootstrap or dependency update.
 - The shared Renovate driver now checks every direct submodule against its remote default branch

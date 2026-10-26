@@ -1,6 +1,7 @@
 #requires -Version 7.0
 
 # Fixture sources, not the live engine ones, so the parser sees known input. Pester 3.4.0: `Should Be`, not `Should -Be`.
+Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function ConvertTo-TestScriptAst, Get-TestAstCommands -ErrorAction Stop
 
 Describe 'Compare-RendererTimings' {
 
@@ -68,6 +69,34 @@ impl TimedPass {
     )
     $out = & pwsh @scriptArgs 2>&1
     return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
+  }
+
+  function Assert-SharedTimingConversion {
+    param([string]$Text)
+    $ast = ConvertTo-TestScriptAst -Text $Text
+    $imports = @(Get-TestAstCommands -Ast $ast -Name 'Import-BuildModule' | Where-Object { $_.Extent.Text -match "'Compare-Renderer\.Common'" })
+    $converts = @(Get-TestAstCommands -Ast $ast -Name 'Convert-DinosaursObjToGltf')
+    $cargoCalls = @(Get-TestAstCommands -Ast $ast -Name 'cargo')
+    $timingRuns = @($cargoCalls | Where-Object { $_.Extent.Text -match 'dump_gpu_timings' })
+    $inlineConversions = @($cargoCalls | Where-Object { $_.Extent.Text -match 'obj2gltf' })
+    if ($imports.Count -ne 1 -or $converts.Count -ne 1 -or $timingRuns.Count -ne 1 -or $inlineConversions.Count -ne 0) {
+      throw 'Timing comparison must use the shared scene converter once and keep one timing run.'
+    }
+    if ($imports[0].Extent.StartOffset -ge $converts[0].Extent.StartOffset -or
+        $converts[0].Extent.StartOffset -ge $timingRuns[0].Extent.StartOffset) {
+      throw 'The shared converter must load and run before GPU timing.'
+    }
+  }
+
+  It 'uses the shared cached scene conversion before timing and rejects an omitted call' {
+    $source = Get-Content -LiteralPath $script:scriptPath -Raw
+    Assert-SharedTimingConversion -Text $source
+    $call = 'Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf'
+    $mutant = $source.Replace($call, '')
+    ($mutant -ne $source) | Should Be $true
+    $failed = $false
+    try { Assert-SharedTimingConversion -Text $mutant } catch { $failed = $true }
+    $failed | Should Be $true
   }
 
   It 'derives the five C++ pass names from GPU_TIMED_PASS_EXPORT_NAMES' {

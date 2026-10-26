@@ -4,12 +4,10 @@
 Describe 'Windows CMake package reuse' {
   . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
   Import-BuildModule @('WindowsBuild.Common', 'WindowsCMake.Common')
+  Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function Get-TestScriptAst -ErrorAction Stop
 
   It 'uses the exported hub argument builder for the one Release package step' {
-    $tokens = $null
-    $errors = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot '..\Build-Windows.ps1'), [ref]$tokens, [ref]$errors)
-    @($errors | Where-Object { $_ }).Count | Should Be 0
+    $ast = Get-TestScriptAst -ScriptPath (Join-Path $PSScriptRoot '..\Build-Windows.ps1')
     $calls = @($ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Get-CmakeBuildArgs' }, $true))
     $calls.Count | Should Be 1
     ($calls[0].Extent.Text -match "-Target 'package'") | Should Be $true

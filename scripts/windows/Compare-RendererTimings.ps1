@@ -154,19 +154,14 @@ if (Test-Path $cppJson) {
 }
 
 # Phase 2: Rust/WebGPU
-$dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
 $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
 
 if ((-not $ValidationOnly) -and (Test-Path $suite)) {
+    . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+    Import-BuildModule 'Compare-Renderer.Common'
+    Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf
     Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
     try {
-        if (-not (Test-Path $dinoGltf) -or
-            (Get-Item $dinoObj).LastWriteTime -gt (Get-Item $dinoGltf).LastWriteTime) {
-            Write-Host '== Converting Dinosaurs OBJ -> glTF ==' -ForegroundColor Cyan
-            cargo run -p kataglyphis_webgpu_renderer --example obj2gltf --quiet -- $dinoObj $dinoGltf 2>$null | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "obj2gltf failed." }
-        }
-
         Write-Host '== Rust/WebGPU (dump_gpu_timings, same scene, 1200x768) ==' -ForegroundColor Cyan
         cargo run -p kataglyphis_webgpu_renderer --example dump_gpu_timings --quiet -- $rustJson $dinoGltf 1200 768 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {

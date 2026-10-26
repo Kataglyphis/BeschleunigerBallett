@@ -13,11 +13,12 @@ Describe 'Compare-RendererPixels' {
 
     function New-FlatPng {
       # Flat colour: stddev 0 and one bucket, so it must fail as uniform.
-      param([string]$Path, [int]$W = 64, [int]$H = 64)
+      param([string]$Path, [int]$W = 64, [int]$H = 64,
+        [System.Drawing.Color]$Color = [System.Drawing.Color]::FromArgb(255, 128, 128, 128))
       $bmp = [System.Drawing.Bitmap]::new($W, $H)
       $g = [System.Drawing.Graphics]::FromImage($bmp)
       try {
-        $g.Clear([System.Drawing.Color]::FromArgb(255, 128, 128, 128))
+        $g.Clear($Color)
       } finally {
         $g.Dispose()
       }
@@ -81,6 +82,35 @@ Describe 'Compare-RendererPixels' {
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
     $result.ExitCode | Should Be 0
+  }
+
+  It 'checks uniformity, darkness and bucket count for both labeled renderers' {
+    $outDir = Join-Path $script:tmpDir 'both-dark'
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    New-FlatPng -Path (Join-Path $outDir 'cpp-vulkan.png') -Color ([System.Drawing.Color]::Black)
+    New-FlatPng -Path (Join-Path $outDir 'rust-webgpu.png') -Color ([System.Drawing.Color]::Black)
+
+    $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
+    $result.ExitCode | Should Be 1
+    foreach ($label in @('C\+\+', 'Rust')) {
+      ($result.Output -match "FAIL \[$label\] Frame is essentially uniform") | Should Be $true
+      ($result.Output -match "FAIL \[$label\] Frame is too dark") | Should Be $true
+      ($result.Output -match "FAIL \[$label\] Too few luminance buckets") | Should Be $true
+    }
+  }
+
+  It 'validates each renderer independently when only Rust is uniform' {
+    $outDir = Join-Path $script:tmpDir 'mixed-structure'
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan.png')
+    New-FlatPng -Path (Join-Path $outDir 'rust-webgpu.png')
+
+    $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
+    $result.ExitCode | Should Be 1
+    ($result.Output -match 'OK   \[C\+\+\] Frame has structure') | Should Be $true
+    ($result.Output -match 'FAIL \[C\+\+\]') | Should Be $false
+    ($result.Output -match 'FAIL \[Rust\] Frame is essentially uniform') | Should Be $true
+    ($result.Output -match 'FAIL \[Rust\] Too few luminance buckets') | Should Be $true
   }
 
   It 'does not throw when computing metrics for a captured frame (regression: use-after-dispose)' {
