@@ -53,6 +53,8 @@ On Windows, build in the toolchain container instead (Stevedore):
 `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1`.
 Prerequisites, both platforms, the scenes, packaging and troubleshooting:
 [docs/source/getting_started.md](docs/source/getting_started.md).
+The ARM64 test artifact carries local and OxidANT-owned shader sources for native source checks;
+see [GPU testing](docs/source/gpu-golden-testing.md).
 
 ## Documentation
 

@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Stage local and OxidANT-owned Slang sources beside ARM64 test binaries so native source checks
+  resolve `rasterizer/rasterizer.slang` and `forward/forward.slang` from the downloaded artifact.
 - Give the local cloud-volume shader a distinct module name so the dual-target
   noise test imports OxidANT's shared `snoise`/`fbm` module; update its SPIR-V
   path and structural tests.

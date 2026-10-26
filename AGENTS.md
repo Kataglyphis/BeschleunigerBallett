@@ -668,7 +668,8 @@ family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build i
 On `windows-11-arm` the commit suite runs whole, in two halves:
 
 - `-StageTests` builds the Release commit suite with `KATAGLYPHIS_RELEASE_COMMIT_TESTS` and stages it
-  with its shaders and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in
+  with compiled and local Slang sources, OxidANT's pinned sources at their canonical `third_party`
+  path, and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in
   `dist\windows-arm64-tests`. The hub's run job runs `tests.json` through its
   `Invoke-StagedTests.ps1` (hub CON43): the CPU suites (the commit suite minus the GPU suites and
   the source-reading `BuildIntegrity.*` checks), `perfTestSuite.exe` (the Profile perf suite) as an

@@ -72,6 +72,9 @@ arch:
   `gpu-suites` job on `windows-11-arm`, from a checkout, which also runs the source-reading
   `BuildIntegrity.*` checks the staged tree lacks. The script sets `LP_NATIVE_VECTOR_WIDTH=256`
   itself; on Linux the image does.
+  The ARM64 test artifact includes the local `Resources/ShadersSlang/` source tree and OxidANT's
+  pinned tree under `third_party/OxidANT/shaders/`: `RepoFilesUnit` runs from that artifact and
+  resolves both source roots relative to it, not the separate checkout.
 - **Release frames the same view.** A Release app opens on crytek-sponza from inside, a Debug one
   on Dinosaurs from (0, 6, 26) (`Camera.cpp`, `SceneConfig.cpp`), and the goldens were calibrated
   on the latter: the first Release run failed 14 of 40 on framing alone (cards out of view, 13 of
