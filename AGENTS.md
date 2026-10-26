@@ -687,6 +687,9 @@ The bundle never ships the loader. The image, the arch gate over `dist/windows-a
 and the run job are the hub's:
 [`windows-cross-builds.md` § Consumer cross lanes](third_party/ANTfrastructure/docs/windows-cross-builds.md#consumer-cross-lanes-container-ci-windowsyml).
 
+Both Windows container callers request direct submodules; the build reads OxidANT's checked-in
+sources and has no need to recurse into ANTfrastructure's cyclic documentation submodules.
+
 **The Windows x64 lane is a thin caller too** (2026-09-26, the family's hub reusable lanes).
 `windows-x64.yml` names `scripts/windows/Invoke-WindowsLane.ps1`, which a local container run
 executes too:

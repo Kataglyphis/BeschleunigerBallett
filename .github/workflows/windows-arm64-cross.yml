@@ -22,6 +22,7 @@ jobs:
     uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-windows.yml@develop
     with:
       target-arch: arm64
+      submodules: 'true'
       build-script: scripts/windows/Build-Windows.ps1
       # Format and tidy run on the x64 lane; the Release commit suite, the Debug (ASan) suite and the Profile perf suite are staged for windows-11-arm.
       build-args: |

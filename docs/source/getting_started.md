@@ -35,6 +35,8 @@ the file itself, or the Windows configurations table in
 [AGENTS.md](https://github.com/Kataglyphis/BeschleunigerBallett/blob/develop/AGENTS.md#windows-configurations-build-windowsps1).
 On Windows, prefer `scripts/windows/Build-Windows-Container.ps1`, which builds
 inside a container that already has a new enough CMake.
+The Windows CI callers check out direct submodules; their build sources are all at that level,
+so they avoid the nested ANTfrastructure and DocumANTation checkout cycle.
 
 ### Scenes
 

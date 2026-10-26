@@ -22,6 +22,7 @@ jobs:
     uses: Kataglyphis/ANTfrastructure/.github/workflows/container-ci-windows.yml@develop
     with:
       target-arch: amd64
+      submodules: 'true'
       build-script: scripts/windows/Invoke-WindowsLane.ps1
       # A self-hosted GPU runner sets KATAGLYPHIS_CI_HAS_GPU=1, dropping -ValidationOnly from the renderer comparisons.
       container-env: |

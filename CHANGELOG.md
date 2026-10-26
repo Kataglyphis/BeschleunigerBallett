@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Limit Windows x64 and arm64 container checkouts to direct submodules; nested documentation
+  submodules formed a cycle before either build could start.
 - Use ANTfrastructure's CMake argument builder for Windows Release packaging, keeping the
   package target and parallel build setting while removing the copied argument logic.
 - Annotate the shared Slang source-root array consumed by the hub driver so
