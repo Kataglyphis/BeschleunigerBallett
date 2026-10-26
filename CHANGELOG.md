@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Use ANTfrastructure's CMake argument builder for Windows Release packaging, keeping the
+  package target and parallel build setting while removing the copied argument logic.
 - Annotate the shared Slang source-root array consumed by the hub driver so
   ShellCheck's warning ratchet retains its existing baseline after the migration.
 - **The WebGPU demo builds from a CRLF checkout, and a lock without its version stops the docs

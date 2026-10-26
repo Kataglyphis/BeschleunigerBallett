@@ -49,11 +49,12 @@ Import-BuildModule @(
   'WindowsTesting.Common',
   'WindowsTargetArch.Common'
 )
-# A hub pin older than 3d26fac7 lacks commands this build calls late, so fail here naming the commit it needs.
-$hubFloor = 'This build needs ANTfrastructure 3d26fac7 (2026-10-19) or later; move third_party/ANTfrastructure to it.'
+# An older hub lacks the exported CMake target builder, so fail before starting the long build.
+$hubFloor = 'This build needs ANTfrastructure 4e4adafb (2026-10-26) or later; move third_party/ANTfrastructure to it.'
 try { Import-BuildModule @('WindowsCrossBundle.Common') } catch { throw "$hubFloor ($($_.Exception.Message))" }
-$missingHubCommands = @('Get-BuildConfigurationRow', 'New-PortableBundle', 'Get-PackageVersion') | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
+$missingHubCommands = @('Get-BuildConfigurationRow', 'New-PortableBundle', 'Get-PackageVersion', 'Get-CmakeBuildArgs') | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if (-not $missingHubCommands -and -not (Get-Command Get-PackageVersion).Parameters.ContainsKey('VersionFile')) { $missingHubCommands = @('Get-PackageVersion -VersionFile') }
+if (-not $missingHubCommands -and -not (Get-Command Get-CmakeBuildArgs).Parameters.ContainsKey('Target')) { $missingHubCommands = @('Get-CmakeBuildArgs -Target') }
 if ($missingHubCommands) { throw "$hubFloor Missing: $($missingHubCommands -join ', ')." }
 $TargetArch = Get-WindowsTargetArch -Arch $TargetArch
 $isCross = Test-WindowsCrossTarget -Arch $TargetArch
@@ -306,18 +307,8 @@ try {
       }
 
       # Packaging runs even with -SkipBuild.
-      $packageArgs = @(
-        '--build', $buildPathClangRelease,
-        '--target', 'package',
-        '--config', 'Release'
-      )
-      if ($ParallelJobs -gt 0) {
-        $packageArgs += @('--parallel', $ParallelJobs.ToString())
-        Write-BuildLog -Context $context -Message "DEBUG: Package build using --parallel $ParallelJobs"
-      } else {
-        $packageArgs += @('--parallel')
-        Write-BuildLog -Context $context -Message "DEBUG: Package build using --parallel (all cores)"
-      }
+      $packageArgs = @(Get-CmakeBuildArgs -Context $context -BuildPath $buildPathClangRelease -Target 'package' `
+        -Configuration 'Release' -ParallelJobs $ParallelJobs -CpuCount ([Environment]::ProcessorCount))
       Write-BuildLog -Context $context -Message "DEBUG: Package command: cmake $($packageArgs -join ' ')"
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
     } | Out-Null

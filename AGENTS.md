@@ -212,6 +212,8 @@ directories via `scripts/windows/Build-Windows.config.psd1`:
   unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`, a build without Rust, went
   on 2026-10-21 (owner: Rust is always in); the `windows-clang-release-wix` package preset now
   builds on `x64-ClangCL-Windows-Release`.
+- The Release package step gets its `cmake --build --target package` arguments and parallelism
+  from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
 
 **Coverage stays OFF for the ClangCL presets** (`myproject_ENABLE_COVERAGE` in
 `x64-ClangCL-Windows-Base`). Switched ON on 2026-10-01 (hub CON9: the image ships
