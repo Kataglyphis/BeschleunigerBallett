@@ -2042,24 +2042,26 @@ TEST(BuildIntegrity, StagedWgslSourceAuditRejectsAlteredAndExtraSources)
         ASSERT_FALSE(error);
     }
     const fs::path relative = "Resources/ShadersSlang/forward.slang";
-    std::ofstream(host / relative) << "float4 color = 1;\r\n";
-    std::ofstream(artifact / relative) << "float4 color = 1;\n";
+    std::ofstream(host / relative, std::ios::binary) << "float4 color = 1;\r\n";
+    std::ofstream(artifact / relative, std::ios::binary) << "float4 color = 1;\n";
     int checked = 0;
-    EXPECT_TRUE(staged_source_differences(host, artifact, checked).empty());
+    const auto baseline_differences = staged_source_differences(host, artifact, checked);
+    EXPECT_TRUE(baseline_differences.empty()) << joinViolations(baseline_differences);
     EXPECT_EQ(checked, 1);
     fs::create_directories(artifact / "Resources/ShadersSlang/build", error);
     ASSERT_FALSE(error);
-    std::ofstream(artifact / "Resources/ShadersSlang/build/ignored.slang") << "build artifact\n";
-    EXPECT_TRUE(staged_source_differences(host, artifact, checked).empty());
-    std::ofstream(artifact / relative) << "float4 color = 2;\n";
+    std::ofstream(artifact / "Resources/ShadersSlang/build/ignored.slang", std::ios::binary) << "build artifact\n";
+    const auto ignored_differences = staged_source_differences(host, artifact, checked);
+    EXPECT_TRUE(ignored_differences.empty()) << joinViolations(ignored_differences);
+    std::ofstream(artifact / relative, std::ios::binary) << "float4 color = 2;\n";
     const auto differences = staged_source_differences(host, artifact, checked);
     EXPECT_EQ(differences.size(), 1u);
     if (!differences.empty()) { EXPECT_NE(differences.front().find("forward.slang"), std::string::npos); }
-    std::ofstream(artifact / relative) << "float4 color = 1;\n";
+    std::ofstream(artifact / relative, std::ios::binary) << "float4 color = 1;\n";
     const fs::path extra = "third_party/OxidANT/shaders/extra.slang";
-    std::ofstream(artifact / extra) << "float4 unexpected = 1;\n";
+    std::ofstream(artifact / extra, std::ios::binary) << "float4 unexpected = 1;\n";
     const auto extra_differences = staged_source_differences(host, artifact, checked);
-    EXPECT_EQ(extra_differences.size(), 1u);
+    EXPECT_EQ(extra_differences.size(), 1u) << joinViolations(extra_differences);
     if (!extra_differences.empty()) { EXPECT_NE(extra_differences.front().find("extra.slang"), std::string::npos); }
     fs::remove_all(root, error);
     EXPECT_FALSE(error);

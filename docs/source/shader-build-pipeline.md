@@ -91,6 +91,8 @@ compares every staged `.slang` source and both manifests with the host checkout,
 so an artifact from another source revision cannot satisfy the proof. Missing
 outputs or changed shader code fail. Local runs keep the source-to-output mtime
 check in their own single checkout.
+The provenance fixture writes its CRLF/LF samples in binary mode: Windows text-mode output would
+add a second carriage return and make an unchanged source look different before mutation checks.
 
 ## The manifest is data, in one place
 

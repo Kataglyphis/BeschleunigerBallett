@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Write the staged WGSL provenance fixture in binary mode so its explicit CRLF/LF samples keep
+  the same bytes on Windows and the mutation assertions test source differences.
 - Refresh the commit-suite count after the two ARM provenance tests and pin the
   Hub preflight repair.
 - Replace the ARM GPU job's cross-checkout shader mtime false positive with a required
