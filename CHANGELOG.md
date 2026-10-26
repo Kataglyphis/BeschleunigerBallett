@@ -63,6 +63,8 @@ the GitHub releases themselves.
 
 ### Changed
 
+- Use the shared Windows Git helper for WSL Renovate runs on Windows checkouts, so CRLF
+  `.gitmodules` does not block the hub bootstrap or dependency update.
 - The shared Renovate driver now checks every direct submodule against its remote default branch
   and initializes missing checkouts when applying. FUZZTEST's release branch remains for the
   separate branch-sync command; its old Renovate approval and release-line rules were removed.
