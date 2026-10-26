@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Refresh the commit-suite count after the two ARM provenance tests and pin the
+  Hub preflight repair.
 - Replace the ARM GPU job's cross-checkout shader mtime false positive with a required
   generated-WGSL and source-provenance check; keep the local mtime guard and upload a crash
   dump only after a real crash created one.
