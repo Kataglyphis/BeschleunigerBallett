@@ -80,7 +80,10 @@ antfrastructure_renovate_will_apply() {
             --dry-run) return 1 ;;
         esac
     done
-    [ "$apply" -eq 1 ]
+    if [ "$apply" -eq 1 ]; then
+        return 0
+    fi
+    return 1
 }
 
 antfrastructure_renovate_check_gitlink() {
