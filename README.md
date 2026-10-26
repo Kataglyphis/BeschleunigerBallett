@@ -65,7 +65,7 @@ Prerequisites, both platforms, the scenes, packaging and troubleshooting:
 | The C++ API reference (Doxygen, on the docs site) | [api/library_root](https://beschleunigerballette.jonasheinle.de/api/library_root.html) |
 | The WebGPU demo in the browser | [docs/source/webgpu_demo.md](docs/source/webgpu_demo.md) |
 | WSL2 with an NVIDIA GPU | [docs/source/wsl2_vulkan.rst](docs/source/wsl2_vulkan.rst) |
-| Shaders: the Slang to SPIR-V and WGSL build | [docs/source/shader-build-pipeline.md](docs/source/shader-build-pipeline.md) |
+| Shaders: the Slang to SPIR-V and WGSL build, including module-name collisions | [docs/source/shader-build-pipeline.md](docs/source/shader-build-pipeline.md) |
 | One Slang source for both renderers | [docs/source/shader-sharing.md](docs/source/shader-sharing.md) |
 | Model loading | [docs/source/model-loading.md](docs/source/model-loading.md) |
 | Path tracing | [docs/source/path-tracing.md](docs/source/path-tracing.md) |

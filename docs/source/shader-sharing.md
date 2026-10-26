@@ -71,8 +71,8 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 - `common/brdf.slang` — the Epic Games / Unreal 4 microfacet PBR model
   (`distribution_ggx`, `geometry_smith`, `fresnel_schlick`, `brdf_direct`),
   used by both renderers' forward/RT shading.
-- `common/noise.slang` — 3D simplex noise + fractal Brownian motion, used by
-  both renderers' cloud/procedural passes.
+- `common/noise.slang` — 3D simplex noise + fractal Brownian motion, exercised
+  on both targets by `tests/noise_test.slang`; no production shader imports it yet.
 - `common/fullscreen.slang` — the fullscreen-triangle vertex trick
   (`vid/2*4-1`), used by every fullscreen pass on both sides. Its `uv` is the
   one per-target difference in shared code: uv (0,0) is always the target's
@@ -165,7 +165,7 @@ tonemap shader.
 | --- | --- |
 | `bloom/bloom.slang` | wgsl |
 | `compute/clouds.slang` | spirv |
-| `compute/noise.slang` | spirv |
+| `compute/noise_volume.slang` | spirv |
 | `deferred/deferred.slang` | spirv |
 | `depth_resolve/depth_resolve.slang` | wgsl |
 | `forward/forward.slang` | wgsl |
@@ -195,6 +195,12 @@ breaks either target's compile fails the manifest run in
 excludes them (see its gating test). Only `brdf` and `noise` are guarded for
 dual emit; a spirv-only module has nothing to guard until it gains a real wgsl
 consumer, which the table below makes checkable.
+
+The local cloud-volume shader is `compute/noise_volume.slang` so Slang's
+`import noise;` resolves OxidANT's `common/noise.slang`. A local file named
+`noise.slang` shadowed that shared module in the compiler's include order;
+the dual-target test then failed with `E30015 undefined identifier` on
+`snoise` and `fbm` before it could test the shared math.
 
 **Shared-module targets:** the per-`common/`-module counterpart of the table
 above, computed the same way (an import-graph walk over `shader-manifest.json`)

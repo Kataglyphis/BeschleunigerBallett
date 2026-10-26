@@ -20,6 +20,9 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Give the local cloud-volume shader a distinct module name so the dual-target
+  noise test imports OxidANT's shared `snoise`/`fbm` module; update its SPIR-V
+  path and structural tests.
 - Limit Windows x64 and arm64 container checkouts to direct submodules; nested documentation
   submodules formed a cycle before either build could start.
 - Use ANTfrastructure's CMake argument builder for Windows Release packaging, keeping the

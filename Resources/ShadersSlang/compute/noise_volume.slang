@@ -1,4 +1,4 @@
-// Cannot `import noise;`: slangc resolves modules by basename, so it would import itself.
+// This basename must not shadow OxidANT's shared noise module imported by the dual-target test.
 
 [vk::binding(0, 0)] RWTexture3D<float4> noiseVolume;
 

@@ -335,6 +335,8 @@ output is gitignored, so a fresh clone must run a compile script before the engi
 load. Build step, staleness rules, fast iteration:
 [`docs/source/shader-build-pipeline.md`](docs/source/shader-build-pipeline.md); sharing shader code between the
 renderers: [`docs/source/shader-sharing.md`](docs/source/shader-sharing.md).
+Keep the local cloud-volume module named `noise_volume.slang`; `noise.slang` would
+shadow OxidANT's shared noise module and invalidate the dual-target import test.
 
 ## Rule: Reusable Work Belongs in ANTfrastructure
 

@@ -5997,7 +5997,7 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path noise_path = slangRoot() / "compute" / "noise.slang";
+    const fs::path noise_path = slangRoot() / "compute" / "noise_volume.slang";
     const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
 
     const auto noise_threads = parse_numthreads(noise_path);
@@ -6158,7 +6158,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path noise_path = slangRoot() / "compute" / "noise.slang";
+    const fs::path noise_path = slangRoot() / "compute" / "noise_volume.slang";
     const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
 
     const auto noise_contents = readFileText(noise_path);

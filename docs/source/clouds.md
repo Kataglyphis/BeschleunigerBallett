@@ -8,7 +8,7 @@ four-`vec4` `SceneUBO` block and its own GUI panel. Everything here is
 ## Pipeline shape
 
 Two compute kernels, both Slang-authored and SPIR-V-only
-(`Resources/ShadersSlang/compute/noise.slang`, `compute/clouds.slang`):
+(`Resources/ShadersSlang/compute/noise_volume.slang`, `compute/clouds.slang`):
 
 - **`noise_main`** runs exactly **once**, from `Clouds::init` via
   `dispatchNoiseGeneration`, filling a `kNoiseVolumeExtent`^3 3D storage
@@ -178,8 +178,8 @@ both sides even though the host already clamped them before packing.
 <!-- cloud-constants:begin -->
 | Constant | Value | Shader token it pins |
 | --- | --- | --- |
-| `kNoiseVolumeExtent` | 128 | `noise.slang`'s `NOISE_VOLUME_EXTENT` and its dispatch-grid divisor |
-| `kNoiseWorkgroupSize` | 8 | `noise.slang`'s `[numthreads(8, 8, 8)]` |
+| `kNoiseVolumeExtent` | 128 | `noise_volume.slang`'s `NOISE_VOLUME_EXTENT` and its dispatch-grid divisor |
+| `kNoiseWorkgroupSize` | 8 | `noise_volume.slang`'s `[numthreads(8, 8, 8)]` |
 | `kCloudWorkgroupSize` | 16 | `clouds.slang`'s `[numthreads(16, 16, 1)]` |
 | `kMinCloudMarchSteps` | 4 | `clouds.slang`'s `num_march_steps` floor |
 | `kMaxCloudMarchSteps` | 128 | `clouds.slang`'s `num_march_steps` clamp, upper bound |

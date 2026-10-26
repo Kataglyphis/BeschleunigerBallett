@@ -1,6 +1,6 @@
 import noise;
 
-// CI-only entry point: proves noise.slang compiles to both SPIR-V and WGSL; no renderer loads it.
+// This is the only WGSL consumer of OxidANT's shared noise module.
 
 RWStructuredBuffer<float> outBuf;
 

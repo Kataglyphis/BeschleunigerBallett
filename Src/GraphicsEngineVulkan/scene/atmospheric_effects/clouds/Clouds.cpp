@@ -123,7 +123,7 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     // Noise pipeline (Slang-emitted SPIR-V)
     std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptors.getLayout() };
     ComputePipelineHandles noiseHandles =
-      createComputePipeline(device, "Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv", noiseLayouts);
+      createComputePipeline(device, "Resources/ShadersSlang/build/spirv/compute/noise_volume.noise_main.spv", noiseLayouts);
     noisePipelineLayout = noiseHandles.layout;
     noiseComputePipeline = noiseHandles.pipeline;
 }

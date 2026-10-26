@@ -110,7 +110,7 @@
     },
     {
       "_comment": "Compute noise volume (SPIR-V only).",
-      "file": "compute/noise.slang",
+      "file": "compute/noise_volume.slang",
       "entry": "noise_main",
       "stage": "compute",
       "targets": [
