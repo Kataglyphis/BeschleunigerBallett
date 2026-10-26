@@ -9,6 +9,10 @@ Before adding Bash or PowerShell behavior, search this repository and its direct
 including ANTfrastructure. Call or extend the shared owner with project-specific arguments;
 the contributor rule is in [AGENTS.md](../../AGENTS.md).
 
+The `powershell-lint` CI job calls ANTfrastructure's reusable PowerShell quality workflow.
+It uses the hub's pinned Gallery installer and reports complexity; `analyzer-strict: false`
+preserves this repo's current advisory analyzer policy while parse failures stay fatal.
+
 `Compare-RendererPixels.ps1` checks C++ and Rust frames with the same structural verdict:
 standard deviation above 2, more than 5% lit pixels, and more than eight luminance buckets.
 The local Pester suite runs generated PNGs through both renderer paths and checks their labels,

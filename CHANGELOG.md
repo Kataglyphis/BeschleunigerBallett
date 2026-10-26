@@ -20,6 +20,7 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Run PowerShell lint through ANTfrastructure's reusable workflow and bounded pinned-module installer.
 - Write the staged WGSL provenance fixture in binary mode so its explicit CRLF/LF samples keep
   the same bytes on Windows and the mutation assertions test source differences.
 - Refresh the commit-suite count after the two ARM provenance tests and pin the

@@ -912,12 +912,10 @@ only surfaces when that line runs, an hour into a gcc build.
 
 - **`lint` is one `uses:` line** onto the lane ANTfrastructure publishes as a `workflow_call`
   workflow, with `submodules: 'recursive'` (the hub's default) and `ratchets: true`.
-- **`powershell-lint`** is the Windows-native job (PSScriptAnalyzer plus the mandatory
-  parse/AST-trap gate over `scripts/`), on `windows-2025` because that gate script resolves its own
-  helper module by backslash path. It is deliberately **not** collapsed onto the hub's equivalent:
-  the hub's passes `-FailOnAnalyzer` unconditionally, and this tree has one analyzer finding left
-  (`$WebDavPassword` should be a `SecureString`), so adopting it would turn the lane red over a
-  change to the build driver's public parameter contract. The file says so at the job.
+- **`powershell-lint`** calls the hub's reusable `powershell-quality.yml` on `windows-2025`.
+  Its `analyzer-strict: false` keeps the existing `$WebDavPassword` analyzer finding advisory
+  while parser and AST-trap failures remain fatal. The shared lane reads the version pin,
+  installs PSScriptAnalyzer with bounded retries and reports complexity under ignored `logs/`.
 
 **One command, and it is the same one CI runs:**
 

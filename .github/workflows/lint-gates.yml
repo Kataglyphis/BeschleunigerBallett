@@ -27,31 +27,10 @@ jobs:
       submodules: 'recursive'
       ratchets: true
 
-  # Not the hub's python-ci-windows lane: that one forces -FailOnAnalyzer and $WebDavPassword is still a String.
+  # Keep analyzer diagnostics advisory until the public WebDavPassword parameter is migrated.
   powershell-lint:
     name: PowerShell lint (ANTfrastructure gate)
-    runs-on: windows-2025
-    # Install-Module can hang; fail in minutes, not at the six-hour default.
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      # Top-level only: ANTfrastructure carries both the gate script and its ruleset.
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-          fetch-depth: 1
-
-      # Pinned so a runner-image module refresh cannot change what this gate reports.
-      - name: Install PSScriptAnalyzer
-        run: Install-Module PSScriptAnalyzer -RequiredVersion 1.25.0 -Force -Scope CurrentUser
-
-      # Parse and AST-trap errors fail the job; without -FailOnAnalyzer only PSScriptAnalyzer is advisory.
-      - name: Lint PowerShell (parse gate + PSScriptAnalyzer)
-        run: >-
-          pwsh -NoProfile -File third_party/ANTfrastructure/windows/scripts/Invoke-Lint.ps1
-          -Path scripts
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/powershell-quality.yml@develop
+    with:
+      lint-path: scripts
+      analyzer-strict: false
