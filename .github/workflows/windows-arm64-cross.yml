@@ -126,7 +126,7 @@ jobs:
         with:
           name: arm64-lavapipe-test-logs-${{ github.run_attempt }}
           path: logs/lavapipe/
-          if-no-files-found: warn
+          if-no-files-found: error
 
       - name: Detect a crash dump
         id: crash_dump

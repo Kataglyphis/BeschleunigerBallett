@@ -558,8 +558,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   (`scripts/windows/Invoke-LavapipeTests.ps1`; x64 on the runner host after the container build,
   arm64 on `windows-11-arm`; a skip fails the run). Preserve fresh per-test JSON and stdout/stderr
   under ignored `logs/lavapipe/`; ARM64 CI uploads them on failure alongside any Windows crash
-  dump. A Linux host with an NVIDIA GPU runs them in the
-  image through CDI. The lavapipe install, the `LP_NATIVE_VECTOR_WIDTH=256` pin, the NVIDIA recipe
+  dump and fails the upload when those evidence files are missing. A Linux host with an NVIDIA GPU
+  runs them in the image through CDI. The lavapipe install, the `LP_NATIVE_VECTOR_WIDTH=256` pin, the NVIDIA recipe
   (an ASan build needs `ASAN_OPTIONS=protect_shadow_gap=0`), the cwd requirement and the
   golden-writing cautions: [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md). "No
   synchronization frames available" on every golden was a FrameSync bug (`695db536`..`981244fd`,

@@ -68,7 +68,8 @@ arch:
   gtest JSON and separate stdout/stderr files under ignored `logs/lavapipe/<run>/`. A failed case
   reports its raw process exit code, whether JSON exists, and the file paths. The ARM64 workflow
   uploads those files on failure as `arm64-lavapipe-test-logs-<attempt>`, even when Windows produced
-  no crash dump. A nonzero exit without a gtest assertion still needs those logs or a dump to
+  no crash dump. The upload fails if no evidence files exist, so a missing capture stays visible.
+  A nonzero exit without a gtest assertion still needs those logs or a dump to
   locate the fault; the last printed renderer phase alone does not identify it.
 - **Which build.** The Release commit suite that `Build-Windows.ps1 -StageTests` stages, on both
   arches: a clean host has no validation layers for the Debug one, so the arm64 lane's Debug
