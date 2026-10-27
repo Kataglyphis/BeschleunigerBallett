@@ -79,17 +79,24 @@ done
 t_case 'the C++ bridge crate texts reach a real package'
 t_skip_unless 'cargo' command -v cargo
 case "$(uname -m)" in aarch64 | arm64) target=aarch64-unknown-linux-gnu ;; *) target=x86_64-unknown-linux-gnu ;; esac
-mkdir -p "${work}/cargo"
+# Corrosion's FindRust runs in third_party/: plain names stay in that scope, the *_CACHED copies are global.
+mkdir -p "${work}/cargo/rust"
+cat > "${work}/cargo/rust/CMakeLists.txt" <<CMAKE
+set(Rust_CARGO cargo)
+set(Rust_CARGO_TARGET ${target})
+set(Rust_CARGO_CACHED cargo CACHE INTERNAL "")
+set(Rust_CARGO_TARGET_CACHED ${target} CACHE INTERNAL "")
+CMAKE
 cat > "${work}/cargo/CMakeLists.txt" <<CMAKE
 cmake_minimum_required(VERSION 3.24)
 project(GraphicsEngine NONE)
+add_subdirectory(rust)
 include("$(native "${root}")/cmake/CargoLicenses.cmake")
 set(CPACK_PACKAGE_FILE_NAME cargo)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 include(CPack)
 CMAKE
-t_assert_ok cmake -S "${work}/cargo" -B "${work}/cargo/build" -DRust_CARGO=cargo "-DRust_CARGO_TARGET=${target}" \
-  "-DPython3_EXECUTABLE=${python}"
+t_assert_ok cmake -S "${work}/cargo" -B "${work}/cargo/build" "-DPython3_EXECUTABLE=${python}"
 t_assert_ok cmake --build "${work}/cargo/build"
 t_assert_ok cpack --config "${work}/cargo/build/CPackConfig.cmake" -G ZIP -B "${work}/cargo/dist"
 t_assert_ok "${python}" "${verifier}" "${work}/cargo/dist/cargo.zip" \
