@@ -13,8 +13,8 @@ set(_myproject_cargo_licenses "${PROJECT_BINARY_DIR}/cargo-licenses")
 add_custom_command(
   OUTPUT "${_myproject_cargo_licenses}/manifest.json"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_myproject_cargo_licenses}"
-  COMMAND "${Rust_CARGO_CACHED}" fetch --locked --manifest-path "${_myproject_oxidant}/Cargo.toml" --target
-          "${Rust_CARGO_TARGET_CACHED}"
+  # Every platform's crates: Cargo resolves the host's build dependencies too, and this may run before Corrosion's build.
+  COMMAND "${Rust_CARGO_CACHED}" fetch --locked --manifest-path "${_myproject_oxidant}/Cargo.toml"
   COMMAND
     "${Python3_EXECUTABLE}"
     "${_myproject_cargo_license_root}/third_party/ANTfrastructure/linux/scripts/06-packaging/stage-cargo-licenses.py"

@@ -29,6 +29,7 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- Root the locked formatter wiring check's `-ScriptPath` in the Windows Pester job; the hub harness resolved the relative path against itself and failed before any suite ran.
 - Load ANTfrastructure's `CPackCommon` at the top level: first included from `Src/`, its include guard left the Linux closure's script paths empty, and every CPack package failed with `bash: : No such file or directory`.
 - Format `cmake/SponzaLicenses.cmake` as the pinned cmake-format expects, which the Linux lane's format check rejected.
 - Install the Windows CMake formatter from ANTfrastructure's locked uv tool project.

@@ -60,7 +60,8 @@ jobs:
 
       - name: Check locked formatter wiring
         shell: pwsh
-        run: pwsh -NoProfile -File third_party/ANTfrastructure/shared/windows/tests/Test-CmakeUvProjectWiring.ps1 -ScriptPath scripts/windows/Build-Windows.ps1 -CommandName Invoke-CmakeFormatStep
+        # Rooted: the hub harness resolves a relative -ScriptPath against the hub, not this checkout.
+        run: pwsh -NoProfile -File third_party/ANTfrastructure/shared/windows/tests/Test-CmakeUvProjectWiring.ps1 -ScriptPath (Join-Path $PWD 'scripts/windows/Build-Windows.ps1') -CommandName Invoke-CmakeFormatStep
 
       # The suites use Pester 3.4's dash-less `Should Be`, which the runner's Pester 5 cannot parse.
       - name: Run Pester suites (pinned 3.4.0)
