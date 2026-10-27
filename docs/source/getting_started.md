@@ -5,7 +5,7 @@
 - C++23 and C17 capable compilers
 - CMake 4.1 or newer
 - a Vulkan SDK installation for Vulkan-enabled builds
-- Python plus the packages locked in `uv.lock` for the docs build (the formatting steps install their own pinned `cmake-format` from ANTfrastructure)
+- Python plus the packages locked in `uv.lock` for the docs build (the formatting steps use ANTfrastructure's separate locked `cmake-format` project)
 - Rust and cargo: every build links OxidANT's cxx bridge through Corrosion
 - network access for the first configure, which downloads the default scenes (see below)
 

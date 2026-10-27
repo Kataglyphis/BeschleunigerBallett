@@ -33,6 +33,7 @@ wrapper and config; see
 [the shared Renovate guide](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/dependency-updates.md).
 The docs environment is declared in `pyproject.toml` and locked in `uv.lock`; run
 `git submodule update --init --recursive` followed by `uv sync --locked` to install it.
+The CMake formatter uses ANTfrastructure's locked uv tool project.
 
 ## Highlights
 

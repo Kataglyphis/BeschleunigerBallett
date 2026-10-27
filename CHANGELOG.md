@@ -20,6 +20,7 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Install the Windows CMake formatter from ANTfrastructure's locked uv tool project.
 - Install the documentation environment from a Renovate-managed `uv.lock` through the shared uv helper.
 - Reuse ANTfrastructure's test-directory fixture for PowerShell performance-baseline tests
   while keeping suite-scoped cleanup.

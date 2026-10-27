@@ -223,10 +223,10 @@ try {
 
   # -ApplyFormat rewrites; otherwise the clang-format check gates (since the 2026-10-06 sweep) and cmake-format stays out.
   if (-not $SkipFormat) {
-    $cmakeFormatRequirements = Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\cmake-format.requirements.txt'
+    $cmakeFormatProject = Join-Path $workspacePath 'third_party\ANTfrastructure\quality\cmake-format'
     if ($ApplyFormat) {
       Invoke-BuildStep -Context $context -StepName 'Python tooling + cmake-format (REWRITING)' -Critical -Script {
-        Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath -RequirementsPath $cmakeFormatRequirements
+        Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath -UvProjectPath $cmakeFormatProject
       } | Out-Null
 
       Invoke-BuildStep -Context $context -StepName 'clang-format (C/C++) (REWRITING)' -Critical -Script {

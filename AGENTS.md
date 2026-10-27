@@ -135,7 +135,7 @@ This repo's own pages are in [Docs](#docs).
 | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses | [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md) |
 | Moving every checkout to its branch tip; adopting a rewritten history | [adopting § Submodule maintenance](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#submodule-maintenance) |
 | Reading and fixing CI status from a shell with `gh` | [`github-cli-pipeline-monitoring.md`](third_party/ANTfrastructure/docs/github-cli-pipeline-monitoring.md) |
-| clang-format / clang-tidy / cmake-format rules, and the lint gates' contracts | [`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md) |
+| clang-format / clang-tidy / cmake-format rules, and the lint gates' contracts | [`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md); cmake-format uses the hub's locked uv tool project |
 | The shared CMake modules: what each provides, how they reach `CMAKE_MODULE_PATH`, what stays project-local | [`cmake/README.md`](third_party/ANTfrastructure/cmake/README.md) |
 
 ---
