@@ -40,7 +40,10 @@ check_contract() {
   run_wrapper "$1" || return 2
   mapfile -t actual < "${work}/calls" || return 2
   expected=("${venv}" '<unset>' '<unset>' sync --dev --all-extras --locked --python "${venv}/bin/python")
-  [[ "${actual[*]}" == "${expected[*]}" && ${#actual[@]} -eq ${#expected[@]} ]]
+  if [[ "${actual[*]}" != "${expected[*]}" || ${#actual[@]} -ne ${#expected[@]} ]]; then
+    return 1
+  fi
+  return 0
 }
 
 wrapper="${here}/../lib/uv-sync-project.sh"
