@@ -22,3 +22,10 @@ gcovr.cfg text eol=lf
 third_party/** linguist-vendored
 Documents/** linguist-vendored
 build/** linguist-vendored
+
+# The font license texts are pinned by SHA-256 in licenses/imgui-fonts.NOTICE.
+licenses/fonts/** -text
+# Bash reads the mapping line by line; a CR would end up in every source path.
+licenses/third-party-licenses.txt text eol=lf
+# The Sponza text is checked against its recorded SHA-256.
+licenses/CC-BY-3.0.txt -text

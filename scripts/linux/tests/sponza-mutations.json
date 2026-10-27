@@ -34,7 +34,7 @@
   {
     "id": "msix.project-license",
     "target": "scripts/windows/Build-Windows.ps1",
-    "find": "    'share/licenses/GraphicsEngine/LICENSE' = 'LICENSE'",
+    "find": "    \"$licenses/LICENSE\" = Join-Path $WorkspacePath 'LICENSE'",
     "replace": "    # removed for mutation proof",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "A built MSIX must retain the full project license."
@@ -42,7 +42,7 @@
   {
     "id": "msix.sponza-license",
     "target": "scripts/windows/Build-Windows.ps1",
-    "find": "    'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = 'licenses/CC-BY-3.0.txt'",
+    "find": "    'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = Join-Path $WorkspacePath 'licenses/CC-BY-3.0.txt'",
     "replace": "    # removed for mutation proof",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "A built MSIX must retain the full Sponza license."
@@ -50,7 +50,7 @@
   {
     "id": "msix.sponza-notice",
     "target": "scripts/windows/Build-Windows.ps1",
-    "find": "    'Resources/Models/crytek-sponza/crytek-sponza.NOTICE' = 'licenses/crytek-sponza.NOTICE'",
+    "find": "    'Resources/Models/crytek-sponza/crytek-sponza.NOTICE' = Join-Path $WorkspacePath 'licenses/crytek-sponza.NOTICE'",
     "replace": "    # removed for mutation proof",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "A built MSIX must retain the Sponza source notice."
@@ -58,7 +58,7 @@
   {
     "id": "msix.verify-artifact",
     "target": "scripts/windows/Build-Windows.ps1",
-    "find": "      Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath",
+    "find": "      Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath -BuildPath $buildPathClangRelease",
     "replace": "      Write-Output 'removed'",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "The completed MSIX must be checked before the build can pass."
@@ -70,5 +70,77 @@
     "replace": "    Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "A selected MSIX packaging failure must not be advisory."
+  },
+  {
+    "id": "third-party.project-wires-install",
+    "target": "CMakeLists.txt",
+    "find": "include(cmake/ThirdPartyLicenses.cmake)",
+    "replace": "# removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "The engine build must install the third-party license texts."
+  },
+  {
+    "id": "third-party.cargo-wires-install",
+    "target": "CMakeLists.txt",
+    "find": "include(cmake/CargoLicenses.cmake)",
+    "replace": "# removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "The engine build must install the C++ bridge's crate texts."
+  },
+  {
+    "id": "third-party.install-mapping",
+    "target": "cmake/ThirdPartyLicenses.cmake",
+    "find": "  _myproject_install_third_party_license(${CMAKE_MATCH_1} \"${_myproject_license_root}/${CMAKE_MATCH_3}\")",
+    "replace": "  # removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "Every mapped third-party text reaches the package."
+  },
+  {
+    "id": "third-party.install-abseil",
+    "target": "cmake/ThirdPartyLicenses.cmake",
+    "find": "_myproject_install_third_party_license(abseil \"${_myproject_abseil_source}/LICENSE\")",
+    "replace": "# removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "Abseil, fetched at configure time, ships its license."
+  },
+  {
+    "id": "third-party.cargo-install",
+    "target": "cmake/CargoLicenses.cmake",
+    "find": "install(DIRECTORY \"${_myproject_cargo_licenses}/\" DESTINATION \"share/licenses/${PROJECT_NAME}/cargo\")",
+    "replace": "# removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "The staged crate texts reach the package."
+  },
+  {
+    "id": "deb.third-party-check",
+    "target": "scripts/linux/check-deb-layout.sh",
+    "find": "if ! python3 \"${license_verifier}\" \"${deb}\" \"${third_party_rules[@]}\"; then",
+    "replace": "if false; then",
+    "test": "bash scripts/linux/tests/test-check-deb-layout.sh",
+    "why": "The DEB gate reads back every mapped third-party text."
+  },
+  {
+    "id": "deb.cargo-manifest",
+    "target": "scripts/linux/check-deb-layout.sh",
+    "find": " \"./${licenses}/cargo/manifest.json\"; do",
+    "replace": "; do",
+    "test": "bash scripts/linux/tests/test-check-deb-layout.sh",
+    "why": "The DEB gate requires the crate manifest."
+  },
+  {
+    "id": "msix.third-party-map",
+    "target": "scripts/windows/Build-Windows.ps1",
+    "find": "    $texts[\"$licenses/third_party/$installed\"] = Join-Path $WorkspacePath $source",
+    "replace": "    $null = $source",
+    "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
+    "why": "The MSIX check reads back every mapped third-party text."
+  },
+  {
+    "id": "msix.gsl",
+    "target": "scripts/windows/Build-Windows.ps1",
+    "find": "    \"$licenses/third_party/gsl/LICENSE\" = Join-Path $BuildPath '_deps/gsl-src/LICENSE'",
+    "replace": "    # removed for mutation proof",
+    "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
+    "why": "The MSIX check reads back GSL's fetched license."
   }
 ]

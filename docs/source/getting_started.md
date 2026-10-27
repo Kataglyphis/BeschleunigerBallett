@@ -129,8 +129,10 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1
 
 ### Linux release packages
 
-The DEB layout gate requires the complete project `LICENSE` in `/usr/share/licenses/GraphicsEngine/`.
-This verifies the project text, not the completeness of third-party licensing information.
+The DEB layout gate requires the complete project `LICENSE` in `/usr/share/licenses/GraphicsEngine/`,
+every third-party text listed in `licenses/third-party-licenses.txt` beside it, GSL's and abseil's,
+and the C++ bridge's crate texts with their `manifest.json` ([licences](LICENSES-README.md#what-every-package-ships)).
+It does not inventory the C and C++ runtime the package carries for older hosts.
 
 ```bash
 bash ./scripts/linux/cmake-configure-build.sh \
@@ -160,8 +162,8 @@ The Windows release workflow can produce an MSIX package. It is signed when a PF
 
 When MSIX creation is selected, packaging failures are fatal and the shared
 package verifier reads the completed MSIX to check the project license, the
-Crytek Sponza CC BY 3.0 text and its provenance notice. The check does not
-establish coverage of other third-party components.
+Crytek Sponza CC BY 3.0 text and its provenance notice, every mapped
+third-party text, GSL's and abseil's, and the crate manifest.
 
 CI fetches the certificate over WebDAV instead of committing it: `Build-Windows.ps1 -WebDavHostname/-WebDavUsername/-WebDavPassword/-RemoteBasePath` (the "Build, test, package (x64)" job of `.github/workflows/windows-x64.yml`, which passes the `WEBDAV_*` secrets) drives ANTfrastructure's `windows/scripts/certificates/download_webdav_files.py` through the `WindowsWebDav.Common` module (`--extension .pfx`). Generating and importing certificates: ANTfrastructure `windows/scripts/certificates/README.md`.
 

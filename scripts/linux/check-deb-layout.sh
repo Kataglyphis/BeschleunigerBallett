@@ -31,6 +31,23 @@ if ! python3 "${license_verifier}" "${deb}" \
   fails=$((fails + 1))
 fi
 
+# The checkout holds every mapped source; the FetchContent and Cargo texts are checked by presence and the bridge's own entry.
+licenses=usr/share/licenses/GraphicsEngine
+third_party_rules=(--require "${licenses}/cargo/kataglyphis_cxx_bridge@*/workspace/LICENSE=${repo_root}/third_party/OxidANT/LICENSE")
+while IFS='=' read -r installed source; do
+  third_party_rules+=(--require "${licenses}/third_party/${installed}=${repo_root}/${source}")
+done < "${repo_root}/licenses/third-party-licenses.txt"
+if ! python3 "${license_verifier}" "${deb}" "${third_party_rules[@]}"; then
+  printf 'FAIL  an installed third-party license text is missing or altered\n'
+  fails=$((fails + 1))
+fi
+for required in "./${licenses}/third_party/gsl/LICENSE" "./${licenses}/third_party/abseil/LICENSE" "./${licenses}/cargo/manifest.json"; do
+  if ! grep -qxF "${required}" <<< "${listing}"; then
+    printf 'FAIL  missing %s\n' "${required}"
+    fails=$((fails + 1))
+  fi
+done
+
 # A relative usr/share under the /usr prefix, and a vendored library's install rules.
 stray="$(grep -E '^\./usr/(usr/|include/|lib/cmake/|lib/pkgconfig/|lib/[^/]+\.a$)' <<< "${listing}" || true)"
 if [[ -n "${stray}" ]]; then

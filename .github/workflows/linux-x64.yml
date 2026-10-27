@@ -29,26 +29,32 @@ permissions:
   contents: read
 
 jobs:
-  # Seconds on the bare runner: two scripts against synthetic inputs (the release collector's suite is the hub's).
+  # Minutes on the bare runner: the scripts against synthetic inputs (the release collector's suite is the hub's).
   deb-layout:
     name: Script suites
     runs-on: ubuntu-26.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      # Only the hub, for its test harness; the vendored libraries stay out.
-      - name: Fetch the hub
-        run: git submodule update --init --depth 1 third_party/ANTfrastructure
+      # The hub for its harness, OxidANT for the bridge's crates and the libraries whose license texts ship.
+      - name: Fetch the hub and the license sources
+        run: >-
+          git submodule update --init --depth 1 third_party/ANTfrastructure third_party/OxidANT
+          third_party/GLFW third_party/IMGUI third_party/STB third_party/GLM third_party/TINY_OBJ_LOADER
+          third_party/cgltf third_party/VULKAN_MEMORY_ALLOCATOR third_party/SPDLOG third_party/NLOHMANN_JSON
+          third_party/tomlplusplus
 
       - name: check-deb-layout.sh against synthetic .debs
         run: bash scripts/linux/tests/test-check-deb-layout.sh
 
       - name: Verify installed Sponza license and notice
         run: bash scripts/linux/tests/test-sponza-package-license.sh
+      - name: Third-party and Cargo license texts in a real package
+        run: bash scripts/linux/tests/test-third-party-package-licenses.sh
 
       - name: docs-build-web.sh's wasm-bindgen pin from LF, CRLF and pin-less Cargo.lock files
         run: bash scripts/linux/tests/test-docs-build-web.sh

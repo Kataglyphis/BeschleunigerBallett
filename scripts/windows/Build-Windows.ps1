@@ -53,14 +53,23 @@ Import-BuildModule @(
 )
 
 function Assert-MsixLicenseContents {
-  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$WorkspacePath)
+  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$WorkspacePath, [Parameter(Mandatory)][string]$BuildPath)
+  $licenses = 'share/licenses/GraphicsEngine'
   $texts = [ordered]@{
-    'share/licenses/GraphicsEngine/LICENSE' = 'LICENSE'
-    'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = 'licenses/CC-BY-3.0.txt'
-    'Resources/Models/crytek-sponza/crytek-sponza.NOTICE' = 'licenses/crytek-sponza.NOTICE'
+    "$licenses/LICENSE" = Join-Path $WorkspacePath 'LICENSE'
+    'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = Join-Path $WorkspacePath 'licenses/CC-BY-3.0.txt'
+    'Resources/Models/crytek-sponza/crytek-sponza.NOTICE' = Join-Path $WorkspacePath 'licenses/crytek-sponza.NOTICE'
+    "$licenses/third_party/gsl/LICENSE" = Join-Path $BuildPath '_deps/gsl-src/LICENSE'
+    "$licenses/third_party/abseil/LICENSE" = Join-Path $BuildPath '_deps/abseil-cpp-src/LICENSE'
+    "$licenses/cargo/manifest.json" = Join-Path $BuildPath 'cargo-licenses/manifest.json'
+  }
+  # The same <component>/<file>=<source> mapping CMake installs from.
+  foreach ($line in @(Get-Content -LiteralPath (Join-Path $WorkspacePath 'licenses/third-party-licenses.txt') | Where-Object { $_ })) {
+    $installed, $source = $line -split '=', 2
+    $texts["$licenses/third_party/$installed"] = Join-Path $WorkspacePath $source
   }
   foreach ($entry in $texts.GetEnumerator()) {
-    Assert-PackageLicense -Path $Path -Pattern $entry.Key -LicensePath (Join-Path $WorkspacePath $entry.Value)
+    Assert-PackageLicense -Path $Path -Pattern $entry.Key -LicensePath $entry.Value
   }
 }
 # An older hub lacks the exported CMake target builder, so fail before starting the long build.
@@ -476,7 +485,7 @@ try {
         -LogoPath (Join-Path $workspacePath 'images\logo.png') `
         -MakeAppxPath $makeappxPath `
         -Sign -SigningRoot $workspacePath | Out-Null
-      Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath
+      Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath -BuildPath $buildPathClangRelease
     }
   } elseif (-not $SkipMsix) {
     Write-BuildLog -Context $context -Message 'DEBUG: MSIX packaging skipped because clangcl-release was not selected.'

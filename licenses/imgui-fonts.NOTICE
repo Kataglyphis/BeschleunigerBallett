@@ -1,0 +1,25 @@
+Dear ImGui's fonts in third_party/IMGUI/misc/fonts ship beside the engine. Each font's
+copyright and license come from its own name table; the texts beside this notice are the
+licenses those entries name, copied unchanged from the sources listed.
+
+Roboto-Medium.ttf: Copyright 2011 Google Inc. All Rights Reserved.
+  License: Apache License, Version 2.0 (Apache-2.0.txt)
+DroidSans.ttf: Digitized data copyright (c) 2007, Google Corporation.
+  License: Apache License, Version 2.0 (Apache-2.0.txt)
+Cousine-Regular.ttf: Digitized data copyright (c) 2010 Google Corporation.
+  License: SIL Open Font License, Version 1.1 (OFL-1.1.txt)
+Karla-Regular.ttf: Copyright (c) 2011, Jonathan Pinhorn, with Reserved Font Names "Karla".
+  License: SIL Open Font License, Version 1.1 (Karla-OFL.txt)
+ProggyClean.ttf, ProggyTiny.ttf: by Tristan Grimmer.
+  License: MIT (ProggyFonts-LICENSE.txt)
+
+Sources:
+Apache-2.0.txt: https://www.apache.org/licenses/LICENSE-2.0.txt
+  SHA-256: cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30
+OFL-1.1.txt: https://openfontlicense.org/documents/OFL.txt
+  SHA-256: 1d361a8f8e8ce6e68457dcd93fb56e162e6baa3bbb7e7573a290d44399f6b57e
+Karla-OFL.txt: https://github.com/google/fonts/blob/90abd17b4f97671435798b6147b698aa9087612f/ofl/karla/OFL.txt
+  SHA-256: cc31fe974951d56d542f33782d07b2d5577a4afdddba89744e6bd69bcbf3a853
+ProggyFonts-LICENSE.txt: https://github.com/bluescan/proggyfonts/blob/479694094055b30f09365c6b3cf2c78345719f06/LICENSE
+  SHA-256: fe61d069df303c697e04200f5f8232c2cb09dd3572f4357b323469f7d592d142
+Font list and licenses as Dear ImGui records them: third_party/IMGUI/docs/FONTS.md.

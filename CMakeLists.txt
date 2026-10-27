@@ -137,6 +137,8 @@ foreach(_myproject_resource_dir IN LISTS _myproject_runtime_resource_dirs)
 endforeach()
 
 include(cmake/SponzaLicenses.cmake)
+include(cmake/ThirdPartyLicenses.cmake)
+include(cmake/CargoLicenses.cmake)
 
 set(_myproject_imgui_fonts
     third_party/IMGUI/misc/fonts/Cousine-Regular.ttf

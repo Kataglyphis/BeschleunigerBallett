@@ -12,6 +12,8 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) now carries the original license texts of the shipped C/C++ libraries, Dear ImGui's fonts and the Rust crates the C++ bridge links, under `share/licenses/GraphicsEngine/`; the DEB gate and the MSIX check read them back.
+
 Selected Windows MSIX builds now fail on packaging errors and verify the project and Sponza license texts in the finished artifact.
 
 The installed Crytek Sponza scene now includes its full CC BY 3.0 license and a source notice.

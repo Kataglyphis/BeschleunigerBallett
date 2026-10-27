@@ -8,6 +8,31 @@ Created in the repository on request. Verification history:
 - **2026-09-25**: the pins that had moved since (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) and the crate versions (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) updated, their licences read from disk again; the other rows unchanged.
 - **2026-10-07**: the pins of imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp, Microsoft GSL and OxidANT and glam 0.34.1 updated; the licence files of the four submodules are unchanged across the moved ranges (`git diff` empty). That evening nlohmann/json moved to 367336c83 and Microsoft GSL to v5.0.1; `LICENSE.MIT` and GSL's `LICENSE` are unchanged across both ranges.
 
+## What every package ships
+
+Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) installs these under
+`share/licenses/GraphicsEngine/` (`/usr/share/...` in the DEB):
+
+- `LICENSE`: the project's own text (ANTfrastructure's `CPackCommon`).
+- `third_party/<component>/`: the original license file of each library the engine
+  links and of Dear ImGui's fonts, as `licenses/third-party-licenses.txt` maps them;
+  `cmake/ThirdPartyLicenses.cmake` installs that list and fails the configure on a
+  missing or empty source. GSL and abseil come from their FetchContent checkouts.
+- `cargo/`: the original texts of every crate in `kataglyphis_cxx_bridge`'s normal graph
+  for the Rust target Corrosion builds, with a `manifest.json` of names, versions,
+  sources and SHA-256s. `cmake/CargoLicenses.cmake` stages them with ANTfrastructure's
+  `stage-cargo-licenses.py` and OxidANT's reviewed `packaging/cargo-license-policy.json`.
+  A Windows checkout made before OxidANT pinned `LICENSE` to LF fails with
+  `policy source SHA-256 mismatch`; re-checkout `third_party/OxidANT/LICENSE`.
+
+Dear ImGui carries no texts for its fonts, so `licenses/fonts/` holds the ones each
+font's name table names, copied unchanged; `licenses/imgui-fonts.NOTICE` records each
+font's copyright, its license and the source and SHA-256 of every text. The Sponza scene's
+texts sit beside the model. KTX is linked as headers only and no source includes one, so it
+ships no text. Not covered yet: the GCC runtime and glibc copy that the Linux packages carry
+for older hosts, and the MSVC runtime DLLs beside the Windows bundle; those belong to
+ANTfrastructure's closure helpers.
+
 ## Git submodules under `third_party/` (shipped)
 
 | Project | URL | Pin | Licence (per licence file) | File checked |

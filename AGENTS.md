@@ -229,6 +229,8 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - MSIX packaging passes `images/logo.png` to the shared renderer; transparent placeholder logos are forbidden.
 - A selected MSIX build is critical and checks the completed package for the project license and both Sponza texts using the shared verifier.
 - The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
+- Every package installs third-party license texts under `share/licenses/GraphicsEngine/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
+- The C++ bridge's crate texts come from the hub's `stage-cargo-licenses.py` with OxidANT's reviewed policy (`cmake/CargoLicenses.cmake`); never write a notice for a crate that lacks one, add the original text to OxidANT's policy.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
   keep Ballett's shader list, mutation and path assertions in this repo.
 
