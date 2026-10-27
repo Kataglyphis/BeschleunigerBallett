@@ -136,6 +136,8 @@ foreach(_myproject_resource_dir IN LISTS _myproject_runtime_resource_dirs)
     PATTERN ".assetant-sha256" EXCLUDE)
 endforeach()
 
+include(cmake/SponzaLicenses.cmake)
+
 set(_myproject_imgui_fonts
     third_party/IMGUI/misc/fonts/Cousine-Regular.ttf
     third_party/IMGUI/misc/fonts/DroidSans.ttf

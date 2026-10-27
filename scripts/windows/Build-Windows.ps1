@@ -43,6 +43,7 @@ Import-BuildModule @(
   'WindowsClang.Common',
   'WindowsWebDav.Common',
   'WindowsMsix.Common',
+  'WindowsMsiLicense.Common',
   'WindowsMsix.Signing',
   'WindowsSlang.Common',
   'WindowsCMake.Common',
@@ -50,6 +51,18 @@ Import-BuildModule @(
   'WindowsTesting.Common',
   'WindowsTargetArch.Common'
 )
+
+function Assert-MsixLicenseContents {
+  param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$WorkspacePath)
+  $texts = [ordered]@{
+    'share/licenses/GraphicsEngine/LICENSE' = 'LICENSE'
+    'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = 'licenses/CC-BY-3.0.txt'
+    'Resources/Models/crytek-sponza/crytek-sponza.NOTICE' = 'licenses/crytek-sponza.NOTICE'
+  }
+  foreach ($entry in $texts.GetEnumerator()) {
+    Assert-PackageLicense -Path $Path -Pattern $entry.Key -LicensePath (Join-Path $WorkspacePath $entry.Value)
+  }
+}
 # An older hub lacks the exported CMake target builder, so fail before starting the long build.
 $hubFloor = 'This build needs ANTfrastructure d96e08e5 (2026-10-26) or later; move third_party/ANTfrastructure to it.'
 try { Import-BuildModule @('WindowsCrossBundle.Common') } catch { throw "$hubFloor ($($_.Exception.Message))" }
@@ -411,7 +424,7 @@ try {
 
   # MSIX: staging is this script's; the hub's Invoke-MsixPackage packs, asserts the output and signs with the root *.pfx.
   if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations)) {
-    Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
+    Invoke-BuildStep -Context $context -StepName 'MSIX packaging' -Critical -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
       if (-not $makeappxPath) {
         throw 'makeappx.exe not found. Install Windows SDK or add it to PATH.'
@@ -460,9 +473,10 @@ try {
           '__LOGO44_REL__' = 'Assets/Square44x44Logo.png'
         } `
         -OutputPath $msixOutPath `
-        -GenerateTransparentLogos `
+        -LogoPath (Join-Path $workspacePath 'images\logo.png') `
         -MakeAppxPath $makeappxPath `
         -Sign -SigningRoot $workspacePath | Out-Null
+      Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath
     }
   } elseif (-not $SkipMsix) {
     Write-BuildLog -Context $context -Message 'DEBUG: MSIX packaging skipped because clangcl-release was not selected.'

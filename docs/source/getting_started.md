@@ -129,6 +129,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1
 
 ### Linux release packages
 
+The DEB layout gate requires the complete project `LICENSE` in `/usr/share/licenses/GraphicsEngine/`.
+This verifies the project text, not the completeness of third-party licensing information.
+
 ```bash
 bash ./scripts/linux/cmake-configure-build.sh \
   --preset linux-release-clang \
@@ -145,9 +148,20 @@ The Vulkan SDK environment defaults to the image's `/opt/vulkan/<VULKAN_VERSION>
 
 Artifacts land in the build directory: a TGZ, a DEB and an AppImage (`CPACK_ENABLE_APPIMAGE` defaults to `ON`; `-DCPACK_ENABLE_APPIMAGE=OFF` skips it). CPack uses a readable `appimagetool` from `PATH`, or downloads the release pinned with its SHA256 in ANTfrastructure's `versions.env`; a configure that cannot get a verified tool fails instead of silently dropping the AppImage.
 
+Packages include the original Crytek Sponza CC BY 3.0 text and the scene's source notice beside
+the installed model; the AssetANT archive remains unchanged.
+
 ### Windows MSIX
 
+The MSIX uses `images/logo.png` for its application tiles and logo assets; the shared packager renders the required sizes.
+The Windows GraphicsEngine executable embeds the project icon via the shared CMake resource helper.
+
 The Windows release workflow can produce an MSIX package. It is signed when a PFX certificate sits at the repository root (the first `*.pfx` there, gitignored; without one the build warns and the MSIX stays unsigned), with the password from `MSIX_PFX_PASSWORD`, else `MSIX_CERT_PASSWORD`. The signing is ANTfrastructure's `Invoke-MsixPackage -Sign -SigningRoot <repo root>`.
+
+When MSIX creation is selected, packaging failures are fatal and the shared
+package verifier reads the completed MSIX to check the project license, the
+Crytek Sponza CC BY 3.0 text and its provenance notice. The check does not
+establish coverage of other third-party components.
 
 CI fetches the certificate over WebDAV instead of committing it: `Build-Windows.ps1 -WebDavHostname/-WebDavUsername/-WebDavPassword/-RemoteBasePath` (the "Build, test, package (x64)" job of `.github/workflows/windows-x64.yml`, which passes the `WEBDAV_*` secrets) drives ANTfrastructure's `windows/scripts/certificates/download_webdav_files.py` through the `WindowsWebDav.Common` module (`--extension .pfx`). Generating and importing certificates: ANTfrastructure `windows/scripts/certificates/README.md`.
 

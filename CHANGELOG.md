@@ -12,6 +12,13 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+Selected Windows MSIX builds now fail on packaging errors and verify the project and Sponza license texts in the finished artifact.
+
+The installed Crytek Sponza scene now includes its full CC BY 3.0 license and a source notice.
+The Linux DEB layout check now rejects a missing or altered project license.
+The Windows MSIX uses the project logo instead of transparent placeholders.
+The Windows GraphicsEngine executable embeds the project icon via the shared CMake helper.
+
 ### Added
 
 - Verify the Renovate wrapper and shared config in CI without applying updates.

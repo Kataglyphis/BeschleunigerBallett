@@ -1,0 +1,13 @@
+name: Linux x64 · mutation gates
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  mutations:
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/mutation-gates.yml@develop
+    with:
+      manifest: scripts/linux/tests/sponza-mutations.json
+      submodules: 'true'

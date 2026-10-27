@@ -66,6 +66,8 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
   fixtures, the renderer comparisons), named by `KATAGLYPHIS_DEFAULT_ASSETS` in the module.
   `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other twelve for the model picker;
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` fetches nothing (the tests that read a scene then skip or fail).
+  The shipped scene also carries its official CC BY 3.0 text and source notice from `licenses/`;
+  CMake installs both alongside the scene without changing its pinned AssetANT archive.
 - **Without a configure**: `cmake -P cmake/FetchAssets.cmake`. `Build-Windows-Container.ps1` runs it
   on the host, so a run from the repo root finds the scenes; the arm64 lane runs it before its
   host-side lavapipe suites. Both need Python on that host's `PATH`. x64 reads the scenes the container's configure fetched into the
@@ -223,6 +225,10 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
   builds on `x64-ClangCL-Windows-Release`.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
+- The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/GraphicsEngine/LICENSE`.
+- MSIX packaging passes `images/logo.png` to the shared renderer; transparent placeholder logos are forbidden.
+- A selected MSIX build is critical and checks the completed package for the project license and both Sponza texts using the shared verifier.
+- The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
   keep Ballett's shader list, mutation and path assertions in this repo.
 

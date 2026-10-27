@@ -20,11 +20,21 @@ make_deb() {
   printf 'Package: graphicsengine\nVersion: 1.0\nArchitecture: all\nMaintainer: t <t@t>\nDescription: t\n' > "${root}/DEBIAN/control"
   for entry in usr/bin/GraphicsEngine usr/share/applications/GraphicsEngine.desktop \
     usr/share/metainfo/de.jonasheinle.GraphicsEngine.appdata.xml usr/share/icons/hicolor/256x256/apps/Engine_logo.png \
+    usr/share/licenses/GraphicsEngine/LICENSE usr/Resources/Models/crytek-sponza/CC-BY-3.0.txt \
+    usr/Resources/Models/crytek-sponza/crytek-sponza.NOTICE \
     usr/lib/graphicsengine/GraphicsEngine "$@"; do
     case "${entry}" in
       -*) rm -f "${root}/${entry#-}" ;;
       *) mkdir -p "$(dirname "${root}/${entry#+}")" && printf 'x' > "${root}/${entry#+}" ;;
     esac
+  done
+  if [[ -f "${root}/usr/share/licenses/GraphicsEngine/LICENSE" ]]; then
+    cp "${here}/../../../LICENSE" "${root}/usr/share/licenses/GraphicsEngine/LICENSE"
+  fi
+  for text in CC-BY-3.0.txt crytek-sponza.NOTICE; do
+    if [[ -f "${root}/usr/Resources/Models/crytek-sponza/${text}" ]]; then
+      cp "${here}/../../../licenses/${text}" "${root}/usr/Resources/Models/crytek-sponza/${text}"
+    fi
   done
   dpkg-deb --root-owner-group -b "${root}" "${work}/${name}.deb" > /dev/null || exit 1
 }
@@ -35,6 +45,15 @@ make_deb glfw-headers +usr/include/GLFW/glfw3.h
 make_deb glfw-static +usr/lib/libglfw3.a
 make_deb glfw-config +usr/lib/cmake/glfw3/glfw3Config.cmake
 make_deb no-icon -usr/share/icons/hicolor/256x256/apps/Engine_logo.png
+make_deb no-license -usr/share/licenses/GraphicsEngine/LICENSE
+make_deb wrong-license
+printf 'incorrect license\n' > "${work}/wrong-license/usr/share/licenses/GraphicsEngine/LICENSE"
+dpkg-deb --root-owner-group -b "${work}/wrong-license" "${work}/wrong-license.deb" > /dev/null || exit 1
+make_deb no-scene-license -usr/Resources/Models/crytek-sponza/CC-BY-3.0.txt
+make_deb no-scene-notice -usr/Resources/Models/crytek-sponza/crytek-sponza.NOTICE
+make_deb wrong-scene-license
+printf 'incorrect license\n' > "${work}/wrong-scene-license/usr/Resources/Models/crytek-sponza/CC-BY-3.0.txt"
+dpkg-deb --root-owner-group -b "${work}/wrong-scene-license" "${work}/wrong-scene-license.deb" > /dev/null || exit 1
 
 t_case "the good layout passes"
 t_assert_rc 0 bash "${gate}" "${work}/good.deb"
@@ -48,4 +67,14 @@ t_case "GLFW's CMake package fails"
 t_assert_rc 1 bash "${gate}" "${work}/glfw-config.deb"
 t_case "a missing icon fails"
 t_assert_rc 1 bash "${gate}" "${work}/no-icon.deb"
+t_case "a missing project license fails"
+t_assert_rc 1 bash "${gate}" "${work}/no-license.deb"
+t_case "a modified project license fails"
+t_assert_rc 1 bash "${gate}" "${work}/wrong-license.deb"
+t_case "a missing scene license fails"
+t_assert_rc 1 bash "${gate}" "${work}/no-scene-license.deb"
+t_case "a missing scene notice fails"
+t_assert_rc 1 bash "${gate}" "${work}/no-scene-notice.deb"
+t_case "a modified scene license fails"
+t_assert_rc 1 bash "${gate}" "${work}/wrong-scene-license.deb"
 t_summary
