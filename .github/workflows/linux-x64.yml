@@ -49,6 +49,8 @@ jobs:
 
       - name: docs-build-web.sh's wasm-bindgen pin from LF, CRLF and pin-less Cargo.lock files
         run: bash scripts/linux/tests/test-docs-build-web.sh
+      - name: Locked documentation environment wrapper
+        run: bash scripts/linux/tests/test-uv-sync-project.sh
 
   build-x64:
     uses: ./.github/workflows/reusable-linux.yml

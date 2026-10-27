@@ -20,6 +20,7 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Install the documentation environment from a Renovate-managed `uv.lock` through the shared uv helper.
 - Reuse ANTfrastructure's test-directory fixture for PowerShell performance-baseline tests
   while keeping suite-scoped cleanup.
 - Keep per-test ARM64 lavapipe stdout, stderr and gtest JSON in ignored `logs/` and upload them on

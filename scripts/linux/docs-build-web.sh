@@ -17,7 +17,7 @@ DOCS_OUT="${1:-${DOCS_OUT:-build/build/html}}"
 DOCS_BUILD_SVG_SOURCE_DIR="${DOCS_OUT}"
 DOCS_BUILD_GENERATOR_SCRIPT="graphviz_generator.py"
 DOCS_BUILD_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
-DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirements.sh"
+DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-sync-project.sh"
 
 # tr: a CRLF checkout's lines end in \r, which the exact name match would never see.
 wasm_bindgen_lock_version() {

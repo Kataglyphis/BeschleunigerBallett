@@ -31,6 +31,8 @@ and `--apply` to update. It checks every direct submodule against its remote def
 initializes missing checkouts when applying, including the tooling hub when needed. CI checks the
 wrapper and config; see
 [the shared Renovate guide](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/dependency-updates.md).
+The docs environment is declared in `pyproject.toml` and locked in `uv.lock`; run
+`git submodule update --init --recursive` followed by `uv sync --locked` to install it.
 
 ## Highlights
 

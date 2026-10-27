@@ -13,17 +13,15 @@ The hand-written pages must build even when the generated artifacts are missing.
 ### Windows
 
 ```pwsh
-.\.venv\scripts\python.exe -m pip install -r requirements.txt
+uv sync --locked
 .\.venv\scripts\python.exe -m sphinx -M html docs/source docs/build -E
 ```
 
 ### Linux
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m sphinx -M html docs/source docs/build -E
+uv sync --locked
+uv run --locked python -m sphinx -M html docs/source docs/build -E
 ```
 
 The site lands in `docs/build/html`.

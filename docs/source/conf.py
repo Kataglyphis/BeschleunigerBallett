@@ -5,7 +5,7 @@ from pathlib import Path
 
 from pygments.lexers.special import TextLexer
 
-# An editable install from the hub's DocumANTation submodule (requirements.txt).
+# The lock includes the hub's editable DocumANTation theme.
 from sphinx_kataglyphis import setup_theme
 
 DOCS_SOURCE_DIR = Path(__file__).resolve().parent

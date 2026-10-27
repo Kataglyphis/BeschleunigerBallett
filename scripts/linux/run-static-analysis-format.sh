@@ -37,7 +37,7 @@ CODE_QUALITY_CMAKE_SEARCH_ROOT="."
 CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build*/*' './.venv/*' './third_party/*')
 CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
-# The hub's default bootstrap installs cmake-format from its pinned requirements, never this repo's requirements.txt.
+# The hub's default bootstrap installs its pinned cmake-format independently of the docs environment.
 
 # A failing gate since the 2026-10-06 sweep, in the pinned LLVM (owner, 2026-10-06): PATH's may be the distro's.
 run_clang_format_check() {
