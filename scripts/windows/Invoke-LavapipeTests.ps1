@@ -42,14 +42,60 @@ function Get-TestName([string[]]$Listing) {
   }
 }
 
-function Get-TestOutcome([string]$Json, [int]$ExitCode) {
-  # Passed, failed or skipped from one test's gtest JSON; a crash leaves no JSON and a non-zero exit.
-  if ($ExitCode -ne 0) { return 'failed' }
-  if (-not (Test-Path -LiteralPath $Json)) { return 'failed' }
-  $case = (Get-Content -LiteralPath $Json -Raw | ConvertFrom-Json).testsuites[0].testsuite[0]
-  if ($case.PSObject.Properties['failures'] -and @($case.failures).Count -gt 0) { return 'failed' }
-  if ($case.result -eq 'SKIPPED') { return 'skipped' }
-  return 'passed'
+function Get-TestOutcome([string]$Json, [int]$ExitCode, [bool]$TimedOut = $false) {
+  # Keep the process verdict and JSON evidence separate so a crash cannot look like a pixel assertion.
+  $jsonPresent = Test-Path -LiteralPath $Json
+  $status = 'failed'
+  $reason = ''
+  if ($TimedOut) { $reason = 'process timed out' }
+  elseif ($ExitCode -ne 0) { $reason = "process exited $ExitCode" }
+  elseif (-not $jsonPresent) { $reason = 'gtest JSON is missing' }
+  else {
+    try {
+      $case = (Get-Content -LiteralPath $Json -Raw | ConvertFrom-Json -ErrorAction Stop).testsuites[0].testsuite[0]
+      if ($null -eq $case) { $reason = 'gtest JSON has no test result' }
+      elseif ($case.PSObject.Properties['failures'] -and $case.failures -and @($case.failures).Count -gt 0) { $reason = 'gtest assertion failed' }
+      elseif ($case.result -eq 'SKIPPED') { $status = 'skipped'; $reason = 'gtest skipped the case' }
+      else { $status = 'passed' }
+    } catch {
+      $reason = "gtest JSON could not be read: $($_.Exception.Message)"
+    }
+  }
+  return [pscustomobject]@{ Status = $status; Reason = $reason; JsonPresent = $jsonPresent }
+}
+
+function Wait-TestProcess([Diagnostics.Process]$Process, [string]$Test, [int]$TimeoutSeconds) {
+  $timedOut = -not $Process.WaitForExit($TimeoutSeconds * 1000)
+  if ($timedOut) {
+    try { $Process.Kill($true) } catch [InvalidOperationException] { Write-Host "$Test exited while the timeout kill was sent" }
+    if (-not $Process.WaitForExit(10000)) { throw "$Test did not exit within 10 seconds after the timeout kill" }
+  } else {
+    $Process.WaitForExit()
+  }
+  return $timedOut
+}
+
+function Write-TestResult {
+  param(
+    [string]$Test, [pscustomobject]$Verdict, [string[]]$Output, [int]$ExitCode,
+    [string]$Json, [string]$Stdout, [string]$Stderr, [Diagnostics.Stopwatch]$Clock,
+    [hashtable]$Counts, [System.Collections.Generic.List[string]]$NotPassed
+  )
+  # A validation error fails an otherwise passed case without losing its raw process evidence.
+  $findings = @($Output | Where-Object { $_ -match 'VUID-|SYNC-HAZARD' })
+  if ($findings.Count -gt 0 -and $Verdict.Status -eq 'passed') {
+    Write-Host "::error::$Test logged $($findings.Count) validation message(s), first: $($findings[0])"
+    $Verdict.Status = 'failed'
+    $Verdict.Reason = 'validation message in process output'
+  }
+  $outcome = $Verdict.Status
+  $Counts[$outcome]++
+  Write-Host "=== $Test $outcome ($([int]$Clock.Elapsed.TotalSeconds) s)"
+  if ($outcome -ne 'passed') {
+    $jsonState = if ($Verdict.JsonPresent) { 'present' } else { 'missing' }
+    Write-Host "::error::$Test ${outcome}: $($Verdict.Reason); exit code=$ExitCode; JSON=$jsonState; stdout=$Stdout; stderr=$Stderr; json=$Json"
+    $NotPassed.Add("$Test $outcome ($($Verdict.Reason), exit $ExitCode, JSON $jsonState)")
+  }
 }
 
 # Beside the suite, so it wins over any vulkan-1.dll the image put in System32.
@@ -119,8 +165,11 @@ if ($LASTEXITCODE -ne 0) { $listing | Write-Host; throw "listing the tests exite
 $tests = @(Get-TestName -Listing $listing)
 if ($tests.Count -eq 0) { throw "-Filter $Filter selects no test" }
 
-$results = Join-Path $ToolDir 'results'
+# A fresh ignored run directory prevents stale JSON from making a later invocation look green.
+$runName = '{0}-{1}-{2}' -f (Get-Date -AsUTC -Format 'yyyyMMddTHHmmssZ'), $PID, [guid]::NewGuid().ToString('N')
+$results = Join-Path $RepoRoot "logs\lavapipe\$runName"
 New-Item -ItemType Directory -Force -Path $results | Out-Null
+Write-Host "lavapipe results: $results"
 $counts = @{ passed = 0; failed = 0; skipped = 0 }
 $notPassed = [System.Collections.Generic.List[string]]::new()
 Push-Location -LiteralPath $RepoRoot
@@ -141,23 +190,13 @@ try {
       -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     # Read once now: without it ExitCode stays empty for a process started this way.
     $null = $process.Handle
-    if ($process.WaitForExit($TimeoutSeconds * 1000)) {
-      $outcome = Get-TestOutcome -Json $json -ExitCode $process.ExitCode
-    } else {
-      $process.Kill($true)
-      $outcome = 'failed'
-    }
+    $timedOut = Wait-TestProcess -Process $process -Test $test -TimeoutSeconds $TimeoutSeconds
+    $verdict = Get-TestOutcome -Json $json -ExitCode $process.ExitCode -TimedOut:$timedOut
     $output = @(foreach ($log in $stdout, $stderr) { if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log } })
     $output | Write-Host
     # Most tests ignore validation messages, so the captured output is where a VUID or a sync hazard surfaces.
-    $findings = @($output | Where-Object { $_ -match 'VUID-|SYNC-HAZARD' })
-    if ($findings.Count -gt 0 -and $outcome -eq 'passed') {
-      Write-Host "::error::$test logged $($findings.Count) validation message(s), first: $($findings[0])"
-      $outcome = 'failed'
-    }
-    $counts[$outcome]++
-    Write-Host "=== $test $outcome ($([int]$clock.Elapsed.TotalSeconds) s)"
-    if ($outcome -ne 'passed') { $notPassed.Add("$test $outcome") }
+    Write-TestResult -Test $test -Verdict $verdict -Output $output -ExitCode $process.ExitCode `
+      -Json $json -Stdout $stdout -Stderr $stderr -Clock $clock -Counts $counts -NotPassed $notPassed
   }
 } finally {
   if ($layerKey) { Remove-ItemProperty -Path $layerKey -Name $layerJson -ErrorAction SilentlyContinue }

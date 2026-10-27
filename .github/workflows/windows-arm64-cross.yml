@@ -111,6 +111,7 @@ jobs:
           New-ItemProperty -Path $key -Name DumpCount -Value 3 -PropertyType DWord -Force | Out-Null
 
       - name: Run them natively
+        id: gpu_suites
         shell: pwsh
         env:
           KATAGLYPHIS_STAGED_WGSL_ROOT: ${{ github.workspace }}/dist/windows-arm64-tests/generated-wgsl
@@ -118,6 +119,14 @@ jobs:
           ./scripts/windows/Invoke-LavapipeTests.ps1
           -Suite dist/windows-arm64-tests/commitTestSuite.exe
           -Filter 'GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment:-GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice'
+
+      - name: Upload lavapipe test evidence
+        if: ${{ failure() && steps.gpu_suites.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: arm64-lavapipe-test-logs-${{ github.run_attempt }}
+          path: logs/lavapipe/
+          if-no-files-found: warn
 
       - name: Detect a crash dump
         id: crash_dump

@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Keep per-test ARM64 lavapipe stdout, stderr and gtest JSON in ignored `logs/` and upload them on
+  failure; report the child exit code and JSON state so intermittent crashes can be diagnosed.
 - Run PowerShell lint through ANTfrastructure's reusable workflow and bounded pinned-module installer.
 - Write the staged WGSL provenance fixture in binary mode so its explicit CRLF/LF samples keep
   the same bytes on Windows and the mutation assertions test source differences.
