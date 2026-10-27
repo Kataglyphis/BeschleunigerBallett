@@ -20,6 +20,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- Reuse ANTfrastructure's test-directory fixture for PowerShell performance-baseline tests
+  while keeping suite-scoped cleanup.
 - Keep per-test ARM64 lavapipe stdout, stderr and gtest JSON in ignored `logs/` and upload them on
   failure; report the child exit code and JSON state so intermittent crashes can be diagnosed.
   Fail the evidence upload when its files are missing, so a failed test cannot lose its diagnostics silently.

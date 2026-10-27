@@ -1,17 +1,17 @@
 #requires -Version 7.0
 
 # Runs the real script against temp fixtures, never the checked-in baseline. Pester 3.4.0: `Should Be`, not `Should -Be`.
+Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function New-TestDir, Remove-TestDir -ErrorAction Stop
 
 Describe 'Compare-PerfBaseline' {
 
   BeforeAll {
     $script:scriptPath = (Resolve-Path (Join-Path $PSScriptRoot '..\Compare-PerfBaseline.ps1')).Path
-    $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('perf-baseline-test-' + (Get-Random))) -Force
-    $script:tmpDir = $tmp.FullName
+    $script:tmpDir = New-TestDir -Prefix 'perf-baseline-test-'
   }
 
   AfterAll {
-    Remove-Item -LiteralPath $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-TestDir -Path $script:tmpDir
   }
 
   function New-BenchmarkJson {

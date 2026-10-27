@@ -539,6 +539,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   (`Resolve-BuildModule`), the preset and shared-config guards (`CMakePresets.Integrity`,
   `SharedConfig.Drift`), the validation-layer runner (`Invoke-SyncValidation`) and the three
   comparison tools (`Compare-PerfBaseline`, `Compare-RendererPixels`, `Compare-RendererTimings`).
+  `Compare-PerfBaseline.Tests.ps1` allocates its suite fixture with the hub's `New-TestDir`
+  and releases it with `Remove-TestDir` in `AfterAll`; keep the cleanup suite-scoped.
   The same job runs the hub's `shared/windows/tests/Repo.GeneratedArtifacts.Tests.ps1` over the
   pathspecs in `scripts/windows/generated-artifacts.txt` (since 2026-10-19; a wildcard ending in `/`
   matches nothing in git, so write `**/__pycache__/*`).

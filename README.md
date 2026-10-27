@@ -73,7 +73,7 @@ failed GPU runs upload required per-test evidence. See [GPU testing](docs/source
 | Path tracing | [docs/source/path-tracing.md](docs/source/path-tracing.md) |
 | Volumetric clouds | [docs/source/clouds.md](docs/source/clouds.md) |
 | GPU golden tests, failure logs, pixel checks and synchronization validation | [docs/source/gpu-golden-testing.md](docs/source/gpu-golden-testing.md) |
-| clang-format, clang-tidy, cmake-format | [docs/source/code-quality.md](docs/source/code-quality.md) |
+| clang-format, clang-tidy, cmake-format and Windows test fixtures | [docs/source/code-quality.md](docs/source/code-quality.md) |
 | CI quality reports, Ruff/ty, reusable PowerShell lint with pinned module setup, and refactor previews | [Shared quality tooling](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/code-quality-tooling.md) |
 | The container build's transports and caches | [docs/source/container-build-caching.md](docs/source/container-build-caching.md) |
 | The C++ engine's change log | [docs/source/cpp-renderer-improvements.md](docs/source/cpp-renderer-improvements.md) |

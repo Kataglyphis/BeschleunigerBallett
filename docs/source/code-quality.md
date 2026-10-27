@@ -18,6 +18,11 @@ standard deviation above 2, more than 5% lit pixels, and more than eight luminan
 The local Pester suite runs generated PNGs through both renderer paths and checks their labels,
 messages and exit codes; it does not exercise GPU capture.
 
+The `Compare-PerfBaseline` Pester suite uses ANTfrastructure's `New-TestDir -Prefix` for its
+temporary baseline fixtures and `Remove-TestDir` in `AfterAll` for suite-scoped cleanup.
+The comparison assertions exercise the real script with temporary JSON, not the checked-in
+baseline.
+
 The ARM64 shader source suite uses ANTfrastructure's `Get-TestSourceCopyLoopText` and
 `Invoke-TestSourceCopyLoop` to parse and run one staging loop. Its own fixture files,
 expected paths and omitted-shader mutants remain here; it does not compile ARM64 code.
