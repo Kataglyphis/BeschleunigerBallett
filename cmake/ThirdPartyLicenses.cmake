@@ -23,9 +23,17 @@ FetchContent_GetProperties(abseil-cpp SOURCE_DIR _myproject_abseil_source)
 # One mapping, <component>/<file>=<source>, that the DEB and MSIX gates read back too.
 file(STRINGS "${_myproject_license_root}/licenses/third-party-licenses.txt" _myproject_license_map)
 foreach(_entry IN LISTS _myproject_license_map)
-  string(REGEX MATCH "^([^/=]+)/([^/=]+)=(.+)$" _matched "${_entry}")
+  string(
+    REGEX MATCH
+          "^([^/=]+)/([^/=]+)=(.+)$"
+          _matched
+          "${_entry}")
   get_filename_component(_source_name "${CMAKE_MATCH_3}" NAME)
-  if(NOT _matched OR NOT _source_name STREQUAL CMAKE_MATCH_2)
+  if(NOT _matched
+     OR NOT
+        _source_name
+        STREQUAL
+        CMAKE_MATCH_2)
     message(FATAL_ERROR "Malformed third-party license mapping: ${_entry}")
   endif()
   _myproject_install_third_party_license(${CMAKE_MATCH_1} "${_myproject_license_root}/${CMAKE_MATCH_3}")

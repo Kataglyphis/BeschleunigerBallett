@@ -142,5 +142,13 @@
     "replace": "    # removed for mutation proof",
     "test": "pwsh -NoProfile -File scripts/linux/tests/test-msix-license.ps1",
     "why": "The MSIX check reads back GSL's fetched license."
+  },
+  {
+    "id": "packaging.cpackcommon-top-level",
+    "target": "CMakeLists.txt",
+    "find": "include(CPackCommon)",
+    "replace": "# removed for mutation proof",
+    "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
+    "why": "CPackCommon must load before Src, or the Linux closure install rule runs bash with an empty script."
   }
 ]

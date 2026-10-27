@@ -20,6 +20,12 @@ t_case 'the project build installs the third-party and Cargo texts'
 t_assert_contains "$(cat "${root}/CMakeLists.txt")" 'include(cmake/ThirdPartyLicenses.cmake)'
 t_assert_contains "$(cat "${root}/CMakeLists.txt")" 'include(cmake/CargoLicenses.cmake)'
 
+t_case 'CPackCommon loads at the top level, so its closure scripts are not empty in the install rules'
+cpack_first() { awk '/^include\(CPackCommon\)/ { seen = 1 } /^add_subdirectory\(Src\)/ { exit !seen }' "$1"; }
+t_assert_ok cpack_first "${root}/CMakeLists.txt"
+grep -v '^include(CPackCommon)' "${root}/CMakeLists.txt" > "${work}/CMakeLists.mutant"
+t_assert_fails cpack_first "${work}/CMakeLists.mutant"
+
 # GraphicsEngine with GSL and abseil taken from local directories instead of their repositories.
 fixture() {
   local dir="$1" module="$2"

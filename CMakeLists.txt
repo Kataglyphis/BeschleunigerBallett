@@ -76,6 +76,8 @@ include(SystemLibDependencies)
 include(Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
 add_subdirectory(third_party)
 
+# Here, not first in Src/: CPackCommon's include_guard(GLOBAL) would keep its script paths in that directory's scope.
+include(CPackCommon)
 add_subdirectory(Src)
 
 # The arm64 cross lane builds Release only, and its windows-11-arm job is the only place an arm64 test can run.
