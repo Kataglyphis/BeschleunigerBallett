@@ -23,6 +23,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Every test executable links the hub's crash handler (`kataglyphis_add_crash_dump`). The ARM64
+  lavapipe job sets `KATAGLYPHIS_CRASH_DUMP_DIR` instead of WER `LocalDumps`, which the runner
+  never wrote, and uploads the minidump with `commitTestSuite.exe` and its PDB (#97).
 - Verify the Renovate wrapper and shared config in CI without applying updates.
 - Shared CI quality reports, Ruff/ty analysis, PowerShell lint and complexity reporting,
   and a manual Python refactor preview. Generated reports stay under ignored `logs/`.

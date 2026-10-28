@@ -395,6 +395,8 @@ try {
           foreach ($target in $fuzz) { $manifest.Add(@{ exe = (Split-Path $target -Leaf); kind = 'gtest' }) }
         }
         Copy-Item -LiteralPath $staged -Destination $tests
+        # kataglyphis_add_crash_dump links this PDB; without it a crash's module+RVA frames have no names.
+        Copy-Item -LiteralPath (Join-Path $buildPathClangRelease 'commitTestSuite.pdb') -Destination $tests -ErrorAction Stop
         $closure = @(Copy-PeImportClosure -Path $staged -SearchDirectory @(Get-ProductDllSearchPath -Arch $TargetArch) -Destination $tests -Arch $TargetArch)
         # The image's layer for the target arch lets Invoke-LavapipeTests.ps1 validate the Release suite; both images carry it (hub CON64).
         $layerSource = 'C:\runtime\vulkan-layers'

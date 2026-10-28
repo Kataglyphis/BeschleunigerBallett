@@ -104,11 +104,24 @@ host.
   (release dry run 38879106284, 2026-10-16), and `DeferredMatchesForwardRoughly` died after
   8 s right after `ASManager: compacted 1 BLAS` (run 39033701859 attempt 1, 2026-10-17). Each
   rerun on the same commit passed, and the 15 GPU jobs since 2026-10-07 otherwise passed both
-  cases. No failure message means a crash or timeout of the case, not a pixel mismatch: the
-  job now sets WER LocalDumps for `commitTestSuite.exe` and uploads
-  `arm64-lavapipe-crash-dump-<attempt>` on failure, so the next crash names the frame. Until
-  then it can stop any release, since `release.yml` needs every lane green; rerunning the
-  failed jobs gets past it.
+  cases. No failure message means a crash or timeout of the case, not a pixel mismatch. On
+  2026-10-27 590abe0a crashed in 3 of 4 cases over two attempts while 3857d44c passed both,
+  although both test binaries differ only in their link timestamp: the crash is intermittent,
+  not caused by a commit. WER LocalDumps wrote nothing on the runner, so every test executable
+  now links the hub's crash handler and the job uploads its dump with the suite's PDB; the next
+  crash names its thread and frame. Until then it can stop any release, since `release.yml`
+  needs every lane green; rerunning the failed jobs gets past it.
+  - **Suspect: `LP_NATIVE_VECTOR_WIDTH=256` on arm64.** NEON is 128 bits, so llvmpipe's AArch64 JIT
+    splits every vector; at 256 it aborted OxidANT's renderer tests about one Linux arm64 run in
+    five (`run-cargo-tests.sh` sets 128 there), and these crashes are on a worker thread in the
+    compute-heavy cloud passes. The pin exists only for the 8-lane BVH radix sort, deleted
+    upstream by Mesa `ebcfbe60`, which is in 26.3 (`26.3-branchpoint`, `26.3.0-rc2`) but not in
+    the 26.2.4 lavapipe the lane runs (hub `LAVAPIPE_VERSION`, mmozeiko/build-mesa, newest
+    26.2.5 on 2026-10-28). The dump decides it: a frame with no module (`?+0x…`, JIT code) or in
+    `vulkan_lvp.dll` confirms it, one in `commitTestSuite.exe` points back at the engine.
+  - **Fix once confirmed:** when mmozeiko/build-mesa publishes 26.3.x, the hub moves
+    `LAVAPIPE_VERSION` and drops the 256 pin on arm64 (native 128) on both lanes; then remove
+    the rerun advice above.
 - [ ] **Every test on every arch lane** (owner goal 2026-10-01; what is left of it).
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.

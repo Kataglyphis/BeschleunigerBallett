@@ -37,7 +37,8 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   scatter pass (`rs_scatter_smem`) writes through wild per-lane addresses and every test that
   builds a BVH SEGVs inside llvmpipe's JIT code (arm64 run 36746313937; on x64,
   `LP_NATIVE_VECTOR_WIDTH=128` reproduces it). 256 is x64's default already; on arm64 LLVM splits
-  each vector into two NEON registers. Mesa main replaced the radix sort with a merge sort
+  each vector into two NEON registers, which is the suspect of the intermittent arm64 crashes
+  (`BACKLOG.md`, golden-render cases on the arm64 device). Mesa main replaced the radix sort with a merge sort
   (`ebcfbe60`, 2026-08-22), so the hub drops its `ENV` once the image's Mesa carries that. The
   Windows lavapipe run (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
 - **ASan builds carry a libX11 leak suppression.** `glfwInit()` on X11 leaks libX11's locale
@@ -71,6 +72,13 @@ arch:
   no crash dump. The upload fails if no evidence files exist, so a missing capture stays visible.
   A nonzero exit without a gtest assertion still needs those logs or a dump to
   locate the fault; the last printed renderer phase alone does not identify it.
+- **Crash dumps.** Every test executable links the hub's handler
+  (`kataglyphis_add_crash_dump` in `Test/cmake/CommonTestBuild.cmake`), because the runner writes no
+  WER `LocalDumps`. The ARM64 job sets `KATAGLYPHIS_CRASH_DUMP_DIR`, so a crash on any thread prints
+  `kataglyphis-crash:` lines with the exception and the faulting thread's `module+0xRVA` frames into
+  the test's stderr, and writes a minidump. The job uploads it with `commitTestSuite.exe` and its
+  PDB as `arm64-lavapipe-crash-dump-<attempt>`; `llvm-symbolizer --obj=commitTestSuite.exe` names a
+  frame in the suite.
 - **Which build.** The Release commit suite that `Build-Windows.ps1 -StageTests` stages, on both
   arches: a clean host has no validation layers for the Debug one, so the arm64 lane's Debug
   (ASan) suite, run beside it since 2026-10-03, skips the same GPU suites. x64 runs it on the
