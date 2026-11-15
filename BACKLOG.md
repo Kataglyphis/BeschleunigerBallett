@@ -106,6 +106,9 @@ No P0 item is open.
   on the host. Once it passes, retire the "Known issue" section of
   `docs/source/gpu-golden-testing.md`, with the `excluded=3` count and the `--gtest_filter` line
   `buildIntegritySuite.cpp` pins in it.
+
+### P3: low
+
 - [b] `C++` **Renderer-level RAII cleanup consolidation** (M, **blocked on being testable**) —
   `VulkanRenderer`'s hand-ordered `cleanUp()`
   and the device-lost special case in `App.cpp`, which skips `scene->cleanUp()` and
