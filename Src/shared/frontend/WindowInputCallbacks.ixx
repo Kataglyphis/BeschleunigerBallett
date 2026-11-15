@@ -37,6 +37,13 @@ inline float consume_axis_delta(float &axis_change)
 inline bool imgui_wants_keyboard_capture()
 { return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard; }
 
+// A focused panel or an open popup keeps Esc, so the first press leaves it and only the next one quits.
+inline bool imgui_holds_escape()
+{
+    return ImGui::GetCurrentContext() != nullptr
+           && (ImGui::IsWindowFocused(ImGuiFocusedFlags_AnyWindow) || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup));
+}
+
 inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int action)
 {
     bool const captured = imgui_wants_keyboard_capture();
@@ -51,7 +58,9 @@ inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int act
 
     if (captured) { return; }
 
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GLFW_TRUE); }
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && !imgui_holds_escape()) {
+        glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
 
     if (key >= 0 && static_cast<std::size_t>(key) < window_key_count) {
         if (action == GLFW_PRESS) { keys[key] = true; }

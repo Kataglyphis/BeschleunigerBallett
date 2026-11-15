@@ -132,6 +132,8 @@ struct EngineHarness
             golden_scene.emplace(GOLDEN_SCENE_MODEL);
         }
         frame_golden_view(*camera);
+        // The goldens frame the whole image; the docked editor would shrink the scene into its viewport.
+        gui->setOverlayVisible(false);
         renderer = std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
     }
 
@@ -388,6 +390,10 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     harness.useForwardRaster();
+    // A screenshot of the editor itself, for looking at the GUI; the pixel comparisons below then differ.
+    if (const char *with_ui = std::getenv("KATAGLYPHIS_FRAME_DUMP_WITH_UI"); with_ui != nullptr && *with_ui != '\0') {
+        harness.gui->setOverlayVisible(true);
+    }
     harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
     // Must match ShadowsDarkenSomePixels' configuration, or the two cannot be compared.
     harness.gui->getGuiSceneSharedVars().cascaded_shadow_intensity = 1.0F;

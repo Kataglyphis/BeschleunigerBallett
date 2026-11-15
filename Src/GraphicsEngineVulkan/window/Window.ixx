@@ -13,9 +13,11 @@ class Window
 {
   public:
     Window();
-    Window(uint32_t window_width, uint32_t window_height);
+    // `fit_to_monitor` scales the size by the monitor's content scale, within 90 % of its work area; the tests
+    // leave it off, since their goldens need exact framebuffer sizes.
+    Window(uint32_t window_width, uint32_t window_height, bool fit_to_monitor = false);
 
-    [[nodiscard]] int initialize(uint32_t window_width, uint32_t window_height);
+    [[nodiscard]] int initialize(uint32_t window_width, uint32_t window_height, bool fit_to_monitor = false);
     void cleanUp();
 
     bool get_should_close() const { return glfwWindowShouldClose(main_window); }

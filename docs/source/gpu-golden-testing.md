@@ -276,13 +276,14 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   while the log held hazards. Make it after the `EngineHarness`, though: on the arm64 runner the
   loader logs a PowerVR ICD's enumeration failure as an error while the harness creates the
   instance.
-- **Captures are tonemapped**, and the **ImGui overlay is composited into them**. The opaque
-  ImGui panel covers the LEFT ~70% of the 1200x768 test frame; the panel-free right edge
-  (x >= 0.72w) is the scene. A pixel classifier written against raw scene colours (e.g.
-  `r < 60 && b < 60`) can silently measure only the overlay, and whole-frame or centre-crop means
-  have measured, at various times: the FPS-counter digits, SSAO, the caster's own body, and
-  nothing at all. Crop away from the overlay (the existing tests crop to the right/lower scene
-  region) and prefer luminance-delta oracles over absolute-colour thresholds.
+- **Captures are tonemapped**, and **the harness hides the editor** (`GUI::setOverlayVisible(false)`,
+  2026-11-14): its docks would cover the frame's edges and recentre the projection on the rect
+  between them. Until then an opaque ImGui panel covered the left ~70% of the 1200x768 frame, so
+  the existing tests crop to the right/lower scene region (x >= 0.72w) they were calibrated on. A
+  pixel classifier written against raw scene colours (e.g. `r < 60 && b < 60`) can silently
+  measure the wrong thing, and whole-frame or centre-crop means have measured, at various times:
+  the FPS-counter digits, SSAO, the caster's own body, and nothing at all. Prefer luminance-delta
+  oracles over absolute-colour thresholds.
 - **Prefer counting to averaging for sparse signals.** Changed-pixel / swung-pixel / detail
   fractions discriminate where means drown (a UNORM ceiling clamps, a texture is near-greyscale,
   a skeleton is 3% of the frame).
@@ -292,7 +293,7 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   before trusting any new pixel metric: `GoldenRender.DISABLED_DumpsFrameToPng` dumps the frame,
   the control, and an amplified difference to PNG
   (`--gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*`,
-  `KATAGLYPHIS_FRAME_DUMP=out`).
+  `KATAGLYPHIS_FRAME_DUMP=out`; `KATAGLYPHIS_FRAME_DUMP_WITH_UI=1` shows the editor in it).
 
 Effects with no runtime toggle (the tonemap is always on) are hard to isolate this way:
 "compressed vs clipped" is ambiguous without a control, so a robust oracle must key on a property
@@ -312,8 +313,8 @@ xvfb-run -a commitTestSuite --gtest_also_run_disabled_tests \
 ```
 
 `KATAGLYPHIS_FRAME_DUMP=out` also writes `out-pcf<r>.png` per radius. A shadows-off capture at
-each radius masks every pixel the overlay moves (the slider text, the FPS digits). The rest of the
-frame splits in two:
+each radius masks every pixel that moves without shadows (the overlay's slider text and FPS digits
+while the harness still showed it). The rest of the frame splits in two:
 
 - **near**: within 16 px of the radius-0 shadow, where penumbra softening shows;
 - **far-lit**: everything else, lit at radius 0, which PCF should leave alone.

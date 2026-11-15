@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -8,12 +9,12 @@
 #include <span>
 
 #include <climits>
+#include <limits>
 
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/SceneUBO.hpp"
 
-using Kataglyphis::aspectRatioOf;
 using Kataglyphis::clampCloudLightMarchSteps;
 using Kataglyphis::clampCloudMarchSteps;
 using Kataglyphis::clampCloudMeshScale;
@@ -28,10 +29,15 @@ using Kataglyphis::kMinCloudDensityMultiplier;
 using Kataglyphis::kMinCloudLightMarchSteps;
 using Kataglyphis::kMinCloudMarchSteps;
 using Kataglyphis::kMinCloudMeshExtent;
+using Kataglyphis::kMinViewportFraction;
+using Kataglyphis::makeViewportRemap;
 using Kataglyphis::makeVulkanProjection;
+using Kataglyphis::sanitizeViewportFraction;
+using Kataglyphis::viewportAspectRatio;
+using Kataglyphis::ViewportFraction;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
 
-static_assert(aspectRatioOf(1920, 0) == 1.0F, "a zero-height extent must not divide by zero");
+static_assert(viewportAspectRatio(1920, 0, ViewportFraction{}) == 1.0F, "a zero-height extent must not divide by zero");
 static_assert(clampCloudMeshScale(glm::vec3(0.0F), 0.0F).x >= kMinCloudMeshExtent
                 && clampCloudMeshScale(glm::vec3(0.0F), 0.0F).w >= kMinCloudDensityMultiplier,
   "an all-zero cloud mesh scale/density must not survive the clamp");
@@ -40,8 +46,90 @@ namespace {
 
 TEST(SceneUboMarshalUnit, ZeroHeightExtentDoesNotDivideByZero)
 {
-    EXPECT_FLOAT_EQ(aspectRatioOf(1920, 0), 1.0F);
-    EXPECT_FLOAT_EQ(aspectRatioOf(1920, 1080), 1920.0F / 1080.0F);
+    EXPECT_FLOAT_EQ(viewportAspectRatio(1920, 0, ViewportFraction{}), 1.0F);
+    EXPECT_FLOAT_EQ(viewportAspectRatio(1920, 1080, ViewportFraction{}), 1920.0F / 1080.0F);
+}
+
+// The docks leave the scene a rect; its aspect, not the swapchain's, must shape the projection.
+TEST(SceneUboMarshalUnit, ViewportAspectComesFromTheSceneRect)
+{
+    const ViewportFraction scene{ 0.25F, 0.1F, 0.75F, 0.9F };
+    EXPECT_FLOAT_EQ(viewportAspectRatio(1600, 900, scene), (1600.0F * 0.5F) / (900.0F * 0.8F));
+}
+
+TEST(SceneUboMarshalUnit, ViewportSanitizeKeepsAValidRect)
+{
+    const ViewportFraction rect = sanitizeViewportFraction(0.2F, 0.05F, 0.8F, 0.75F);
+    EXPECT_FLOAT_EQ(rect.x0, 0.2F);
+    EXPECT_FLOAT_EQ(rect.y0, 0.05F);
+    EXPECT_FLOAT_EQ(rect.x1, 0.8F);
+    EXPECT_FLOAT_EQ(rect.y1, 0.75F);
+}
+
+TEST(SceneUboMarshalUnit, ViewportSanitizeClampsToTheImage)
+{
+    const ViewportFraction rect = sanitizeViewportFraction(-0.5F, -1.0F, 1.5F, 2.0F);
+    EXPECT_FLOAT_EQ(rect.x0, 0.0F);
+    EXPECT_FLOAT_EQ(rect.y0, 0.0F);
+    EXPECT_FLOAT_EQ(rect.x1, 1.0F);
+    EXPECT_FLOAT_EQ(rect.y1, 1.0F);
+}
+
+// A NaN, an inverted or a collapsed rect would put NaN or a mirrored image into every pass.
+TEST(SceneUboMarshalUnit, ViewportSanitizeFallsBackToTheWholeImage)
+{
+    constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+    const std::array<ViewportFraction, 4> broken = { ViewportFraction{ kNaN, 0.0F, kNaN, 1.0F },
+        ViewportFraction{ 0.8F, 0.0F, 0.2F, 1.0F },
+        ViewportFraction{ 0.5F, 0.0F, 0.5F + kMinViewportFraction * 0.5F, 1.0F },
+        ViewportFraction{ 0.0F, 0.6F, 1.0F, 0.6F } };
+    for (const ViewportFraction &input : broken) {
+        const ViewportFraction rect = sanitizeViewportFraction(input.x0, input.y0, input.x1, input.y1);
+        EXPECT_FLOAT_EQ(rect.x0, 0.0F);
+        EXPECT_FLOAT_EQ(rect.y0, 0.0F);
+        EXPECT_FLOAT_EQ(rect.x1, 1.0F);
+        EXPECT_FLOAT_EQ(rect.y1, 1.0F);
+    }
+}
+
+TEST(SceneUboMarshalUnit, WholeImageViewportRemapIsTheIdentity)
+{
+    const glm::mat4 remap = makeViewportRemap(ViewportFraction{});
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) { EXPECT_FLOAT_EQ(remap[col][row], col == row ? 1.0F : 0.0F); }
+    }
+}
+
+// Vulkan NDC runs from -1 at the top-left; the rect's fractions are measured from the same corner.
+TEST(SceneUboMarshalUnit, ViewportRemapMapsTheClipSquareOntoTheRect)
+{
+    const ViewportFraction rect{ 0.2F, 0.1F, 0.7F, 0.8F };
+    const glm::mat4 remap = makeViewportRemap(rect);
+    const auto toFraction = [&remap](float ndcX, float ndcY) {
+        const glm::vec4 clip = remap * glm::vec4(ndcX, ndcY, 0.5F, 1.0F);
+        return glm::vec2((clip.x / clip.w + 1.0F) * 0.5F, (clip.y / clip.w + 1.0F) * 0.5F);
+    };
+    const glm::vec2 topLeft = toFraction(-1.0F, -1.0F);
+    const glm::vec2 bottomRight = toFraction(1.0F, 1.0F);
+    const glm::vec2 centre = toFraction(0.0F, 0.0F);
+    EXPECT_NEAR(topLeft.x, rect.x0, 1e-6F);
+    EXPECT_NEAR(topLeft.y, rect.y0, 1e-6F);
+    EXPECT_NEAR(bottomRight.x, rect.x1, 1e-6F);
+    EXPECT_NEAR(bottomRight.y, rect.y1, 1e-6F);
+    EXPECT_NEAR(centre.x, (rect.x0 + rect.x1) * 0.5F, 1e-6F);
+    EXPECT_NEAR(centre.y, (rect.y0 + rect.y1) * 0.5F, 1e-6F);
+}
+
+// The remap must not touch depth or w, or the depth test and perspective divide would change with the docks.
+TEST(SceneUboMarshalUnit, ViewportRemapKeepsDepthAndW)
+{
+    const glm::mat4 projection = makeVulkanProjection(60.0F, 1.5F, 0.1F, 100.0F);
+    const glm::mat4 remapped = makeViewportRemap(ViewportFraction{ 0.1F, 0.2F, 0.6F, 0.9F }) * projection;
+    const glm::vec4 point(1.0F, -2.0F, -10.0F, 1.0F);
+    const glm::vec4 before = projection * point;
+    const glm::vec4 after = remapped * point;
+    EXPECT_FLOAT_EQ(after.z, before.z);
+    EXPECT_FLOAT_EQ(after.w, before.w);
 }
 
 TEST(SceneUboMarshalUnit, ProjectionFlipsYForVulkan)

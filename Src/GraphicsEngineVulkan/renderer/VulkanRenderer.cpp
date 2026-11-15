@@ -177,14 +177,20 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   const GUISceneSharedVars &guiSceneSharedVars)
 {
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
-    float const aspect_ratio = aspectRatioOf(extent.width, extent.height);
+    // The docks cover the image's edges, so aspect and centre come from the part the scene shows through.
+    const auto &scene_viewport = gui->getGuiRendererSharedVars().scene_viewport;
+    const ViewportFraction viewport =
+      sanitizeViewportFraction(scene_viewport.x0, scene_viewport.y0, scene_viewport.x1, scene_viewport.y1);
+    float const aspect_ratio = viewportAspectRatio(extent.width, extent.height, viewport);
 
     // Clamped here: tests and config loads write the GUI vars too. Readers use get_fov(), not the GUI value.
     camera_data->set_fov(std::clamp(guiSceneSharedVars.camera_fov, 20.0F, 110.0F));
 
     globalUBO.view = camera_data->calculate_viewmatrix();
-    globalUBO.projection = makeVulkanProjection(
-      camera_data->get_fov(), aspect_ratio, camera_data->get_near_plane(), camera_data->get_far_plane());
+    globalUBO.projection =
+      makeViewportRemap(viewport)
+      * makeVulkanProjection(
+        camera_data->get_fov(), aspect_ratio, camera_data->get_near_plane(), camera_data->get_far_plane());
 
     fillSceneUboCamera(sceneUBO, camera_data->get_camera_position(), camera_data->get_camera_direction());
 

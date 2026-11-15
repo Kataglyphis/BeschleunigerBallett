@@ -15,16 +15,52 @@
 
 namespace Kataglyphis {
 
-// Guards the zero-height extent a minimized or resizing window reports, which would put NaN/Inf in the projection.
-constexpr auto aspectRatioOf(uint32_t width, uint32_t height) -> float
-{ return (height > 0) ? static_cast<float>(width) / static_cast<float>(height) : 1.0F; }
-
 // Flips Y for Vulkan clip space; never flip the cascade matrices to match (the shadow pass's culling relies on it).
 inline auto makeVulkanProjection(float fovDegrees, float aspect, float nearPlane, float farPlane) -> glm::mat4
 {
     glm::mat4 projection = glm::perspective(glm::radians(fovDegrees), aspect, nearPlane, farPlane);
     projection[1][1] *= -1;
     return projection;
+}
+
+// The scene's share of the swapchain image, in fractions of its width and height from the top-left corner.
+struct ViewportFraction
+{
+    float x0 = 0.0F;
+    float y0 = 0.0F;
+    float x1 = 1.0F;
+    float y1 = 1.0F;
+};
+
+// Below this share per axis the rect is treated as degenerate and the whole image is used instead.
+constexpr float kMinViewportFraction = 0.05F;
+
+// GUI, tests and configs may send anything: edges clamp into the image (NaN to 0), a collapsed rect becomes all of it.
+constexpr auto sanitizeViewportFraction(float x0, float y0, float x1, float y1) -> ViewportFraction
+{
+    const auto clamp01 = [](float value) { return (value >= 0.0F) ? ((value <= 1.0F) ? value : 1.0F) : 0.0F; };
+    const ViewportFraction rect{ clamp01(x0), clamp01(y0), clamp01(x1), clamp01(y1) };
+    if (rect.x1 - rect.x0 < kMinViewportFraction || rect.y1 - rect.y0 < kMinViewportFraction) { return {}; }
+    return rect;
+}
+
+// 1 for an empty rect: a minimized or resizing window reports zero height, which would put NaN in the projection.
+constexpr auto viewportAspectRatio(uint32_t width, uint32_t height, ViewportFraction rect) -> float
+{
+    const float rectWidth = static_cast<float>(width) * (rect.x1 - rect.x0);
+    const float rectHeight = static_cast<float>(height) * (rect.y1 - rect.y0);
+    return (rectHeight > 0.0F) ? rectWidth / rectHeight : 1.0F;
+}
+
+// Centres the camera on the rect; every pass still covers the whole image, the docks hide the rest.
+inline auto makeViewportRemap(ViewportFraction rect) -> glm::mat4
+{
+    glm::mat4 remap(1.0F);
+    remap[0][0] = rect.x1 - rect.x0;
+    remap[1][1] = rect.y1 - rect.y0;
+    remap[3][0] = rect.x0 + rect.x1 - 1.0F;
+    remap[3][1] = rect.y0 + rect.y1 - 1.0F;
+    return remap;
 }
 
 // A negative value cast to uint32_t would wrap, skip the tap loop and read as fully shadowed.

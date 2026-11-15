@@ -144,6 +144,12 @@ committed to.
 
 ## C++ engine ideas
 
+- **The library can mark a model the scene does not hold.** `GUI::ensureModelSelection` takes
+  `defaultSelectedModelIndex`, which ignores `KATAGLYPHIS_MODEL_OVERRIDE` and falls back to the
+  first model when the default scene was not fetched, while the startup load uses
+  `getModelFile()`. The marked row cannot be loaded (the editor never reloads the loaded row,
+  or a double-click on Load would load twice); loading another model first recovers. Deriving
+  the index from `getModelFile()` fixes it.
 - **A receiver-plane depth bias for the PCF taps.** `cascaded_shadow.slang` compares every
   tap against the centre texel's depth with one bias, so on a receiver sloped against the
   light the outer taps shadow it. On the shadow rig, lit surfaces far from any shadow darken
@@ -217,6 +223,10 @@ committed to.
 - **No budget on the GPU timings.** `KATAGLYPHIS_GPU_TIMING_JSON` and
   `Compare-RendererTimings.ps1` make per-pass timings comparable, but nothing asserts a budget
   for any `GpuTimedPass`.
+- **No input-level test for the editor.** The GUI sweep writes the shared vars directly, so
+  flows such as "a library click picks, Enter loads" (`GUI::renderModelLibrary`) are checked by
+  reading ImGui's source, not by a test. Driving `ImGuiIO`'s mouse and key events from the engine
+  harness, with the row rects taken from ImGui's item data, would cover them.
 - **`resolveModelPath` is about 4x slower on a miss** (8 parent-directory probes;
   `Test/perf/baselines/win-9070xt-32core.json`). Fine at startup, bad in a loop.
 

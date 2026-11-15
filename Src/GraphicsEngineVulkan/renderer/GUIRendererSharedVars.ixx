@@ -80,9 +80,22 @@ struct VisibilityStats
     unsigned int shadow_casters_total = 0;
 };
 
+/// The part of the swapchain image the docked GUI leaves to the scene, in fractions (0..1) of its width and
+/// height, written by the GUI every frame. The renderer centres the projection on it; the default is the whole
+/// image, which is also what a hidden GUI reports.
+struct SceneViewport
+{
+    float x0 = 0.0F;
+    float y0 = 0.0F;
+    float x1 = 1.0F;
+    float y1 = 1.0F;
+};
+
 struct GUIRendererSharedVars
 {
     RasterizationMode rasterizationMode = RasterizationMode::Forward;
+
+    SceneViewport scene_viewport;
 
     bool raytracing = false;
     bool pathTracing = false;

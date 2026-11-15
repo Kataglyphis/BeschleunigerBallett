@@ -1011,6 +1011,11 @@ OFF, so none of them fetches Kompute's `fmt`.
   `fullscreen_vs` and inverts it with `fullscreen_uv_to_ndc` (`common/fullscreen.slang`, switched per
   target), never by hand: a copy mirrors one renderer, and a vertically symmetric scene hides it.
   [`docs/source/shader-sharing.md`](docs/source/shader-sharing.md).
+- The editor (`gui/GUI.cpp` over `Src/shared/imgui/`) docks with `BeginViewportSideBar` on Dear
+  ImGui master and publishes the free rect as `scene_viewport`; `updateUniforms` premultiplies
+  `makeViewportRemap`, so `projection` centres the camera there while every pass still covers the
+  whole image. Screen-space code must derive from `projection`/`inv_projection`, never assume the
+  camera axis hits the image centre. The golden harness hides the editor (`setOverlayVisible(false)`).
 - Model-loading architecture (the two loaders, the async parse/upload split, the multi-mesh flow):
   [`docs/source/model-loading.md`](docs/source/model-loading.md).
 - Per-unit verification pattern (container build -> direct test exe -> validation run):

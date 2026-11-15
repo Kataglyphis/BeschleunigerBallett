@@ -2,7 +2,7 @@
 
 The clouds subsystem (`Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/`)
 is the only one with a compute pair, a shared host/shader constants header, a
-four-`vec4` `SceneUBO` block and its own GUI panel. Everything here is
+four-`vec4` `SceneUBO` block and its own GUI section. Everything here is
 **shipped** behaviour; open work lives in `BACKLOG.md`.
 
 ## Pipeline shape
@@ -19,8 +19,8 @@ Two compute kernels, both Slang-authored and SPIR-V-only
   flattens part of the cloud shape.
   `BuildIntegrity.CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads`
   pins both the extent and the no-bare-literal-channel contract.
-- **`clouds_main`** runs **once per frame**, only while the GUI's "Enable
-  Clouds" checkbox is on (`VulkanRenderer::recordComputeCommands`'s
+- **`clouds_main`** runs **once per frame**, only while clouds are on (the
+  inspector's CLOUDS switch or the outliner's eye; `VulkanRenderer::recordComputeCommands`'s
   `guiSceneSharedVars.clouds_enabled` gate), ray-marching the noise volume
   into a screen-sized 2D storage texture.
 
@@ -142,7 +142,7 @@ validation).
 `SceneUboMarshal.hpp`'s `fillSceneUboClouds` (the host packer) and
 `clouds_main`'s cloud-parameter unpack block (the sole shader-side consumer)
 are two hand-written mirrors of the same nine-value layout. The table maps
-each GUI control (`GUI.cpp`'s "Cloud Settings" tree node) -> shader field ->
+each GUI control (the CLOUDS section of the inspector's Sky tab, `GUI.cpp`) -> shader field ->
 `SceneUBO` field/component; both sides must agree on it.
 `BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack` pins the shader half,
 field by field, and `BuildIntegrity.CloudsDocTablesMatchTheirSources` pins
@@ -151,18 +151,18 @@ this table against that same test's data.
 <!-- cloud-ubo:begin -->
 | GUI control | Shader field | SceneUBO field |
 | --- | --- | --- |
-| `# march steps` | `cloud.num_march_steps` | `cloudParameters.w` |
-| `# march steps to light` | `cloud.num_march_steps_to_light` | `cloudLightMarch.x` |
+| `March steps` | `cloud.num_march_steps` | `cloudParameters.w` |
+| `Light steps` | `cloud.num_march_steps_to_light` | `cloudLightMarch.x` |
 | `Density` | `cloud.scale` | `cloudMeshScale.w` |
-| `Coverage threshold` | `cloud.threshold` | `cloudMeshOffset.w` |
+| `Coverage` | `cloud.threshold` | `cloudMeshOffset.w` |
 | `Pillowness` | `cloud.pillowness` | `cloudParameters.x` |
-| `Cirrus effect` | `cloud.cirrus_effect` | `cloudParameters.y` |
+| `Cirrus` | `cloud.cirrus_effect` | `cloudParameters.y` |
 | `Powder effect` | `cloud.powder_effect` | `cloudParameters.z` |
 | `Scale` | `cloud.radius` | `cloudMeshScale.xyz` |
-| `Translation` | `cloud.offset` | `cloudMeshOffset.xyz` |
+| `Offset` | `cloud.offset` | `cloudMeshOffset.xyz` |
 <!-- cloud-ubo:end -->
 
-The "Enable Clouds" checkbox is not in this table: it gates
+The CLOUDS switch (and the outliner's eye on Clouds) is not in this table: it gates
 `recordComputeCommands`/`clouds_main`'s dispatch and `post.slang`'s
 compositing branch through a push constant
 (`PushConstantPost::clouds_enabled`), not a `SceneUBO` field.

@@ -18,6 +18,7 @@ using Kataglyphis::Frontend::handle_focus_lost;
 using Kataglyphis::Frontend::handle_key_callback;
 using Kataglyphis::Frontend::handle_mouse_button_callback;
 using Kataglyphis::Frontend::handle_mouse_callback;
+using Kataglyphis::Frontend::imgui_holds_escape;
 using Kataglyphis::Frontend::reset_window_keys;
 using Kataglyphis::Frontend::should_capture_cursor;
 using Kataglyphis::Frontend::should_release_cursor;
@@ -285,6 +286,31 @@ TEST(WindowInputUnit, ImGuiCaptureGateSwallowsInput)
     ImGui::GetIO().WantCaptureMouse = false;
     handle_key_callback(nullptr, keys, GLFW_KEY_W, GLFW_PRESS);
     EXPECT_TRUE(keys[GLFW_KEY_W]);
+
+    ImGui::DestroyContext(ctx);
+}
+
+// The editor's two-stage Esc: a focused panel keeps the key, so the first press leaves the panel, not the app.
+TEST(WindowInputUnit, FocusedImGuiWindowHoldsEscape)
+{
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ASSERT_NE(ctx, nullptr);
+    ImGuiIO &io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(640.0F, 480.0F);
+    // Lets a frame run without a renderer backend uploading the font atlas.
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    EXPECT_FALSE(imgui_holds_escape()) << "with nothing focused, Esc must still quit";
+
+    ImGui::NewFrame();
+    ImGui::Begin("panel");
+    ImGui::End();
+    ImGui::Render();
+    EXPECT_TRUE(imgui_holds_escape()) << "a window that just appeared has focus and must keep Esc";
+
+    ImGui::NewFrame();
+    ImGui::SetWindowFocus(nullptr);
+    ImGui::Render();
+    EXPECT_FALSE(imgui_holds_escape()) << "once the panel lost focus, Esc must quit again";
 
     ImGui::DestroyContext(ctx);
 }

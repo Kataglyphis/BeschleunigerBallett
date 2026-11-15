@@ -28,14 +28,15 @@ Kataglyphis::App::App() = default;
 
 auto Kataglyphis::App::run() -> int
 {
-    int const window_width = 1280;
-    int const window_height = 720;
+    // Room for the editor's docks around the scene; Window scales it to the monitor and keeps it on screen.
+    int const window_width = 1600;
+    int const window_height = 900;
 
     float delta_time = 0.0F;
     float last_time = 0.0F;
 
     std::unique_ptr<Kataglyphis::Frontend::Window> const window =
-      std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
+      std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height, true);
 
     if (!window->is_valid()) {
         spdlog::critical("Window creation failed, aborting startup!");

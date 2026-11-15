@@ -20,7 +20,7 @@ struct Crop
     uint32_t y1;
 };
 
-// Excludes the ImGui overlay (the left ~72% plus thin top and bottom margins).
+// The right-hand region the goldens' thresholds were tuned on; EngineHarness hides the editor.
 inline Crop panel_free_crop(uint32_t w, uint32_t h)
 { return Crop{ (w * 18U) / 25U, (w * 49U) / 50U, h / 20U, (h * 19U) / 20U }; }
 

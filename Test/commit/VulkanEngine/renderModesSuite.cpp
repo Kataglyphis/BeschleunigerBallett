@@ -87,6 +87,24 @@ TEST(Integration, RenderModesSelectableInGui)
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "forward");
 
+    // The menu and status bars always stay, so the visible editor must hand the renderer an inner rect.
+    const auto &scene_viewport = renderer_vars.scene_viewport;
+    EXPECT_GT(scene_viewport.y0, 0.0F) << "the menu bar must push the scene's top edge down";
+    EXPECT_LT(scene_viewport.y1, 1.0F) << "the status bar must lift the scene's bottom edge";
+    EXPECT_GE(scene_viewport.x0, 0.0F);
+    EXPECT_LE(scene_viewport.x1, 1.0F);
+    EXPECT_LT(scene_viewport.x0, scene_viewport.x1);
+    EXPECT_LT(scene_viewport.y0, scene_viewport.y1);
+
+    // Hidden, the editor must give the scene the whole image again, as the goldens rely on.
+    gui->setOverlayVisible(false);
+    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), 1, "editor-hidden");
+    EXPECT_FLOAT_EQ(scene_viewport.x0, 0.0F);
+    EXPECT_FLOAT_EQ(scene_viewport.y0, 0.0F);
+    EXPECT_FLOAT_EQ(scene_viewport.x1, 1.0F);
+    EXPECT_FLOAT_EQ(scene_viewport.y1, 1.0F);
+    gui->setOverlayVisible(true);
+
     // Rasterizer, deferred shading.
     renderer_vars.rasterizationMode = RasterizationMode::Deferred;
     run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "deferred");

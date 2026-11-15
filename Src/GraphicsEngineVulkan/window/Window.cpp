@@ -2,6 +2,7 @@ module;
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -20,6 +21,42 @@ using namespace Kataglyphis::Frontend;
 static void onErrorCallback(int error, const char *description)
 { std::cerr << "GLFW Error " << error << ": " << description << '\n'; }
 
+// Win32 and X11 size windows in pixels, so the size follows the scale; Cocoa and Wayland use logical units.
+static void fitToPrimaryMonitor(uint32_t &window_width, uint32_t &window_height)
+{
+    GLFWmonitor *monitor = glfwGetPrimaryMonitor();
+    if (monitor == nullptr) { return; }
+
+    float scale_x = 1.0F;
+    float scale_y = 1.0F;
+    glfwGetMonitorContentScale(monitor, &scale_x, &scale_y);
+    scale_x = std::max(scale_x, 1.0F);
+    scale_y = std::max(scale_y, 1.0F);
+    int area_x = 0;
+    int area_y = 0;
+    int area_width = 0;
+    int area_height = 0;
+    glfwGetMonitorWorkarea(monitor, &area_x, &area_y, &area_width, &area_height);
+    auto area_w = static_cast<float>(area_width);
+    auto area_h = static_cast<float>(area_height);
+
+    const int platform = glfwGetPlatform();
+    const bool pixel_sized = platform == GLFW_PLATFORM_WIN32 || platform == GLFW_PLATFORM_X11;
+    // Wayland: pixel work area, logical windows; a fractional scale reads as its integer ceiling, so this errs small.
+    if (platform == GLFW_PLATFORM_WAYLAND) {
+        area_w /= scale_x;
+        area_h /= scale_y;
+    }
+
+    const auto fit = [](uint32_t size, float scale, float area) -> uint32_t {
+        const float scaled = static_cast<float>(size) * scale;
+        const float limit = (area > 0.0F) ? area * 0.9F : scaled;
+        return static_cast<uint32_t>(std::min(scaled, limit));
+    };
+    window_width = fit(window_width, pixel_sized ? scale_x : 1.0F, area_w);
+    window_height = fit(window_height, pixel_sized ? scale_y : 1.0F, area_h);
+}
+
 Window::Window() : framebuffer_resized(false)
 {
     Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
@@ -28,14 +65,16 @@ Window::Window() : framebuffer_resized(false)
 }
 
 // please use this constructor; never the standard
-Window::Window(uint32_t window_width, uint32_t window_height) : framebuffer_resized(false)
+Window::Window(uint32_t window_width, uint32_t window_height, bool fit_to_monitor) : framebuffer_resized(false)
 {
     Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
 
-    if (initialize(window_width, window_height) != 0) { spdlog::critical("Window initialization failed!"); }
+    if (initialize(window_width, window_height, fit_to_monitor) != 0) {
+        spdlog::critical("Window initialization failed!");
+    }
 }
 
-auto Window::initialize(uint32_t window_width, uint32_t window_height) -> int
+auto Window::initialize(uint32_t window_width, uint32_t window_height, bool fit_to_monitor) -> int
 {
     glfwSetErrorCallback(onErrorCallback);
     if (glfwInit() == 0) {
@@ -45,6 +84,8 @@ auto Window::initialize(uint32_t window_width, uint32_t window_height) -> int
     }
 
     if (glfwVulkanSupported() == 0) { spdlog::error("No Vulkan Supported!"); }
+
+    if (fit_to_monitor) { fitToPrimaryMonitor(window_width, window_height); }
 
     // allow it to resize
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
@@ -164,6 +205,13 @@ void Window::mouse_button_callback(GLFWwindow *window, int button, int action, i
         glfwSetInputMode(window, GLFW_CURSOR, Kataglyphis::Frontend::cursor_input_mode_for(is_look_mode_active));
         if (glfwRawMouseMotionSupported()) {
             glfwSetInputMode(window, GLFW_RAW_MOUSE_MOTION, is_look_mode_active ? GLFW_TRUE : GLFW_FALSE);
+        }
+        // X11 and Wayland report no motion for GLFW's warp back, so ImGui would keep look mode's virtual position.
+        if (!is_look_mode_active) {
+            double x_pos = 0.0;
+            double y_pos = 0.0;
+            glfwGetCursorPos(window, &x_pos, &y_pos);
+            ImGui_ImplGlfw_CursorPosCallback(window, x_pos, y_pos);
         }
     }
 }

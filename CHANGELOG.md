@@ -23,6 +23,14 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- A docked editor replaces the floating ImGui window: menu bar with a renderer switch, scene
+  outliner, a model library grouped by folder, an inspector per object (Model, Sun, Camera, Sky,
+  Renderer), a profiler with frame-time and GPU pass graphs, and a status bar. A graphite theme
+  follows the monitor's scale, F1 hides the editor, and the camera centres on the part of the
+  window the docks leave free. A library click only picks a model; a double-click, Enter or Load
+  opens it, since a load stalls the GPU and replaces the scene. A focused panel no longer swallows
+  WASD; Esc first leaves the panel, then quits. The app window opens at 1600x900, scaled to the
+  monitor.
 - Every test executable links the hub's crash handler (`kataglyphis_add_crash_dump`). The ARM64
   lavapipe job sets `KATAGLYPHIS_CRASH_DUMP_DIR` instead of WER `LocalDumps`, which the runner
   never wrote, and uploads the minidump with `commitTestSuite.exe` and its PDB (#97).

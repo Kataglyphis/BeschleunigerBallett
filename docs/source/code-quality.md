@@ -94,7 +94,7 @@ fleet formats with the pinned LLVM (owner decision, 2026-10-06). Since
   of the PATH clang-format, the image's `C:\llvm-patched\bin\clang-format.exe`.
 - **Linux**: the `static-analysis` job's first step,
   `run-static-analysis-format.sh --only-format-check`, over `Src`, `Test` and
-  `scripts/riscv64`, the 217 files `Get-ProjectCppFiles` gives Windows. The
+  `scripts/riscv64`, the 219 files `Get-ProjectCppFiles` gives Windows. The
   hub's `code_quality_require_pinned_clang_format` takes the first
   `LLVM_RELEASE` clang-format of `/usr/local/llvm-target/bin` and PATH, so a
   distro one (21.1.8 flagged 41 of the swept files) never grades.
@@ -111,10 +111,11 @@ that fixed them is in `.git-blame-ignore-revs`.
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 217 -->
+<!-- format-drift-denominator: 219 -->
 
-**0 of 217** own sources under `Src/` and `Test/` differ from `.clang-format`
-(0 of 218 with `scripts/riscv64/fp16_helpers.c`), after the sweep in commit
+**0 of 219** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 220 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
+2026-11-14), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM
 commit `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin`
 in `:latest`, the version `:winamd64` ships as `C:\llvm-patched`) over the 217

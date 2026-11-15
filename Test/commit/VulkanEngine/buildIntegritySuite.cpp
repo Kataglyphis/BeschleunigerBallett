@@ -10046,7 +10046,7 @@ TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
         { "GLFW_KEY_Q", "Q" },
         { "GLFW_KEY_E", "E" },
         { "GLFW_KEY_ESCAPE", "ESC" },
-        { "GLFW_MOUSE_BUTTON_RIGHT", "right mouse" },
+        { "GLFW_MOUSE_BUTTON_RIGHT", "Right mouse" },
     };
 
     // Bound inputs deliberately not user-facing, each with a reason; none today.

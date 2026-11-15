@@ -15,8 +15,8 @@ export constexpr uint32_t kShadowMapResolutions[] = { 512, 1024, 2048, 4096 };
 
 export inline constexpr int kShadowMapResolutionCount = static_cast<int>(std::size(kShadowMapResolutions));
 
-// Range for the "Shadow distance" slider (GUI.cpp). One owner for the bounds,
-// the same way kShadowMapResolutions is the one owner of the resolution combo.
+// Range for the Sun tab's shadow "Distance" slider (GUI.cpp). One owner for the bounds,
+// the same way kShadowMapResolutions is the one owner of the resolution control.
 export inline constexpr float kMinShadowDistance = 5.0F;
 export inline constexpr float kMaxShadowDistance = 500.0F;
 
