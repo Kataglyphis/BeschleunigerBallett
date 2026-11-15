@@ -106,6 +106,15 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The local Renovate run of 2026-11-14 moved the submodules to their default-branch tips: Dear
+  ImGui `8c36ecfb` (its default arrows are now stroked chevrons, not filled triangles), stb
+  `9600522d`, VMA v3.5.0, nlohmann/json `81888ff9`, google/benchmark `cf4d7fed`, spdlog
+  `6d9805df`, FuzzTest `fcde2c27` (`main`; its Abseil `20260817.0` now equals `ABSL_TAG`), toml++
+  `cfd71597`, OxidANT and ANTfrastructure. The docs stack takes Sphinx 9.2.0, myst-parser 5.2.0 and
+  sphinx-design 0.8.0; `uv.lock` takes its lock maintenance and the docs theme's dynamic version.
+- The Windows lanes run lavapipe 26.3.0 at each arch's native vector width: the hub drops the
+  `LP_NATIVE_VECTOR_WIDTH=256` pin that BACKLOG suspects of the intermittent arm64 crash, since Mesa
+  26.3 deleted the BVH sort that needed it.
 - Search this repository and its direct submodules for a Bash or PowerShell helper before
   adding one; shared behavior belongs in its upstream owner.
 - Use the shared Windows Git helper for WSL Renovate runs on Windows checkouts, so CRLF

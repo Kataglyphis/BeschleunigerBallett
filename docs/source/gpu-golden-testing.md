@@ -56,8 +56,9 @@ hosted runner takes one in a minute. `scripts/windows/Invoke-LavapipeTests.ps1` 
 arch:
 
 - **What it installs.** lavapipe from [mmozeiko/build-mesa](https://github.com/mmozeiko/build-mesa)
-  26.2.3 (the one build that ships an arm64 lavapipe; mesa-dist-win has x86 and x64 only) and the
-  Khronos loader from LunarG's 1.4.357.0 runtime components, both pinned by SHA256.
+  at the hub's `LAVAPIPE_VERSION` (26.3.0 since 2026-11-14; the one build that ships an arm64
+  lavapipe, as mesa-dist-win has x86 and x64 only) and the Khronos loader from LunarG's runtime
+  components at the hub's `VULKAN_VERSION` (1.4.363.0), both pinned by SHA256.
   `vulkan-1.dll` goes beside the suite, so no System32 copy wins.
 - **How the loader finds it.** `VK_DRIVER_FILES` names the ICD, but the loader ignores it in an
   elevated process, which a hosted runner's is, so the ICD is also registered under
@@ -84,8 +85,9 @@ arch:
   (ASan) suite, run beside it since 2026-10-03, skips the same GPU suites. x64 runs it on the
   runner host after the container build (`windows-x64.yml`'s `host-command`); arm64 in the
   `gpu-suites` job on `windows-11-arm`, from a checkout, which also runs the source-reading
-  `BuildIntegrity.*` checks the staged tree lacks. The script sets `LP_NATIVE_VECTOR_WIDTH=256`
-  itself; on Linux the image does.
+  `BuildIntegrity.*` checks the staged tree lacks. From lavapipe 26.3.0 on, the hub's installer
+  leaves `LP_NATIVE_VECTOR_WIDTH` unset, so arm64 runs llvmpipe at its native 128 bits; the Linux
+  image still sets 256 while its Mesa predates 26.3.
   The ARM64 test artifact includes the local `Resources/ShadersSlang/` source tree and OxidANT's
   pinned tree under `third_party/OxidANT/shaders/`: `RepoFilesUnit` runs from that artifact and
   resolves both source roots relative to it, not the separate checkout.

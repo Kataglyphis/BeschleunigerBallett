@@ -468,8 +468,9 @@ every direct submodule against its remote default branch, including FUZZTEST.
 **Coupling to watch when bumping pins:** `third_party/FUZZTEST` pins its own Abseil LTS (`absl_TAG`
 in `cmake/BuildDependencies.cmake`); this repo's `ABSL_TAG` in `third_party/CMakeLists.txt` is
 declared first and wins, so it must stay >= the FuzzTest pin or configure fails with missing
-`absl::*` targets (observed: `absl::random_mocking_access`). This repo is at `20260817.0`, FuzzTest
-at `20260526.0` (2026-10-07).
+`absl::*` targets (observed: `absl::random_mocking_access`). This repo and FuzzTest are both at
+`20260817.0` (FuzzTest `fcde2c27`, 2026-11-14), so the constraint holds only at equality: the next
+FuzzTest Abseil bump must move `ABSL_TAG` in the same change.
 
 **Drift is guarded by ANTfrastructure's repo-agnostic suite**,
 `third_party/ANTfrastructure/shared/windows/tests/Submodule.Pins.Tests.ps1`, run by its own
@@ -569,7 +570,7 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   arm64 on `windows-11-arm`; a skip fails the run). Preserve fresh per-test JSON and stdout/stderr
   under ignored `logs/lavapipe/`; ARM64 CI uploads them on failure alongside any Windows crash
   dump and fails the upload when those evidence files are missing. A Linux host with an NVIDIA GPU
-  runs them in the image through CDI. The lavapipe install, the `LP_NATIVE_VECTOR_WIDTH=256` pin, the NVIDIA recipe
+  runs them in the image through CDI. The lavapipe install and its vector width per OS, the NVIDIA recipe
   (an ASan build needs `ASAN_OPTIONS=protect_shadow_gap=0`), the cwd requirement and the
   golden-writing cautions: [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md). "No
   synchronization frames available" on every golden was a FrameSync bug (`695db536`..`981244fd`,
@@ -599,7 +600,7 @@ CON10, over the TUs that import no module) and the suggested cadence:
 [`docs/source/code-quality.md`](docs/source/code-quality.md).
 
 **clang-format is a failing gate since 2026-10-06**, graded by the pinned LLVM's clang-format (the
-hub's `LLVM_RELEASE`, 23.1.3 since 2026-10-10) on both lanes: the Windows x64 lane's
+hub's `LLVM_RELEASE`, 23.1.5 since the 2026-11-14 hub pin, which the `:latest` image reports too) on both lanes: the Windows x64 lane's
 `Build-Windows.ps1` step and the Linux `static-analysis` job's
 `run-static-analysis-format.sh --only-format-check`. The hub picks and checks the binary
 (`Invoke-ClangFormatCheck`, `code_quality_require_pinned_clang_format`, since 2026-10-19), so a
@@ -932,17 +933,23 @@ only surfaces when that line runs, an hour into a gcc build.
 **One command, and it is the same one CI runs:**
 
 ```bash
-bash ./scripts/linux/run-lint-gates.sh   # the seven always-on gates, then --ratchets
+bash ./scripts/linux/run-lint-gates.sh   # the eight always-on gates, then --ratchets
 ```
 
 The wrapper hands this repo's root to the hub's `linux/scripts/run-lint-gates.sh`, which owns the
-seven always-on gates (shell, workflows + CI image refs, secrets, python, shared-config drift,
-consumer pin-forwarding, README length), their pinned binaries and the contracts behind them
+eight always-on gates (shell, workflows + CI image refs, secrets, python, shared-config drift,
+consumer pin-forwarding, README length, mutation staleness), their pinned binaries and the contracts
+behind them
 ([`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md#the-scan-root-contract)).
-All gates run even after one fails. The wrapper passes `--ratchets` itself since 2026-10-16; the
-hub's consumer hook, once a clone opts in with
-`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`, runs the
-seven without it. So run the wrapper before pushing a comment, size or shell change: the
+Mutation staleness runs the hub's `verify_mutations.py --stale-check` over
+`scripts/linux/tests/sponza-mutations.json`: a recipe whose find text no longer matches its target
+exactly once now turns `Lint gates` red, not only the mutation lane.
+All gates run even after one fails. The wrapper passes `--ratchets` itself since 2026-10-16. Once a
+clone opts in with
+`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`, the hub's
+hook pair runs this wrapper: the commit hook with `--staged` (the large-file check and a secret scan
+of the staged blobs), the push hook in full. Without that line every local run prints a
+`core.hooksPath is unset` warning, and running the wrapper before a push is on you: the
 comment-size ratchet once failed `Lint gates` that way (run 37486873828). The doc-link gate reads
 the submodules, so a fresh clone needs `git submodule update --init` first.
 

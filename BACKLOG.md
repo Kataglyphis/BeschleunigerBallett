@@ -115,13 +115,14 @@ host.
     splits every vector; at 256 it aborted OxidANT's renderer tests about one Linux arm64 run in
     five (`run-cargo-tests.sh` sets 128 there), and these crashes are on a worker thread in the
     compute-heavy cloud passes. The pin exists only for the 8-lane BVH radix sort, deleted
-    upstream by Mesa `ebcfbe60`, which is in 26.3 (`26.3-branchpoint`, `26.3.0-rc2`) but not in
-    the 26.2.4 lavapipe the lane runs (hub `LAVAPIPE_VERSION`, mmozeiko/build-mesa, newest
-    26.2.5 on 2026-10-28). The dump decides it: a frame with no module (`?+0x…`, JIT code) or in
+    upstream by Mesa `ebcfbe60` ("Delete radix_sort_vk"), which is in `mesa-26.3.0` and in no
+    26.2.x tag. The dump decides it: a frame with no module (`?+0x…`, JIT code) or in
     `vulkan_lvp.dll` confirms it, one in `commitTestSuite.exe` points back at the engine.
-  - **Fix once confirmed:** when mmozeiko/build-mesa publishes 26.3.x, the hub moves
-    `LAVAPIPE_VERSION` and drops the 256 pin on arm64 (native 128) on both lanes; then remove
-    the rerun advice above.
+  - **Fix applied, waiting for proof (2026-11-14):** mmozeiko/build-mesa published 26.3.0 on
+    2026-11-10, so the hub moves `LAVAPIPE_VERSION` to 26.3.0 and no Windows lane sets
+    `LP_NATIVE_VECTOR_WIDTH` any more (arm64 runs its native 128). Once the hub pin carrying it is
+    in, watch the `[ci windows]` rounds: when the arm64 GPU job stays green, remove the rerun
+    advice above and tick this item. A crash at 26.3.0 is not the pin; read its dump.
 - [ ] **Every test on every arch lane** (owner goal 2026-10-01; what is left of it).
   - **The Rust renderer tests run on Linux only.** Windows and riscv64 compile the crate
     (the bridge, the wasm demo) but leave `cargo test` to OxidANT's own lanes.

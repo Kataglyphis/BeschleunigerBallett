@@ -7,6 +7,8 @@ Created in the repository on request. Verification history:
 - **2026-08-02**: last full verification against the disk; the Rust crate licences also against `cargo metadata --format-version 1 --locked` in the `:latest-cross` container (full crates.io registry).
 - **2026-09-25**: the pins that had moved since (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) and the crate versions (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) updated, their licences read from disk again; the other rows unchanged.
 - **2026-10-07**: the pins of imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp, Microsoft GSL and OxidANT and glam 0.34.1 updated; the licence files of the four submodules are unchanged across the moved ranges (`git diff` empty). That evening nlohmann/json moved to 367336c83 and Microsoft GSL to v5.0.1; `LICENSE.MIT` and GSL's `LICENSE` are unchanged across both ranges.
+- **2026-11-14**: the Renovate run moved imgui, stb, Vulkan Memory Allocator, nlohmann/json, google/benchmark, spdlog, google/fuzztest (off its `release_2026-06-29` line to `main`), tomlplusplus, OxidANT and ANTfrastructure; every row below names its new pin. The licence files of imgui, VMA, nlohmann/json, google/benchmark, spdlog (with the bundled {fmt}), google/fuzztest (with the Lucent `rune.*` notice), tomlplusplus and OxidANT are unchanged from the pin each row named before (`git diff` empty). stb's `LICENSE` preamble changed in `aae9fee` from a free choice between two licences to "in the public domain; most of them also MIT"; `stb_image.h` v2.32 and `stb_image_write.h` v1.18, the two headers this repository includes, still carry the MIT-or-public-domain block. ANTfrastructure's SPDX headers were counted again, and egui, egui-wgpu and egui-winit moved to 0.37.0, each `license` field read for that exact version.
+- **2026-11-15**: OxidANT moved on to `f8b8c587` and ANTfrastructure to `2c81ef49`, pulled before the commit. Both `LICENSE` files and OxidANT's `Cargo.lock` are unchanged across the moved ranges (`git diff` empty); at `2c81ef49` all 589 SPDX headers of the hub's own files say MIT.
 
 ## What every package ships
 
@@ -30,8 +32,13 @@ font's name table names, copied unchanged; `licenses/imgui-fonts.NOTICE` records
 font's copyright, its license and the source and SHA-256 of every text. The Sponza scene's
 texts sit beside the model. KTX is linked as headers only and no source includes one, so it
 ships no text. Not covered yet: the GCC runtime and glibc copy that the Linux packages carry
-for older hosts, and the MSVC runtime DLLs beside the Windows bundle; those belong to
-ANTfrastructure's closure helpers.
+for older hosts; that belongs to ANTfrastructure's closure helpers. For the MSVC runtime DLLs,
+every Windows package (ZIP, MSI, NSIS, the portable bundle and the MSIX staged from it) carries
+`licenses/msvc-runtime/Redist.txt` and `README.txt` at the install root beside `bin/`, not under
+`share/licenses/GraphicsEngine/`. ANTfrastructure's `CPackCommon` installs both and appends the
+notice to the MSI licence page, and its `New-PortableBundle` checks the CPack MSI and ZIP for
+them; the wording is the hub's draft
+([the MSVC runtime notice](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/third-party-licenses.md#the-msvc-runtime-notice)).
 
 ## Git submodules under `third_party/` (shipped)
 
@@ -39,17 +46,17 @@ ANTfrastructure's closure helpers.
 |---|---|---|---|---|
 | tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `third_party/TINY_OBJ_LOADER/LICENSE` |
 | glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `third_party/GLM/copying.txt` |
-| imgui | https://github.com/ocornut/imgui | v1.92.9b-112-gf502f9c98 | MIT | `third_party/IMGUI/LICENSE.txt` |
-| stb | https://github.com/nothings/stb | 2c980bb5 | Dual: MIT or public domain (your choice) | `third_party/STB/LICENSE` |
+| imgui | https://github.com/ocornut/imgui | v1.93.0-72-g8c36ecfb6 | MIT | `third_party/IMGUI/LICENSE.txt` |
+| stb | https://github.com/nothings/stb | 9600522d | Public domain, most libraries also MIT (your choice); `stb_image.h` v2.32 and `stb_image_write.h` v1.18 carry the MIT-or-public-domain block | `third_party/STB/LICENSE`; the licence blocks at the end of `third_party/STB/stb_image.h` and `third_party/STB/stb_image_write.h` |
 | glfw | https://github.com/glfw/glfw | 3.5.1-1-g92dcf4ce | zlib/libpng licence text | `third_party/GLFW/LICENSE.md` |
-| Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | 3aa92122 | MIT licence text (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
-| nlohmann/json | https://github.com/nlohmann/json | v3.11.3-695-g367336c83 | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
-| google/benchmark | https://github.com/google/benchmark | v1.9.5-143-g39a78e3 | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
-| spdlog | https://github.com/gabime/spdlog | v1.17.0-53-gd6c93f38 | MIT; contains a bundled {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
-| google/fuzztest | https://github.com/google/fuzztest | 704efb34 (2026-06-29) | Apache-2.0; an additional Lucent notice for `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
+| Vulkan Memory Allocator (VMA) | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | v3.5.0 | MIT licence text (Copyright AMD) | `third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt` |
+| nlohmann/json | https://github.com/nlohmann/json | v3.11.3-963-g81888ff9f | MIT | `third_party/NLOHMANN_JSON/LICENSE.MIT` |
+| google/benchmark | https://github.com/google/benchmark | v1.10.0-28-gcf4d7fe | Apache-2.0 | `third_party/GOOGLE_BENCHMARK/LICENSE` |
+| spdlog | https://github.com/gabime/spdlog | v1.17.0-66-g6d9805df | MIT; contains a bundled {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
+| google/fuzztest | https://github.com/google/fuzztest | fcde2c27 (main, 2026-11-13) | Apache-2.0; an additional Lucent notice for `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
 | kompute (only the optional playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-99-g267e019 | Apache-2.0 | `third_party/KOMPUTE/LICENSE` |
 | cgltf | https://github.com/jkuhlmann/cgltf | v1.15-11-g85cd623 | MIT licence text (Copyright Johannes Kuhlmann) | `third_party/cgltf/LICENSE` |
-| tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-50-g1e8829b | MIT | `third_party/tomlplusplus/LICENSE` |
+| tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-88-gcfd7159 | MIT | `third_party/tomlplusplus/LICENSE` |
 
 ## Vendored sources (no submodule)
 
@@ -97,8 +104,8 @@ which file was actually read.
 
 | Project | URL | Pin | Licence | Source checked |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | d610fb49 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
-| ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 7d819f77 | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); 275 of its own files carry `SPDX-License-Identifier: MIT`, **25 carry `Apache-2.0` again** (see "Unverified, to check"); OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | f8b8c587 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 2c81ef49 (develop) | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); all 589 of its own files with an SPDX header carry `SPDX-License-Identifier: MIT`; OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
 
 ## Rust crate dependencies (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
 
@@ -120,14 +127,14 @@ neighbouring version or a guess.
   cargo metadata --format-version 1 --locked   # CARGO_HOME=/cargo-cache
   ```
 
-- **Rows updated on 2026-09-25** (a new lock version): the same `license`
-  field, read in the `Cargo.toml` of the exact version in the host's registry
-  cache (`scoop/persist/rustup/.cargo/registry/src`) or, for the patched
-  `egui-winit`, in the vendored
-  `third_party/OxidANT/third_party/egui-winit-0.36.2/Cargo.toml`
-  (`[patch.crates-io]` in `third_party/OxidANT/Cargo.toml`). `egui` and
-  `egui-wgpu` 0.36.2 are not in that cache; their entry was read from 0.36.1
-  (see "Unverified, to check").
+- **Rows updated on 2026-09-25** (a new lock version; log, wgpu, pollster): the
+  same `license` field, read in the `Cargo.toml` of the exact version in the
+  host's registry cache (`scoop/persist/rustup/.cargo/registry/src`).
+- **Rows updated on 2026-11-14** (egui, egui-wgpu and egui-winit 0.37.0): the
+  same `license` field, read in the `Cargo.toml` of the exact lock version in
+  the registry the CI image's `cargo` filled for the locked workspace (volume
+  `bb-cargo-cache`). `egui-winit` is a plain crates.io crate again: OxidANT's
+  `[patch.crates-io]` no longer carries it.
 
 | Crate | Version (lock) | Licence (`license` field) | Source checked |
 |---|---|---|---|
@@ -141,9 +148,9 @@ neighbouring version or a guess.
 | glam | 0.34.1 | MIT OR Apache-2.0 | `license` field of the exact lock version on crates.io (2026-10-07) |
 | gltf | 1.4.1 | MIT OR Apache-2.0 | `cargo metadata` (exact lock version, container) |
 | bevy_mikktspace | 1.0.0 | Zlib AND (MIT OR Apache-2.0) | `cargo metadata` (exact lock version, container) |
-| egui | 0.36.2 | MIT OR Apache-2.0 | `Cargo.toml` of 0.36.1 (host cache, 2026-09-25); 0.36.2 itself not read |
-| egui-wgpu | 0.36.2 | MIT OR Apache-2.0 | `Cargo.toml` of 0.36.1 (host cache, 2026-09-25); 0.36.2 itself not read |
-| egui-winit | 0.36.2 (vendored patch) | MIT OR Apache-2.0 | `third_party/OxidANT/third_party/egui-winit-0.36.2/Cargo.toml` (2026-09-25) |
+| egui | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
+| egui-wgpu | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
+| egui-winit | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
 | ktx2 | 0.5.0 | Apache-2.0 | `cargo metadata` (exact lock version, container) |
 
 Notes on single entries:
@@ -164,19 +171,20 @@ Notes on single entries:
 
 ## Unverified, to check
 
-Open since the check of 2026-09-25:
+Nothing is open.
 
-- **ANTfrastructure, the MIT/Apache contradiction is back**: `LICENSE` says MIT
-  and 275 of its own files carry `SPDX-License-Identifier: MIT`, but 25 of its
-  own files carry `SPDX-License-Identifier: Apache-2.0` again, together with
-  "All rights reserved." (among them `windows/scripts/host/*.ps1`,
-  `windows/scripts/build/Build-*All.ps1`,
-  `windows/scripts/modules/WindowsSourceBuild.Common.psm1`,
-  `.claude/hooks/guard-destructive-deletes.*`). To be fixed in ANTfrastructure,
-  not here.
-- **egui / egui-wgpu 0.36.2**: the `license` field was read from 0.36.1,
-  because 0.36.2 is not in the host cache; confirm it for the exact version
-  with `cargo metadata --locked` in the container.
+Resolved on 2026-11-15:
+
+- **ANTfrastructure, the MIT/Apache contradiction, open since 2026-09-25**: at
+  `2c81ef49` its last two files, `.claude/hooks/guard-destructive-deletes.ps1`
+  and `.py`, say `SPDX-License-Identifier: MIT` too, so `LICENSE` and all 589
+  SPDX headers agree (25 files carried `Apache-2.0` on 2026-09-25, 2 at
+  `3c39fac6`).
+
+Resolved on 2026-11-14:
+
+- **egui / egui-wgpu**: the `license` field is read for the exact lock version
+  (0.37.0) now, instead of from 0.36.1.
 
 Resolved on 2026-08-07:
 
