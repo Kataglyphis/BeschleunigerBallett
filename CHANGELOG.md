@@ -44,6 +44,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- A model placed with a mirroring transform (a negative scale) renders right side out in the
+  forward and deferred rasterizers, which cull it by its reversed winding now, and its normal map
+  keeps its relief in every mode, since the bitangent follows the mirror.
 - The cloud box is the axis-aligned box the inspector describes: Offset moves it with its
   clouds, and Scale and Density set its extent. It was a sheared slab that Offset could not
   move, because Slang fills a `float4x4(1.0)` with ones instead of making an identity.

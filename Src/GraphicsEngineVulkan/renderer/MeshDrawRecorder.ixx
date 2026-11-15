@@ -41,7 +41,7 @@ struct MeshDrawStats
 /// - `onMesh(modelMatrix, objectIndex, mesh)` runs once per surviving mesh,
 ///   before the shared bind+draw. It is where each caller pushes its own
 ///   push-constant type/content (`PushConstantRasterizer` with
-///   inverse-transpose rows and the dynamic `setCullMode`, vs
+///   inverse-transpose rows and the dynamic `setCullMode`/`setFrontFace`, vs
 ///   `ShadowPushConstants` with no cull-mode toggle since the shadow
 ///   pipeline is built `eCullMode = eNone`).
 ///
@@ -101,7 +101,7 @@ MeshDrawStats walkSceneMeshes(vk::CommandBuffer commandBuffer,
 /// Forward/deferred rasterization's use of walkSceneMeshes: seeds
 /// `pushConstant`'s model/invModelRows per model, culls against one camera
 /// frustum, then pushes `PushConstantRasterizer` and sets the dynamic cull
-/// mode per mesh. `pipelineLayout` and `pushConstantStages` are the two
+/// mode and front face per mesh. `pipelineLayout` and `pushConstantStages` are the two
 /// genuine differences between the callers - forward pushes
 /// eVertex|eFragment through pipeline_layout, deferred pushes eAll through
 /// geometryPipelineLayout - and must NOT be collapsed to one value.

@@ -268,8 +268,8 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
       geometryPipelineBuilder.setShaderStages({ geomStages.stages().begin(), geomStages.stages().end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setColorAttachmentCount(3)
-        // Dynamic, so doubleSided glTF meshes skip back-face culling here too.
-        .setDynamicCullMode(true)
+        // Dynamic, so doubleSided meshes skip culling and mirrored models flip their winding here too.
+        .setDynamicCulling(true)
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
 
     // Lighting Pipeline (Slang-emitted SPIR-V)

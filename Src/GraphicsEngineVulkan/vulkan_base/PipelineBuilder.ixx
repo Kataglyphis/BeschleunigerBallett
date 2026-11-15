@@ -70,12 +70,12 @@ class PipelineBuilder
     // clamp to depth 0 instead of being CLIPPED. Only legal when the device
     // feature is enabled - pass VulkanDevice::supportsDepthClamp().
     PipelineBuilder &setDepthClamp(bool enable);
-    // Adds VK_DYNAMIC_STATE_CULL_MODE so the cull mode set by setCullMode becomes
-    // a per-draw dynamic state (vkCmdSetCullMode). Core in Vulkan 1.3, which the
-    // engine targets. Opt-in: off by default, so every other pipeline keeps its
-    // static cull mode and needs no per-draw setCullMode. Used by the forward
-    // raster pass to disable back-face culling for doubleSided glTF meshes only.
-    PipelineBuilder &setDynamicCullMode(bool enable);
+    // Adds VK_DYNAMIC_STATE_CULL_MODE and VK_DYNAMIC_STATE_FRONT_FACE, so every
+    // draw sets both (vkCmdSetCullMode, vkCmdSetFrontFace). Core in Vulkan 1.3,
+    // which the engine targets. Opt-in: off by default, so every other pipeline
+    // keeps its static state. Used by the forward and deferred geometry passes:
+    // doubleSided glTF meshes skip culling, mirrored models wind clockwise.
+    PipelineBuilder &setDynamicCulling(bool enable);
 
     // Assembles every sub-state build() needs without touching a vk::Device -
     // see GraphicsPipelineState. Pair with linkGraphicsPipelineCreateInfo to
@@ -96,9 +96,9 @@ class PipelineBuilder
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages;
     std::vector<vk::VertexInputBindingDescription> vertex_bindings;
     std::vector<vk::VertexInputAttributeDescription> vertex_attributes;
-    // No setter and never varies - CascadedShadowMap.cpp reasons about this
-    // exact default explicitly (culling is disabled there instead of flipping
-    // the front face to match the projection's Y-flip).
+    // No setter - CascadedShadowMap.cpp reasons about this exact default
+    // explicitly (culling is disabled there instead of flipping the front face
+    // to match the projection's Y-flip). setDynamicCulling overrides it per draw.
     static constexpr vk::FrontFace kFrontFace = vk::FrontFace::eCounterClockwise;
 
     vk::CullModeFlags cull_mode = vk::CullModeFlagBits::eBack;
@@ -109,6 +109,6 @@ class PipelineBuilder
     bool depth_write = true;
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
     bool depth_clamp = false;
-    bool dynamic_cull_mode = false;
+    bool dynamic_culling = false;
 };
 }// namespace Kataglyphis

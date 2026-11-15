@@ -284,6 +284,10 @@ constexpr const char *DIELECTRIC_CUBE_MODEL = "Models/GltfTest/cube_textured.glt
 constexpr const char *TILTED_NORMAL_PNG =
   "data:image/png;base64,"
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mO41XALAARsAjUuHifuAAAAAElFTkSuQmCC";
+// One texel (128, 38, 218): a tangent-space normal tilted 45 degrees toward -B, as a glTF data URI.
+constexpr const char *TILTED_AGAINST_BITANGENT_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNoULsFAAKqAYGCutYQAAAAAElFTkSuQmCC";
 // One metallic-roughness texel (0, 0, 0): roughness and metallic both 0 whatever their factors.
 constexpr const char *ZERO_ROUGHNESS_PNG =
   "data:image/png;base64,"
@@ -4386,6 +4390,87 @@ TEST(GoldenRender, NormalMappedBackFaceFlipsItsWholeTangentFrame)
         // A back face that kept the front's tangent turns its relief away from this light: N.L 0 against 0.98.
         EXPECT_GT(back_luma, 0.85 * front_luma)
           << mode.name << ": the back face's normal map is mirrored along its tangent - only N and B were flipped";
+    }
+}
+
+// glTF 3.7.4: a mirroring model matrix reverses the winding and the tangent frame's handedness, not the relief.
+TEST(GoldenRender, MirroredModelKeepsItsWindingAndNormalMapRelief)
+{
+    SKIP_WITHOUT_GPU();
+
+    // A white, rough, single-sided dielectric whose normal map tilts every texel 45 degrees toward -B, +Y on this card.
+    const auto tilted =
+      write_gltf_variant(NORMAL_MAP_CARD_MODEL, "kataglyphis_bitangent_tilted_card.gltf", [](auto &gltf) {
+          auto &material = gltf["materials"][0];
+          material["normalTexture"] = { { "index", 0 } };
+          material["pbrMetallicRoughness"] = {
+              { "baseColorFactor", { 1.0, 1.0, 1.0, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 1.0 }
+          };
+          material["doubleSided"] = false;
+          gltf["images"][0]["uri"] = TILTED_AGAINST_BITANGENT_PNG;
+      });
+    ASSERT_TRUE(tilted.has_value()) << "could not write the tilted normal card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.shadows_enabled = false;
+    // From above and behind the camera, in the mirror plane: the mapped normal (0, 0.71, 0.71) faces it squarely.
+    scene_vars.directional_light_direction[0] = 0.0F;
+    scene_vars.directional_light_direction[1] = -1.0F;
+    scene_vars.directional_light_direction[2] = -1.0F;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // The right card is the left one scaled by -1 in x: same facing, same relief, reversed winding.
+    const glm::mat4 upright =
+      glm::translate(glm::mat4(1.0F), glm::vec3(-2.5F, 4.0F, 15.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    const glm::mat4 mirrored = glm::translate(glm::mat4(1.0F), glm::vec3(2.5F, 4.0F, 15.0F))
+                               * glm::scale(glm::mat4(1.0F), glm::vec3(-2.0F, 2.0F, 2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(tilted->string(), upright).has_value()) << "adding the upright card failed";
+    ASSERT_TRUE(harness.renderer->addModel(tilted->string(), mirrored).has_value())
+      << "adding the mirrored card failed";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+        int frames;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false, SETTLE_FRAMES },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false, SETTLE_FRAMES } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false, SETTLE_FRAMES });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true, 12 });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        harness.render_frames(mode.frames);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        // HDR: the tonemap compresses the sun's share, and the path tracer's sky bounce alone reached 0.92 of it.
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_FALSE(radiance.empty()) << mode.name;
+
+        // The cards' centres project 207 px either side of the middle column.
+        const uint32_t offset = (width * 207U) / WINDOW_WIDTH;
+        const double upright_mean = mean_hdr_in_square(radiance, width, width / 2U - offset, height / 2U, 30U);
+        const double mirrored_mean = mean_hdr_in_square(radiance, width, width / 2U + offset, height / 2U, 30U);
+        GTEST_LOG_(INFO) << mode.name << ": upright card " << upright_mean << ", mirrored card " << mirrored_mean;
+
+        ASSERT_GT(upright_mean, 0.05) << mode.name << ": the upright card is unlit - check the light or the placement";
+        // Culled, the mirrored card shows what lies behind it; with its bitangent reversed, N.L is 0 against 1.
+        EXPECT_NEAR(mirrored_mean, upright_mean, 0.1 * upright_mean)
+          << mode.name << ": the mirrored card is culled by its reversed winding or its normal map's relief inverts";
     }
 }
 

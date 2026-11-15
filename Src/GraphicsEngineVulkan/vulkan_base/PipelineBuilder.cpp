@@ -77,9 +77,9 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthClamp(bool e
     return *this;
 }
 
-Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCullMode(bool enable)
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCulling(bool enable)
 {
-    dynamic_cull_mode = enable;
+    dynamic_culling = enable;
     return *this;
 }
 
@@ -102,9 +102,12 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
     state.viewport_state_create_info.scissorCount = 1;
     state.viewport_state_create_info.pScissors = nullptr;
 
-    // Dynamic cull mode is opt-in, so only the pass that needs per-draw culling pays for vkCmdSetCullMode.
+    // Dynamic culling is opt-in, so only the passes that cull per draw pay for vkCmdSetCullMode/vkCmdSetFrontFace.
     state.dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-    if (dynamic_cull_mode) { state.dynamic_states.push_back(vk::DynamicState::eCullMode); }
+    if (dynamic_culling) {
+        state.dynamic_states.push_back(vk::DynamicState::eCullMode);
+        state.dynamic_states.push_back(vk::DynamicState::eFrontFace);
+    }
     state.dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(state.dynamic_states.size());
     state.dynamic_state_create_info.pDynamicStates = state.dynamic_states.data();
 

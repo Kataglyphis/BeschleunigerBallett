@@ -11,3 +11,9 @@ float3 apply_normal_map(float3 geometricNormal, float4 tangent, float3 sampledNo
     // Negating n before the call keeps t, which mirrored the relief along it; t, b and n must flip together.
     return frontFace ? mapped : -mapped;
 }
+
+// A transform with a negative determinant mirrors space and so reverses the tangent frame's handedness (glTF 3.7.4).
+float mirrored_handedness(float handedness, float3x3 objectToWorld)
+{
+    return dot(objectToWorld[0], cross(objectToWorld[1], objectToWorld[2])) < 0.0 ? -handedness : handedness;
+}

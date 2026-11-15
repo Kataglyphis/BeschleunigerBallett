@@ -1,5 +1,6 @@
 import scene_types;
 import push_constants;
+import normal_map;
 
 // One vertex stage for forward and deferred: their parity golden compares the outputs pixel for pixel.
 
@@ -27,7 +28,8 @@ RasterVsOut raster_geometry_vs(
     o.worldPosition = mul(pc.model, float4(position, 1.0)).xyz;
     o.shadingNormal = transform_normal(pc, normal);
     // A tangent is a surface direction, so it takes the model matrix, not the inverse-transpose.
-    o.worldTangent = float4(normalize(mul(pc.model, float4(tangent.xyz, 0.0)).xyz), tangent.w);
+    float handedness = mirrored_handedness(tangent.w, (float3x3)pc.model);
+    o.worldTangent = float4(normalize(mul(pc.model, float4(tangent.xyz, 0.0)).xyz), handedness);
     o.texCoords = texCoords;
     o.fragmentColor = color;
     return o;

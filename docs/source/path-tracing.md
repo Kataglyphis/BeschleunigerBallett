@@ -249,15 +249,16 @@ dramatically.
   fix, 41.6 vs 248 when `raytrace.rchit.slang` seeds its payload with the
   unlit albedo (`e852ac99`).
 
-Five more goldens cover the kernel without the `PathTracing` prefix the
+Six more goldens cover the kernel without the `PathTracing` prefix the
 marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at
 roughness 0.3 mirrors the sky at 219 luma and, tilted halfway to the sun, a
 white highlight; without the lobe 0 and 71),
 `PathTracedUnlitCardKeepsItsAlbedo` (an unlit card's HDR value matches
 forward's to 0.01; metallic first gave 0),
-`HdrTargetStaysBelowTheHalfFloatMaximum` and
-`NormalMappedBackFaceFlipsItsWholeTangentFrame` (all four modes, see
-[`gpu-golden-testing.md`](gpu-golden-testing.md)), and
+`HdrTargetStaysBelowTheHalfFloatMaximum`,
+`NormalMappedBackFaceFlipsItsWholeTangentFrame` and
+`MirroredModelKeepsItsWindingAndNormalMapRelief` (all four modes; a mirrored
+instance's bitangent follows the determinant's sign), and
 `ReloadedModelIsVisibleInPathTracing`, which reloads the dielectric
 `cube_textured.gltf` and finds its green and magenta checker: the metal card
 it reloaded before went black without a lobe, and the frame still changed,

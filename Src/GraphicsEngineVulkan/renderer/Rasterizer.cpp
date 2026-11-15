@@ -282,7 +282,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
       pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
         .setAlphaBlending(true)
-        // Dynamic, so doubleSided glTF meshes can skip back-face culling per draw.
-        .setDynamicCullMode(true)
+        // Dynamic, so doubleSided glTF meshes skip back-face culling and mirrored models flip their winding per draw.
+        .setDynamicCulling(true)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
 }

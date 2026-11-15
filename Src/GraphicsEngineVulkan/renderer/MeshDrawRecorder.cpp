@@ -20,11 +20,15 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats Kataglyphis::VulkanRendererI
   const std::optional<FrustumPlanes> &cameraFrustum,
   PushConstantRasterizer &pushConstant)
 {
+    vk::FrontFace front_face = vk::FrontFace::eCounterClockwise;
     return walkSceneMeshes(
       commandBuffer,
       scene,
       [&](const glm::mat4 &model_matrix) {
           pushConstant.model = model_matrix;
+          // A mirroring model matrix reverses the screen-space winding of its front faces (glTF 3.7.4).
+          front_face = glm::determinant(glm::mat3(model_matrix)) < 0.0F ? vk::FrontFace::eClockwise
+                                                                        : vk::FrontFace::eCounterClockwise;
           // Precomputed here: Slang has no inverse() for SPIR-V.
           const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(model_matrix));
           for (int row = 0; row < 3; ++row) {
@@ -41,8 +45,9 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats Kataglyphis::VulkanRendererI
           commandBuffer.pushConstants(
             pipelineLayout, pushConstantStages, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
-          // Cull mode is dynamic, so every draw sets it: none for glTF doubleSided, else back.
+          // Culling is dynamic, so every draw sets it: none for glTF doubleSided, else back, on the model's winding.
           commandBuffer.setCullMode(
             mesh != nullptr && mesh->isDoubleSided() ? vk::CullModeFlagBits::eNone : vk::CullModeFlagBits::eBack);
+          commandBuffer.setFrontFace(front_face);
       });
 }

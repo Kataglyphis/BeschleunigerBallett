@@ -45,13 +45,14 @@ TEST(PipelineBuilderUnit, DefaultStateMatchesTheDocumentedDefaults)
     EXPECT_TRUE(state.use_color_blend_state);
 }
 
-TEST(PipelineBuilderUnit, DynamicCullModeAppendsExactlyOneState)
+TEST(PipelineBuilderUnit, DynamicCullingAppendsCullModeAndFrontFace)
 {
-    const GraphicsPipelineState enabled = PipelineBuilder().setDynamicCullMode(true).buildState();
-    ASSERT_EQ(enabled.dynamic_states.size(), 3U);
+    const GraphicsPipelineState enabled = PipelineBuilder().setDynamicCulling(true).buildState();
+    ASSERT_EQ(enabled.dynamic_states.size(), 4U);
     EXPECT_EQ(enabled.dynamic_states[2], vk::DynamicState::eCullMode);
+    EXPECT_EQ(enabled.dynamic_states[3], vk::DynamicState::eFrontFace);
 
-    const GraphicsPipelineState disabled = PipelineBuilder().setDynamicCullMode(false).buildState();
+    const GraphicsPipelineState disabled = PipelineBuilder().setDynamicCulling(false).buildState();
     EXPECT_EQ(disabled.dynamic_states.size(), 2U);
 }
 
@@ -101,12 +102,13 @@ TEST(PipelineBuilderUnit, EmptyVertexInputCarriesNullPointers)
 
 TEST(PipelineBuilderUnit, MatchesForwardRasterizerCallSite)
 {
-    // Rasterizer.cpp: dynamic cull mode serves doubleSided glTF meshes.
-    const GraphicsPipelineState state = PipelineBuilder().setAlphaBlending(true).setDynamicCullMode(true).buildState();
+    // Rasterizer.cpp: dynamic culling serves doubleSided glTF meshes and mirrored models.
+    const GraphicsPipelineState state = PipelineBuilder().setAlphaBlending(true).setDynamicCulling(true).buildState();
 
     EXPECT_EQ(state.color_states[0].blendEnable, VK_TRUE);
-    ASSERT_EQ(state.dynamic_states.size(), 3U);
+    ASSERT_EQ(state.dynamic_states.size(), 4U);
     EXPECT_EQ(state.dynamic_states[2], vk::DynamicState::eCullMode);
+    EXPECT_EQ(state.dynamic_states[3], vk::DynamicState::eFrontFace);
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eBack);
     EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_TRUE);
 }
@@ -115,12 +117,13 @@ TEST(PipelineBuilderUnit, MatchesDeferredGeometryCallSite)
 {
     // DeferredRasterizer.cpp geometry pipeline: three G-buffer attachments.
     const GraphicsPipelineState state =
-      PipelineBuilder().setColorAttachmentCount(3).setDynamicCullMode(true).buildState();
+      PipelineBuilder().setColorAttachmentCount(3).setDynamicCulling(true).buildState();
 
     ASSERT_EQ(state.color_states.size(), 3U);
     EXPECT_EQ(state.color_blending.attachmentCount, 3U);
-    ASSERT_EQ(state.dynamic_states.size(), 3U);
+    ASSERT_EQ(state.dynamic_states.size(), 4U);
     EXPECT_EQ(state.dynamic_states[2], vk::DynamicState::eCullMode);
+    EXPECT_EQ(state.dynamic_states[3], vk::DynamicState::eFrontFace);
 }
 
 TEST(PipelineBuilderUnit, MatchesDeferredLightingCallSite)

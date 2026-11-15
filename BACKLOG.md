@@ -80,12 +80,6 @@ No P0 item is open.
 
 ### P2: medium
 
-- [ ] `C++` **Mirrored transforms keep the tangent frame's handedness** (M). `raster_geometry.slang`
-  and both tracers carry `tangent.w` through a model matrix with a negative determinant unchanged,
-  so a normal map's bitangent relief inverts on a mirrored model, and the raster pipelines cull by
-  a fixed winding, so such a model renders inside out. OxidANT fixed both in `f2a28c5f` (the
-  determinant's sign on the normal transform and the bitangent, clockwise-front pipelines for
-  mirrored primitives). Test: a normal-mapped card scaled by -1 in x beside an upright one.
 - [ ] `Rust` **Bin punctual lights conservatively, then stop an empty tile from iterating every light**
   (M, a correctness bug before a cost). `third_party/OxidANT/shaders/forward/forward_lighting.slang`'s
   `punctual_lighting` falls back to all lights when a tile's

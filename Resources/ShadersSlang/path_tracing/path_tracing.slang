@@ -5,6 +5,7 @@ import brdf;
 import hdr_safe;
 import material_fetch;
 import material_textures;
+import normal_map;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
@@ -258,7 +259,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // A tangent is a surface direction: objToWorld, not the inverse-transpose.
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
                 // Explicit LOD: see the base-colour sample below for why.
-                shadingNormal = resolved_normal_lod0(authoredNormal, float4(worldTangent, tangentHit.w), frontFace, obj, material, texCoords);
+                float handedness = mirrored_handedness(tangentHit.w, (float3x3)objToWorld);
+                shadingNormal = resolved_normal_lod0(authoredNormal, float4(worldTangent, handedness), frontFace, obj, material, texCoords);
             }
 
             float3 albedo;

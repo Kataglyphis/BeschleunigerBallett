@@ -4,6 +4,7 @@ import brdf;
 import base_color;
 import material_fetch;
 import material_textures;
+import normal_map;
 
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 
@@ -90,7 +91,8 @@ void rchit_main(
         float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
         float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
         // Explicit LOD: see the base-colour sample above for why.
-        N = resolved_normal_lod0(worldNormal, float4(worldTangent, tangentHit.w), frontFace, obj, material, texCoords);
+        float handedness = mirrored_handedness(tangentHit.w, (float3x3)ObjectToWorld());
+        N = resolved_normal_lod0(worldNormal, float4(worldTangent, handedness), frontFace, obj, material, texCoords);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
