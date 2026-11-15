@@ -9,12 +9,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <span>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "RepoFiles.hpp"
@@ -238,32 +240,58 @@ TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
 
 TEST(SceneConfigUnit, DefaultModelRelativePathIsAmongTheModelsGetModelFileCanResolve)
 {
-    // If these drift, the GUI's default selection points at a path getModelFile() never loads.
+    // The startup load opens this path, and the library marks its row by it.
     const std::string_view relative_path = sceneConfig::defaultModelRelativePath();
     EXPECT_FALSE(relative_path.empty());
     EXPECT_TRUE(std::filesystem::exists(sceneConfig::resolveModelPath(std::string(relative_path))))
       << "defaultModelRelativePath() does not resolve to a bundled model: " << relative_path;
 }
 
-TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBackToTheFirst)
+TEST(ModelPickerUnit, ModelIndexOfMarksOnlyTheLoadedModel)
 {
-    const std::vector<std::string> models_with_preferred{ "Models/Dinosaurs/dinosaurs.obj",
-        "Models/VikingRoom/viking_room.obj" };
-    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/Dinosaurs/dinosaurs.obj"), 0);
-    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/VikingRoom/viking_room.obj"), 1);
+    const std::vector<std::string> models{ "Models/Dinosaurs/dinosaurs.obj", "Models/VikingRoom/viking_room.obj" };
+    EXPECT_EQ(sceneConfig::modelIndexOf(models, "Models/Dinosaurs/dinosaurs.obj"), 0);
+    EXPECT_EQ(sceneConfig::modelIndexOf(models, "Models/VikingRoom/viking_room.obj"), 1);
 
-    // Without the preferred path, fall back to 0: -1 leaves the model transform controls dead.
-    const std::vector<std::string> models_without_preferred{ "Models/VikingRoom/viking_room.obj" };
-    const int fallback_index =
-      sceneConfig::defaultSelectedModelIndex(models_without_preferred, "Models/Dinosaurs/dinosaurs.obj");
-    EXPECT_EQ(fallback_index, 0) << "must fall back to 0, not -1 - -1 disables the transform controls";
+    // The editor used to fall back to row 0 here, marking a model the scene did not hold.
+    const std::vector<std::string> models_without_loaded{ "Models/VikingRoom/viking_room.obj" };
+    EXPECT_EQ(sceneConfig::modelIndexOf(models_without_loaded, "Models/Dinosaurs/dinosaurs.obj"), -1);
+    EXPECT_EQ(sceneConfig::modelIndexOf(models, ""), -1) << "an empty path means nothing is loaded";
 
     const std::vector<std::string> empty_models;
-    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(empty_models, "Models/Dinosaurs/dinosaurs.obj"), -1);
+    EXPECT_EQ(sceneConfig::modelIndexOf(empty_models, "Models/Dinosaurs/dinosaurs.obj"), -1);
 
-    // Backslashed Windows spelling must still match the forward-slashed preferred path.
+    // Windows scans backslash; an override may say "./".
     const std::vector<std::string> models_with_backslash{ "Models\\Dinosaurs\\dinosaurs.obj" };
-    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
+    EXPECT_EQ(sceneConfig::modelIndexOf(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
+    EXPECT_EQ(sceneConfig::modelIndexOf(models, "./Models/VikingRoom/viking_room.obj"), 1);
+}
+
+// The startup load opens the override, so the editor's loaded mark must name it too.
+TEST(SceneConfigUnit, StartupModelIsTheOverrideWhenOneIsSet)
+{
+    const auto set_override = [](const char *value) {
+#ifdef _WIN32
+        std::ignore = _putenv_s("KATAGLYPHIS_MODEL_OVERRIDE", value);
+#else
+        if (*value == '\0') {
+            std::ignore = unsetenv("KATAGLYPHIS_MODEL_OVERRIDE");
+        } else {
+            std::ignore = setenv("KATAGLYPHIS_MODEL_OVERRIDE", value, 1);
+        }
+#endif
+    };
+    const char *previous = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE");
+    const std::string restore = previous != nullptr ? previous : "";
+
+    set_override("Models/ShadowTest/shadow_rig.obj");
+    EXPECT_EQ(sceneConfig::startupModelRelativePath(), "Models/ShadowTest/shadow_rig.obj");
+    EXPECT_EQ(sceneConfig::getModelFile(), sceneConfig::resolveModelPath("Models/ShadowTest/shadow_rig.obj"));
+
+    set_override("");
+    EXPECT_EQ(sceneConfig::startupModelRelativePath(), std::string(sceneConfig::defaultModelRelativePath()));
+
+    set_override(restore.c_str());
 }
 
 TEST(SceneConfigUnit, ScanningARegularFileReportsAnIncompleteWalk)
@@ -298,7 +326,7 @@ TEST(SceneConfigUnit, ScanningTheRepoResourcesFindsTheDefaultDebugModel)
     const auto result = sceneConfig::scanModelsUnder(repo_root / "Resources");
     EXPECT_TRUE(result.complete);
     ASSERT_EQ(result.paths.size(), result.displayNames.size());
-    EXPECT_GE(sceneConfig::defaultSelectedModelIndex(result.paths, sceneConfig::defaultModelRelativePath()), 0);
+    EXPECT_GE(sceneConfig::modelIndexOf(result.paths, sceneConfig::defaultModelRelativePath()), 0);
 }
 
 TEST(CameraSceneConfigUnit, ModelMatrixIsIdentityInEveryConfiguration)

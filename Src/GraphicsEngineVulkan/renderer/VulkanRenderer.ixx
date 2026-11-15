@@ -105,6 +105,9 @@ class VulkanRenderer
     bool supportsFrameCapture() const;
     void requestFrameCapture();
     std::vector<uint8_t> takeCapturedFrame(uint32_t &outWidth, uint32_t &outHeight);
+    // The same arm-then-take pair for the HDR target post reads: raw RGBA16F texels, 8 bytes each.
+    void requestHdrCapture();
+    std::vector<uint8_t> takeCapturedHdrFrame(uint32_t &outWidth, uint32_t &outHeight);
 
     void cleanUp();
 
@@ -131,6 +134,8 @@ class VulkanRenderer
     void reinitShadowMapForCurrentSettings();
     void handleModelTransformChange(GUISceneSharedVars &guiSceneSharedVars);
     void handleModelReloadRequest(GUISceneSharedVars &guiSceneSharedVars);
+    // The editor marks what the scene holds and restarts the inspector at the identity a load leaves.
+    void publishLoadedModel(GUISceneSharedVars &guiSceneSharedVars);
 
     // The rasterization mode whose offscreen texture the post (and RT) input
     // descriptors currently point at. The mode branch in record_commands is
@@ -181,17 +186,19 @@ class VulkanRenderer
 
     // The single predicate deciding whether recordRaytracingOrPathTracing will
     // actually dispatch this frame. Called from both record_commands (to skip
-    // the raster pass) and recordRaytracingOrPathTracing (to gate the RT/PT
-    // dispatch), so the two can never disagree. The TLAS-null term is
+    // the raster and shadow passes) and recordRaytracingOrPathTracing (to gate
+    // the RT/PT dispatch), so the two can never disagree. The TLAS-null term is
     // load-bearing: during the async model-load window RT/PT is requested but
     // cannot dispatch yet, so the raster pass must still run.
     [[nodiscard]] bool raytracingOwnsFrame(uint32_t image_index);
+    // raytracingOwnsFrame's mode, per drawnRenderMode(): 0 raster, 1 RT, 2 PT.
+    [[nodiscard]] int drawnRenderMode() const;
 
     // Records the ray-tracing or path-tracing pass (whichever the GUI selected)
     // when hardware RT is available and the TLAS is built, including the
     // path-tracing accumulation-reset bookkeeping. Extracted verbatim from
     // record_commands.
-    void recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index);
+    void recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index, bool clouds_enabled);
     void create_command_pool();
     void cleanUpCommandPools();
     vk::CommandPool graphics_command_pool{};
@@ -225,11 +232,20 @@ class VulkanRenderer
     uint32_t pathTracingAccumulatedFrames{ 0 };
     Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey pathTracingLastHistory{};
     void createPathTracingAccumulationResources();
+    // RT/PT's primary-hit NDC depth, which the clouds read in place of a raster depth buffer.
+    Texture tracedDepth;
+    void createTracedDepthResources();
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
 
     // Atmospheric & Lighting Additions
     Kataglyphis::SkyBox skyBox;
     Kataglyphis::Clouds clouds;
+    // The depth image this frame's main pass writes; the clouds' descriptor is rewritten only when it changes.
+    enum class CloudDepthSource : std::uint8_t { None, ForwardRaster, DeferredRaster, Traced };
+    CloudDepthSource boundCloudDepthSource{ CloudDepthSource::None };
+    [[nodiscard]] CloudDepthSource cloudDepthSourceForThisFrame() const;
+    void bindCloudSceneDepth();
+    void handleCloudDepthSourceChange();
     Kataglyphis::CascadedShadowMap dirShadowMap;
     // Set at the end of reinitShadowMapForCurrentSettings(): a re-init leaves
     // every swapchain image but the next one drawFrame() acquires holding
@@ -261,6 +277,7 @@ class VulkanRenderer
     // -- headless frame capture (see requestFrameCapture above); see
     // kataglyphis.vulkan.frame_capture for the arm/record/bind/take lifecycle.
     FrameCapture frameCapture;
+    FrameCapture hdrCapture;
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;

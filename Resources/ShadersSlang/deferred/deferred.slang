@@ -8,6 +8,7 @@ import push_constants;
 import raster_geometry;
 import material_textures;
 import fullscreen;
+import hdr_safe;
 
 // Deferred geometry pass (writes the G-buffer) and lighting pass.
 
@@ -63,10 +64,8 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     texColor.rgb *= In.fragmentColor.rgb;
 
     GBufferOut g;
-    // Only doubleSided materials disable culling; flip here, since the lighting pass has no SV_IsFrontFace.
-    float3 N = normalize(In.shadingNormal);
-    if (!isFrontFace) N = -N;
-    N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
+    // Only doubleSided materials disable culling; resolved here, since the lighting pass has no SV_IsFrontFace.
+    float3 N = resolved_normal(normalize(In.shadingNormal), In.worldTangent, isFrontFace, obj, material, In.texCoords);
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
     float metallic = metallicRoughness.x;
     float roughness = metallicRoughness.y;
@@ -74,14 +73,14 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     g.outNormal = float4(N, metallic);
     // .a carries KHR_materials_unlit, not alpha: sRGB encodes RGB only, so 0.0/1.0 round-trip exactly.
     g.outAlbedo = float4(texColor.rgb, material.unlit != 0 ? 1.0 : 0.0);
-    // r = roughness, gba = emissive; the float16 format keeps emissive strength above 1.0.
-    g.outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords));
+    // r = roughness, gba = emissive; the float16 format keeps emissive strength above 1.0, short of +Inf.
+    g.outMaterial = float4(roughness, hdr_safe(resolved_emission(obj, material, In.texCoords)));
     return g;
 }
 
 // --- Deferred lighting pass ---
 
-[vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO_lighting;
+// The lighting pass reads the geometry pass's globalUBO: a second name on its binding drew Slang's overlap warning.
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO_lighting;
 
 [[vk::binding(GBUFFER_NORMAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_NORMAL_BINDING)]] SubpassInput<float4> inNormal;
@@ -103,7 +102,7 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     if (depth >= 1.0) discard;
 
     float4 clipPos = float4(fullscreen_uv_to_ndc(In.uv), depth, 1.0);
-    float4 worldPos = mul(globalUBO_lighting.inv_view, mul(globalUBO_lighting.inv_projection, clipPos));
+    float4 worldPos = mul(globalUBO.inv_view, mul(globalUBO.inv_projection, clipPos));
     worldPos /= worldPos.w;
 
     float4 normal = inNormal.SubpassLoad();
@@ -111,7 +110,7 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     float4 material = inMaterial.SubpassLoad();
 
     // KHR_materials_unlit (outAlbedo.a): skip lighting, shadowing and emissive alike.
-    if (albedo.a > 0.5) return float4(albedo.rgb, 1.0);
+    if (albedo.a > 0.5) return float4(hdr_safe(albedo.rgb), 1.0);
 
     float3 N = normalize(normal.xyz);
     float3 L = normalize(-sceneUBO_lighting.dirLight.direction.xyz);
@@ -132,5 +131,5 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;
 
-    return float4(color, 1.0);
+    return float4(hdr_safe(color), 1.0);
 }

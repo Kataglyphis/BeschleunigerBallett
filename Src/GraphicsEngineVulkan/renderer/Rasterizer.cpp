@@ -69,6 +69,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
   std::span<const vk::DescriptorSet> descriptorSets,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
+    // Every draw reads set 0, as Clouds::recordComputeCommands' dispatch does.
+    if (descriptorSets.empty()) {
+        spdlog::error("Rasterizer::recordCommands called with an empty shared descriptor set span");
+        return;
+    }
+
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
     std::array<vk::ClearValue, 2> clear_values = {};
@@ -144,11 +150,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     const vk::AttachmentDescription color_attachment =
       buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-    // Store eDontCare: depth is never read after the pass. Reuses createTextures()'s depth_format.
+    // Stored and left sampleable: the clouds stop their march at it. Reuses createTextures()'s depth_format.
     const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(depth_format,
-      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
       vk::AttachmentLoadOp::eClear,
-      vk::AttachmentStoreOp::eDontCare);
+      vk::AttachmentStoreOp::eStore);
 
     vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;
@@ -162,7 +168,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
       std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
 
     // Without the fragment-test stages the depth clear races the layout transition (SYNC-HAZARD-WRITE-AFTER-WRITE).
-    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDepthDependency() };
+    const std::array<vk::SubpassDependency, 2> subpass_dependencies = { buildExternalColorDepthDependency(),
+        buildSampledOutputDependency(0) };
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
     const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
@@ -219,7 +226,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
           swap_chain_extent,
           OFFSCREEN_FORMAT,
           vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-            | vk::ImageUsageFlagBits::eTransferDst);
+            | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
 
         offscreenTextures[index] = std::move(texture);
     }
@@ -230,7 +237,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
     vk::ImageAspectFlags depth_aspect_flags =
       depthStencilTransitionAspect(chooseDepthFormat(device->getPhysicalDevice()));
 
-    depth_format = createDepthAttachment(*depthBufferImage, device, swap_chain_extent, {}, depth_aspect_flags);
+    // Sampled view: exactly one aspect, not depth_aspect_flags. See depthStencilTransitionAspect's doc comment.
+    depth_format = createDepthAttachment(
+      *depthBufferImage, device, swap_chain_extent, vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eDepth);
 
     // This overload submits and waits on its own command buffer.
     VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();

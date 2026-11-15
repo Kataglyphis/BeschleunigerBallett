@@ -1,10 +1,12 @@
 import scene_types;
 import rt_types;
+import hdr_safe;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 [vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
+[vk::binding(TRACED_DEPTH_IMAGE_BINDING, 1)] RWTexture2D<float> tracedDepth;
 
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
 
@@ -23,6 +25,7 @@ void rgen_main()
     HitPayload payload;
     payload.hit_value = float3(0);
     payload.is_hit = 0.0;
+    payload.hit_t = 0.0;
 
     RayDesc ray;
     ray.Origin = origin.xyz;
@@ -40,5 +43,14 @@ void rgen_main()
         ray,
         payload);
 
-    image[DispatchRaysIndex().xy] = float4(payload.hit_value, payload.is_hit);
+    image[DispatchRaysIndex().xy] = float4(hdr_safe(payload.hit_value), payload.is_hit);
+
+    // NDC depth for the clouds; 1 on a miss, like a cleared depth buffer.
+    float tracedNdcDepth = 1.0;
+    if (payload.is_hit > 0.5)
+    {
+        float4 clip = mul(globalUBO.projection, mul(globalUBO.view, float4(ray.Origin + ray.Direction * payload.hit_t, 1.0)));
+        tracedNdcDepth = clip.z / clip.w;
+    }
+    tracedDepth[DispatchRaysIndex().xy] = tracedNdcDepth;
 }

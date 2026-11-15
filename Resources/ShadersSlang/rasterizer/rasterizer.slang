@@ -7,6 +7,7 @@ import cascaded_shadow;
 import push_constants;
 import raster_geometry;
 import material_textures;
+import hdr_safe;
 
 // The normal matrix comes precomputed in push constants: Slang has no inverse() for SPIR-V.
 
@@ -33,10 +34,8 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     ObjMaterial material = fetch_material(obj, primitiveID);
 
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
-    float3 N = normalize(In.shadingNormal);
     // Only doubleSided materials disable culling (MeshDrawRecorder.cpp), so a back face means doubleSided.
-    if (!isFrontFace) N = -N;
-    N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
+    float3 N = resolved_normal(normalize(In.shadingNormal), In.worldTangent, isFrontFace, obj, material, In.texCoords);
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
     // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
@@ -63,7 +62,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     albedo *= In.fragmentColor.rgb;
 
     // KHR_materials_unlit: skip lighting, shadowing and emissive alike.
-    if (material.unlit != 0) return float4(albedo, 1.0);
+    if (material.unlit != 0) return float4(hdr_safe(albedo), 1.0);
 
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
     float metallic = metallicRoughness.x;
@@ -81,5 +80,5 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);
 
-    return float4(color, 1.0);
+    return float4(hdr_safe(color), 1.0);
 }

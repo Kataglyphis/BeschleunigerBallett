@@ -34,6 +34,7 @@ class Rasterizer
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
+    vk::ImageView getDepthImageView() const { return depthBufferImage->getImageView(); }
 
     void setPushConstant(PushConstantRasterizer push_constant);
 
@@ -85,7 +86,7 @@ class Rasterizer
     vk::Format depth_format{ vk::Format::eUndefined };
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
-    PushConstantRasterizer pushConstant{ glm::mat4(1.f) };
+    PushConstantRasterizer pushConstant{ glm::mat4(1.f), {}, 0 };
 
     vk::Pipeline graphics_pipeline{};
     vk::PipelineLayout pipeline_layout{};

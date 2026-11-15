@@ -13,6 +13,11 @@ struct PushConstantPathTracing
     // GUI-driven quality: samples per pixel per frame and the bounce cap.
     uint samples_per_pixel;
     uint max_bounces;
+    // Furnace mode's white surface (clearColor.w > 0.5): a dielectric at metallic 0, a white metal at 1.
+    float furnace_metallic;
+    float furnace_roughness;
+    // Nonzero when the clouds read this frame's traced depth; otherwise its extra primary ray is skipped.
+    uint trace_cloud_depth;
 };
 
 }// namespace Kataglyphis::VulkanRendererInternals

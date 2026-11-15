@@ -300,6 +300,7 @@ const std::vector<std::string> kSharedConstantNames = { "MAX_TEXTURE_COUNT",
     "TLAS_BINDING",
     "OUT_IMAGE_BINDING",
     "ACCUMULATION_IMAGE_BINDING",
+    "TRACED_DEPTH_IMAGE_BINDING",
     "GBUFFER_NORMAL_BINDING",
     "GBUFFER_ALBEDO_BINDING",
     "GBUFFER_MATERIAL_BINDING",
@@ -1071,8 +1072,13 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "height", offsetof(PushConstantPathTracing, height) },
             { "frame_index", offsetof(PushConstantPathTracing, frame_index) },
             { "samples_per_pixel", offsetof(PushConstantPathTracing, samples_per_pixel) },
-            { "max_bounces", offsetof(PushConstantPathTracing, max_bounces) } } },
-        { "PushConstantPost_std430", { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } } },
+            { "max_bounces", offsetof(PushConstantPathTracing, max_bounces) },
+            { "furnace_metallic", offsetof(PushConstantPathTracing, furnace_metallic) },
+            { "furnace_roughness", offsetof(PushConstantPathTracing, furnace_roughness) },
+            { "trace_cloud_depth", offsetof(PushConstantPathTracing, trace_cloud_depth) } } },
+        { "PushConstantPost_std430",
+          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
+            { "skybox_enabled", offsetof(PushConstantPost, skybox_enabled) } } },
         { "PushConstantRaytracing_std430", { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
         { "ShadowPushConstants_std430",
           // The host's cascadeIndex carries the shader's objectIndex (makeShadowPush); what must agree is the offset.
@@ -1582,6 +1588,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
+    EXPECT_EQ(shader.at("TRACED_DEPTH_IMAGE_BINDING"), TRACED_DEPTH_IMAGE_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_NORMAL_BINDING"), GBUFFER_NORMAL_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_ALBEDO_BINDING"), GBUFFER_ALBEDO_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_MATERIAL_BINDING"), GBUFFER_MATERIAL_BINDING);
@@ -2384,10 +2391,6 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
         "sample_metallic_roughness(" };
     static const std::string kOwningFile = "common/material_textures.slang";
 
-    // path_tracing keeps its block inline: the helper's fallback would apply metallic (glTF default 1.0) to its kernel.
-    static const std::string kSanctionedExceptionFile = "path_tracing/path_tracing.slang";
-    static const std::string kSanctionedExceptionCall = "sample_metallic_roughness_lod0(";
-
     std::vector<std::string> violations;
     std::error_code error;
     for (const auto &shader_path : shaderSourceFiles(slang_root, error)) {
@@ -2405,14 +2408,9 @@ TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
 
         for (const char *raw_sampler : kRawSamplers) {
             if (text.find(raw_sampler) == std::string::npos) { continue; }
-            if (relative_path == kSanctionedExceptionFile && std::string(raw_sampler) == kSanctionedExceptionCall) {
-                continue;
-            }
-            violations.push_back(relative_path + " calls " + raw_sampler
-                                  + " directly - only " + kOwningFile
-                                  + " (and path_tracing.slang's sanctioned sample_metallic_roughness_lod0 "
-                                    "exception) may call the raw sampler; every other shading path must go "
-                                    "through resolved_emission/resolved_metallic_roughness/resolved_normal "
+            violations.push_back(relative_path + " calls " + raw_sampler + " directly - only " + kOwningFile
+                                  + " may call the raw sampler; every shading path must go through "
+                                    "resolved_emission/resolved_metallic_roughness/resolved_normal "
                                     "(and their _lod0 twins) instead");
         }
     }
@@ -2690,7 +2688,8 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(deferred_text.find("outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords))"),
+    EXPECT_NE(
+      deferred_text.find("outMaterial = float4(roughness, hdr_safe(resolved_emission(obj, material, In.texCoords)))"),
       std::string::npos)
       << "deferred.slang's geometry pass no longer packs resolved_emission() into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
@@ -3098,7 +3097,7 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
          "roughness factor. "
       << kFailureMessage;
 
-    // path_tracing keeps its block inline: the shared fallback would apply metallic to its Lambertian-only kernel.
+    // Every path, path_tracing.slang included, resolves the untextured factor through the same helper.
     const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
     const auto material_textures_text_opt = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
@@ -3120,21 +3119,14 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
-        const bool is_path_tracing = path.filename() == "path_tracing.slang";
-        if (is_path_tracing) {
-            EXPECT_NE(text.find("metallicRoughnessTextureID"), std::string::npos)
-              << path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. " << kFailureMessage;
-            EXPECT_NE(text.find("material_metallic_roughness("), std::string::npos)
-              << path.string() << " no longer calls material_metallic_roughness(). " << kFailureMessage;
-        } else {
-            EXPECT_NE(text.find("import material_textures;"), std::string::npos)
-              << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
-            const bool calls_resolved = text.find("resolved_metallic_roughness(") != std::string::npos
-                                        || text.find("resolved_metallic_roughness_lod0(") != std::string::npos;
-            EXPECT_TRUE(calls_resolved)
-              << path.string() << " no longer calls resolved_metallic_roughness()/resolved_metallic_roughness_lod0(). "
-              << kFailureMessage;
-        }
+        EXPECT_NE(text.find("import material_textures;"), std::string::npos)
+          << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
+        // A texture-gated read drops the untextured factor: the path tracer once ignored metallic_card's 0.75.
+        const bool calls_resolved = text.find("resolved_metallic_roughness(") != std::string::npos
+                                    || text.find("resolved_metallic_roughness_lod0(") != std::string::npos;
+        EXPECT_TRUE(calls_resolved)
+          << path.string() << " no longer calls resolved_metallic_roughness()/resolved_metallic_roughness_lod0(). "
+          << kFailureMessage;
         EXPECT_EQ(text.find("mrSample.g"), std::string::npos)
           << path.string()
           << " hand-rolls the roughness (G) channel read instead of going through "
@@ -3240,9 +3232,6 @@ TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
       << "raytrace.rchit.slang column-multiplies WorldToObject for the normal again. " << kFailureMessage;
     EXPECT_NE(rchit_text.find("mul(normalHit,"), std::string::npos)
       << "raytrace.rchit.slang no longer row-multiplies WorldToObject for the normal. " << kFailureMessage;
-    EXPECT_NE(rchit_text.find("dot(worldNormal, WorldRayDirection())"), std::string::npos)
-      << "raytrace.rchit.slang no longer face-forwards the closest-hit normal against WorldRayDirection(). "
-      << kFailureMessage;
 
     const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto path_tracing_text_opt = readFileText(path_tracing_path);
@@ -3384,7 +3373,6 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     { "rasterizer/rasterizer.slang", "globalUBO" },
     { "rasterizer/rasterizer.slang", "sceneUBO" },
     { "deferred/deferred.slang", "globalUBO" },
-    { "deferred/deferred.slang", "globalUBO_lighting" },
     { "deferred/deferred.slang", "sceneUBO_lighting" },
     { "deferred/deferred.slang", "inNormal" },
     { "deferred/deferred.slang", "inAlbedo" },
@@ -3395,11 +3383,14 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     { "raytracing/raytrace.rgen.slang", "globalUBO" },
     { "raytracing/raytrace.rgen.slang", "TLAS" },
     { "raytracing/raytrace.rgen.slang", "image" },
+    { "raytracing/raytrace.rgen.slang", "tracedDepth" },
     { "path_tracing/path_tracing.slang", "globalUBO" },
     { "path_tracing/path_tracing.slang", "sceneUBO" },
     { "path_tracing/path_tracing.slang", "TLAS" },
     { "path_tracing/path_tracing.slang", "image" },
     { "path_tracing/path_tracing.slang", "accumulationImage" },
+    { "path_tracing/path_tracing.slang", "tracedDepth" },
+    { "post/post.slang", "globalUBO" },
 };
 
 // Bindings must use the named constants, or a renumbering moves both headers while a shader literal stays behind.
@@ -3487,7 +3478,7 @@ struct TracedObjectIndexFile
 
 // Update these counts when a traced object-index site is added, removed or moved.
 const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
-    { "path_tracing/path_tracing.slang", 3 },
+    { "path_tracing/path_tracing.slang", 4 },
     { "raytracing/raytrace.rchit.slang", 1 },
     { "raytracing/raytrace.rahit.slang", 1 },
 };
@@ -3829,8 +3820,8 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
         }
     }
 
-    EXPECT_EQ(occurrences_checked, 6)
-      << "expected exactly 6 shader sites reading dirLight.direction, found " << occurrences_checked
+    EXPECT_EQ(occurrences_checked, 5)
+      << "expected exactly 5 shader sites reading dirLight.direction, found " << occurrences_checked
       << " - update this count if a consumer was intentionally added or removed, and confirm the new "
          "site also negates the field";
 
@@ -3990,7 +3981,31 @@ TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
         }
     }
     ASSERT_EQ(depth, 0u) << "unbalanced parentheses after aces_tonemap( in " << tonemap_path.string();
-    const std::string composite_expr = tonemap_source.substr(args_start, pos - 1 - args_start);
+    std::string composite_expr = tonemap_source.substr(args_start, pos - 1 - args_start);
+
+    // The composite may be named first (`float3 scene = min(<composite>, cap)`); follow it to its first argument.
+    static const std::regex kIdentifier(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)\s*$)");
+    std::smatch identifier_match;
+    if (std::regex_match(composite_expr, identifier_match, kIdentifier)) {
+        const std::string definition = "float3 " + identifier_match[1].str() + " = min(";
+        const std::size_t definition_pos = tonemap_source.find(definition);
+        ASSERT_NE(definition_pos, std::string::npos) << "aces_tonemap(" << identifier_match[1].str() << ") but no `"
+                                                     << definition << "...)` in " << tonemap_path.string();
+        const std::size_t min_start = definition_pos + definition.size();
+        std::size_t min_depth = 0;
+        std::size_t min_pos = min_start;
+        for (; min_pos < tonemap_source.size(); ++min_pos) {
+            const char ch = tonemap_source[min_pos];
+            if (ch == '(') {
+                ++min_depth;
+            } else if (ch == ')' && min_depth > 0) {
+                --min_depth;
+            } else if ((ch == ',' || ch == ')') && min_depth == 0) {
+                break;
+            }
+        }
+        composite_expr = tonemap_source.substr(min_start, min_pos - min_start);
+    }
 
     // Split top-level '+' terms, tracking paren depth for any future nested '+'.
     std::vector<std::string> terms;
@@ -4433,7 +4448,7 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 
 namespace {
 
-// Transitive imports of `entry_relative`; wgslMap sources import only from common/, which is looked up recursively.
+// Transitive imports of `entry_relative`; common/ wins over the importer's own directory, as in import_closure.
 std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, const std::string &entry_relative)
 {
     std::set<std::string> file_set;
@@ -4450,9 +4465,11 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
         for (const auto &raw_line : *lines) {
             const std::string stripped = strip_line_comment(raw_line);
             std::smatch match;
-            if (std::regex_search(stripped, match, kImportRe)) {
-                worklist.push_back("common/" + match[1].str() + ".slang");
-            }
+            if (!std::regex_search(stripped, match, kImportRe)) { continue; }
+            const std::string common = "common/" + match[1].str() + ".slang";
+            const std::string sibling =
+              (fs::path(relative).parent_path() / (match[1].str() + ".slang")).generic_string();
+            worklist.push_back(sourceExists(slang_root / common) ? common : sibling);
         }
     }
     return file_set;
@@ -4522,6 +4539,9 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
     std::vector<std::string> violations;
     int checked_destinations = 0;
     int forward_reachable_count = 0;
+    // A module beside its importer (forward/, tracer/) must reach the scan too, not only common/.
+    std::map<std::string, std::string> sibling_module_probes{ { "forward.wgsl", "shade_surface" },
+        { "traced.wgsl", "load_node" } };
 
     for (const auto &mapping : manifest->wgsl_map) {
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
@@ -4537,6 +4557,13 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 
         ++checked_destinations;
         if (mapping.wgsl_file == "forward.wgsl") { forward_reachable_count = static_cast<int>(reachable_names.size()); }
+        const auto probe = sibling_module_probes.find(mapping.wgsl_file);
+        if (probe != sibling_module_probes.end()) {
+            EXPECT_TRUE(reachable_names.contains(probe->second))
+              << mapping.slang_source << ": the reachability scan no longer follows its sibling-module imports to "
+              << probe->second;
+            sibling_module_probes.erase(probe);
+        }
 
         for (const auto &name : reachable_names) {
             const std::regex pattern("fn " + name + "(_[0-9]+)?\\(");
@@ -4671,6 +4698,19 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
     std::map<std::string, std::vector<std::string>> exported_names_by_file;
     for (const auto &fn : functions) { exported_names_by_file[fn.relative_file].push_back(fn.name); }
     for (const auto &st : structs) { exported_names_by_file[st.relative_file].push_back(st.name); }
+    // A module-scope constant is an export too: traced.slang imports brdf for MIN_ROUGHNESS alone.
+    static const std::regex kConstantRe(R"(^static\s+const\s+\w+\s+([A-Za-z_]\w*)\s*=)");
+    for (const auto &relative_path : all_relative_paths) {
+        const auto lines = readFileLines(slang_root / relative_path);
+        if (!lines) { continue; }
+        for (const auto &raw_line : *lines) {
+            const std::string stripped = strip_line_comment(raw_line);
+            std::smatch match;
+            if (std::regex_search(stripped, match, kConstantRe)) {
+                exported_names_by_file[relative_path].push_back(match[1].str());
+            }
+        }
+    }
 
     static const std::regex kImportRe(R"(^\s*import\s+([A-Za-z_]\w*)\s*;)");
 
@@ -4718,8 +4758,8 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
                                 [&identifiers](const std::string &name) { return identifiers.contains(name); });
             if (!used) {
                 violations.push_back(relative_path + ": import " + module_name + " (" + *resolved
-                                      + ") is unused - none of its exported function or struct names appear in "
-                                        "this file");
+                                      + ") is unused - none of its exported function, struct or constant names "
+                                        "appear in this file");
             }
         }
     }
@@ -6155,6 +6195,30 @@ std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
     return std::array<int, 3>{ std::stoi(match[1].str()), std::stoi(match[2].str()), std::stoi(match[3].str()) };
 }
 
+// The cloud math both renderers march; the C++ entry points only bind their resources to it.
+fs::path sharedCloudsPath() { return sharedSlangRoot() / "common" / "volumetric_clouds.slang"; }
+
+// A local copy of the march would let the two renderers' clouds drift apart again unseen.
+TEST(BuildIntegrity, CppCloudsMarchThroughTheSharedModule)
+{
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contents = readFileText(clouds_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
+    ASSERT_TRUE(readFileText(sharedCloudsPath()).has_value()) << "missing " << sharedCloudsPath().string();
+
+    static const std::regex kImport(R"((^|\n)\s*import\s+volumetric_clouds\s*;)");
+    EXPECT_TRUE(std::regex_search(*contents, kImport)) << clouds_path.string() << " must import volumetric_clouds";
+    EXPECT_NE(contents->find("march_clouds("), std::string::npos)
+      << clouds_path.string() << " must march through volumetric_clouds.slang's march_clouds";
+    EXPECT_NE(contents->find("cloud_unpack("), std::string::npos)
+      << clouds_path.string() << " must unpack the SceneUBO through volumetric_clouds.slang's cloud_unpack";
+    for (const char *local :
+      { "float sample_density(", "float phase_HG(", "bool box_intersect(", "float light_march(" }) {
+        EXPECT_EQ(contents->find(local), std::string::npos)
+          << clouds_path.string() << " defines its own " << local << "...), a copy of the shared cloud math";
+    }
+}
+
 // Dispatch constants have no compiler link to [numthreads]; a mismatch leaves most of the noise volume undefined.
 TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
 {
@@ -6216,7 +6280,7 @@ std::optional<std::pair<float, float>> parse_cloud_light_march_steps_range(const
 // The shader's defensive clamps must match CloudDispatch.hpp, which the GUI slider and host packer also use.
 TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
 {
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path clouds_path = sharedCloudsPath();
     const auto contents = readFileText(clouds_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
 
@@ -6245,10 +6309,10 @@ TEST(BuildIntegrity, CloudMarchStepBoundsMatchTheShaderClamps)
       << Kataglyphis::kMaxCloudLightMarchSteps << ')';
 }
 
-// Operands of the noiseVolume float4 write, split on top-level commas; std::nullopt when absent.
+// Operands of noise_volume_texel's returned float4, split on top-level commas; std::nullopt when absent.
 std::optional<std::vector<std::string>> parse_noise_volume_write_operands(const std::string &contents)
 {
-    static const std::regex kAssignStart(R"(noiseVolume\[tid\]\s*=\s*float4\()");
+    static const std::regex kAssignStart(R"(return\s+float4\()");
     std::smatch match;
     if (!std::regex_search(contents, match, kAssignStart)) { return std::nullopt; }
 
@@ -6322,8 +6386,16 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path noise_path = slangRoot() / "compute" / "noise_volume.slang";
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path entry_path = slangRoot() / "compute" / "noise_volume.slang";
+    const fs::path noise_path = sharedCloudsPath();
+    const fs::path clouds_path = sharedCloudsPath();
+
+    const auto entry_contents = readFileText(entry_path);
+    ASSERT_TRUE(entry_contents.has_value()) << "could not read " << entry_path.string();
+    static const std::regex kEntryWritesTheSharedTexel(R"(noiseVolume\[tid\]\s*=\s*noise_volume_texel\(tid\))");
+    EXPECT_TRUE(std::regex_search(*entry_contents, kEntryWritesTheSharedTexel))
+      << entry_path.string() << " must write volumetric_clouds.slang's noise_volume_texel(tid), the texel both "
+      << "renderers' marches read";
 
     const auto noise_contents = readFileText(noise_path);
     ASSERT_TRUE(noise_contents.has_value()) << "could not read " << noise_path.string();
@@ -6339,19 +6411,20 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
       << ") does not match CloudDispatch.hpp's kNoiseVolumeExtent (" << Kataglyphis::kNoiseVolumeExtent << ')';
 
     // (b) No float4() operand may be a bare numeric literal, a hard-coded channel.
-    const auto operands = parse_noise_volume_write_operands(*noise_contents);
-    ASSERT_TRUE(operands.has_value()) << "no `noiseVolume[tid] = float4( ... );` assignment found in "
-                                      << noise_path.string();
+    const auto operands = parse_noise_volume_write_operands(
+      extract_function_body(*noise_contents, "float4 noise_volume_texel(uint3 texel)"));
+    ASSERT_TRUE(operands.has_value()) << "no `return float4( ... );` found in " << noise_path.string()
+                                      << "'s noise_volume_texel";
     ASSERT_EQ(operands->size(), 4u) << noise_path.string()
-                                    << "'s noiseVolume[tid] = float4( ... ) assignment does not have 4 operands";
+                                    << "'s noise_volume_texel does not return a float4 of 4 operands";
 
     static const std::regex kBareNumericLiteral(R"(^[+-]?[0-9]+(\.[0-9]*)?[fF]?$)");
     static const char *const kChannelNames[4] = { ".r", ".g", ".b", ".a" };
     for (size_t i = 0; i < operands->size(); ++i) {
         EXPECT_FALSE(std::regex_match((*operands)[i], kBareNumericLiteral))
-          << noise_path.string() << "'s noiseVolume[tid] = float4(...) operand " << (i + 1) << " (channel "
+          << noise_path.string() << "'s noise_volume_texel float4(...) operand " << (i + 1) << " (channel "
           << kChannelNames[i] << ", value \"" << (*operands)[i]
-          << "\") is a bare numeric literal, not a computed value - clouds.slang's sample_density weights every "
+          << "\") is a bare numeric literal, not a computed value - sample_density weights every "
              "channel into baseDensity/the cirrus band, so a constant channel silently flattens part of the "
              "cloud shape";
     }
@@ -6360,7 +6433,7 @@ TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelThe
     const auto clouds_contents = readFileText(clouds_path);
     ASSERT_TRUE(clouds_contents.has_value()) << "could not read " << clouds_path.string();
     const std::string sample_density_body =
-      extract_function_body(*clouds_contents, "float sample_density(float3 position, Clouds cloud)");
+      extract_function_body(*clouds_contents, "float sample_density(ICloudNoise noise, float3 position, Clouds cloud)");
     ASSERT_FALSE(sample_density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
 
     static const std::regex kSwizzleRead(R"(noise(?:Coarse|Fine)\.([rgba]))");
@@ -6411,13 +6484,13 @@ TEST(BuildIntegrity, CloudNoiseSamplingWrapsRatherThanMirrors)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path clouds_path = sharedCloudsPath();
     const auto contentsOpt = readFileText(clouds_path);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
     const std::string &contents = *contentsOpt;
 
     const std::string sample_density_body =
-      extract_function_body(contents, "float sample_density(float3 position, Clouds cloud)");
+      extract_function_body(contents, "float sample_density(ICloudNoise noise, float3 position, Clouds cloud)");
     ASSERT_FALSE(sample_density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
 
     EXPECT_EQ(sample_density_body.find("abs(fmod("), std::string::npos)
@@ -6438,7 +6511,7 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path clouds_path = sharedCloudsPath();
     const auto contentsOpt = readFileText(clouds_path);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
     const std::string &contents = *contentsOpt;
@@ -6468,7 +6541,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path clouds_path = sharedCloudsPath();
     const auto contentsOpt = readFileText(clouds_path);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
     const std::string &contents = *contentsOpt;
@@ -6531,54 +6604,50 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
     }
 }
 
-// Slang has no SPIR-V inverse(), so clouds_main forms the box inverse itself; no dead forward matrix, no CPU claim.
-TEST(BuildIntegrity, CloudBoxInverseIsFormedInTheShaderNotOnTheHost)
+// Slang's floatNxM(1.0) fills every element: the cloud box was once a sheared slab its Offset could not move.
+TEST(BuildIntegrity, CloudBoxIsAnAxisAlignedBoxAroundItsOffset)
 {
-    const fs::path repo_root = repoRoot();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
-    const auto clouds_contents_opt = readFileText(clouds_path);
-    ASSERT_TRUE(clouds_contents_opt.has_value()) << "missing " << clouds_path.string();
-    const std::string &clouds_contents = *clouds_contents_opt;
-
-    // ECMAScript regex has no lookbehind, so compare counts: every "model_to_world" must be an "inv_model_to_world".
-    auto countOccurrences = [](const std::string &text, const std::string &needle) {
-        std::size_t count = 0;
-        std::size_t pos = 0;
-        while ((pos = text.find(needle, pos)) != std::string::npos) {
-            ++count;
-            pos += needle.size();
+    static const std::regex kScalarMatrix(R"(float[234]x[234]\(\s*[-+]?[0-9.]+[fF]?\s*\))");
+    std::vector<std::string> scalar_matrices;
+    std::error_code error;
+    for (const auto &shader_path : shaderSourceFiles(slang_root, error)) {
+        if (error) { break; }
+        const auto lines = readFileLines(shader_path);
+        if (!lines) { continue; }
+        for (std::size_t i = 0; i < lines->size(); ++i) {
+            const std::string line = strip_line_comment((*lines)[i]);
+            if (std::regex_search(line, kScalarMatrix)) {
+                scalar_matrices.push_back(
+                  shaderRelativePath(shader_path, slang_root).generic_string() + ":" + std::to_string(i + 1));
+            }
         }
-        return count;
-    };
-    const std::size_t model_to_world_count = countOccurrences(clouds_contents, "model_to_world");
-    const std::size_t inv_model_to_world_count = countOccurrences(clouds_contents, "inv_model_to_world");
-    EXPECT_EQ(model_to_world_count, inv_model_to_world_count)
-      << clouds_path.string()
-      << " contains a \"model_to_world\" occurrence that is not part of "
-         "\"inv_model_to_world\" - the write-only forward matrix must stay deleted";
+    }
+    EXPECT_TRUE(scalar_matrices.empty())
+      << "a matrix built from one scalar is all that scalar in Slang, not a scaled identity:"
+      << joinViolations(scalar_matrices);
 
-    static const std::regex kCpuAttributionClaim(
-      R"((inverse model matrix|inv_model_to_world)[^.]{0,80}(CPU|host))", std::regex::icase);
-    std::smatch clouds_match;
-    EXPECT_FALSE(std::regex_search(clouds_contents, clouds_match, kCpuAttributionClaim))
-      << clouds_path.string() << " re-attributes the inverse model matrix to the CPU/host: \""
-      << (clouds_match.empty() ? "" : clouds_match.str())
-      << "\" - it is formed in clouds_main, not precomputed on the host";
+    const fs::path clouds_path = sharedCloudsPath();
+    const auto clouds_text = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_text.has_value()) << "missing " << clouds_path.string();
 
-    const fs::path clouds_doc_path = repo_root / "docs" / "source" / "clouds.md";
-    const auto clouds_doc_contents_opt = readFileText(clouds_doc_path);
-    ASSERT_TRUE(clouds_doc_contents_opt.has_value()) << "missing " << clouds_doc_path.string();
-    const std::string &clouds_doc_contents = *clouds_doc_contents_opt;
+    const std::string box_body =
+      extract_function_body(*clouds_text, "bool box_intersect(float3 ro, float3 rd, Clouds cloud, out float2 oT)");
+    ASSERT_FALSE(box_body.empty()) << "could not locate box_intersect's body in " << clouds_path.string();
+    EXPECT_NE(box_body.find("ro - cloud.offset"), std::string::npos)
+      << "box_intersect must centre the box on cloud.offset, or the Offset control no longer moves the volume";
+    EXPECT_NE(box_body.find("cloud.radius"), std::string::npos)
+      << "box_intersect must take its half extents from cloud.radius, the Scale x Density extent";
+    EXPECT_EQ(clouds_text->find("inv_model_to_world"), std::string::npos)
+      << clouds_path.string() << " builds a box matrix again; an axis-aligned box needs none";
 
-    std::smatch doc_match;
-    EXPECT_FALSE(std::regex_search(clouds_doc_contents, doc_match, kCpuAttributionClaim))
-      << clouds_doc_path.string() << " re-attributes the inverse model matrix to the CPU/host: \""
-      << (doc_match.empty() ? "" : doc_match.str())
-      << "\" - it is formed in the shader, not precomputed on the host (this window is bounded to one "
-         "sentence so it cannot collide with the doc's legitimate statement that inv_projection/inv_view "
-         "ARE CPU-precomputed into GlobalUBO)";
+    const std::string density_body =
+      extract_function_body(*clouds_text, "float sample_density(ICloudNoise noise, float3 position, Clouds cloud)");
+    ASSERT_FALSE(density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
+    EXPECT_NE(density_body.find("position - cloud.offset"), std::string::npos)
+      << "sample_density must sample box-local noise, or moving the box slides the clouds through it";
 }
 
 // The host-to-shader cloud UBO pairs, shared by the unpack test and the doc-table test so their truths cannot diverge.
@@ -6606,7 +6675,7 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const fs::path clouds_path = sharedCloudsPath();
     const auto contents = readFileText(clouds_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
 
@@ -9370,43 +9439,180 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
       << joinViolations(violations);
 }
 
-// glTF 2.0 3.9.4: double-sided back faces flip their normal; with culling off for them, SV_IsFrontFace detects them.
+// glTF 2.0 3.9.2: a doubleSided back face reverses its whole tangent frame; culling is off for it, SV_IsFrontFace tells.
 TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
-      "glTF 2.0 Section 3.9.4 requires flipping the shading normal on back-facing fragments of doubleSided "
-      "materials; both C++ renderers already disable culling for doubleSided meshes, so a fragment shader that "
-      "does not test SV_IsFrontFace and negate its normal renders those back faces black";
+      "glTF 2.0 Section 3.9.2 requires reversing the normal of back-facing fragments of doubleSided materials, and "
+      "with a normal map the whole tangent frame: both C++ renderers disable culling for doubleSided meshes, so a "
+      "shading path that does not hand the face side to resolved_normal() renders those back faces black, and one "
+      "that negates N before the call keeps the tangent and mirrors the map's relief along it";
 
-    const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
-    const auto rasterizer_text_opt = readFileText(rasterizer_path);
-    ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
-    const std::string &rasterizer_text = *rasterizer_text_opt;
-    EXPECT_NE(rasterizer_text.find("SV_IsFrontFace"), std::string::npos)
-      << "rasterizer.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
-    EXPECT_NE(rasterizer_text.find("N = -N"), std::string::npos)
-      << "rasterizer.slang no longer negates N for back-facing fragments. " << kFailureMessage;
+    // The face side reaches the shared helper, which negates the mapped normal whole; no caller pre-flips N.
+    for (const char *relative :
+      { "Resources/ShadersSlang/rasterizer/rasterizer.slang", "Resources/ShadersSlang/deferred/deferred.slang" }) {
+        const fs::path path = repo_root / relative;
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("SV_IsFrontFace"), std::string::npos)
+          << relative << " no longer reads SV_IsFrontFace. " << kFailureMessage;
+        EXPECT_NE(text.find("In.worldTangent, isFrontFace, obj, material"), std::string::npos)
+          << relative << " no longer passes isFrontFace into resolved_normal(). " << kFailureMessage;
+        EXPECT_EQ(text.find("N = -N"), std::string::npos)
+          << relative << " negates N before resolving the normal map. " << kFailureMessage;
+    }
+    for (const char *relative : { "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+           "Resources/ShadersSlang/path_tracing/path_tracing.slang" }) {
+        const fs::path path = repo_root / relative;
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        EXPECT_NE(text_opt->find("frontFace, obj, material, texCoords)"), std::string::npos)
+          << relative << " no longer passes its face-forward side into resolved_normal_lod0(). " << kFailureMessage;
+    }
+    // Like SV_IsFrontFace, the traced side comes from the winding; the interpolated normal can disagree near silhouettes.
+    const std::array<std::pair<const char *, const char *>, 2> traced_sides = {
+        std::pair{ "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+          "bool frontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;" },
+        std::pair{ "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+          "bool frontFace = rayQuery.CommittedTriangleFrontFace();" }
+    };
+    for (const auto &[relative, needle] : traced_sides) {
+        const auto text_opt = readFileText(repo_root / relative);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << relative;
+        EXPECT_NE(text_opt->find(needle), std::string::npos)
+          << relative << " no longer takes the face side from the triangle's winding (" << needle << ")";
+    }
 
-    const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
-    const auto deferred_text_opt = readFileText(deferred_path);
-    ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
-    const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(deferred_text.find("SV_IsFrontFace"), std::string::npos)
-      << "deferred.slang's geometry_fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
-    EXPECT_NE(deferred_text.find("N = -N"), std::string::npos)
-      << "deferred.slang no longer negates N for back-facing fragments before the G-buffer write. " << kFailureMessage;
+    const fs::path normal_map_path = repo_root / "Resources/ShadersSlang/common/normal_map.slang";
+    const auto normal_map_text_opt = readFileText(normal_map_path);
+    ASSERT_TRUE(normal_map_text_opt.has_value()) << "could not open " << normal_map_path.string();
+    EXPECT_NE(normal_map_text_opt->find("return frontFace ? mapped : -mapped;"), std::string::npos)
+      << "normal_map.slang's apply_normal_map() no longer negates the mapped normal as a whole on a back face. "
+      << kFailureMessage;
 
+    // OxidANT's twin negates the mapped normal whole on a back face too (its f2a28c5f).
     const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
     const auto forward_text_opt = readFileText(forward_path);
     ASSERT_TRUE(forward_text_opt.has_value()) << "could not open " << forward_path.string();
-    const std::string &forward_text = *forward_text_opt;
-    EXPECT_NE(forward_text.find("SV_IsFrontFace"), std::string::npos)
+    EXPECT_NE(forward_text_opt->find("SV_IsFrontFace"), std::string::npos)
       << "forward.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
-    EXPECT_NE(forward_text.find("nGeom = -nGeom"), std::string::npos)
-      << "forward.slang no longer negates nGeom for back-facing fragments before t/b are derived. " << kFailureMessage;
+    EXPECT_NE(forward_text_opt->find("if (!isFrontFace) n = -n;"), std::string::npos)
+      << "forward.slang's sample_material no longer negates the mapped normal on a back face. " << kFailureMessage;
+    EXPECT_EQ(forward_text_opt->find("nGeom = -nGeom"), std::string::npos)
+      << "forward.slang negates nGeom before the normal map again. " << kFailureMessage;
+}
+
+// An RGBA16F target stores radiance past 65504 as +Inf and ACES makes NaN of it, so every writer clamps through one helper.
+TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
+
+    const auto hdr_safe_text = readFileText(slang_root / "common" / "hdr_safe.slang");
+    ASSERT_TRUE(hdr_safe_text.has_value()) << "missing common/hdr_safe.slang";
+    EXPECT_NE(hdr_safe_text->find("static const float HDR_MAX = 65000.0;"), std::string::npos)
+      << "hdr_safe.slang's maximum is no longer OxidANT's 65000, under fp16's 65504";
+
+    struct Writer
+    {
+        const char *file;
+        const char *needle;
+        std::size_t minimum;
+    };
+    // A fragment shader's returns, a ray-generation or compute shader's stores, and the path tracer's per-sample sum.
+    static const std::array<Writer, 5> kWriters = { {
+      { "rasterizer/rasterizer.slang", "return float4(", 2U },
+      { "deferred/deferred.slang", "return float4(", 2U },
+      { "raytracing/raytrace.rgen.slang", "image[", 1U },
+      { "path_tracing/path_tracing.slang", "image[tid.xy] =", 2U },
+      { "path_tracing/path_tracing.slang", "summedColor +=", 1U },
+    } };
+
+    std::vector<std::string> violations;
+    for (const Writer &writer : kWriters) {
+        const auto lines = readFileLines(slang_root / writer.file);
+        ASSERT_TRUE(lines.has_value()) << "could not open " << writer.file;
+        std::size_t writes = 0;
+        for (std::size_t i = 0; i < lines->size(); ++i) {
+            const std::string line = strip_line_comment((*lines)[i]);
+            if (line.find(writer.needle) == std::string::npos) { continue; }
+            ++writes;
+            if (line.find("hdr_safe(") == std::string::npos) {
+                violations.push_back(std::string(writer.file) + ":" + std::to_string(i + 1) + " writes unclamped HDR");
+            }
+        }
+        if (writes < writer.minimum) {
+            violations.push_back(std::string(writer.file) + " has " + std::to_string(writes) + " \"" + writer.needle
+                                 + "\" site(s), expected at least " + std::to_string(writer.minimum)
+                                 + " - did a write move?");
+        }
+    }
+    EXPECT_TRUE(violations.empty()) << "HDR writes that bypass hdr_safe():" << joinViolations(violations);
+}
+
+// Both raster passes bind descriptorSets[0]; an empty span there is undefined behaviour unless refused first.
+TEST(BuildIntegrity, RasterPassesRefuseAnEmptyDescriptorSpan)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<std::pair<const char *, const char *>, 2> kPasses = { {
+      { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp", "Rasterizer::recordCommands(" },
+      { "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp", "DeferredRasterizer::recordCommands(" },
+    } };
+    for (const auto &[relative, function] : kPasses) {
+        const auto text = readFileText(repo_root / relative);
+        ASSERT_TRUE(text.has_value()) << "could not open " << relative;
+        const std::string body = extract_function_body(*text, function);
+        ASSERT_FALSE(body.empty()) << "could not locate " << function << " in " << relative;
+        const std::size_t guard = body.find("descriptorSets.empty()");
+        const std::size_t first_bind = body.find("bindDescriptorSets(");
+        ASSERT_NE(first_bind, std::string::npos) << function << " binds no descriptor set any more";
+        EXPECT_LT(guard, first_bind) << function << " binds descriptorSets before refusing an empty span, as "
+                                     << "Clouds::recordComputeCommands does";
+    }
+}
+
+// The submit-failure context once named the GUI's pick, ray tracing first, while a TLAS-less frame drew raster.
+TEST(BuildIntegrity, SubmitFailureLogNamesTheDrawnMode)
+{
+    const fs::path renderer_path = repoRoot() / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const auto text = readFileText(renderer_path);
+    ASSERT_TRUE(text.has_value()) << "could not open " << renderer_path.string();
+    EXPECT_NE(text->find("renderModeLogName(drawnRenderMode())"), std::string::npos)
+      << renderer_path.string() << " no longer names drawnRenderMode() in its queue-submit context";
+}
+
+// The menu bar's and the inspector's mode controls show the drawn mode, so only a reselectable switch can cancel a pick.
+TEST(BuildIntegrity, BothRenderModeControlsShareTheReselectableSwitch)
+{
+    const fs::path gui_path = repoRoot() / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
+    const auto lines = readFileLines(gui_path);
+    ASSERT_TRUE(lines.has_value()) << "could not open " << gui_path.string();
+
+    std::size_t switch_calls = 0;
+    std::vector<std::string> segmented_mode_controls;
+    for (const std::string &raw : *lines) {
+        const std::string line = strip_line_comment(raw);
+        if (line.find("renderModeSwitch(\"##renderer_switch\"") != std::string::npos
+            || line.find("renderModeSwitch(\"##render_mode\"") != std::string::npos) {
+            ++switch_calls;
+        }
+        if (line.find("studioSegmented(") != std::string::npos && line.find("kRenderModeLabels") != std::string::npos) {
+            segmented_mode_controls.push_back(line);
+        }
+    }
+    EXPECT_EQ(switch_calls, 2U)
+      << gui_path.string() << " draws the menu bar's or the inspector's render-mode control outside renderModeSwitch";
+    ASSERT_EQ(segmented_mode_controls.size(), 1U)
+      << gui_path.string()
+      << " builds a render-mode control outside renderModeSwitch:" << joinViolations(segmented_mode_controls);
+    EXPECT_NE(segmented_mode_controls.front().find(", true)"), std::string::npos)
+      << "renderModeSwitch's control is not reselectable, so Raster cannot cancel a pick that waits for a TLAS";
 }
 
 // Model owns the transform; a per-mesh matrix would be a second truth that no draw path reads.
@@ -9641,6 +9847,30 @@ TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
       << path_tracing_path.string() << " assigns the bounce direction without normalizing it. " << kFailureMessage;
 }
 
+// The cloud depth is a whole extra primary ray per pixel, so the path tracer traces it only when the clouds read it.
+TEST(BuildIntegrity, PathTracedCloudDepthIsTracedOnlyForTheClouds)
+{
+    const fs::path repo_root = repoRoot();
+    const fs::path shader_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto shader = readFileText(shader_path);
+    ASSERT_TRUE(shader.has_value()) << "could not open " << shader_path.string();
+    const std::size_t gate = shader->find("if (pc_ray.trace_cloud_depth != 0u)");
+    const std::size_t trace = shader->find("tracedDepth[tid.xy] = primary_hit_depth(");
+    ASSERT_NE(trace, std::string::npos) << shader_path.string() << " no longer writes the traced depth";
+    ASSERT_NE(gate, std::string::npos) << shader_path.string()
+                                       << " traces the cloud depth whether or not clouds are on";
+    EXPECT_TRUE(gate < trace && trace - gate < 160U)
+      << shader_path.string() << " does not guard its primary_hit_depth() write with trace_cloud_depth";
+
+    const fs::path renderer_path = repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
+    const auto renderer = readFileText(renderer_path);
+    ASSERT_TRUE(renderer.has_value()) << "could not open " << renderer_path.string();
+    EXPECT_NE(
+      renderer->find("recordRaytracingOrPathTracing(commandBuffer, image_index, guiSceneSharedVars.clouds_enabled);"),
+      std::string::npos)
+      << renderer_path.string() << " no longer hands the frame's clouds_enabled to the path tracer";
+}
+
 // Per shading path, since a field dropped by one path still passes the any-shader check; reads may go through helpers.
 TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
 {
@@ -9850,11 +10080,12 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
     const std::string &post_slang_text = *post_slang_text_opt;
 
     std::size_t sample_count = 0;
-    std::size_t pos = 0;
-    static const std::string kNeedle = "noisyTxt.Sample";
-    while ((pos = post_slang_text.find(kNeedle, pos)) != std::string::npos) {
-        ++sample_count;
-        pos += kNeedle.size();
+    for (const std::string needle : { "noisyTxt.Sample", "noisyTxt.Load" }) {
+        std::size_t pos = 0;
+        while ((pos = post_slang_text.find(needle, pos)) != std::string::npos) {
+            ++sample_count;
+            pos += needle.size();
+        }
     }
     EXPECT_EQ(sample_count, 1U)
       << post_slang_path.string() << " samples noisyTxt " << sample_count

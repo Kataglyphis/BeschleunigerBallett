@@ -47,15 +47,58 @@ build_webgpu_wasm_demo() {
         "${demo}/pkg/kataglyphis_webgpu_renderer_bg.wasm"
 }
 
+# The editor's embedded fonts ship in the wasm, so their notices sit beside it.
+stage_webgpu_demo_font_notices() {
+    local demo="docs/source/_webgpu_demo/webgpu-demo"
+    local fonts="third_party/OxidANT/crates/webgpu_renderer/assets/fonts"
+    mkdir -p "${demo}/fonts" || return 1
+    cp "${fonts}/NOTICE" "${fonts}/Apache-2.0.txt" "${fonts}/OFL-1.1.txt" "${demo}/fonts/"
+}
+
+# The wasm is the renderer's whole crate graph for its target; the hub stager fails on a crate OxidANT's policy has not reviewed.
+stage_webgpu_demo_crate_licenses() {
+    local rpt="third_party/OxidANT"
+    local out="docs/source/_webgpu_demo/webgpu-demo/licenses/cargo"
+    rm -rf "${out}" || return 1
+    # Every platform's crates, as cmake/CargoLicenses.cmake fetches them: the stager reads Cargo's metadata offline.
+    cargo fetch --locked --manifest-path "${rpt}/Cargo.toml" || return 1
+    python3 "$(antfrastructure_path linux/scripts/06-packaging/stage-cargo-licenses.py)" \
+        --workspace "${rpt}" --root-package kataglyphis_webgpu_renderer --target wasm32-unknown-unknown \
+        --policy "${rpt}/packaging/cargo-license-policy.json" --output-dir "${out}"
+}
+
+# The demo's Colosseum row fetches Colosseum-web.glb beside the page; the release archive carries its notices.
+stage_webgpu_demo_colosseum() {
+    local demo="docs/source/_webgpu_demo/webgpu-demo"
+    local scene="Resources/Models/Colosseum-web"
+    rm -rf "${demo}/Colosseum-web" "${demo}/Colosseum-web.glb" || return 1
+    python3 -I "$(antfrastructure_path linux/scripts/lib/fetch-data-lock.py)" \
+        --lock Resources/assets.lock --dest Resources/Models --extract --only Colosseum-web || return 1
+    mkdir -p "${demo}/Colosseum-web" || return 1
+    cp "${scene}/Colosseum-web.glb" "${demo}/Colosseum-web.glb" || return 1
+    cp -R "${scene}/ATTRIBUTION.txt" "${scene}/LICENSES" "${demo}/Colosseum-web/"
+}
+
 info "Building the WebGPU WASM browser demo from the current renderer"
 # html_extra_path must exist under -W, demo or not.
 mkdir -p docs/source/_webgpu_demo
-if build_webgpu_wasm_demo; then
+if build_webgpu_wasm_demo && stage_webgpu_demo_font_notices && stage_webgpu_demo_crate_licenses; then
     info "WebGPU WASM demo built from current source"
-elif [ -n "${GITHUB_ACTIONS:-}" ]; then
-    echo "::warning::WebGPU WASM demo build failed; the docs publish without it"
+    if stage_webgpu_demo_colosseum; then
+        info "Colosseum-web staged beside the WebGPU demo"
+    elif [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::warning::Colosseum-web could not be fetched; the demo publishes without its Colosseum row's scene"
+    else
+        warn "Colosseum-web could not be fetched; the demo builds without its Colosseum row's scene"
+    fi
 else
-    info "WebGPU WASM demo build skipped/failed; the docs build without it"
+    # A wasm without its notices must not publish.
+    rm -rf docs/source/_webgpu_demo/webgpu-demo
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::warning::WebGPU WASM demo build or its notices failed; the docs publish without it"
+    else
+        info "WebGPU WASM demo build or its notices skipped/failed; the docs build without it"
+    fi
 fi
 
 docs_build_main

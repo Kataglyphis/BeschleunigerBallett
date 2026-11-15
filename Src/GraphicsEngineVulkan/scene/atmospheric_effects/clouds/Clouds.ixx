@@ -21,17 +21,20 @@ class Clouds
     Clouds(const Clouds &) = delete;
     Clouds &operator=(const Clouds &) = delete;
 
-    void init(const std::shared_ptr<VulkanDevice> &device,
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
       vk::CommandPool commandPool,
       vk::DescriptorSetLayout sharedLayout,
-      uint32_t width,
-      uint32_t height);
+      uint32_t in_width,
+      uint32_t in_height);
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 
+    // The depth the march stops at: what the main pass drew, as NDC depth in `layout` at dispatch time.
+    void setSceneDepth(vk::ImageView sceneDepthView, vk::ImageLayout layout);
+
     void shaderHotReload(vk::DescriptorSetLayout sharedLayout);
 
-    void recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height);
+    void recreateFrameResources(vk::CommandPool commandPool, uint32_t new_width, uint32_t new_height);
 
     void cleanUp();
 

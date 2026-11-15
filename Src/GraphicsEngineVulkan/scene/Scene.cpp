@@ -56,6 +56,7 @@ void Scene::loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPo
         if (model_index) {
             glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
             update_model_matrix(modelMatrix, *model_index);
+            loadedModelPath = sceneConfig::startupModelRelativePath();
         }
     } else {
         spdlog::error("Failed to load model: {}", modelFileName);
@@ -86,7 +87,9 @@ std::optional<uint32_t> Scene::loadAdditionalModel(const std::shared_ptr<VulkanD
 
 void Scene::beginModelLoadAsync()
 {
-    const std::string modelFileName = sceneConfig::getModelFile();
+    // Kept relative, as the library lists it: the editor marks the loaded model by this path once it arrives.
+    pendingModelPath = sceneConfig::startupModelRelativePath();
+    const std::string modelFileName = sceneConfig::resolveModelPath(pendingModelPath);
     spdlog::info("Loading model asynchronously: {}", modelFileName);
     pendingModelParse.start(modelFileName);
     modelLoadPending = true;
@@ -127,7 +130,10 @@ bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::Comma
     }
 
     const std::optional<uint32_t> model_index = add_model(new_model);
-    if (model_index) { update_model_matrix(sceneConfig::getModelMatrix(), *model_index); }
+    if (model_index) {
+        update_model_matrix(sceneConfig::getModelMatrix(), *model_index);
+        loadedModelPath = pendingModelPath;
+    }
     spdlog::info("Model added successfully (async).");
     return true;
 }
@@ -180,6 +186,7 @@ void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device,
     cleanUp();
     model_list.clear();
     object_descriptions.clear();
+    loadedModelPath.clear();
 
     // Paths are relative to Resources/, and the app and tests run from different working directories.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
@@ -193,6 +200,7 @@ void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device,
 
     glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
     update_model_matrix(modelMatrix, *model_index);
+    loadedModelPath = modelPath;
 }
 
 void Scene::cleanUp()

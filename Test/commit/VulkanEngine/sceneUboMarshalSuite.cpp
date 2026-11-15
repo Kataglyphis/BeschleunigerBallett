@@ -259,7 +259,7 @@ TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
     EXPECT_GE(degenerate.z, kMinCloudMeshExtent);
     EXPECT_GE(degenerate.w, kMinCloudDensityMultiplier);
 
-    // clouds.slang divides by this, so it must stay positive even from an all-zero input.
+    // The box's half extents, which the slab test scales by 1/rd, must stay positive even from an all-zero input.
     EXPECT_GT(degenerate.x * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.y * degenerate.w * 10.0F, 0.0F);
     EXPECT_GT(degenerate.z * degenerate.w * 10.0F, 0.0F);
@@ -323,20 +323,20 @@ TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
     EXPECT_GE(degenerate.cloudMeshScale.z, kMinCloudMeshExtent);
     EXPECT_GE(degenerate.cloudMeshScale.w, kMinCloudDensityMultiplier);
     EXPECT_FLOAT_EQ(degenerate.cloudParameters.z, 0.0F)
-      << "powderEffect == false must produce exactly 0.0F - clouds.slang tests > 0.5";
+      << "powderEffect == false must produce exactly 0.0F - volumetric_clouds.slang tests > 0.5";
 }
 
 TEST(SceneUboMarshalUnit, CloudMarchStepsNeverLeaveTheShaderClampsRange)
 {
     EXPECT_EQ(clampCloudMarchSteps(kMinCloudMarchSteps - 1), kMinCloudMarchSteps)
-      << "clouds.slang's dt divides by num_march_steps; a below-floor count must not reach the UBO";
+      << "the cloud march's dt divides by num_march_steps; a below-floor count must not reach the UBO";
     EXPECT_EQ(clampCloudMarchSteps(0), kMinCloudMarchSteps);
     EXPECT_EQ(clampCloudMarchSteps(kMinCloudMarchSteps), kMinCloudMarchSteps);
     EXPECT_EQ(clampCloudMarchSteps(kMaxCloudMarchSteps), kMaxCloudMarchSteps);
     EXPECT_EQ(clampCloudMarchSteps(kMaxCloudMarchSteps + 1), kMaxCloudMarchSteps);
 
     EXPECT_EQ(clampCloudLightMarchSteps(kMinCloudLightMarchSteps - 1), kMinCloudLightMarchSteps)
-      << "clouds.slang's dtL divides by num_march_steps_to_light; a below-floor count must not reach the UBO";
+      << "the cloud march's dtL divides by num_march_steps_to_light; a below-floor count must not reach the UBO";
     EXPECT_EQ(clampCloudLightMarchSteps(0), kMinCloudLightMarchSteps);
     EXPECT_EQ(clampCloudLightMarchSteps(kMinCloudLightMarchSteps), kMinCloudLightMarchSteps);
     EXPECT_EQ(clampCloudLightMarchSteps(kMaxCloudLightMarchSteps), kMaxCloudLightMarchSteps);

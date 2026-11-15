@@ -67,7 +67,7 @@ inline auto makeViewportRemap(ViewportFraction rect) -> glm::mat4
 constexpr auto clampPcfRadius(int guiValue) -> uint32_t
 { return static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS)); }
 
-// clouds.slang divides by mesh scale * density multiplier, so a zero in either gives inf/NaN box hits.
+// The cloud box's half extents are mesh scale * density * 10; a zero one collapses the box to nothing.
 constexpr float kMinCloudMeshExtent = 1e-3F;
 constexpr float kMinCloudDensityMultiplier = 1e-3F;
 

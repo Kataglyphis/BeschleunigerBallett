@@ -35,7 +35,8 @@ class PathTracing
       std::span<const vk::DescriptorSet> descriptorSets,
       uint32_t frame_index,
       uint32_t samples_per_pixel,
-      uint32_t max_bounces);
+      uint32_t max_bounces,
+      bool trace_cloud_depth);
 
     void cleanUp();
 
@@ -46,7 +47,7 @@ class PathTracing
 
     vk::PipelineLayout pipeline_layout{};
     vk::Pipeline pipeline{};
-    PushConstantPathTracing push_constant{ glm::vec4(0.f), 0, 0 };
+    PushConstantPathTracing push_constant{};
 
     // NOTE: this stage used to own a private 2-query timestamp pool that was
     // written every frame but never read back. Per-pass GPU timing now lives

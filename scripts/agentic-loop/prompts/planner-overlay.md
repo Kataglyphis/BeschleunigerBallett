@@ -11,8 +11,10 @@ sibling renderer.
 
 ## BACKLOG sections
 
-Place tasks under the appropriate existing heading — `## C++ Vulkan engine`,
-`## Rust WebGPU renderer`, and the others already in the file.
+Sized tasks go under `## Sized`, in the heading of their priority:
+`### P0: broken or blocking`, `### P1: high value`, `### P2: medium` or `### P3: low`.
+Start each entry with its area tag after the checkbox (`C++`, `Rust`, `Shared`, `CI`,
+`Assets`). The executor takes the first `- [ ]` in file order, so the order is the priority.
 
 ## Which build to specify
 

@@ -49,7 +49,7 @@ configure extracts the two the code, the tests and the packages read (`crytek-sp
 needs Python 3.12 or newer on `PATH` (`python` on Windows, `python3` elsewhere). The paths the
 engine loads did not change.
 
-- `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches every locked scene (all fourteen), for the model picker.
+- `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches every locked scene (all sixteen), for the model picker.
 - `cmake -P cmake/FetchAssets.cmake` fetches without configuring (add the same `-D` before `-P` for all).
 - Offline, put each archive in the cache as `<sha256>-<name>.tar.xz`, or configure with
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` and go without the scenes and the tests that read them.
@@ -62,6 +62,7 @@ Each fetched scene carries its credit in `ATTRIBUTION.txt`; AssetANT's
 | `crytek-sponza` | AssetANT; fetched by default and installed with the packages | CC BY 3.0: © 2010 Frank Meinl, Crytek, after Marko Dabrovic's Sponza; corrections by Morgan McGuire |
 | `Dinosaurs` | AssetANT; fetched by default | unknown; the Triceratops mesh is named after joel3d.com |
 | `Sulo` | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS` | modelled by [Sulo456](https://github.com/Sulo456), published with his permission |
+| `Colosseum-gltf`, `Colosseum-web` | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS`, and the docs build fetches `Colosseum-web` for the WebGPU demo | CC BY 4.0: Colosseum by [Sulo456](https://github.com/Sulo456), converted to glTF by AssetANT |
 | the other eleven | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS` | per scene, in [AssetANT's README](https://github.com/Kataglyphis/AssetANT#the-assets) |
 | `VikingRoom` | tracked, a test fixture | CC BY 4.0: "Viking room" by nigelgoh on Sketchfab, the Vulkan Tutorial's copy with its material renamed |
 | `GltfTest`, `ShadowTest`, `Plane`, `plane.obj`, `suzanne.obj` | tracked, test fixtures | — |

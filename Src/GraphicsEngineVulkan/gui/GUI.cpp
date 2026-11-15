@@ -491,14 +491,35 @@ void GUI::setRenderMode(int mode)
     guiRendererSharedVars.pathTracing = (mode == 2);
 }
 
-void GUI::ensureModelSelection()
+bool GUI::tracingAvailable() const { return renderUserSelectionForRRT && guiRendererSharedVars.tracingReady; }
+
+int GUI::displayedRenderMode() const
 {
-    // Must not stay -1: handleModelTransformChange gates the transform controls on it.
-    if (guiSceneSharedVars.selected_model_index != -1) { return; }
-    const auto model_paths = sceneConfig::getAvailableModelPaths();
-    if (model_paths.empty()) { return; }
-    guiSceneSharedVars.selected_model_index =
-      sceneConfig::defaultSelectedModelIndex(model_paths, sceneConfig::defaultModelRelativePath());
+    return Kataglyphis::VulkanRendererInternals::FrontendShared::drawnRenderMode(
+      guiRendererSharedVars.raytracing, guiRendererSharedVars.pathTracing, tracingAvailable());
+}
+
+void GUI::renderModeSwitch(const char *id, float width)
+{
+    int mode = displayedRenderMode();
+    const std::array<bool, 3> available = { true, tracingAvailable(), tracingAvailable() };
+    // Reselectable: it shows Raster while a tracing pick waits for a TLAS, and a press on Raster drops that pick.
+    if (studioSegmented(id, &mode, kRenderModeLabels, available, width, true)) { setRenderMode(mode); }
+}
+
+auto GUI::loadedModelName() const -> std::string_view
+{
+    const auto model_names = sceneConfig::getAvailableModelDisplayNames();
+    const int loaded = guiSceneSharedVars.selected_model_index;
+    if (loaded >= 0 && loaded < static_cast<int>(model_names.size())) {
+        return modelDisplayName(model_names[static_cast<std::size_t>(loaded)]);
+    }
+    // A model the library does not list, such as an absolute KATAGLYPHIS_MODEL_OVERRIDE, goes by its file's stem.
+    const std::string_view path = guiRendererSharedVars.loadedModelPath;
+    const std::size_t slash = path.find_last_of("/\\");
+    const std::string_view file = slash == std::string_view::npos ? path : path.substr(slash + 1);
+    const std::size_t dot = file.find_last_of('.');
+    return (dot == std::string_view::npos || dot == 0) ? file : file.substr(0, dot);
 }
 
 void GUI::render()
@@ -554,7 +575,6 @@ void GUI::render()
         return;
     }
 
-    ensureModelSelection();
     renderMenuBar();
     renderStatusBar();
     renderDocks(ui_scale);
@@ -718,11 +738,10 @@ void GUI::renderMenuBar()
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Render")) {
-        const int mode = renderMode();
+        const int mode = displayedRenderMode();
         for (std::size_t index = 0; index < kRenderModeLabels.size(); ++index) {
             const int option = static_cast<int>(index);
-            if (ImGui::MenuItem(
-                  kRenderModeLabels[index], nullptr, mode == option, option == 0 || renderUserSelectionForRRT)) {
+            if (ImGui::MenuItem(kRenderModeLabels[index], nullptr, mode == option, option == 0 || tracingAvailable())) {
                 setRenderMode(option);
             }
         }
@@ -759,11 +778,7 @@ void GUI::renderMenuBar()
     if (switch_x > after_menus + style.ItemSpacing.x) {
         ImGui::SetCursorScreenPos(
           ImVec2(switch_x, bar_top + std::round((bar_height - ImGui::GetFrameHeight()) * 0.5F)));
-        int mode = renderMode();
-        const std::array<bool, 3> available = { true, renderUserSelectionForRRT, renderUserSelectionForRRT };
-        if (studioSegmented("##renderer_switch", &mode, kRenderModeLabels, available, switch_width)) {
-            setRenderMode(mode);
-        }
+        renderModeSwitch("##renderer_switch", switch_width);
         occupied_right = switch_x + switch_width;
     }
 
@@ -828,11 +843,8 @@ void GUI::renderSceneDock(float width)
           "##studio_scene", ImGuiDir_Left, width, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
         captionLine("SCENE");
 
-        const auto model_names = sceneConfig::getAvailableModelDisplayNames();
-        const int loaded = guiSceneSharedVars.selected_model_index;
-        const std::string_view model_name = (loaded >= 0 && loaded < static_cast<int>(model_names.size()))
-                                              ? modelDisplayName(model_names[static_cast<std::size_t>(loaded)])
-                                              : std::string_view("none");
+        const std::string_view loaded_name = loadedModelName();
+        const std::string_view model_name = loaded_name.empty() ? std::string_view("none") : loaded_name;
 
         std::array<char, 24> sun{};
         if (guiSceneSharedVars.shadows_enabled) {
@@ -866,7 +878,8 @@ void GUI::renderSceneDock(float width)
         row(SceneObject::Camera, fov.data(), nullptr, nullptr);
         row(SceneObject::Skybox, {}, &guiSceneSharedVars.skybox_enabled, "Show or hide the skybox");
         row(SceneObject::Clouds, {}, &guiSceneSharedVars.clouds_enabled, "Show or hide the clouds");
-        row(SceneObject::Renderer, kRenderModeLabels[static_cast<std::size_t>(renderMode())], nullptr, nullptr);
+        row(
+          SceneObject::Renderer, kRenderModeLabels[static_cast<std::size_t>(displayedRenderMode())], nullptr, nullptr);
         ImGui::PopStyleVar();
 
         sectionHeader("LIBRARY");
@@ -1041,13 +1054,12 @@ void GUI::renderInspectorDock(float width)
         const bool forced = studio->selectionChanged;
         const auto subtitle = [this](SceneObject subject) -> std::string_view {
             if (subject == SceneObject::Model) {
-                const auto model_names = sceneConfig::getAvailableModelDisplayNames();
-                const int loaded = guiSceneSharedVars.selected_model_index;
-                return (loaded >= 0 && loaded < static_cast<int>(model_names.size()))
-                         ? modelDisplayName(model_names[static_cast<std::size_t>(loaded)])
-                         : std::string_view("No model");
+                const std::string_view loaded_name = loadedModelName();
+                return loaded_name.empty() ? std::string_view("No model") : loaded_name;
             }
-            if (subject == SceneObject::Renderer) { return kRenderModeLabels[static_cast<std::size_t>(renderMode())]; }
+            if (subject == SceneObject::Renderer) {
+                return kRenderModeLabels[static_cast<std::size_t>(displayedRenderMode())];
+            }
             const char *kind = objectInfo(subject).kind;
             return (kind != nullptr) ? std::string_view(kind) : std::string_view();
         };
@@ -1170,7 +1182,9 @@ void GUI::renderModelInspector()
 {
     const auto model_paths = sceneConfig::getAvailableModelPaths();
     const int loaded = guiSceneSharedVars.selected_model_index;
-    const bool has_model = loaded >= 0 && loaded < static_cast<int>(model_paths.size());
+    const bool listed = loaded >= 0 && loaded < static_cast<int>(model_paths.size());
+    // The scene holds a model the library may not list; the transform applies to it all the same.
+    const bool has_model = !loadedModelName().empty();
 
     studioBeginDisabled(!has_model);
     if (beginStudioProperties("##transform", propertyLabelWidth())) {
@@ -1194,7 +1208,9 @@ void GUI::renderModelInspector()
     sectionHeader("SOURCE");
     if (has_model) {
         ImGui::PushFont(studio->fonts.mono, 0.0F);
-        mutedWrappedText(model_paths[static_cast<std::size_t>(loaded)].c_str());
+        const std::string &source =
+          listed ? model_paths[static_cast<std::size_t>(loaded)] : guiRendererSharedVars.loadedModelPath;
+        mutedWrappedText(source.c_str());
         ImGui::PopFont();
     } else {
         mutedWrappedText("Pick a model in the scene library.");
@@ -1219,7 +1235,7 @@ void GUI::renderSkyInspector()
           &guiSceneSharedVars.cloud_num_march_steps_to_light,
           Kataglyphis::kMinCloudLightMarchSteps,
           Kataglyphis::kMaxCloudLightMarchSteps);
-        studioPropertyLabel("Density", "Multiplies every noise sample (cloud.scale)");
+        studioPropertyLabel("Density", "Multiplies every noise sample and the box's extent (cloud.scale)");
         studioSlider("##density",
           &guiSceneSharedVars.cloud_density_multiplier,
           Kataglyphis::kMinCloudDensityMultiplier,
@@ -1257,13 +1273,14 @@ void GUI::renderSkyInspector()
 
 void GUI::renderRenderInspector()
 {
-    const int mode = renderMode();
-    int selected_mode = mode;
-    const std::array<bool, 3> available = { true, renderUserSelectionForRRT, renderUserSelectionForRRT };
-    if (studioSegmented("##render_mode", &selected_mode, kRenderModeLabels, available, -1.0F)) {
-        setRenderMode(selected_mode);
+    const int mode = displayedRenderMode();
+    renderModeSwitch("##render_mode", -1.0F);
+    if (!renderUserSelectionForRRT) {
+        mutedWrappedText("Ray and path tracing need hardware ray tracing.");
+    } else if (!guiRendererSharedVars.tracingReady) {
+        mutedWrappedText(renderMode() != 0 ? "Your pick starts once a model has loaded; Raster cancels it."
+                                           : "Ray and path tracing start once a model has loaded.");
     }
-    if (!renderUserSelectionForRRT) { mutedWrappedText("Ray and path tracing need hardware ray tracing."); }
 
     studioBeginDisabled(mode != 0);
     if (beginStudioProperties("##raster", propertyLabelWidth())) {
@@ -1417,7 +1434,7 @@ void GUI::renderViewportOverlay(float sceneX0, float sceneY0, float sceneX1, flo
 {
     const ImGuiStyle &style = ImGui::GetStyle();
     const ImGuiIO &io = ImGui::GetIO();
-    const int mode = renderMode();
+    const int mode = displayedRenderMode();
 
     std::array<char, 96> label{};
     if (mode == 2) {

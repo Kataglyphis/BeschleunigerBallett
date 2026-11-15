@@ -8,6 +8,7 @@ Created in the repository on request. Verification history:
 - **2026-09-25**: the pins that had moved since (imgui, glfw, nlohmann/json, google/benchmark, OxidANT, ANTfrastructure) and the crate versions (log, wgpu, pollster, glam, egui, egui-wgpu, egui-winit) updated, their licences read from disk again; the other rows unchanged.
 - **2026-10-07**: the pins of imgui, nlohmann/json, google/benchmark, spdlog, abseil-cpp, Microsoft GSL and OxidANT and glam 0.34.1 updated; the licence files of the four submodules are unchanged across the moved ranges (`git diff` empty). That evening nlohmann/json moved to 367336c83 and Microsoft GSL to v5.0.1; `LICENSE.MIT` and GSL's `LICENSE` are unchanged across both ranges.
 - **2026-11-14**: the Renovate run moved imgui, stb, Vulkan Memory Allocator, nlohmann/json, google/benchmark, spdlog, google/fuzztest (off its `release_2026-06-29` line to `main`), tomlplusplus, OxidANT and ANTfrastructure; every row below names its new pin. The licence files of imgui, VMA, nlohmann/json, google/benchmark, spdlog (with the bundled {fmt}), google/fuzztest (with the Lucent `rune.*` notice), tomlplusplus and OxidANT are unchanged from the pin each row named before (`git diff` empty). stb's `LICENSE` preamble changed in `aae9fee` from a free choice between two licences to "in the public domain; most of them also MIT"; `stb_image.h` v2.32 and `stb_image_write.h` v1.18, the two headers this repository includes, still carry the MIT-or-public-domain block. ANTfrastructure's SPDX headers were counted again, and egui, egui-wgpu and egui-winit moved to 0.37.0, each `license` field read for that exact version.
+- **2026-11-15 (later)**: OxidANT moved to `eb97c364`, its renderer parity work merged with its `develop`. `LICENSE` is unchanged across the range (`git diff` empty); `Cargo.lock` adds `epaint_default_fonts` 0.37.0 for OxidANT's `gui` crate (which neither the bridge nor the renderer uses) and `sha2` to the renderer's dev-dependencies. The renderer takes `image` 0.25.10 as a normal dependency (it was a dev-dependency); the C++ bridge (`kataglyphis_cxx_bridge`, `cxx` only) does not depend on the renderer, so the packaged crate texts are unchanged. The renderer embeds Dear ImGui's Roboto Medium and Cousine (byte-identical to `third_party/IMGUI/misc/fonts`, SHA-256 checked), and the docs site's demo carries the Colosseum: both in *The docs site's WebGPU demo* below.
 - **2026-11-15**: OxidANT moved on to `f8b8c587` and ANTfrastructure to `2c81ef49`, pulled before the commit. Both `LICENSE` files and OxidANT's `Cargo.lock` are unchanged across the moved ranges (`git diff` empty); at `2c81ef49` all 589 SPDX headers of the hub's own files say MIT.
 
 ## What every package ships
@@ -104,7 +105,7 @@ which file was actually read.
 
 | Project | URL | Pin | Licence | Source checked |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | f8b8c587 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | eb97c364 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
 | ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 2c81ef49 (develop) | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); all 589 of its own files with an SPDX header carry `SPDX-License-Identifier: MIT`; OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
 
 ## Rust crate dependencies (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
@@ -152,6 +153,7 @@ neighbouring version or a guess.
 | egui-wgpu | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
 | egui-winit | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
 | ktx2 | 0.5.0 | Apache-2.0 | `cargo metadata` (exact lock version, container) |
+| image (`png` only) | 0.25.10 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-15) |
 
 Notes on single entries:
 
@@ -163,6 +165,20 @@ Notes on single entries:
 - **pollster 1.0.1** uses the deprecated slash notation `Apache-2.0/MIT`; it
   means a choice (equivalent to `Apache-2.0 OR MIT`).
 
+## The docs site's WebGPU demo (not in any package)
+
+`scripts/linux/docs-build-web.sh` publishes the Rust renderer as wasm on the docs site, with two
+third-party works beside it that no package carries:
+
+| Work | Licence | Where its texts go |
+|---|---|---|
+| Colosseum (`Colosseum-web.glb`, AssetANT release `Colosseum-web-v1`): Colosseum by Sulo456 (https://github.com/Sulo456), converted to glTF by AssetANT | CC BY 4.0 (AssetANT's `assets/Colosseum-web/asset.json`) | the archive's `ATTRIBUTION.txt` and `LICENSES/` (`CC-BY-4.0.txt`, `NOTICE.txt` listing the conversion's changes), copied to `webgpu-demo/Colosseum-web/` |
+| Roboto Medium, Cousine Regular (embedded in the wasm by `crates/webgpu_renderer/src/ui/fonts.rs`) | Apache-2.0 and OFL-1.1, per each font's name table | OxidANT's `crates/webgpu_renderer/assets/fonts/{NOTICE,Apache-2.0.txt,OFL-1.1.txt}`, copied to `webgpu-demo/fonts/`; the same texts as `licenses/fonts/` |
+
+`licenses/third-party-licenses.txt` lists what the packages install, so neither has a row there.
+The `Colosseum-gltf` scene, which `KATAGLYPHIS_FETCH_ALL_ASSETS` fetches for the model picker, is
+CC BY 4.0 by the same author and ships nowhere either.
+
 ## Toolchain (build time, not shipped)
 
 | Tool | Origin | Licence |
@@ -171,9 +187,14 @@ Notes on single entries:
 
 ## Unverified, to check
 
-Nothing is open.
+None open.
 
 Resolved on 2026-11-15:
+
+- **The docs site's wasm demo ships its crates' texts**: `scripts/linux/docs-build-web.sh` stages
+  the original licence files of the renderer's 258 `wasm32-unknown-unknown` crates into
+  `webgpu-demo/licenses/cargo/` with the hub's `stage-cargo-licenses.py`, since OxidANT's policy
+  reviews `bevy_mikktspace@1.0.0` (`Zlib AND (MIT OR Apache-2.0)`, its Zlib notice in `src/lib.rs`).
 
 - **ANTfrastructure, the MIT/Apache contradiction, open since 2026-09-25**: at
   `2c81ef49` its last two files, `.claude/hooks/guard-destructive-deletes.ps1`

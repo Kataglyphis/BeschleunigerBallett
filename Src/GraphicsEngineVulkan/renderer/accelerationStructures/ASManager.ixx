@@ -35,6 +35,7 @@ class ASManager
     ASManager();
 
     vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
+    [[nodiscard]] bool hasTLAS() const { return static_cast<bool>(tlas.vulkanAS); }
 
     void createASForScene(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,

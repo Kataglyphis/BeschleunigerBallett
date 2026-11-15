@@ -1,10 +1,14 @@
 // Structure only, never exact pixels; see docs/source/gpu-golden-testing.md § Writing a new golden test.
 
 #include "EngineLoadWait.hpp"
+#include "GltfVariant.hpp"
 #include "GoldenMetrics.hpp"
+#include "ScopedEnvVar.hpp"
+#include "common/GuiModelTransform.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/packing.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <vulkan/vulkan.hpp>
@@ -16,6 +20,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -23,6 +28,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -30,6 +36,7 @@
 #include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -76,28 +83,17 @@ bool glfw_reports_vulkan_support()
     return supports_vulkan;
 }
 
+using Kataglyphis::TestSupport::GltfVariant;
+using Kataglyphis::TestSupport::ScopedEnvVar;
+
 // Pick a scene for what it measures: the debug skeleton's thin bones leave most PCF taps unoccluded.
 class ScopedModelOverride
 {
   public:
-    explicit ScopedModelOverride(const char *relative_path) { set(relative_path); }
-    ScopedModelOverride(const ScopedModelOverride &) = delete;
-    ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
-    ~ScopedModelOverride() { set(""); }
+    explicit ScopedModelOverride(const char *relative_path) : env_("KATAGLYPHIS_MODEL_OVERRIDE", relative_path) {}
 
   private:
-    static void set(const char *value)
-    {
-#ifdef _WIN32
-        std::ignore = _putenv_s("KATAGLYPHIS_MODEL_OVERRIDE", value);
-#else
-        if (*value == '\0') {
-            std::ignore = unsetenv("KATAGLYPHIS_MODEL_OVERRIDE");
-        } else {
-            std::ignore = setenv("KATAGLYPHIS_MODEL_OVERRIDE", value, 1);
-        }
-#endif
-    }
+    ScopedEnvVar env_;
 };
 
 // The goldens were calibrated on the Debug app's scene and framing, so the harness pins both, whatever the build type.
@@ -169,6 +165,20 @@ struct EngineHarness
         renderer->requestFrameCapture();
         render_frame();
         return renderer->takeCapturedFrame(width, height);
+    }
+
+    // Linear RGBA radiance as post read it, before the tonemap compresses what a bound has to tell apart.
+    std::vector<float> capture_hdr_frame(uint32_t &width, uint32_t &height)
+    {
+        renderer->requestHdrCapture();
+        render_frame();
+        const std::vector<uint8_t> raw = renderer->takeCapturedHdrFrame(width, height);
+        std::vector<float> rgba(raw.size() / 2U);
+        for (size_t i = 0; i < rgba.size(); ++i) {
+            const auto half = static_cast<uint16_t>(raw[2U * i] | (raw[2U * i + 1U] << 8U));
+            rgba[i] = glm::unpackHalf1x16(half);
+        }
+        return rgba;
     }
 
     [[nodiscard]] bool supportsFrameCapture() const { return renderer->supportsFrameCapture(); }
@@ -266,6 +276,25 @@ constexpr const char *EMISSIVE_CARD_MODEL = "Models/GltfTest/emissive_card.gltf"
 constexpr const char *EMISSIVE_STRENGTH_CARD_MODEL = "Models/GltfTest/emissive_strength_card.gltf";
 // The lit-but-not-glowing control for EMISSIVE_CARD_MODEL.
 constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf";
+// A card with a normal texture and nothing else, the base for a normal-map control.
+constexpr const char *NORMAL_MAP_CARD_MODEL = "Models/GltfTest/uv_transform_normal_only_card.gltf";
+// A unit cube, metallic 0: a dielectric the library lists, so the editor's reload can pick it.
+constexpr const char *DIELECTRIC_CUBE_MODEL = "Models/GltfTest/cube_textured.gltf";
+// One texel (218, 128, 218): a tangent-space normal tilted 45 degrees toward +T, as a glTF data URI.
+constexpr const char *TILTED_NORMAL_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mO41XALAARsAjUuHifuAAAAAElFTkSuQmCC";
+// One metallic-roughness texel (0, 0, 0): roughness and metallic both 0 whatever their factors.
+constexpr const char *ZERO_ROUGHNESS_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC";
+// One metallic-roughness texel (0, 255, 0): the roughness factor itself, metallic 0.
+constexpr const char *FULL_ROUGHNESS_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNg+M8AAAICAQB7CYF4AAAAAElFTkSuQmCC";
+// Four float32 VEC3 normals (sin 70, 0, cos 70): a card facing +Z whose vertex normals lean 70 degrees toward +X.
+constexpr const char *LEANING_VERTEX_NORMALS =
+  "data:application/octet-stream;base64,so9wPwAAAABEHa8+so9wPwAAAABEHa8+so9wPwAAAABEHa8+so9wPwAAAABEHa8+";
 
 // Validation errors reach spdlog::error, the only way to see one a driver tolerates without changing pixels.
 class ScopedValidationErrorCounter
@@ -295,24 +324,10 @@ class ScopedValidationErrorCounter
 class ScopedGpuTimingJsonPath
 {
   public:
-    explicit ScopedGpuTimingJsonPath(const std::string &path) { set(path.c_str()); }
-    ScopedGpuTimingJsonPath(const ScopedGpuTimingJsonPath &) = delete;
-    ScopedGpuTimingJsonPath &operator=(const ScopedGpuTimingJsonPath &) = delete;
-    ~ScopedGpuTimingJsonPath() { set(""); }
+    explicit ScopedGpuTimingJsonPath(const std::string &path) : env_("KATAGLYPHIS_GPU_TIMING_JSON", path.c_str()) {}
 
   private:
-    static void set(const char *value)
-    {
-#ifdef _WIN32
-        std::ignore = _putenv_s("KATAGLYPHIS_GPU_TIMING_JSON", value);
-#else
-        if (*value == '\0') {
-            std::ignore = unsetenv("KATAGLYPHIS_GPU_TIMING_JSON");
-        } else {
-            std::ignore = setenv("KATAGLYPHIS_GPU_TIMING_JSON", value, 1);
-        }
-#endif
-    }
+    ScopedEnvVar env_;
 };
 
 // "light" is run-riscv64-tests.sh's QEMU frame budget; docs/source/gpu-golden-testing.md § The riscv64 light variant.
@@ -326,6 +341,153 @@ int path_traced_history(int full_frames, int light_frames)
     GTEST_LOG_(INFO) << "path-traced variant: " << variant << ", " << frames << "-frame history (full " << full_frames
                      << ", light " << light_frames << ")";
     return frames;
+}
+
+// A fixture resolved like any model, copied privately with an edit; keep the handle until the model has loaded.
+std::optional<GltfVariant>
+  write_gltf_variant(const char *fixture, const char *file_name, const std::function<void(nlohmann::json &)> &edit)
+{ return GltfVariant::create(sceneConfig::resolveModelPath(fixture), file_name, edit); }
+
+// Half extents are Scale x Density x 10 in volumetric_clouds.slang, so a test names the box it wants and the density.
+void place_cloud_box(GUISceneSharedVars &vars, glm::vec3 centre, glm::vec3 half_extents, float density)
+{
+    vars.cloud_density_multiplier = density;
+    for (int axis = 0; axis < 3; ++axis) {
+        vars.cloud_mesh_offset[axis] = centre[axis];
+        vars.cloud_mesh_scale[axis] = half_extents[axis] / (density * 10.0F);
+    }
+}
+
+// Largest per-channel difference of one pixel between two RGBA8 captures.
+int channel_delta(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, size_t pixel)
+{
+    int delta = 0;
+    for (size_t c = 0; c < 3U; ++c) {
+        delta = std::max(delta, std::abs(static_cast<int>(a[pixel * 4U + c]) - static_cast<int>(b[pixel * 4U + c])));
+    }
+    return delta;
+}
+
+// skybox.slang's disabled sky, linear (0, 0, 0.5), as the UNORM swapchain stores it.
+bool is_disabled_sky(const std::vector<uint8_t> &rgba, size_t pixel)
+{
+    const size_t base = pixel * 4U;
+    return rgba[base] <= 2U && rgba[base + 1U] <= 2U && std::abs(static_cast<int>(rgba[base + 2U]) - 188) <= 2;
+}
+
+// Pixels whose 3x3 neighbourhood is all `mask`, so an edge a traced pass samples differently drops out.
+std::vector<bool> eroded(const std::vector<bool> &mask, uint32_t w, uint32_t h)
+{
+    std::vector<bool> result(mask.size(), false);
+    for (uint32_t y = 1; y + 1U < h; ++y) {
+        for (uint32_t x = 1; x + 1U < w; ++x) {
+            bool all = true;
+            for (int dy = -1; dy <= 1 && all; ++dy) {
+                for (int dx = -1; dx <= 1 && all; ++dx) {
+                    all = mask[static_cast<size_t>(static_cast<int>(y) + dy) * w
+                               + static_cast<size_t>(static_cast<int>(x) + dx)];
+                }
+            }
+            result[static_cast<size_t>(y) * w + x] = all;
+        }
+    }
+    return result;
+}
+
+// KATAGLYPHIS_CLOUDS_DUMP=<prefix> writes <prefix>-<name>.png, for looking at what a cloud golden measured.
+void dump_cloud_frame(const std::string &name, const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h)
+{
+    const char *prefix = std::getenv("KATAGLYPHIS_CLOUDS_DUMP");
+    if (prefix == nullptr || *prefix == '\0' || rgba.empty()) { return; }
+    stbi_write_png((std::string(prefix) + "-" + name + ".png").c_str(),
+      static_cast<int>(w),
+      static_cast<int>(h),
+      4,
+      rgba.data(),
+      static_cast<int>(w) * 4);
+}
+
+// brdf.slang's brdf_direct for a white albedo integrated over the hemisphere, uniform in angle for the narrow lobes.
+double white_directional_albedo(double mu, double roughness, double metallic)
+{
+    constexpr double PI = 3.14159265358979323846;
+    constexpr int STEPS = 320;
+    const double alpha = roughness * roughness;
+    const double a2 = alpha * alpha;
+    const double k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    const double f0 = 0.04 + 0.96 * metallic;
+    const auto smith = [k](double cosine) { return cosine / std::max(cosine * (1.0 - k) + k, 1e-6); };
+    const glm::dvec3 v(std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, mu);
+    const double n_dot_v = std::max(mu, 1e-4);
+    double sum = 0.0;
+    for (int i = 0; i < STEPS; ++i) {
+        const double theta = (static_cast<double>(i) + 0.5) / STEPS * PI * 0.5;
+        const double n_dot_l = std::cos(theta);
+        for (int j = 0; j < STEPS; ++j) {
+            const double phi = (static_cast<double>(j) + 0.5) / STEPS * 2.0 * PI;
+            const glm::dvec3 l(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), n_dot_l);
+            const glm::dvec3 h = glm::normalize(v + l);
+            const double n_dot_h = std::max(h.z, 0.0);
+            const double d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+            const double ndf = a2 / std::max(PI * d * d, 1e-6);
+            const double fresnel = f0 + (1.0 - f0) * std::pow(std::clamp(1.0 - glm::dot(h, v), 0.0, 1.0), 5.0);
+            const double specular =
+              ndf * smith(n_dot_v) * smith(n_dot_l) * fresnel / std::max(4.0 * n_dot_v * n_dot_l, 1e-6);
+            const double diffuse = (1.0 - fresnel) * (1.0 - metallic) / PI;
+            sum += (diffuse + specular) * n_dot_l * std::sin(theta);
+        }
+    }
+    return sum * (PI * 0.5 / STEPS) * (2.0 * PI / STEPS);
+}
+
+// Mean red, green or blue radiance of an RGBA float capture over a square around (cx, cy).
+double mean_hdr_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    double sum = 0.0;
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+            sum += static_cast<double>(rgba[base] + rgba[base + 1U] + rgba[base + 2U]) / 3.0;
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : 0.0;
+}
+
+// Every texel finite and at most hdr_safe.slang's HDR_MAX, and the largest one, from an RGBA float capture.
+struct HdrRange
+{
+    size_t non_finite = 0;
+    float largest = 0.0F;
+};
+
+HdrRange hdr_range(const std::vector<float> &rgba)
+{
+    HdrRange range;
+    for (size_t i = 0; i < rgba.size(); ++i) {
+        if (i % 4U == 3U) { continue; }
+        if (!std::isfinite(rgba[i])) {
+            ++range.non_finite;
+            continue;
+        }
+        range.largest = std::max(range.largest, rgba[i]);
+    }
+    return range;
+}
+
+// Mean Rec. 709 luma of an RGBA8 capture over a square around (cx, cy).
+double mean_luminance_in_square(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    double sum = 0.0;
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
 
 #define SKIP_WITHOUT_GPU()                                                                                            \
@@ -1748,6 +1910,62 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
                                    "quality push constants not reaching the kernel.";
 }
 
+// metallic_card's 0.75 comes without a metallic-roughness texture; the path tracer once lit it like a dielectric.
+TEST(GoldenRender, PathTracingHonorsTheUntexturedMetallicFactor)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto dielectric_card = write_gltf_variant(METALLIC_CARD_MODEL,
+      "kataglyphis_dielectric_card.gltf",
+      [](nlohmann::json &gltf) { gltf["materials"][0]["pbrMetallicRoughness"]["metallicFactor"] = 0.0; });
+    ASSERT_TRUE(dielectric_card.has_value()) << "could not write the dielectric twin of " << METALLIC_CARD_MODEL;
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    // Two short paths a pixel: the card means over thousands of pixels average the noise out.
+    renderer_vars.pathTracingSamplesPerPixel = 2;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Mirror images of one placement, so the sun meets both cards alike.
+    const glm::mat4 right = panel_free_card_placement();
+    const glm::mat4 left = glm::translate(glm::mat4(1.0F), glm::vec3(-2.0F * right[3].x, 0.0F, 0.0F)) * right;
+    ASSERT_TRUE(harness.renderer->addModel(METALLIC_CARD_MODEL, right).has_value())
+      << "adding the metallic card failed";
+    ASSERT_TRUE(harness.renderer->addModel(dielectric_card->string(), left).has_value())
+      << "adding the dielectric card failed";
+    harness.render_frames(SETTLE_FRAMES + 16);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    // Linear radiance: the specular lobe gives the metal back part of its light, which ACES would squeeze near white.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(radiance.empty());
+
+    const Crop metallic_box = panel_free_card_box(width, height);
+    const uint32_t centre_y = (metallic_box.y0 + metallic_box.y1) / 2U;
+    const uint32_t metallic_x = (metallic_box.x0 + metallic_box.x1) / 2U;
+    const double metallic_mean = mean_hdr_in_square(radiance, width, metallic_x, centre_y, 40U);
+    const double dielectric_mean = mean_hdr_in_square(radiance, width, width - metallic_x, centre_y, 40U);
+    GTEST_LOG_(INFO) << "path-traced card radiance: metallic 0.75 " << metallic_mean << ", dielectric "
+                     << dielectric_mean;
+
+    // A quarter of the diffuse plus a rough GGX lobe at F0 near the albedo comes to about half the dielectric's.
+    ASSERT_GT(dielectric_mean, 0.05) << "the dielectric card is unlit - check the placement";
+    EXPECT_LT(metallic_mean, 0.8 * dielectric_mean)
+      << "the untextured metallicFactor does not reach the path tracer: the metal shades like its dielectric twin";
+}
+
 // The light must scale diffuse as well as specular, or only sparse highlights respond to radiance.
 TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
 {
@@ -2222,6 +2440,12 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
 {
     SKIP_WITHOUT_GPU();
 
+    // The fixture leaves metallicFactor at glTF's default 1, which the Lambertian path tracer renders black.
+    const auto card = write_gltf_variant(MASK_CARD_MODEL,
+      "kataglyphis_dielectric_mask_card.gltf",
+      [](nlohmann::json &gltf) { gltf["materials"][0]["pbrMetallicRoughness"]["metallicFactor"] = 0.0; });
+    ASSERT_TRUE(card.has_value()) << "could not write the dielectric twin of " << MASK_CARD_MODEL;
+
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
@@ -2252,7 +2476,7 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
       * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
-    const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
+    const auto added = harness.renderer->addModel(card->string(), placement);
     ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
     harness.render_frames(SETTLE_FRAMES + history);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
@@ -2545,6 +2769,12 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
 {
     SKIP_WITHOUT_GPU();
 
+    // The fixture leaves metallicFactor at glTF's default 1, which the Lambertian path tracer renders black.
+    const auto card = write_gltf_variant(UV_TRANSFORM_MODEL,
+      "kataglyphis_dielectric_uv_card.gltf",
+      [](nlohmann::json &gltf) { gltf["materials"][0]["pbrMetallicRoughness"]["metallicFactor"] = 0.0; });
+    ASSERT_TRUE(card.has_value()) << "could not write the dielectric twin of " << UV_TRANSFORM_MODEL;
+
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
@@ -2565,7 +2795,7 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     const std::vector<uint8_t> before = harness.capture_frame(width, height);
     ASSERT_FALSE(before.empty());
 
-    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, panel_free_card_placement());
+    const auto added = harness.renderer->addModel(card->string(), panel_free_card_placement());
     ASSERT_TRUE(added.has_value()) << "adding the card failed";
     // The AS rebuild resets history; deepen it so noise does not swamp the detail.
     harness.render_frames(SETTLE_FRAMES);
@@ -2662,70 +2892,385 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
-    uint32_t width = 0;
-    uint32_t height = 0;
-    const std::vector<uint8_t> before = harness.capture_frame(width, height);
-    ASSERT_FALSE(harness.renderer->hasDeviceLost());
-    ASSERT_FALSE(before.empty());
-
-    // The same flags the GUI's model combo box sets.
-    const auto model_paths = sceneConfig::getAvailableModelPaths();
-    int reload_index = -1;
-    for (size_t i = 0; i < model_paths.size(); ++i) {
-        if (std::filesystem::path(model_paths[i]) == std::filesystem::path(UV_TRANSFORM_MODEL)) {
-            reload_index = static_cast<int>(i);
-            break;
-        }
-    }
-    ASSERT_GE(reload_index, 0) << UV_TRANSFORM_MODEL << " not found among the scanned models";
+    // A dielectric, so the frame measures the new model shaded; a metal card went black here, the rig still vanished.
+    const int reload_index = sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), DIELECTRIC_CUBE_MODEL);
+    ASSERT_GE(reload_index, 0) << DIELECTRIC_CUBE_MODEL << " not found among the scanned models";
 
     ScopedValidationErrorCounter validation_errors;
+    // The same flags the editor's library sets.
     scene_vars.selected_model_index = reload_index;
     scene_vars.model_reload_requested = true;
     harness.render_frames(SETTLE_FRAMES);
-    // The AS rebuild resets history; deepen it so noise does not swamp the measurement.
-    harness.render_frames(60);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    // The cube sits at the origin with the identity; from here its front face fills the image's centre.
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.6F, 2.2F));
+    harness.camera->set_orientation(-90.0F, -15.0F);
+    harness.render_frames(30);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     EXPECT_EQ(validation_errors.errorCount(), 0)
       << "the reload logged a Vulkan validation error - almost certainly the "
          "raytracing descriptor set still referencing the TLAS the AS rebuild destroyed";
 
+    uint32_t width = 0;
+    uint32_t height = 0;
     const std::vector<uint8_t> after = harness.capture_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
-    ASSERT_EQ(before.size(), after.size());
+    ASSERT_FALSE(after.empty());
 
-    const double swung = swung_fraction(before, after, width, height, panel_free_crop(width, height));
-    GTEST_LOG_(INFO) << "reload PT before/after swung-pixel fraction (panel-free crop): " << swung;
+    // The face's green and magenta checker, cells about 90 px wide; a stale TLAS shows the rig's grey, an empty one sky.
+    size_t green = 0;
+    size_t magenta = 0;
+    size_t total = 0;
+    for (uint32_t y = height / 2U - 150U; y < height / 2U + 150U; ++y) {
+        for (uint32_t x = width / 2U - 150U; x < width / 2U + 150U; ++x) {
+            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+            const int red = after[base];
+            const int grn = after[base + 1U];
+            if (grn > red + 40) { ++green; }
+            if (red > grn + 40) { ++magenta; }
+            ++total;
+        }
+    }
+    GTEST_LOG_(INFO) << "reloaded cube, centre crop: " << green << " green and " << magenta << " magenta of " << total
+                     << " px";
 
-    EXPECT_GT(swung, 0.05) << "the reloaded model is not visible in path tracing - the scene "
-                              "looks unchanged after the reload";
+    EXPECT_GT(static_cast<double>(green), 0.05 * static_cast<double>(total))
+      << "no green checker texels: the reloaded cube is not shaded in path tracing";
+    EXPECT_GT(static_cast<double>(magenta), 0.05 * static_cast<double>(total))
+      << "no magenta checker texels: the reloaded cube is not shaded in path tracing";
 }
 
-// Unbiased means every pixel hits linear_to_srgb(aces(1.0)) * 255; post.slang encodes for the UNORM swapchain.
+// The library marks what the startup load opened; it once marked the default scene whatever the override said.
+TEST(GoldenRender, EditorMarksTheModelTheSceneLoaded)
+{
+    SKIP_WITHOUT_GPU();
+
+    {
+        ScopedModelOverride rig(SHADOW_RIG_MODEL);
+        EngineHarness harness;
+        // Visible, so the editor runs the code that marks the loaded row.
+        harness.gui->setOverlayVisible(true);
+        harness.render_frames(SETTLE_FRAMES);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+        const int rig_row = sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), SHADOW_RIG_MODEL);
+        ASSERT_GE(rig_row, 0) << SHADOW_RIG_MODEL << " is not in the model library";
+        EXPECT_EQ(harness.gui->getGuiSceneSharedVars().selected_model_index, rig_row)
+          << "KATAGLYPHIS_MODEL_OVERRIDE loaded the shadow rig, but the library marks another row";
+        EXPECT_EQ(harness.gui->loadedModelName(), std::string_view("ShadowTest/shadow_rig"))
+          << "the library row's name";
+    }
+    {
+        // A failed load leaves the scene empty, so no row may claim to be loaded.
+        ScopedModelOverride missing("Models/ShadowTest/no_such_model.obj");
+        EngineHarness harness;
+        harness.gui->setOverlayVisible(true);
+        harness.render_frames(SETTLE_FRAMES);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+        EXPECT_EQ(harness.scene->getModelCount(), 0U);
+        EXPECT_EQ(harness.gui->getGuiSceneSharedVars().selected_model_index, -1)
+          << "nothing loaded, yet the library marks a row as loaded";
+        EXPECT_TRUE(harness.gui->loadedModelName().empty()) << "nothing loaded, yet the editor names a model";
+    }
+}
+
+// An absolute override loads a model the library lists under no row; the inspector once disabled its transform.
+TEST(GoldenRender, EditorTransformsAModelTheLibraryDoesNotList)
+{
+    SKIP_WITHOUT_GPU();
+
+    std::error_code absolute_error;
+    const std::string unlisted =
+      std::filesystem::absolute(sceneConfig::resolveModelPath(SHADOW_RIG_MODEL), absolute_error).string();
+    ASSERT_FALSE(absolute_error) << "could not make the shadow rig's path absolute";
+    ScopedModelOverride rig(unlisted.c_str());
+    EngineHarness harness;
+    harness.gui->setOverlayVisible(true);
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(harness.scene->getModelCount(), 1U) << "the absolute override " << unlisted << " did not load";
+
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    EXPECT_EQ(scene_vars.selected_model_index, -1) << "no library row holds an absolute path";
+    // The inspector enables Position, Rotation and Reset exactly when the editor names a model.
+    EXPECT_EQ(harness.gui->loadedModelName(), std::string_view("shadow_rig"))
+      << "the editor names no model for the scene's unlisted one, so its transform controls stay disabled";
+
+    // What those controls write; the renderer must move the unlisted model with it.
+    const std::array<float, 3> position = { 1.0F, 2.0F, 3.0F };
+    std::copy(position.begin(), position.end(), std::begin(scene_vars.model_position));
+    scene_vars.model_transform_changed = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    EXPECT_EQ(harness.scene->getModelMatrix(0),
+      Kataglyphis::makeGuiModelTransform(
+        std::span<const float, 3>(scene_vars.model_position), std::span<const float, 3>(scene_vars.model_rotation)))
+      << "the transform did not reach the model the library does not list";
+}
+
+// A load places the model at the identity, so the inspector must too; it once kept the previous model's transform.
+TEST(GoldenRender, ReloadResetsTheInspectorTransform)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    harness.render_frames(WARMUP_FRAMES);
+
+    const std::array<float, 3> position = { 1.0F, 2.0F, 3.0F };
+    const std::array<float, 3> rotation = { 10.0F, 20.0F, 30.0F };
+    std::copy(position.begin(), position.end(), std::begin(scene_vars.model_position));
+    std::copy(rotation.begin(), rotation.end(), std::begin(scene_vars.model_rotation));
+    scene_vars.model_transform_changed = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_NE(harness.scene->getModelMatrix(0), glm::mat4(1.0F)) << "the transform never reached the model";
+
+    const int reload_row = sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), UV_TRANSFORM_MODEL);
+    ASSERT_GE(reload_row, 0) << UV_TRANSFORM_MODEL << " is not in the model library";
+    scene_vars.selected_model_index = reload_row;
+    scene_vars.model_reload_requested = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(harness.scene->getModelCount(), 1U) << "the reload failed";
+
+    const glm::mat4 shown = Kataglyphis::makeGuiModelTransform(
+      std::span<const float, 3>(scene_vars.model_position), std::span<const float, 3>(scene_vars.model_rotation));
+    EXPECT_EQ(shown, harness.scene->getModelMatrix(0))
+      << "the inspector shows position (" << scene_vars.model_position[0] << ", " << scene_vars.model_position[1]
+      << ", " << scene_vars.model_position[2] << ") for a model the reload placed elsewhere";
+    EXPECT_EQ(scene_vars.selected_model_index, reload_row) << "the library does not mark the reloaded model";
+}
+
+// Ray tracing traces a binary shadow ray and path tracing uses NEE; the cascade pass once ran under both anyway.
+TEST(GoldenRender, TracedFramesSkipTheShadowPass)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
+
+    auto &renderer_vars = harness.useForwardRaster();
+    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    const auto shadow_pass_ms = [&renderer_vars] {
+        return renderer_vars.gpuTimings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)];
+    };
+
+    // A fresh query pool reads back nothing for its first frames, so the raster control runs long enough to sample.
+    harness.render_frames(WARMUP_FRAMES + 10);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U) << "the raster frame drew no shadow casters";
+    if (renderer_vars.gpuTimings.supported) {
+        EXPECT_GE(shadow_pass_ms(), 0.0F) << "the raster frame's shadow pass reported no GPU time";
+    }
+
+    for (const bool raytracing : { true, false }) {
+        renderer_vars.raytracing = raytracing;
+        renderer_vars.pathTracing = !raytracing;
+        // Past every swapchain image's timing slice, so no raster sample is left.
+        harness.render_frames(6);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+        const char *mode = raytracing ? "ray traced" : "path traced";
+        EXPECT_EQ(renderer_vars.visibility.shadow_casters_total, 0U) << mode << " frames still record the shadow pass";
+        if (renderer_vars.gpuTimings.supported) {
+            EXPECT_LT(shadow_pass_ms(), 0.0F) << mode << " frames still time a \"Shadow cascades\" pass";
+        }
+    }
+}
+
+// A white dielectric under a uniform sky of radiance 1, graded in linear radiance, where ACES hides a few percent.
 TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
 {
     SKIP_WITHOUT_GPU();
 
-    // Same env-scoping pattern as ScopedModelOverride.
-    struct ScopedFurnace
+    // The furnace metal golden covers metallic 1.
+    const ScopedEnvVar furnace("KATAGLYPHIS_PT_FURNACE", "1.0");
+    const ScopedEnvVar furnace_metallic("KATAGLYPHIS_PT_FURNACE_METALLIC", "0");
+    std::optional<ScopedEnvVar> furnace_roughness;
+
+    // A lone card returns E(mu) of the sky after one bounce: the first-bounce oracle for both lobes and their mixture.
     {
-        ScopedFurnace() { set("1.0"); }
-        ~ScopedFurnace() { set(""); }
-        // _putenv_s is Windows-only, hence ScopedModelOverride's portable split.
-        static void set(const char *value)
-        {
-#ifdef _WIN32
-            std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", value);
-#else
-            if (*value == '\0') {
-                std::ignore = unsetenv("KATAGLYPHIS_PT_FURNACE");
-            } else {
-                std::ignore = setenv("KATAGLYPHIS_PT_FURNACE", value, 1);
-            }
-#endif
+        ScopedModelOverride card(METALLIC_CARD_MODEL);
+        EngineHarness harness;
+        SKIP_WITHOUT_FRAME_CAPTURE(harness);
+        if (!harness.renderer->supportsHardwareRaytracing()) {
+            GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
         }
-    } furnace;
+
+        auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+        harness.gui->getGuiSceneSharedVars().directional_light_radiance = 0.0F;
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = true;
+        renderer_vars.pathTracingSamplesPerPixel = 4;
+        renderer_vars.pathTracingMaxBounces = 2;
+        harness.render_frames(WARMUP_FRAMES);
+
+        struct View
+        {
+            float mu;
+            glm::vec3 position;
+            float yaw;
+        };
+        const std::array<View, 2> views = { View{ 1.0F, glm::vec3(0.0F, 0.0F, 2.0F), -90.0F },
+            View{ 0.5F, glm::vec3(1.7320508F, 0.0F, 1.0F), -150.0F } };
+        const int frames = path_traced_history(8, 4);
+        // 0.25 narrows the GGX lobe until the 0.1 floor on its selection chance decides the mixture.
+        for (const char *roughness : { "0.5", "0.25" }) {
+            furnace_roughness.reset();
+            furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", roughness);
+            for (const View &view : views) {
+                harness.camera->set_camera_position(view.position);
+                harness.camera->set_orientation(view.yaw, 0.0F);
+                harness.render_frames(frames);
+                uint32_t width = 0;
+                uint32_t height = 0;
+                const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+                ASSERT_FALSE(harness.renderer->hasDeviceLost());
+                ASSERT_FALSE(radiance.empty());
+
+                const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
+                const double expected = white_directional_albedo(view.mu, std::strtod(roughness, nullptr), 0.0);
+                GTEST_LOG_(INFO) << "white dielectric card, roughness " << roughness << ", mu " << view.mu << ": "
+                                 << measured << " of a sky of 1, E(mu) = " << expected;
+                EXPECT_NEAR(measured, expected, 0.01)
+                  << "the lobe mixture's sampling weight is off: roughness " << roughness << ", mu " << view.mu;
+            }
+        }
+    }
+
+    // In the rig every path bounces many times, so a per-bounce gain or loss compounds; E(mu) <= 1 at 0.5 caps it at 1.
+    furnace_roughness.reset();
+    furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.5");
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    // NEE would add energy on top of the furnace; many bounces keep truncation loss small.
+    scene_vars.directional_light_radiance = 0.0F;
+    renderer_vars.pathTracingMaxBounces = 16;
+    harness.render_frames(WARMUP_FRAMES);
+    harness.render_frames(path_traced_history(80, 40));
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(radiance.empty());
+
+    // Measured 0.993, 1st to 99th percentile 0.946-1.032; a path that loses 1 % a bounce stays well above 0.98.
+    constexpr double FURNACE_PIXEL_BAND = 0.1;
+    constexpr double FURNACE_RIG_MEAN_MIN = 0.98;
+    constexpr double FURNACE_RIG_MEAN_MAX = 1.002;
+    const uint32_t x0 = (width * 18U) / 25U;
+    const uint32_t x1 = (width * 49U) / 50U;
+    const uint32_t y0 = height / 20U;
+    const uint32_t y1 = (height * 19U) / 20U;
+    double sum = 0.0;
+    size_t within = 0;
+    size_t total = 0;
+    for (uint32_t y = y0; y < y1; ++y) {
+        for (uint32_t x = x0; x < x1; ++x) {
+            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+            const double value = (radiance[base] + radiance[base + 1U] + radiance[base + 2U]) / 3.0;
+            sum += value;
+            if (std::abs(value - 1.0) <= FURNACE_PIXEL_BAND) { ++within; }
+            ++total;
+        }
+    }
+    const double mean = sum / static_cast<double>(total);
+    const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
+    GTEST_LOG_(INFO) << "furnace rig crop mean radiance: " << mean << " (sky 1), fraction within +-"
+                     << FURNACE_PIXEL_BAND << ": " << uniform_fraction;
+
+    EXPECT_GT(mean, FURNACE_RIG_MEAN_MIN) << "Furnace converges LOW - the estimator is losing energy.";
+    EXPECT_LT(mean, FURNACE_RIG_MEAN_MAX) << "Furnace converges HIGH - the estimator is gaining energy.";
+    EXPECT_GT(uniform_fraction, 0.98) << "The furnace image is not uniform - geometry is visible, so some path "
+                                         "class is biased.";
+}
+
+// A white metal reflects through its GGX lobe alone, so in a uniform sky it must return E(mu) of that sky, no more.
+TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedEnvVar furnace("KATAGLYPHIS_PT_FURNACE", "1.0");
+    const ScopedEnvVar furnace_metallic("KATAGLYPHIS_PT_FURNACE_METALLIC", "1");
+    std::optional<ScopedEnvVar> furnace_roughness;
+    // A lone card: every reflected ray reaches the sky, so a pixel's radiance is exactly E(mu) times its radiance.
+    ScopedModelOverride card(METALLIC_CARD_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    harness.gui->getGuiSceneSharedVars().directional_light_radiance = 0.0F;
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.pathTracingSamplesPerPixel = 8;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    struct View
+    {
+        float mu;
+        glm::vec3 position;
+        float yaw;
+    };
+    // Two units from the card's centre, head-on and at 60 degrees; the measured square spans a few degrees.
+    const std::array<View, 2> views = { View{ 1.0F, glm::vec3(0.0F, 0.0F, 2.0F), -90.0F },
+        View{ 0.5F, glm::vec3(1.7320508F, 0.0F, 1.0F), -150.0F } };
+    for (const char *roughness : { "0.3", "0.7" }) {
+        furnace_roughness.reset();
+        furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", roughness);
+        for (const View &view : views) {
+            // A camera move restarts the history, so each pair accumulates on its own.
+            harness.camera->set_camera_position(view.position);
+            harness.camera->set_orientation(view.yaw, 0.0F);
+            harness.render_frames(12);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost());
+            ASSERT_FALSE(radiance.empty());
+
+            const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
+            const double expected = white_directional_albedo(view.mu, std::strtod(roughness, nullptr), 1.0);
+            GTEST_LOG_(INFO) << "white metal, roughness " << roughness << ", mu " << view.mu << ": " << measured
+                             << " of a sky of 1, E(mu) = " << expected;
+            // Single scattering only: a microfacet lobe keeps E(mu) <= 1, and the estimator must reproduce it.
+            EXPECT_LE(expected, 1.0);
+            EXPECT_NEAR(measured, expected, 0.03)
+              << "the GGX lobe's sampling weight is off: roughness " << roughness << ", mu " << view.mu;
+        }
+    }
+}
+
+// A metal reflects only through its specular lobe; the path tracer once had none and rendered every metal black.
+TEST(GoldenRender, PathTracedMetalCardReflectsTheSkyAndTheSun)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto metal = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_white_metal_card.gltf", [](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.9, 0.9, 0.9, 1.0 } }, { "metallicFactor", 1.0 }, { "roughnessFactor", 0.3 }
+        };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+    });
+    ASSERT_TRUE(metal.has_value()) << "could not write the white metal card";
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
@@ -2738,46 +3283,285 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    // NEE would add energy on top of the furnace; many bounces keep truncation loss small.
-    scene_vars.directional_light_radiance = 0.0F;
-    renderer_vars.pathTracingMaxBounces = 16;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
     harness.render_frames(WARMUP_FRAMES);
 
-    // Accumulate deep so per-frame noise is averaged well below the band.
-    harness.render_frames(path_traced_history(80, 40));
+    // Mirror images of one placement; only the right card turns its normal halfway between the sun and the camera.
+    const glm::vec3 right_centre(5.0F, 4.0F, 15.0F);
+    const glm::vec3 to_sun = glm::normalize(-glm::vec3(scene_vars.directional_light_direction[0],
+      scene_vars.directional_light_direction[1],
+      scene_vars.directional_light_direction[2]));
+    const glm::vec3 to_camera = glm::normalize(harness.camera->get_camera_position() - right_centre);
+    const glm::vec3 mirror_normal = glm::normalize(to_sun + to_camera);
+    const glm::vec3 card_normal(0.0F, 0.0F, 1.0F);
+    const glm::mat4 highlight = glm::translate(glm::mat4(1.0F), right_centre)
+                                * glm::rotate(glm::mat4(1.0F),
+                                  std::acos(glm::dot(card_normal, mirror_normal)),
+                                  glm::normalize(glm::cross(card_normal, mirror_normal)))
+                                * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    const glm::vec3 left_centre(-right_centre.x, right_centre.y, right_centre.z);
+    const glm::mat4 plain = glm::translate(glm::mat4(1.0F), left_centre) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(metal->string(), highlight).has_value()) << "adding the tilted card failed";
+    ASSERT_TRUE(harness.renderer->addModel(metal->string(), plain).has_value()) << "adding the plain card failed";
+    harness.render_frames(SETTLE_FRAMES + 12);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     uint32_t width = 0;
     uint32_t height = 0;
     const std::vector<uint8_t> frame = harness.capture_frame(width, height);
-    ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(frame.empty());
+    const Crop card_box = panel_free_card_box(width, height);
+    const uint32_t centre_x = (card_box.x0 + card_box.x1) / 2U;
+    const uint32_t centre_y = (card_box.y0 + card_box.y1) / 2U;
+    const double highlight_mean = mean_luminance_in_square(frame, width, centre_x, centre_y, 20U);
+    const double plain_mean = mean_luminance_in_square(frame, width, width - centre_x, centre_y, 20U);
+    GTEST_LOG_(INFO) << "path-traced white metal: " << highlight_mean << " where the sun mirrors into the camera, "
+                     << plain_mean << " facing it";
 
-    const uint32_t x0 = (width * 18U) / 25U;
-    const uint32_t x1 = (width * 49U) / 50U;
-    const uint32_t y0 = height / 20U;
-    const uint32_t y1 = (height * 19U) / 20U;
-    double sum = 0.0;
-    size_t within = 0;
-    size_t total = 0;
-    for (uint32_t y = y0; y < y1; ++y) {
-        for (uint32_t x = x0; x < x1; ++x) {
-            const double lum = luminance_of(frame, static_cast<size_t>(y) * width + x);
-            sum += lum;
-            if (std::abs(lum - 231.6) <= 6.0) { ++within; }
-            ++total;
-        }
+    // Facing the camera, the card mirrors the sky behind it at F0 0.9: lit, if far from the sun's highlight.
+    EXPECT_GT(plain_mean, 60.0) << "the metal card is (nearly) black: no specular lobe reflects the sky";
+    // The sun's GGX peak is a hundredfold the sky; tonemapped it is white.
+    EXPECT_GT(highlight_mean, 245.0) << "no specular highlight where the sun mirrors into the camera";
+    EXPECT_GT(highlight_mean, plain_mean + 30.0) << "the highlight is not brighter than the reflected sky";
+}
+
+// An unlit glTF material that omits metallicFactor (1 by the spec) once went black in PT: metallic darkened it first.
+TEST(GoldenRender, PathTracedUnlitCardKeepsItsAlbedo)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto unlit = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_unlit_orange_card.gltf", [](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = { { "baseColorFactor", { 0.8, 0.4, 0.1, 1.0 } } };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+        material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+    });
+    ASSERT_TRUE(unlit.has_value()) << "could not write the unlit card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
-    const double mean = sum / static_cast<double>(total);
-    const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
-    GTEST_LOG_(INFO) << "furnace crop mean luminance: " << mean
-                     << " (ideal 231.6), fraction within +-6: " << uniform_fraction;
 
-    EXPECT_GT(mean, 225.6) << "Furnace converges LOW - the estimator is losing energy "
-                              "(beyond the known bounce-cap truncation).";
-    EXPECT_LT(mean, 237.6) << "Furnace converges HIGH - the estimator is gaining energy.";
-    EXPECT_GT(uniform_fraction, 0.98) << "The furnace image is not uniform - geometry is visible, so some path "
-                                         "class is biased.";
+    auto &renderer_vars = harness.useForwardRaster();
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.renderer->addModel(unlit->string(), panel_free_card_placement()).has_value())
+      << "adding the unlit card failed";
+    harness.render_frames(SETTLE_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> forward = harness.capture_hdr_frame(width, height);
+    renderer_vars.pathTracing = true;
+    // Unlit ends every path at its first hit, so the card interior converges in one frame.
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<float> traced = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(forward.empty());
+    ASSERT_EQ(traced.size(), forward.size());
+
+    const Crop card_box = panel_free_card_box(width, height);
+    const uint32_t centre_x = (card_box.x0 + card_box.x1) / 2U;
+    const uint32_t centre_y = (card_box.y0 + card_box.y1) / 2U;
+    const size_t centre = (static_cast<size_t>(centre_y) * width + centre_x) * 4U;
+    GTEST_LOG_(INFO) << "unlit card centre: forward (" << forward[centre] << ", " << forward[centre + 1U] << ", "
+                     << forward[centre + 2U] << "), path traced (" << traced[centre] << ", " << traced[centre + 1U]
+                     << ", " << traced[centre + 2U] << ")";
+
+    // Raster returns the albedo for an unlit material; the path tracer must add it as the path's last radiance.
+    constexpr std::array<float, 3> ALBEDO = { 0.8F, 0.4F, 0.1F };
+    for (size_t channel = 0; channel < 3U; ++channel) {
+        EXPECT_NEAR(forward[centre + channel], ALBEDO[channel], 0.01F)
+          << "forward does not show the unlit card's albedo in channel " << channel << " - check the placement";
+        EXPECT_NEAR(traced[centre + channel], forward[centre + channel], 0.01F)
+          << "the path tracer darkens an unlit material that omits metallicFactor, channel " << channel;
+    }
+}
+
+// A metallic-roughness texel with G = 0 once made GGX alpha 0: the visible-normal density's 0/0 broke whole samples.
+TEST(GoldenRender, PathTracingFloorsAZeroRoughnessTexel)
+{
+    SKIP_WITHOUT_GPU();
+
+    // White dielectrics: one at roughness factor 1 times a G of 0, one at the 0.045 floor times a G of 1.
+    const auto roughness_card = [](const char *file_name, const char *texel, double roughness_factor) {
+        return write_gltf_variant(EMISSIVE_CARD_MODEL, file_name, [texel, roughness_factor](nlohmann::json &gltf) {
+            auto &material = gltf["materials"][0];
+            nlohmann::json texture_ref;
+            texture_ref["index"] = 0;
+            material["pbrMetallicRoughness"] = { { "baseColorFactor", { 0.8, 0.8, 0.8, 1.0 } },
+                { "metallicFactor", 1.0 },
+                { "roughnessFactor", roughness_factor },
+                { "metallicRoughnessTexture", texture_ref } };
+            material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+            nlohmann::json image;
+            image["uri"] = texel;
+            nlohmann::json texture;
+            texture["source"] = 0;
+            gltf["images"] = nlohmann::json::array({ image });
+            gltf["textures"] = nlohmann::json::array({ texture });
+        });
+    };
+    const auto zero_card = roughness_card("kataglyphis_zero_roughness_card.gltf", ZERO_ROUGHNESS_PNG, 1.0);
+    const auto floor_card = roughness_card("kataglyphis_floor_roughness_card.gltf", FULL_ROUGHNESS_PNG, 0.045);
+    ASSERT_TRUE(zero_card.has_value() && floor_card.has_value()) << "could not write the roughness cards";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.pathTracingSamplesPerPixel = 2;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    const glm::mat4 right = panel_free_card_placement();
+    const glm::mat4 left = glm::translate(glm::mat4(1.0F), glm::vec3(-2.0F * right[3].x, 0.0F, 0.0F)) * right;
+    ASSERT_TRUE(harness.renderer->addModel(zero_card->string(), right).has_value()) << "adding the G = 0 card failed";
+    ASSERT_TRUE(harness.renderer->addModel(floor_card->string(), left).has_value()) << "adding the floor card failed";
+    harness.render_frames(SETTLE_FRAMES + 16);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(radiance.empty());
+    const Crop zero_box = panel_free_card_box(width, height);
+    const uint32_t centre_y = (zero_box.y0 + zero_box.y1) / 2U;
+    const uint32_t zero_x = (zero_box.x0 + zero_box.x1) / 2U;
+    const double zero_mean = mean_hdr_in_square(radiance, width, zero_x, centre_y, 40U);
+    const double floor_mean = mean_hdr_in_square(radiance, width, width - zero_x, centre_y, 40U);
+    GTEST_LOG_(INFO) << "path-traced card radiance: texel G 0 " << zero_mean << ", roughness floor " << floor_mean;
+
+    ASSERT_GT(floor_mean, 0.05) << "the floor card is unlit - check the placement";
+    // The floor makes the two materials one; NaN-zeroed or 1e-6-divided samples move the mean by far more.
+    EXPECT_NEAR(zero_mean, floor_mean, 0.03 * floor_mean)
+      << "a roughness texel of 0 shades unlike the 0.045 floor: GGX alpha 0 reached the path tracer";
+}
+
+// A smooth low-poly mesh's vertex normal can face away where its triangle faces the camera; raster sides by winding.
+TEST(GoldenRender, TracedHitsTakeTheirSideFromTheTriangleWinding)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto grey_card = [](nlohmann::json &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.8, 0.8, 0.8, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 0.5 }
+        };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+        material["doubleSided"] = false;
+    };
+    const auto flat = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_flat_grey_card.gltf", grey_card);
+    const auto leaning =
+      write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_leaning_normal_card.gltf", [&](auto &gltf) {
+          grey_card(gltf);
+          nlohmann::json buffer;
+          buffer["uri"] = LEANING_VERTEX_NORMALS;
+          buffer["byteLength"] = 48;
+          gltf["buffers"].push_back(buffer);
+          nlohmann::json view;
+          view["buffer"] = gltf["buffers"].size() - 1U;
+          view["byteOffset"] = 0;
+          view["byteLength"] = 48;
+          view["target"] = 34962;
+          gltf["bufferViews"].push_back(view);
+          nlohmann::json accessor;
+          accessor["bufferView"] = gltf["bufferViews"].size() - 1U;
+          accessor["componentType"] = 5126;
+          accessor["count"] = 4;
+          accessor["type"] = "VEC3";
+          gltf["accessors"].push_back(accessor);
+          gltf["meshes"][0]["primitives"][0]["attributes"]["NORMAL"] = gltf["accessors"].size() - 1U;
+      });
+    const auto emitter =
+      write_gltf_variant(EMISSIVE_STRENGTH_CARD_MODEL, "kataglyphis_strong_emitter.gltf", [](auto &gltf) {
+          gltf["materials"][0]["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"] = 50.0;
+      });
+    ASSERT_TRUE(flat.has_value() && leaning.has_value() && emitter.has_value()) << "could not write the cards";
+
+    ScopedModelOverride card(leaning->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; ray tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.shadows_enabled = false;
+    // Lit along the leaning normal: raster's N.L is 0.96, a normal flipped by the ray's side gets none.
+    scene_vars.directional_light_direction[0] = -0.9F;
+    scene_vars.directional_light_direction[1] = -0.3F;
+    scene_vars.directional_light_direction[2] = -0.33F;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
+    // 60 degrees off the card's axis toward -X: the triangle faces the camera, the vertex normal (N.V -0.64) does not.
+    harness.camera->set_camera_position(glm::vec3(-1.7320508F, 0.0F, 1.0F));
+    harness.camera->set_orientation(-30.0F, 0.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> forward = harness.capture_hdr_frame(width, height);
+    renderer_vars.raytracing = true;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<float> traced = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(forward.empty());
+    ASSERT_EQ(traced.size(), forward.size());
+    const double forward_mean = mean_hdr_in_square(forward, width, width / 2U, height / 2U, 24U);
+    const double traced_mean = mean_hdr_in_square(traced, width, width / 2U, height / 2U, 24U);
+    GTEST_LOG_(INFO) << "leaning-normal card: forward " << forward_mean << ", ray traced " << traced_mean;
+    ASSERT_GT(forward_mean, 0.05) << "forward leaves the card unlit - check the light or the placement";
+    EXPECT_NEAR(traced_mean, forward_mean, 0.05 * forward_mean)
+      << "the ray-traced hit flips its normal by the vertex normal's side, not the triangle's winding";
+
+    // Sun off: the front sees only the sky, and an emitter wholly behind the card's plane must add nothing.
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    scene_vars.directional_light_radiance = 0.0F;
+    harness.render_frames(8);
+    const std::vector<float> before = harness.capture_hdr_frame(width, height);
+    const glm::mat4 behind = glm::translate(glm::mat4(1.0F), glm::vec3(-1.5F, 0.0F, -1.2F))
+                             * glm::rotate(glm::mat4(1.0F), glm::half_pi<float>(), glm::vec3(0.0F, 1.0F, 0.0F))
+                             * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(emitter->string(), behind).has_value()) << "adding the emitter failed";
+    harness.render_frames(8);
+    const std::vector<float> after = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(after.size(), before.size());
+    const double before_mean = mean_hdr_in_square(before, width, width / 2U, height / 2U, 24U);
+    const double after_mean = mean_hdr_in_square(after, width, width / 2U, height / 2U, 24U);
+    GTEST_LOG_(INFO) << "path-traced leaning-normal card: " << before_mean << " alone, " << after_mean
+                     << " with an emitter behind it";
+    ASSERT_GT(before_mean, 0.02) << "the path-traced card does not see the sky - check the placement";
+    EXPECT_NEAR(after_mean, before_mean, 0.05 * before_mean)
+      << "bounces leave through the triangle toward an emitter behind it: the path bound is the vertex normal";
+
+    // A vertex normal facing away from the viewer leaves no lobe, so the triangle's normal shades, as on a flat twin.
+    const glm::mat4 in_front = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, 0.001F));
+    ASSERT_TRUE(harness.renderer->addModel(flat->string(), in_front).has_value()) << "adding the flat card failed";
+    harness.render_frames(8);
+    const std::vector<float> flat_frame = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(flat_frame.size(), before.size());
+    const double flat_mean = mean_hdr_in_square(flat_frame, width, width / 2U, height / 2U, 24U);
+    GTEST_LOG_(INFO) << "path-traced flat twin: " << flat_mean;
+    EXPECT_NEAR(before_mean, flat_mean, 0.05 * flat_mean)
+      << "the path-traced card shades unlike its flat twin: its side or its path bound follows the vertex normal";
 }
 
 namespace {
@@ -3038,6 +3822,571 @@ TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
     EXPECT_GT(clouds_detail, baseline_detail)
       << "Clouds did not add pixel-to-pixel detail over the clouds-off baseline (baseline=" << baseline_detail
       << ", clouds=" << clouds_detail << "); the noise volume may be flat or uniformly filled again.";
+}
+
+// Pixels a clouds-on capture changes against a clouds-off one, per image half; "drifted" counts any 3-level move.
+struct CloudFootprint
+{
+    size_t changed = 0;
+    double centroid_x = 0.0;
+    std::array<size_t, 2> changed_per_half{};
+    std::array<size_t, 2> drifted_per_half{};
+};
+
+static CloudFootprint
+  cloud_footprint(const std::vector<uint8_t> &off, const std::vector<uint8_t> &on, uint32_t w, uint32_t h)
+{
+    CloudFootprint footprint;
+    double column_sum = 0.0;
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            const int delta = channel_delta(off, on, static_cast<size_t>(y) * w + x);
+            const size_t half = x < w / 2U ? 0U : 1U;
+            if (delta > 2) { ++footprint.drifted_per_half[half]; }
+            if (delta <= 5) { continue; }
+            ++footprint.changed;
+            ++footprint.changed_per_half[half];
+            column_sum += static_cast<double>(x);
+        }
+    }
+    footprint.centroid_x = footprint.changed > 0U ? column_sum / static_cast<double>(footprint.changed) : 0.0;
+    return footprint;
+}
+
+// Offset places the box and Scale sizes it; the box was once a sheared slab that Offset could not move.
+TEST(GoldenRender, CloudOffsetMovesTheCloudVolume)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.clouds_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> baseline = harness.capture_frame(width, height);
+    ASSERT_FALSE(baseline.empty());
+    dump_cloud_frame("offset-baseline", baseline, width, height);
+
+    // 3-unit boxes between the camera and the rig, either side of the view axis; each projects inside its own half.
+    const auto footprint_of_box_at = [&](float x) {
+        place_cloud_box(scene_vars, glm::vec3(x, 6.0F, 12.0F), glm::vec3(3.0F), 2.0F);
+        scene_vars.clouds_enabled = true;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t w = 0;
+        uint32_t h = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(w, h);
+        dump_cloud_frame(x < 0.0F ? "offset-left" : "offset-right", frame, w, h);
+        EXPECT_EQ(frame.size(), baseline.size());
+        return frame.size() == baseline.size() ? cloud_footprint(baseline, frame, width, height) : CloudFootprint{};
+    };
+    const CloudFootprint left_box = footprint_of_box_at(-6.0F);
+    const CloudFootprint right_box = footprint_of_box_at(6.0F);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    GTEST_LOG_(INFO) << "cloud box at x=-6: " << left_box.changed << " px, centroid column " << left_box.centroid_x
+                     << "; at x=+6: " << right_box.changed << " px, centroid column " << right_box.centroid_x << " of "
+                     << width;
+
+    const double pixels = static_cast<double>(width) * static_cast<double>(height);
+    const double half_pixels = pixels / 2.0;
+    ASSERT_GT(static_cast<double>(left_box.changed), 0.005 * pixels) << "the box at x=-6 drew no clouds";
+    ASSERT_GT(static_cast<double>(right_box.changed), 0.005 * pixels) << "the box at x=+6 drew no clouds";
+    EXPECT_LT(left_box.centroid_x, 0.4 * width) << "the box at x=-6 does not show left of the view axis";
+    EXPECT_GT(right_box.centroid_x, 0.6 * width) << "the box at x=+6 does not show right of the view axis";
+    // Each box leaves the far half alone, the sky included: there post's HDR sky must reproduce the sky pass.
+    EXPECT_LT(static_cast<double>(left_box.changed_per_half[1]), 0.001 * half_pixels)
+      << "the box at x=-6 changed the right half, outside its 3-unit extent";
+    EXPECT_LT(static_cast<double>(right_box.changed_per_half[0]), 0.001 * half_pixels)
+      << "the box at x=+6 changed the left half, outside its 3-unit extent";
+    EXPECT_LT(static_cast<double>(left_box.drifted_per_half[1]), 0.002 * half_pixels)
+      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: the sky's inverse tonemap is off";
+    EXPECT_LT(static_cast<double>(right_box.drifted_per_half[0]), 0.002 * half_pixels)
+      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: the sky's inverse tonemap is off";
+}
+
+// A wall in front of the box hides it: a box behind the rig's slab shows around the slab, never on it.
+TEST(GoldenRender, CloudsStopAtTheSceneDepth)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    // The disabled sky is one known colour, so a pixel that is not it is geometry.
+    scene_vars.skybox_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    // Behind the slab (z -10..2) and above the ground; rays over and under the slab reach it.
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, -20.0F), glm::vec3(40.0F, 6.0F, 4.0F), 1.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    for (const RasterizationMode path : { RasterizationMode::Forward, RasterizationMode::Deferred }) {
+        const char *name = path == RasterizationMode::Forward ? "forward" : "deferred";
+        renderer_vars.rasterizationMode = path;
+
+        scene_vars.clouds_enabled = false;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> off = harness.capture_frame(width, height);
+        scene_vars.clouds_enabled = true;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t w2 = 0;
+        uint32_t h2 = 0;
+        const std::vector<uint8_t> on = harness.capture_frame(w2, h2);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << name;
+        ASSERT_FALSE(off.empty()) << name;
+        ASSERT_EQ(off.size(), on.size()) << name;
+        dump_cloud_frame(std::string("depth-") + name + "-off", off, width, height);
+        dump_cloud_frame(std::string("depth-") + name + "-on", on, width, height);
+
+        size_t geometry = 0;
+        size_t geometry_changed = 0;
+        size_t sky = 0;
+        size_t sky_changed = 0;
+        for (size_t pixel = 0; pixel < off.size() / 4U; ++pixel) {
+            const int delta = channel_delta(off, on, pixel);
+            if (is_disabled_sky(off, pixel)) {
+                ++sky;
+                if (delta > 5) { ++sky_changed; }
+            } else {
+                ++geometry;
+                if (delta > 2) { ++geometry_changed; }
+            }
+        }
+        GTEST_LOG_(INFO) << name << ": " << geometry_changed << " of " << geometry << " geometry px changed, "
+                         << sky_changed << " of " << sky << " sky px";
+
+        ASSERT_GT(geometry, off.size() / 4U / 10U) << name << ": the rig fills too little of the frame to judge";
+        EXPECT_GT(static_cast<double>(sky_changed), 0.1 * static_cast<double>(sky))
+          << name << ": the box behind the slab drew no clouds around it - nothing to hide";
+        EXPECT_LT(static_cast<double>(geometry_changed), 0.001 * static_cast<double>(geometry))
+          << name << ": clouds behind the slab drew over it - the march ignores the scene depth";
+    }
+}
+
+// RT and PT write no depth buffer, so their own primary hits must hide the box, as the raster depth does.
+TEST(GoldenRender, CloudsStopAtTracedGeometry)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.skybox_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, -20.0F), glm::vec3(40.0F, 6.0F, 4.0F), 1.0F);
+    // One path per pixel and frame: the depth is what is measured here, not the image.
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Raster names the geometry; eroded, as RT's pixel centres and PT's jitter may disagree with it on an edge.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> raster = harness.capture_frame(width, height);
+    ASSERT_FALSE(raster.empty());
+    std::vector<bool> geometry_mask(raster.size() / 4U);
+    std::vector<bool> sky_mask(raster.size() / 4U);
+    for (size_t pixel = 0; pixel < geometry_mask.size(); ++pixel) {
+        sky_mask[pixel] = is_disabled_sky(raster, pixel);
+        geometry_mask[pixel] = !sky_mask[pixel];
+    }
+    geometry_mask = eroded(geometry_mask, width, height);
+    sky_mask = eroded(sky_mask, width, height);
+
+    struct Mode
+    {
+        const char *name;
+        bool raytracing;
+        int frames;
+    };
+    for (const Mode mode : { Mode{ "ray traced", true, SETTLE_FRAMES }, Mode{ "path traced", false, 8 } }) {
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = !mode.raytracing;
+
+        scene_vars.clouds_enabled = false;
+        harness.render_frames(mode.frames);
+        uint32_t w1 = 0;
+        uint32_t h1 = 0;
+        const std::vector<uint8_t> off = harness.capture_frame(w1, h1);
+        scene_vars.clouds_enabled = true;
+        harness.render_frames(mode.frames);
+        uint32_t w2 = 0;
+        uint32_t h2 = 0;
+        const std::vector<uint8_t> on = harness.capture_frame(w2, h2);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_EQ(off.size(), raster.size()) << mode.name;
+        ASSERT_EQ(on.size(), raster.size()) << mode.name;
+
+        size_t geometry = 0;
+        size_t geometry_changed = 0;
+        size_t sky = 0;
+        size_t sky_changed = 0;
+        for (size_t pixel = 0; pixel < geometry_mask.size(); ++pixel) {
+            const int delta = channel_delta(off, on, pixel);
+            if (geometry_mask[pixel]) {
+                ++geometry;
+                // PT keeps accumulating across the toggle, so a penumbra pixel may still settle by a few levels.
+                if (delta > (mode.raytracing ? 2 : 16)) { ++geometry_changed; }
+            } else if (sky_mask[pixel]) {
+                ++sky;
+                if (delta > 5) { ++sky_changed; }
+            }
+        }
+        GTEST_LOG_(INFO) << mode.name << ": " << geometry_changed << " of " << geometry << " geometry px changed, "
+                         << sky_changed << " of " << sky << " sky px";
+
+        ASSERT_GT(geometry, geometry_mask.size() / 10U) << mode.name;
+        EXPECT_GT(static_cast<double>(sky_changed), 0.1 * static_cast<double>(sky))
+          << mode.name << ": the box behind the slab drew no clouds around it - nothing to hide";
+        EXPECT_LT(static_cast<double>(geometry_changed), 0.005 * static_cast<double>(geometry))
+          << mode.name << ": clouds behind the slab drew over it - the traced depth does not reach the march";
+    }
+}
+
+// Over a sky of zero red, a cloud's red is its own tonemapped light, as over a black card; once it was scaled by alpha.
+TEST(GoldenRender, CloudsCompositeOverTheSkyAsOverGeometry)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto black_card =
+      write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_black_unlit_card.gltf", [](auto &gltf) {
+          auto &material = gltf["materials"][0];
+          material["pbrMetallicRoughness"]["baseColorFactor"] = { 0.0, 0.0, 0.0, 1.0 };
+          material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+          material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+          gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+      });
+    ASSERT_TRUE(black_card.has_value()) << "could not write the black unlit card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    // The disabled sky is linear (0, 0, 0.5): no red, like the black card.
+    scene_vars.skybox_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    // Powder darkens thin cloud to almost nothing, and thin, lit cloud is what tells the two composites apart.
+    scene_vars.cloud_powder_effect = false;
+    // Beyond the ground's far edge, in the band of sky under the slab; the card stands behind them.
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 4.0F, -40.0F), glm::vec3(40.0F, 4.0F, 5.0F), 0.6F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](bool clouds) {
+        scene_vars.clouds_enabled = clouds;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    const std::vector<uint8_t> sky_off = capture(false);
+    const std::vector<uint8_t> sky_on = capture(true);
+
+    const glm::mat4 card_placement =
+      glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 5.0F, -60.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(20.0F));
+    ASSERT_TRUE(harness.renderer->addModel(black_card->string(), card_placement).has_value())
+      << "adding the black card failed";
+    const std::vector<uint8_t> card_off = capture(false);
+    const std::vector<uint8_t> card_on = capture(true);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    for (const auto &[name, frame] : { std::pair{ "sky-off", &sky_off },
+           std::pair{ "sky-on", &sky_on },
+           std::pair{ "card-off", &card_off },
+           std::pair{ "card-on", &card_on } }) {
+        dump_cloud_frame(std::string("composite-") + name, *frame, width, height);
+    }
+    ASSERT_FALSE(sky_off.empty());
+    ASSERT_EQ(sky_on.size(), sky_off.size());
+    ASSERT_EQ(card_off.size(), sky_off.size());
+    ASSERT_EQ(card_on.size(), sky_off.size());
+
+    // Pixels that were sky before the card and are the card after it: the same cloud over both backgrounds.
+    size_t region = 0;
+    size_t clouded = 0;
+    size_t mismatched = 0;
+    for (size_t pixel = 0; pixel < sky_off.size() / 4U; ++pixel) {
+        const size_t base = pixel * 4U;
+        const bool card = card_off[base] <= 2U && card_off[base + 1U] <= 2U && card_off[base + 2U] <= 2U;
+        if (!is_disabled_sky(sky_off, pixel) || !card) { continue; }
+        ++region;
+        if (sky_on[base] >= 10U) { ++clouded; }
+        const int red = std::abs(static_cast<int>(sky_on[base]) - static_cast<int>(card_on[base]));
+        const int green = std::abs(static_cast<int>(sky_on[base + 1U]) - static_cast<int>(card_on[base + 1U]));
+        if (std::max(red, green) > 3) { ++mismatched; }
+    }
+    GTEST_LOG_(INFO) << "sky-then-card region: " << region << " px, " << clouded << " clouded, " << mismatched
+                     << " with red or green off by more than 3 levels between sky and card";
+
+    ASSERT_GT(region, 2000U) << "the card does not cover enough former sky - check the framing";
+    ASSERT_GT(static_cast<double>(clouded), 0.2 * static_cast<double>(region))
+      << "the clouds in front of the card are too thin to measure";
+    EXPECT_LT(static_cast<double>(mismatched), 0.01 * static_cast<double>(region))
+      << "the same cloud shows a different red over the sky than over a black card: the sky composite is not the "
+         "linear HDR premultiplied-over that geometry gets";
+}
+
+// A box in front of the slab and an unlit card must cloud them in every mode; RT once put an unlit hit at the eye.
+TEST(GoldenRender, CloudsInFrontOfGeometryCoverItInEveryMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    // Unlit, so its colour is the same in every mode and the path tracer adds no noise over it.
+    const auto green_card =
+      write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_green_unlit_card.gltf", [](auto &gltf) {
+          auto &material = gltf["materials"][0];
+          material["pbrMetallicRoughness"]["baseColorFactor"] = { 0.0, 1.0, 0.0, 1.0 };
+          material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+          material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+          gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+      });
+    ASSERT_TRUE(green_card.has_value()) << "could not write the green unlit card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const bool traced = harness.renderer->supportsHardwareRaytracing();
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.skybox_enabled = false;
+    // Threshold 0 fills the box with fog, so every ray through it meets cloud.
+    scene_vars.cloud_coverage_threshold = 0.0F;
+    // z 4..8, between the camera (26) and the card (3), which stands one unit before the slab's face (2).
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, 6.0F), glm::vec3(8.0F, 2.5F, 2.0F), 2.0F);
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+    const glm::mat4 card_placement =
+      glm::translate(glm::mat4(1.0F), glm::vec3(2.0F, 9.0F, 3.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(green_card->string(), card_placement).has_value())
+      << "adding the green card failed";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](bool clouds) {
+        scene_vars.clouds_enabled = clouds;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+
+    // Forward names the regions: the card by its green, the geometry the clouds cover by what they change.
+    const std::vector<uint8_t> forward_off = capture(false);
+    const std::vector<uint8_t> forward_on = capture(true);
+    ASSERT_FALSE(forward_off.empty());
+    ASSERT_EQ(forward_on.size(), forward_off.size());
+    std::vector<bool> card_mask(forward_off.size() / 4U);
+    std::vector<bool> covered_mask(forward_off.size() / 4U);
+    for (size_t pixel = 0; pixel < card_mask.size(); ++pixel) {
+        const size_t base = pixel * 4U;
+        card_mask[pixel] = forward_off[base] < 40U && forward_off[base + 1U] > 200U && forward_off[base + 2U] < 40U;
+        covered_mask[pixel] = !is_disabled_sky(forward_off, pixel) && !card_mask[pixel]
+                              && channel_delta(forward_off, forward_on, pixel) > 5;
+    }
+    // Eroded, as RT's pixel centres and PT's jitter may disagree with raster on an edge.
+    card_mask = eroded(card_mask, width, height);
+    covered_mask = eroded(covered_mask, width, height);
+    const size_t card_pixels = static_cast<size_t>(std::count(card_mask.begin(), card_mask.end(), true));
+    const size_t covered_pixels = static_cast<size_t>(std::count(covered_mask.begin(), covered_mask.end(), true));
+    ASSERT_GT(card_pixels, 1000U) << "the green card fills too little of the frame - check the placement";
+    ASSERT_GT(covered_pixels, 2000U) << "forward shows no cloud over the lit geometry behind the box";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false } };
+    if (traced) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        const std::vector<uint8_t> off = capture(false);
+        const std::vector<uint8_t> on = capture(true);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_EQ(off.size(), forward_off.size()) << mode.name;
+        ASSERT_EQ(on.size(), forward_off.size()) << mode.name;
+
+        size_t card_clouded = 0;
+        size_t covered_clouded = 0;
+        for (size_t pixel = 0; pixel < card_mask.size(); ++pixel) {
+            if (card_mask[pixel] && channel_delta(off, on, pixel) > 5) { ++card_clouded; }
+            if (covered_mask[pixel] && channel_delta(off, on, pixel) > 5) { ++covered_clouded; }
+        }
+        GTEST_LOG_(INFO) << mode.name << ": clouds change " << card_clouded << " of " << card_pixels << " card px and "
+                         << covered_clouded << " of " << covered_pixels << " lit px behind the box";
+
+        EXPECT_GT(static_cast<double>(card_clouded), 0.9 * static_cast<double>(card_pixels))
+          << mode.name << ": clouds in front of the unlit card vanish - its depth reaches the march too near";
+        // The path tracer's lit pixels move by noise alone, so its depth is judged on the noise-free card.
+        if (!mode.pathTracing) {
+            EXPECT_GT(static_cast<double>(covered_clouded), 0.9 * static_cast<double>(covered_pixels))
+              << mode.name << ": clouds in front of lit geometry vanish - the depth reaches the march too near";
+        }
+    }
+}
+
+// Radiance past fp16's 65504 stores as +Inf (lavapipe: 65504), and the tonemap turns Inf into black NaN.
+TEST(GoldenRender, HdrTargetStaysBelowTheHalfFloatMaximum)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto lamp =
+      write_gltf_variant(EMISSIVE_STRENGTH_CARD_MODEL, "kataglyphis_overbright_card.gltf", [](auto &gltf) {
+          gltf["materials"][0]["extensions"]["KHR_materials_emissive_strength"]["emissiveStrength"] = 1.0e6;
+      });
+    ASSERT_TRUE(lamp.has_value()) << "could not write the overbright card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.useForwardRaster();
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.renderer->addModel(lamp->string(), panel_free_card_placement()).has_value())
+      << "adding the overbright card failed";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true });
+    }
+    // hdr_safe.slang's HDR_MAX, as fp16 rounds it; every pass that writes the HDR target clamps to it.
+    constexpr float HDR_MAX = 65000.0F;
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_FALSE(radiance.empty()) << mode.name;
+        ASSERT_FALSE(frame.empty()) << mode.name;
+
+        const HdrRange range = hdr_range(radiance);
+        const double lamp_luma = mean_luminance_in_crop(frame, width, height, panel_free_card_box(width, height));
+        GTEST_LOG_(INFO) << mode.name << ": " << range.non_finite << " non-finite HDR channels, largest "
+                         << range.largest << ", lamp luma " << lamp_luma;
+
+        EXPECT_EQ(range.non_finite, 0U) << mode.name << " wrote Inf or NaN to the HDR target";
+        EXPECT_LE(range.largest, HDR_MAX) << mode.name << " wrote radiance past the fp16-safe maximum";
+        EXPECT_GE(range.largest, 0.9F * HDR_MAX) << mode.name << ": the lamp never reached the clamp - check it";
+        EXPECT_GT(lamp_luma, 240.0) << mode.name << ": the overbright lamp does not tonemap to white";
+    }
+}
+
+// glTF 3.9.2: a doubleSided back face reverses its whole tangent frame; flipping only N and B mirrored the relief.
+TEST(GoldenRender, NormalMappedBackFaceFlipsItsWholeTangentFrame)
+{
+    SKIP_WITHOUT_GPU();
+
+    // A white, rough dielectric whose normal map tilts every texel 45 degrees toward +T, +X on an unrotated card.
+    const auto tilted =
+      write_gltf_variant(NORMAL_MAP_CARD_MODEL, "kataglyphis_tilted_normal_card.gltf", [](auto &gltf) {
+          auto &material = gltf["materials"][0];
+          material["normalTexture"] = { { "index", 0 } };
+          material["pbrMetallicRoughness"] = {
+              { "baseColorFactor", { 1.0, 1.0, 1.0, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 1.0 }
+          };
+          gltf["images"][0]["uri"] = TILTED_NORMAL_PNG;
+      });
+    ASSERT_TRUE(tilted.has_value()) << "could not write the tilted normal card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.shadows_enabled = false;
+    // From +X and the camera's side: the front card's mapped normal (0.71, 0, 0.71) faces it almost squarely.
+    scene_vars.directional_light_direction[0] = -1.0F;
+    scene_vars.directional_light_direction[1] = -0.3F;
+    scene_vars.directional_light_direction[2] = -1.0F;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Turned about Y, the right card shows its back face; reversed whole, its mapped normal points as the left one's.
+    const glm::mat4 front =
+      glm::translate(glm::mat4(1.0F), glm::vec3(-2.5F, 4.0F, 15.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    const glm::mat4 back = glm::translate(glm::mat4(1.0F), glm::vec3(2.5F, 4.0F, 15.0F))
+                           * glm::rotate(glm::mat4(1.0F), glm::pi<float>(), glm::vec3(0.0F, 1.0F, 0.0F))
+                           * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(tilted->string(), front).has_value()) << "adding the front card failed";
+    ASSERT_TRUE(harness.renderer->addModel(tilted->string(), back).has_value()) << "adding the back card failed";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+        int frames;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false, SETTLE_FRAMES },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false, SETTLE_FRAMES } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false, SETTLE_FRAMES });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true, 12 });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        harness.render_frames(mode.frames);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_FALSE(frame.empty()) << mode.name;
+
+        // The cards' centres project 207 px either side of the middle column.
+        const uint32_t offset = (width * 207U) / WINDOW_WIDTH;
+        const double front_luma = mean_luminance_in_square(frame, width, width / 2U - offset, height / 2U, 30U);
+        const double back_luma = mean_luminance_in_square(frame, width, width / 2U + offset, height / 2U, 30U);
+        GTEST_LOG_(INFO) << mode.name << ": front face " << front_luma << ", back face " << back_luma;
+
+        ASSERT_GT(front_luma, 80.0) << mode.name << ": the front card is unlit - check the light or the placement";
+        // A back face that kept the front's tangent turns its relief away from this light: N.L 0 against 0.98.
+        EXPECT_GT(back_luma, 0.85 * front_luma)
+          << mode.name << ": the back face's normal map is mirrored along its tangent - only N and B were flipped";
+    }
 }
 
 // Keep LAST in the file: a device-lost abort here kills every later test in the process.

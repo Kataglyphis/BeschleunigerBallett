@@ -5,6 +5,8 @@ struct HitPayload
 {
     float3 hit_value;
     float is_hit;
+    // Primary-hit distance along the ray, for the clouds' depth.
+    float hit_t;
 };
 
 // Push constants for the ray tracing pass.

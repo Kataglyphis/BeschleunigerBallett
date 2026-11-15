@@ -81,7 +81,7 @@ void DeferredRasterizer::createTextures()
     createAttachment(offscreenTextures,
       FINAL_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-        | vk::ImageUsageFlagBits::eTransferDst);
+        | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
     // No position attachment: the lighting pass reconstructs position from depth, saving an rgba16f target.
     createAttachment(gBufferNormals,
       GBUFFER_NORMAL_FORMAT,
@@ -95,9 +95,12 @@ void DeferredRasterizer::createTextures()
 
     // No transition here: the render pass performs the first one from eUndefined.
     depthBufferImage = std::make_unique<Texture>();
-    // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    depth_format = createDepthAttachment(
-      *depthBufferImage, device, extent, vk::ImageUsageFlagBits::eInputAttachment, vk::ImageAspectFlagBits::eDepth);
+    // Input-attachment and sampled view: exactly one aspect, not depthStencilTransitionAspect. See its doc comment.
+    depth_format = createDepthAttachment(*depthBufferImage,
+      device,
+      extent,
+      vk::ImageUsageFlagBits::eInputAttachment | vk::ImageUsageFlagBits::eSampled,
+      vk::ImageAspectFlagBits::eDepth);
 }
 
 void DeferredRasterizer::createPushConstantRange()
@@ -169,7 +172,8 @@ void DeferredRasterizer::createRenderPass()
         buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 1: Normal
         buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 2: Albedo
         buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 3: Material
-        buildAttachmentDescription(depth_format, vk::ImageLayout::eDepthStencilAttachmentOptimal)// 4: Depth
+        // Left in the lighting subpass's read layout: the clouds stop their march at it.
+        buildAttachmentDescription(depth_format, vk::ImageLayout::eShaderReadOnlyOptimal)// 4: Depth
     };
 
     // Subpass 0: Geometry Pass
@@ -221,17 +225,8 @@ void DeferredRasterizer::createRenderPass()
                                     | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
-    // Lighting Subpass -> External
-    dependencies[2].srcSubpass = 1;
-    dependencies[2].dstSubpass = VK_SUBPASS_EXTERNAL;
-    // Depth's store in subpass 1 must precede the final transition back to its attachment layout.
-    dependencies[2].srcStageMask =
-      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[2].dstStageMask = vk::PipelineStageFlagBits::eBottomOfPipe;
-    dependencies[2].srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
-                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[2].dstAccessMask = vk::AccessFlagBits::eMemoryRead;
-    dependencies[2].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+    // Lighting Subpass -> External: depth's store in subpass 1 must land before the clouds sample it.
+    dependencies[2] = buildSampledOutputDependency(1);
 
     std::array<vk::SubpassDescription, 2> subpasses = { geometrySubpass, lightingSubpass };
 
@@ -330,6 +325,12 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   std::span<const vk::DescriptorSet> descriptorSets,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
+    // Both subpasses bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
+    if (descriptorSets.empty()) {
+        spdlog::error("DeferredRasterizer::recordCommands called with an empty shared descriptor set span");
+        return;
+    }
+
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
     std::array<vk::ClearValue, 5> clearValues{};

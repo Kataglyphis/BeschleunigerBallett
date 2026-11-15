@@ -67,21 +67,38 @@ constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(std::span<const vk:
         dependencies.data() };
 }
 
-// The depth buffer is shared across frames in flight, so the last write must land before this clear; not by-region.
+// The depth buffer is shared across frames in flight, so its last write and the clouds' read must land before this clear.
 constexpr vk::SubpassDependency buildExternalColorDepthDependency()
 {
     vk::SubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                              | vk::PipelineStageFlagBits::eEarlyFragmentTests
-                              | vk::PipelineStageFlagBits::eLateFragmentTests;
+    dependency.srcStageMask =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests
+      | vk::PipelineStageFlagBits::eLateFragmentTests | vk::PipelineStageFlagBits::eComputeShader;
     dependency.srcAccessMask =
       vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependency.dstStageMask =
       vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.dstAccessMask =
       vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.dependencyFlags = vk::DependencyFlags{};
+    return dependency;
+}
+
+// A raster pass's results leave it for sampling: post reads the colour, the clouds' compute pass the depth.
+constexpr vk::SubpassDependency buildSampledOutputDependency(uint32_t last_subpass)
+{
+    vk::SubpassDependency dependency{};
+    dependency.srcSubpass = last_subpass;
+    dependency.dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                              | vk::PipelineStageFlagBits::eEarlyFragmentTests
+                              | vk::PipelineStageFlagBits::eLateFragmentTests;
+    dependency.srcAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader;
+    dependency.dstAccessMask = vk::AccessFlagBits::eShaderRead;
     dependency.dependencyFlags = vk::DependencyFlags{};
     return dependency;
 }

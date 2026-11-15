@@ -101,7 +101,7 @@ class DeferredRasterizer
     vk::Format depth_format{ vk::Format::eUndefined };
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
-    PushConstantRasterizer pushConstant{ glm::mat4(1.f) };
+    PushConstantRasterizer pushConstant{ glm::mat4(1.f), {}, 0 };
 
     // Geometry Pass
     vk::Pipeline geometryPipeline{};

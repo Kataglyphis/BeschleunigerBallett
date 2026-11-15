@@ -13,7 +13,8 @@ their `include_str!` calls are unchanged and now read Slang-emitted text.
 `histogram.wgsl` is the one deliberate holdout (WGSL fallback policy below).
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
-shared `aces`, `brdf`, `noise`, `fullscreen` and `sky_model` modules. This repo
+shared `aces`, `brdf`, `noise`, `fullscreen`, `sky_model` and
+`volumetric_clouds` modules. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
 Vulkan-specific material modules stay in `Resources/ShadersSlang/`. OxidANT
 can compile and check its generated WGSL without a superproject checkout.
@@ -50,9 +51,10 @@ Slang is module- and entry-point-centric: a no-entry-point math module cannot
 be emitted to GLSL/WGSL text, and imported functions are name-mangled in the
 emit, so sharing goes through Slang's module system, not textual `#include`:
 
-- **Shared math** lives under `third_party/OxidANT/shaders/common/`. Four
-  (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`) are imported
-  on both targets, so both renderers share them. The rest are shared within one
+- **Shared math** lives under `third_party/OxidANT/shaders/common/`. Five
+  (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`,
+  `volumetric_clouds.slang`) are imported on both targets, so both renderers
+  share them. The rest are shared within one
   target: all but `sky_model.slang` on the C++/SPIR-V side, across its raster,
   deferred, shadow-map, ray tracing and path tracing paths. The
   shared-module-targets table below is the exact, gated mapping.
@@ -61,6 +63,12 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   non-issue.
 - Where the passes genuinely differ (they composite differently), each
   renderer keeps its own entry points over the same imported math.
+- **Target-local modules** sit beside their entry points, not under `common/`:
+  `forward/forward_lighting.slang` (the WebGPU forward and G-buffer lighting)
+  and `tracer/bvh_traverse.slang`, `tracer/trace_shading.slang`,
+  `tracer/path_estimator.slang` (the WebGPU compute ray and path tracer). Slang
+  finds them in the importer's own directory; they compile to WGSL only, and
+  the reachable-function gate follows those imports as it does `common/`.
 
 ## What is wired today
 
@@ -113,6 +121,11 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   `rasterizer/shadows/shadow_map.slang`, `raytrace.rchit.slang` and
   `alpha_test.slang`; `path_tracing.slang` gets it through `alpha_test.slang`
   and also imports it directly for its own base-colour sample.
+- `common/skybox_radiance.slang` — the skybox's linear radiance per view
+  direction (`skybox_view_direction`, `skybox_radiance`, the disabled-sky
+  navy). Spirv only: `skybox.slang` draws it, and `post.slang` puts the same
+  sky under the clouds in HDR ([`clouds.md`](clouds.md) § Compositing
+  contract), so the two cannot disagree on a direction or the navy.
 - `common/cascaded_shadow.slang` — PCF cascaded shadow-map sampling
   (`calc_cascaded_shadow`). Spirv only: the raster and deferred lighting paths
   (`rasterizer.slang`, `deferred.slang`).
@@ -134,17 +147,38 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   texture). Spirv only, all four raster/RT shading paths (`rasterizer.slang`,
   `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang`).
 - `common/normal_map.slang` — glTF tangent-space normal mapping
-  (`apply_normal_map`, glTF SS3.9.3). Spirv only, the same four paths as
-  `emission.slang`; `forward/forward.slang`'s `fs_main` (wgsl) reimplements
-  the same math locally.
+  (`apply_normal_map`, glTF SS3.9.3). Callers hand it the authored geometric
+  normal and the face side; on a doubleSided back face it negates the mapped
+  normal as a whole, which reverses tangent, bitangent and normal together
+  (glTF SS3.9.2). Negating only the normal before the call kept the tangent
+  and mirrored the map's relief along it, until 2026-11 on all four paths.
+  Spirv only, the same four paths as `emission.slang`;
+  `forward/forward.slang`'s `fs_main` (wgsl) reimplements the same math
+  locally.
+- `common/hdr_safe.slang` — `hdr_safe`, the clamp every write to an RGBA16F
+  HDR target ends in: radiance to `[0, HDR_MAX]` with `HDR_MAX = 65000`, under
+  fp16's 65504, and NaN to 0. Spirv only: the forward and deferred outputs and
+  the deferred G-buffer's emission, the ray-generation store, and the path
+  tracer's per-sample sum and output store. OxidANT clamps its WebGPU passes
+  to the same 65000.
 - `common/alpha_test.slang` — the glTF MASK alpha test for ray queries:
   `raytrace.rahit.slang`'s any-hit shader and `path_tracing.slang`'s ray-query
   candidate loop (which has no any-hit stage of its own). Spirv only.
+- `common/volumetric_clouds.slang` — the volumetric clouds: the noise
+  volume's texel (`noise_volume_texel`), `cloud_unpack` of the SceneUBO's four
+  cloud `vec4`s, the axis-aligned box test, density, Henyey-Greenstein phase,
+  light march and `march_clouds`, which stops at the scene depth
+  (`cloud_scene_distance`). The noise comes in through the `ICloudNoise`
+  interface, which Slang specializes per caller: the C++ `compute/clouds.slang`
+  passes its combined `Sampler3D`, OxidANT's `clouds/cloud_march.slang` a
+  texture plus a sampler. Both. [`clouds.md`](clouds.md) owns the behaviour.
 - `common/sky_model.slang` — the analytic sky's horizon/zenith/ground gradient
   (`sky_gradient`), sun disk (`sun_disk`) and diffuse hemisphere irradiance
   approximation (`hemisphere_irradiance`), shared by `sky/sky.slang` (the
-  Rust/WebGPU background) and `forward/forward.slang` (the analytic IBL
-  fallback, whose reflections and irradiance must agree with the background).
+  Rust/WebGPU background), `forward/forward_lighting.slang` (the analytic IBL
+  fallback, whose reflections and irradiance must agree with the background)
+  and the WebGPU tracer's miss shading (`tracer/traced.slang`,
+  `tracer/trace_shading.slang`).
   There is deliberately no combined `sky_radiance`: each caller takes its
   light direction/intensity from a different uniform block, so each keeps a
   thin local wrapper over `sky_gradient` + `sun_disk`. `tests/sky_constants.rs`
@@ -154,7 +188,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 
 **Entry-point shader targets:** every Slang entry-point source below compiles
 to exactly one target, so none is shared between the two renderers at the
-entry-point level. Only the four `both` math modules and the CI guards below
+entry-point level. Only the five `both` math modules and the CI guards below
 cross targets. `tonemap/tonemap.slang` (WGSL) and `post/post.slang` (SPIR-V)
 look like one pass but are separate sources: the C++ side's `post/post.slang`
 also composites clouds via push constants, so it never merged with the Rust
@@ -164,6 +198,8 @@ tonemap shader.
 | File | Target |
 | --- | --- |
 | `bloom/bloom.slang` | wgsl |
+| `clouds/cloud_march.slang` | wgsl |
+| `clouds/cloud_noise.slang` | wgsl |
 | `compute/clouds.slang` | spirv |
 | `compute/noise_volume.slang` | spirv |
 | `deferred/deferred.slang` | spirv |
@@ -186,6 +222,9 @@ tonemap shader.
 | `ssao/ssao.slang` | wgsl |
 | `tex_quad/tex_quad.slang` | wgsl |
 | `tonemap/tonemap.slang` | wgsl |
+| `tracer/trace_debug.slang` | wgsl |
+| `tracer/trace_resolve.slang` | wgsl |
+| `tracer/traced.slang` | wgsl |
 <!-- shader-targets:end -->
 
 **CI guards:** `tests/brdf_test.slang` and `tests/noise_test.slang` each
@@ -194,7 +233,10 @@ breaks either target's compile fails the manifest run in
 `Build-SlangShaders.ps1` before it reaches either renderer. The table above
 excludes them (see its gating test). Only `brdf` and `noise` are guarded for
 dual emit; a spirv-only module has nothing to guard until it gains a real wgsl
-consumer, which the table below makes checkable.
+consumer, which the table below makes checkable. OxidANT's
+`tests/volumetric_clouds_test.slang` is the reverse guard: SPIR-V only, it
+imports `volumetric_clouds` with a `Sampler3D` the way the C++ engine does, so
+OxidANT's own CI proves the module still emits for this engine.
 
 The local cloud-volume shader is `compute/noise_volume.slang` so Slang's
 `import noise;` resolves OxidANT's `common/noise.slang`. A local file named
@@ -219,6 +261,7 @@ imports.
 | `common/cascaded_shadow.slang` | spirv |
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
+| `common/hdr_safe.slang` | spirv |
 | `common/material_fetch.slang` | spirv |
 | `common/material_rules.slang` | spirv |
 | `common/material_textures.slang` | spirv |
@@ -228,6 +271,8 @@ imports.
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
 | `common/sky_model.slang` | wgsl |
+| `common/skybox_radiance.slang` | spirv |
+| `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->
 
 **Status:** all C++ shaders are on Slang SPIR-V (all 8 loading sites), and all
@@ -261,10 +306,10 @@ shades a colour. A cell names the expression or helper that reads the field on
 that path, or says "not read" and why. The asymmetries it pins, so they stop
 being rediscovered one field at a time:
 
-- `metallic` is a full factor-or-texture read on three paths, but on
-  `path_tracing.slang` only the metallic-roughness *texture* branch touches it
-  (`material_textures.slang`'s comment says why that path skips
-  `resolved_metallic_roughness_lod0()`).
+- `metallic` and `roughness` are a full factor-or-texture read on all four
+  paths. Until 2026-11 `path_tracing.slang` read metallic on the texture
+  branch alone, so an untextured factor (`metallic_card.gltf`'s 0.75) was
+  ignored, and had no specular lobe to use roughness with.
 - `shininess` is only reachable through `material_roughness()`'s
   negative-`roughness` fallback ("(fallback)" in its row).
 - `dissolve` is read only inside `alpha_masked_out()`, so a path with no MASK
@@ -276,22 +321,22 @@ being rediscovered one field at a time:
 | --- | --- | --- | --- | --- | --- |
 | `diffuse` | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | not read — alpha testing only discards a fragment, never shades a colour |
 | `emission` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` (skipped in furnace-test mode) | not read — no lighting |
-| `shininess` | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness_lod0()` (fallback) | not read — no roughness/specular term at all (only the metallic half of `material_metallic_roughness()` is used) | not read — no lighting |
+| `shininess` | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness_lod0()` (fallback) | `resolved_metallic_roughness_lod0()` (fallback) | not read — no lighting |
 | `dissolve` | `alpha_masked_out()` | `alpha_masked_out()` | not read — the MASK cut-out for ray-traced hits runs in the any-hit shader (`raytrace.rahit.slang`, via `alpha_test.slang`) | not read — candidates are alpha-tested earlier, by `alpha_test.slang`'s `ray_hit_masked_out()` | `alpha_masked_out()` |
 | `textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` |
 | `alphaCutoff` | `alpha_masked_out()` | `alpha_masked_out()` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaCutoff` (outer guard) / `alpha_masked_out()` |
 | `uv_transform_row0` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` |
 | `uv_transform_row1` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` |
-| `metallic` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `material_metallic_roughness()`'s raw metallic term, gated on `metallicRoughnessTextureID >= 0` only — no untextured-factor fallback | not read — no lighting |
-| `roughness` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | not read — only the metallic half (`.x`) of `material_metallic_roughness()` is used | not read — no lighting |
+| `metallic` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
+| `roughness` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
 | `emissiveTextureID` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
 | `normalTextureID` | `resolved_normal()` | `resolved_normal()` | `material.normalTextureID` (outer guard) / `resolved_normal_lod0()` | `material.normalTextureID` (outer guard) / `resolved_normal_lod0()` | not read — no normal mapping |
 | `normalScale` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
-| `metallicRoughnessTextureID` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `material.metallicRoughnessTextureID` (outer guard before `sample_metallic_roughness_lod0()`) | not read — no lighting |
+| `metallicRoughnessTextureID` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
 | `normal_uv_transform_row0` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
 | `normal_uv_transform_row1` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
-| `metallic_roughness_uv_transform_row0` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `sample_metallic_roughness_lod0()`, called directly — same `metallic`-style exception | not read — no lighting |
-| `metallic_roughness_uv_transform_row1` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `sample_metallic_roughness_lod0()`, called directly — same `metallic`-style exception | not read — no lighting |
+| `metallic_roughness_uv_transform_row0` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
+| `metallic_roughness_uv_transform_row1` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
 | `emissive_uv_transform_row0` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
 | `emissive_uv_transform_row1` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
 | `unlit` | `material.unlit` | `material.unlit` | `material.unlit` | `material.unlit` | not read — MASK alpha testing runs regardless of `unlit` |

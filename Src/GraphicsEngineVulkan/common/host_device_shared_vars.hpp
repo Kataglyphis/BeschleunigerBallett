@@ -22,6 +22,8 @@ const int MAX_PCF_RADIUS = 5;
 #define OUT_IMAGE_BINDING 1
 // Path-tracing history: one per renderer, not per swapchain image, as it persists across frames.
 #define ACCUMULATION_IMAGE_BINDING 2
+// Primary-hit NDC depth of a ray- or path-traced frame, which the clouds read in place of a raster depth buffer.
+#define TRACED_DEPTH_IMAGE_BINDING 3
 // ---- RAYTRACING BINDING ---- END
 
 // ----- GBUFFER INPUT ATTACHMENT SET ----- START (lightingInputRefs positions; render pass indices are +1)

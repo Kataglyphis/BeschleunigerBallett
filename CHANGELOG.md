@@ -31,6 +31,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   opens it, since a load stalls the GPU and replaces the scene. A focused panel no longer swallows
   WASD; Esc first leaves the panel, then quits. The app window opens at 1600x900, scaled to the
   monitor.
+- `BuildIntegrity.CppCloudsMarchThroughTheSharedModule` fails on a local copy of the cloud math;
+  the cloud gates read `volumetric_clouds.slang`, the reachable-function gate follows imports of a
+  module beside its importer (`forward/forward_lighting.slang`, `tracer/`), and the unused-import
+  gate counts a module's constants as uses.
 - Every test executable links the hub's crash handler (`kataglyphis_add_crash_dump`). The ARM64
   lavapipe job sets `KATAGLYPHIS_CRASH_DUMP_DIR` instead of WER `LocalDumps`, which the runner
   never wrote, and uploads the minidump with `commitTestSuite.exe` and its PDB (#97).
@@ -40,6 +44,41 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- The cloud box is the axis-aligned box the inspector describes: Offset moves it with its
+  clouds, and Scale and Density set its extent. It was a sheared slab that Offset could not
+  move, because Slang fills a `float4x4(1.0)` with ones instead of making an identity.
+- Clouds stop at the scene: geometry in front of the cloud box hides it, in raster, ray-traced
+  and path-traced frames alike. Over the sky they composite in linear HDR before the tonemap,
+  as over geometry, instead of being darkened by their alpha a second time after it.
+- The path tracer honours a material's metallic factor without a metallic-roughness texture, and
+  reflects through raster's GGX lobe, importance-sampled from the visible normals and weighted
+  against the diffuse lobe by one-sample MIS: metals, and glTF materials at the default
+  `metallicFactor` 1, are no longer black there. An unlit material ends its path at its albedo
+  before metallic can darken it.
+- Clouds in front of an unlit surface no longer vanish in ray-traced frames: the closest-hit
+  shader recorded no hit distance for an unlit hit.
+- On a double-sided back face a normal map's whole tangent frame flips, in all four shading
+  paths; flipping only the normal mirrored the map's relief along the tangent.
+- Ray- and path-traced hits take their front or back side from the triangle's winding, as raster
+  does, not from the interpolated vertex normal, and a path-traced bounce that would leave
+  through the triangle ends the path: near a smooth low-poly silhouette the vertex normal can
+  face away from the camera while the triangle faces it.
+- A metallic-roughness texel with a green channel of 0 no longer undoes the 0.045 roughness
+  floor; in the path tracer the GGX density was 0/0 there.
+- The path tracer traces its extra per-pixel ray for the clouds' depth only while clouds are on.
+- Every write to an HDR target clamps radiance below fp16's maximum (65000, as OxidANT), so a
+  strong emitter or a sharp highlight can no longer store +Inf and tonemap to a black NaN.
+- `run-ctest.sh --virtual-display` and the riscv64 GPU shards start Xvfb with `-noreset`: a
+  golden's GLFW probe left the server without clients, and a window opened during its reset
+  found no display, failing one random GPU test now and then.
+- In the editor, pressing Raster cancels a ray- or path-tracing pick that waits for a model,
+  and a model the library does not list (an absolute `KATAGLYPHIS_MODEL_OVERRIDE`) keeps its
+  name and its transform controls.
+- The model library marks the model the scene actually loaded, also with
+  `KATAGLYPHIS_MODEL_OVERRIDE` or when the default scene is missing, and a load resets the
+  inspector's position and rotation to the identity the model is placed at.
+- Ray- and path-traced frames skip the unused shadow-cascade pass, so the profiler no longer
+  times one there, and the editor shows raster while ray or path tracing waits for a model.
 - Root the locked formatter wiring check's `-ScriptPath` in the Windows Pester job; the hub harness resolved the relative path against itself and failed before any suite ran.
 - Load ANTfrastructure's `CPackCommon` at the top level: first included from `Src/`, its include guard left the Linux closure's script paths empty, and every CPack package failed with `bash: : No such file or directory`.
 - Format `cmake/SponzaLicenses.cmake` as the pinned cmake-format expects, which the Linux lane's format check rejected.
@@ -114,6 +153,28 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- OxidANT moves to its Rust renderer parity work (`eb97c364`): the Rust WebGPU renderer gets the
+  C++ editor (docks, model library, inspectors, profiler), the fly camera, the Colosseum as its
+  default scene, a deferred path, the C++ shadow controls and cube-map skybox, volumetric clouds,
+  and compute-shader ray and path tracing. Its WebGPU demo starts on an embedded cube and fetches
+  the Colosseum on request.
+- The C++ clouds march through OxidANT's shared `common/volumetric_clouds.slang`, which the Rust
+  renderer's clouds use too; `compute/clouds.slang` and `compute/noise_volume.slang` only bind the
+  engine's resources to it. The behaviour is the C++ one, except that a ray direction with an
+  exactly zero component (a sun straight overhead) no longer meets `inf - inf` in the box test.
+- The shared `brdf.slang` NDF floors roughness at 0.045 and guards its denominator at 1e-20
+  instead of 1e-6, which had clipped every specular peak below roughness 0.154: highlights on
+  glossy materials get brighter and smaller in every C++ shading path too.
+- `Resources/assets.lock` pins AssetANT's `Colosseum-gltf` and `Colosseum-web`. Neither is in
+  `KATAGLYPHIS_DEFAULT_ASSETS`: `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches both, and the docs
+  build fetches `Colosseum-web` for the demo, both from releases published on 2026-11-15.
+- The docs build puts `Colosseum-web.glb` beside the WebGPU demo, with the scene's
+  `ATTRIBUTION.txt` and `LICENSES/` in `webgpu-demo/Colosseum-web/` and the editor fonts' notice
+  and texts in `webgpu-demo/fonts/`; without the archive the demo publishes without it, with a
+  warning.
+- `Compare-RendererTimings.ps1` treats the Rust passes a forward timing run never records
+  (`GBuffer`, `DeferredLighting`, `Clouds`, `RayTrace`, `PathTrace`, `TraceResolve`) as optional,
+  like `OcclusionCull`.
 - The local Renovate run of 2026-11-14 moved the submodules to their default-branch tips: Dear
   ImGui `8c36ecfb` (its default arrows are now stroked chevrons, not filled triangles), stb
   `9600522d`, VMA v3.5.0, nlohmann/json `81888ff9`, google/benchmark `cf4d7fed`, spdlog

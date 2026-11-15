@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include <cstdint>
 #include <stdexcept>
 #include <vector>
 
@@ -72,6 +73,13 @@ constexpr bool isCapturableSwapchainFormat(vk::Format format)
            || format == vk::Format::eR8G8B8A8Snorm || format == vk::Format::eR8G8B8A8Uint
            || format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb
            || format == vk::Format::eB8G8R8A8Snorm || format == vk::Format::eB8G8R8A8Uint;
+}
+
+// Bytes per texel FrameCapture copies: the 8-bit swapchain formats and the RGBA16F HDR target, else 0.
+constexpr uint32_t capturedTexelBytes(vk::Format format)
+{
+    if (isCapturableSwapchainFormat(format)) { return 4U; }
+    return format == vk::Format::eR16G16B16A16Sfloat ? 8U : 0U;
 }
 
 // The BGRA formats FrameCapture::take() must swizzle back to RGBA.

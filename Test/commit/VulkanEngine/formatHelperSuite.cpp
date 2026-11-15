@@ -79,6 +79,15 @@ TEST(FormatHelperUnit, CaptureOnlyAcceptsEightBitFourChannelFormats)
     EXPECT_FALSE(Kataglyphis::isCapturableSwapchainFormat(vk::Format::eR16G16B16A16Sfloat));
 }
 
+// The HDR readback copies the RGBA16F target at 8 bytes a texel; an unknown format must copy nothing.
+TEST(FormatHelperUnit, CapturedTexelSizeCoversTheSwapchainAndTheHdrTarget)
+{
+    EXPECT_EQ(Kataglyphis::capturedTexelBytes(vk::Format::eB8G8R8A8Unorm), 4U);
+    EXPECT_EQ(Kataglyphis::capturedTexelBytes(vk::Format::eR8G8B8A8Srgb), 4U);
+    EXPECT_EQ(Kataglyphis::capturedTexelBytes(vk::Format::eR16G16B16A16Sfloat), 8U);
+    EXPECT_EQ(Kataglyphis::capturedTexelBytes(vk::Format::eA2B10G10R10UnormPack32), 0U);
+}
+
 TEST(FormatHelperUnit, BgraCaptureFormatsAreExactlyTheBFirstOnes)
 {
     EXPECT_TRUE(Kataglyphis::capturedFormatIsBgra(vk::Format::eB8G8R8A8Unorm));

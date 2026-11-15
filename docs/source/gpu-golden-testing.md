@@ -24,6 +24,11 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
 
 - **Only that one Linux job runs them.** They cost ~20 minutes of llvmpipe on a 32-core host (~55
   on a 4-vCPU runner); the sanitizer and gcc jobs keep excluding them.
+- **Xvfb runs with `-noreset`** (2026-11-15). Every golden probes GLFW and terminates it before its
+  window opens; that probe was the server's last client, so Xvfb reset, and a window opened during
+  the reset failed with `GLFW Error 65550: Failed to detect any supported platform`, one test in a
+  few full runs (`RaytracedLargeMeshDoesNotLoseTheDevice`, then
+  `Integration.RasterSegmentCancelsAPendingTracingPick`). `run-riscv64-tests.sh` passes it too.
 - **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a runner.** It passes on llvmpipe
   (266 s on 32 cores; 12 s on an RTX 2080) but hit ctest's 1500 s timeout on a 4-vCPU GitHub runner
   (run 36627716804), so CI excludes it. It is the only exclusion: the five goldens once excluded
@@ -121,13 +126,14 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | --- | --- | --- | --- | --- | --- |
 | `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
 | `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
-| `PathTracingPassesTheWhiteFurnaceTest` | 80 → 40 | mean 231.87, 1.0 within ±6 | 231.83, 1.0 | 225.6-237.6, 0.98 | albedo 0.9: 228.19, 0.869, fails |
+| `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of `E(mu)`, rig 0.993, 1.0 within ±0.1 (2026-11-15, aarch64 llvmpipe, one stream) | card within 0.001, rig 0.993, 0.998 | card 0.01, rig 0.98-1.002, 0.98 | albedo 0.95: card 0.944-0.957, rig 0.940, 0.856, fails |
 | `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
   outside the card stretch its bounding box (0.139). From 16 on it finds the full variant's box.
   The added model's control picks up noise as the history shortens: 0.111 at 8, 0.078 at 16,
-  0.055 at 24, 0.016 at 60. The furnace stays at 1.0 within ±6 from a history of 10. The
+  0.055 at 24, 0.016 at 60. The 8-bit furnace stayed at 1.0 within ±6 from a history of 10;
+  the HDR one (2026-11-15) is measured on one stream only. The
   anti-aliasing golden separates at any depth: on one stream 249 of 312 columns blend in a
   2-frame accumulation against 62 through the pixel centre, 302 against 8 at 9 frames, and 312
   against 0 from 25. Its light history is therefore 25, not the 50 it started with: on riscv64
@@ -138,9 +144,10 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   point differs, so a margin has to hold across streams, not on one. The four extra streams (a
   seed offset in `path_tracing.slang`, not committed) give the light column's ranges.
 - **The controls** are one-line edits, measured and reverted: the path tracer commits every
-  candidate without its alpha test, `addModel` skips the AS rebuild, the furnace albedo is 0.9,
-  and the primary ray goes through the pixel centre. The full variant fails all four the same
-  way. The furnace band is wide: albedo 0.95 passes both variants (mean 230.1).
+  candidate without its alpha test, `addModel` skips the AS rebuild, the furnace albedo is 0.95
+  (0.9 for the 8-bit furnace), and the primary ray goes through the pixel centre. The full
+  variant fails all four the same way. The 8-bit furnace's band was wide: albedo 0.95 passed
+  both variants (mean 230.1).
 - **The anti-aliasing golden reads one edge: the slab's top against the sky** (owner decision
   2026-10-12), at y 56 of the 1200x768 frame. `sky_silhouette` (`GoldenMetrics.hpp`) walks each
   column of the panel-free crop down from the sky to its first step of more than 20 levels, so
@@ -253,7 +260,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=43 runnable=41 integration=2 total=43 excluded=3 -->
+<!-- golden-counts: defined=60 runnable=58 integration=4 total=62 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -284,6 +291,17 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   measure the wrong thing, and whole-frame or centre-crop means have measured, at various times:
   the FPS-counter digits, SSAO, the caster's own body, and nothing at all. Prefer luminance-delta
   oracles over absolute-colour thresholds.
+- **For a radiance bound, read the HDR target.** `EngineHarness::capture_hdr_frame` arms
+  `VulkanRenderer::requestHdrCapture`, which copies the RGBA16F target post just read, as linear
+  floats. ACES squeezes everything above about 1 into the last few 8-bit levels, so a ratio or an
+  energy bound measured on the tonemapped frame is weak or vacuous there:
+  `PathTracingPassesTheWhiteMetalFurnaceTest` compares radiance to `E(mu)` within 0.03,
+  `PathTracingPassesTheWhiteFurnaceTest` a dielectric's within 0.01 and the rig's mean to
+  0.98-1.002, `PathTracingFloorsAZeroRoughnessTexel` two cards within 3 %,
+  `PathTracingHonorsTheUntexturedMetallicFactor` a metal to its dielectric twin, and
+  `HdrTargetStaysBelowTheHalfFloatMaximum` every texel to the fp16-safe 65000. That last one is
+  the only way to see the overflow on lavapipe, which rounds radiance past 65504 to 65504 rather
+  than +Inf, so its 8-bit frame looks right either way.
 - **Prefer counting to averaging for sparse signals.** Changed-pixel / swung-pixel / detail
   fractions discriminate where means drown (a UNORM ceiling clamps, a texture is near-greyscale,
   a skeleton is 3% of the frame).

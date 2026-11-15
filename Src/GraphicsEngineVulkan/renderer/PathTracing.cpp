@@ -26,6 +26,32 @@ import kataglyphis.vulkan.shader_helper;
 
 // See https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
 
+namespace {
+
+struct FurnaceSurface
+{
+    float metallic = 0.0F;
+    float roughness = 0.5F;
+};
+
+// KATAGLYPHIS_PT_FURNACE_METALLIC and _ROUGHNESS pick the furnace's white surface; unset, a dielectric at 0.5.
+FurnaceSurface furnaceSurfaceFromEnvironment()
+{
+    FurnaceSurface surface;
+    if (const char *metallic = std::getenv("KATAGLYPHIS_PT_FURNACE_METALLIC");
+      metallic != nullptr && *metallic != '\0') {
+        surface.metallic = std::clamp(std::strtof(metallic, nullptr), 0.0F, 1.0F);
+    }
+    // 0.045 is material_roughness()'s floor, which keeps the GGX lobe finite.
+    if (const char *roughness = std::getenv("KATAGLYPHIS_PT_FURNACE_ROUGHNESS");
+      roughness != nullptr && *roughness != '\0') {
+        surface.roughness = std::clamp(std::strtof(roughness, nullptr), 0.045F, 1.0F);
+    }
+    return surface;
+}
+
+}// namespace
+
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::init(const std::shared_ptr<VulkanDevice> &in_device,
@@ -51,7 +77,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   std::span<const vk::DescriptorSet> descriptorSets,
   uint32_t frame_index,
   uint32_t samples_per_pixel,
-  uint32_t max_bounces)
+  uint32_t max_bounces,
+  bool trace_cloud_depth)
 {
     // Same queue, so no ownership transfer; eUndefined because the kernel overwrites every pixel.
     const vk::ImageMemoryBarrier presentToPathTracingImageBarrier =
@@ -96,9 +123,13 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     } else {
         push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
     }
+    const FurnaceSurface furnace_surface = furnaceSurfaceFromEnvironment();
+    push_constant.furnace_metallic = furnace_surface.metallic;
+    push_constant.furnace_roughness = furnace_surface.roughness;
     push_constant.frame_index = frame_index;
     push_constant.samples_per_pixel = std::max(samples_per_pixel, 1U);
     push_constant.max_bounces = std::max(max_bounces, 1U);
+    push_constant.trace_cloud_depth = trace_cloud_depth ? 1U : 0U;
 
     commandBuffer.pushConstants(
       pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);

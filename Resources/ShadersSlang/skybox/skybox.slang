@@ -1,6 +1,7 @@
 // C++/Vulkan cubemap skybox.
 
 import aces;
+import skybox_radiance;
 
 struct CameraUBO
 {
@@ -33,10 +34,7 @@ VsOut vs_main(float3 in_position : POSITION,
               float2 in_tex_coord : TEXCOORD0)
 {
     VsOut o;
-    float4 clipPos = float4(in_position.x, in_position.y, 1.0, 1.0);
-    float4 viewPos = mul(camera.inv_projection, clipPos);
-    float3 viewDir = float3(viewPos.xy, -1.0);
-    o.worldDir = mul((float3x3)camera.inv_view, viewDir);
+    o.worldDir = skybox_view_direction(in_position.xy, camera.inv_projection, camera.inv_view);
     o.svPosition = float4(in_position.xy, 0.9999, 1.0);
     return o;
 }
@@ -44,10 +42,6 @@ VsOut vs_main(float3 in_position : POSITION,
 [shader("fragment")]
 float4 fs_main(VsOut In) : SV_Target
 {
-    // Renders straight into the UNORM swapchain, so both branches encode sRGB themselves.
-    if (pc_skybox.skybox_enabled != 0u)
-    {
-        return float4(linear_to_srgb(skyboxSampler.Sample(normalize(In.worldDir)).xyz), 1.0);
-    }
-    return float4(linear_to_srgb(float3(0.0, 0.0, 0.5)), 1.0);
+    // Renders straight into the UNORM swapchain, so the shader encodes sRGB itself.
+    return float4(linear_to_srgb(skybox_radiance(skyboxSampler, In.worldDir, pc_skybox.skybox_enabled != 0u)), 1.0);
 }

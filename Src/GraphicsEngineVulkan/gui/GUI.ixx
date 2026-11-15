@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <string_view>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.gui;
@@ -34,6 +35,11 @@ class GUI
 
     void render();
 
+    // What the renderer draws, per drawnRenderMode(): a ray- or path-tracing pick shows raster until a TLAS exists.
+    [[nodiscard]] int displayedRenderMode() const;
+    // The scene's model as the editor names it, listed or not; empty while the scene holds none.
+    [[nodiscard]] std::string_view loadedModelName() const;
+
     void cleanUp();
 
     ~GUI();
@@ -48,7 +54,9 @@ class GUI
 
     [[nodiscard]] int renderMode() const;
     void setRenderMode(int mode);
-    void ensureModelSelection();
+    [[nodiscard]] bool tracingAvailable() const;
+    // Both render-mode controls: one rule for what they show and what a press picks.
+    void renderModeSwitch(const char *id, float width);
 
     void renderDocks(float uiScale);
     void renderMenuBar();

@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <string>
 
 export module kataglyphis.vulkan.gui_renderer_shared_vars;
 
@@ -8,9 +9,9 @@ export namespace Kataglyphis::VulkanRendererInternals::FrontendShared {
 enum class RasterizationMode { Forward, Deferred };
 
 // Passes bracketed by GPU timestamp pairs in VulkanRenderer::record_commands.
-// "Main" is forward/deferred rasterization plus the optional ray-/path-tracing
-// stage that post-processes the raster result; "Post" includes the GUI draw
-// (ImGui renders inside the post render pass).
+// "Main" is forward/deferred rasterization or, in its place, the ray-/path-
+// tracing stage; "Post" includes the GUI draw (ImGui renders inside the post
+// render pass).
 enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, Count };
 
 // Single source of truth for the pass count: bumping this table is the only
@@ -97,8 +98,13 @@ struct GUIRendererSharedVars
 
     SceneViewport scene_viewport;
 
+    // The selection; what a frame draws is drawnRenderMode() below.
     bool raytracing = false;
     bool pathTracing = false;
+    /// Written by the renderer: a TLAS exists, so an RT/PT selection owns the frame; until then raster draws.
+    bool tracingReady = false;
+    /// Written by the renderer after each load: the scene's model as the load named it, empty while it holds none.
+    std::string loadedModelPath;
 
     bool shader_hot_reload_triggered = false;
     /// CPU frustum culling. A switch rather than a constant because culling
@@ -130,4 +136,19 @@ struct GUIRendererSharedVars
     int pathTracingSamplesPerPixel = 8;
     int pathTracingMaxBounces = 8;
 };
+
+// 0 raster, 1 ray traced, 2 path traced: the one rule the renderer draws by and the editor shows.
+constexpr int drawnRenderMode(bool raytracing, bool pathTracing, bool tracingAvailable)
+{
+    if (!tracingAvailable) { return 0; }
+    if (pathTracing) { return 2; }
+    return raytracing ? 1 : 0;
+}
+
+// A drawnRenderMode() value as the renderer's logs name it.
+constexpr const char *renderModeLogName(int drawnMode)
+{
+    if (drawnMode == 2) { return "path_tracing"; }
+    return drawnMode == 1 ? "raytracing" : "rasterizer";
+}
 }// namespace Kataglyphis::VulkanRendererInternals::FrontendShared

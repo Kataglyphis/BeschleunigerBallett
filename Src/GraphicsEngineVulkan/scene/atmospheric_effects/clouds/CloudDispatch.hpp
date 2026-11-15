@@ -12,7 +12,7 @@ inline constexpr uint32_t kCloudWorkgroupSize = 16;
 static_assert(kNoiseVolumeExtent % kNoiseWorkgroupSize == 0,
   "kNoiseVolumeExtent must tile evenly by kNoiseWorkgroupSize, or part of the noise volume goes unwritten");
 
-// The minimums are load-bearing: both counts divide in clouds.slang, and zero steps put every sample at +-inf.
+// The minimums are load-bearing: both counts divide in the cloud march, and zero steps put every sample at +-inf.
 inline constexpr int kMinCloudMarchSteps = 4;
 inline constexpr int kMaxCloudMarchSteps = 128;
 inline constexpr int kMinCloudLightMarchSteps = 1;

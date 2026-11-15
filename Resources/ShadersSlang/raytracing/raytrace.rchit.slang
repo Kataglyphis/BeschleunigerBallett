@@ -45,11 +45,9 @@ void rchit_main(
     float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
     float3 worldNormal = normalize(mul(normalHit, (float3x3)WorldToObject()));
 
-    // faceforward: the normal must oppose the ray.
-    if (dot(worldNormal, WorldRayDirection()) > 0.0)
-    {
-        worldNormal = -worldNormal;
-    }
+    // The winding decides the side, as SV_IsFrontFace does in raster; near a silhouette the vertex normal can disagree.
+    bool frontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
+    float3 facingNormal = frontFace ? worldNormal : -worldNormal;
 
     // Texture coordinates.
     float2 texCoords = v0.texture_coords * barycentrics.x
@@ -72,6 +70,9 @@ void rchit_main(
     }
     albedo *= vertexColor.rgb;
 
+    // The clouds' depth needs every primary hit's distance, an unlit one's too.
+    payload.hit_t = RayTCurrent();
+
     // KHR_materials_unlit: return before any lighting or shadow ray.
     if (material.unlit != 0)
     {
@@ -82,20 +83,20 @@ void rchit_main(
 
     // Light direction (towards the light) and view direction (towards camera).
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
-    float3 N = worldNormal;
+    float3 N = facingNormal;
     if (material.normalTextureID >= 0)
     {
         // A tangent is a surface direction: ObjectToWorld(), not the inverse-transpose.
         float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
         float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
         // Explicit LOD: see the base-colour sample above for why.
-        N = resolved_normal_lod0(N, float4(worldTangent, tangentHit.w), obj, material, texCoords);
+        N = resolved_normal_lod0(worldNormal, float4(worldTangent, tangentHit.w), frontFace, obj, material, texCoords);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
     // Shadow ray: trace from the hit point towards the light.
     bool shadowed = true;
-    if (dot(worldNormal, L) > 0)
+    if (dot(facingNormal, L) > 0)
     {
         RayDesc shadowRay;
         shadowRay.Origin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();

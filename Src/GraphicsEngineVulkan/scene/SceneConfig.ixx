@@ -10,13 +10,16 @@ module;
 export module kataglyphis.vulkan.scene_config;
 
 export namespace sceneConfig {
+// KATAGLYPHIS_MODEL_OVERRIDE when set, else defaultModelRelativePath(); relative to Resources/.
+std::string startupModelRelativePath();
 std::string getModelFile();
 glm::mat4 getModelMatrix();
 std::span<const std::string> getAvailableModelPaths();
 std::span<const std::string> getAvailableModelDisplayNames();
 std::string resolveModelPath(const std::string &relativeModelPath);
 std::string_view defaultModelRelativePath();
-int defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath);
+// The library row holding relativePath, or -1 when none does: nothing loaded, or a path the scan does not list.
+int modelIndexOf(std::span<const std::string> availablePaths, std::string_view relativePath);
 
 /// Result of one walk of a Models directory. `complete` is false iff the walk
 /// could not be started or was aborted by an error partway through - a false

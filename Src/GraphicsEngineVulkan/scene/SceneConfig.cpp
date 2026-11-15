@@ -1,4 +1,5 @@
 module;
+#include <algorithm>
 #include <cstdlib>
 
 #include <filesystem>
@@ -67,7 +68,7 @@ namespace {
 
 auto scanModelsUnder(const std::filesystem::path &resourcesRoot) -> ModelScanResult
 {
-    ModelScanResult result{ .complete = false };
+    ModelScanResult result{ .paths = {}, .displayNames = {}, .complete = false };
 
     std::error_code ec;
     const std::filesystem::path models_dir = resourcesRoot / "Models";
@@ -104,15 +105,17 @@ auto defaultModelRelativePath() -> std::string_view
 #endif
 }
 
-auto getModelFile() -> std::string
+auto startupModelRelativePath() -> std::string
 {
     // Tests pick a scene for what it measures: the default skeleton's thin bones cast too little shadow to gate on.
     if (const char *override_path = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); override_path != nullptr) {
-        if (*override_path != '\0') { return resolveModelPath(override_path); }
+        if (*override_path != '\0') { return override_path; }
     }
 
-    return resolveModelPath(std::string(defaultModelRelativePath()));
+    return std::string(defaultModelRelativePath());
 }
+
+auto getModelFile() -> std::string { return resolveModelPath(startupModelRelativePath()); }
 
 // Identity: a big model scale puts the camera inside the geometry and outgrows a cascade's resolution.
 auto getModelMatrix() -> glm::mat4 { return glm::mat4(1.0F); }
@@ -129,17 +132,22 @@ auto getAvailableModelDisplayNames() -> std::span<const std::string>
     return s_cached_model_display_names;
 }
 
-auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath)
-  -> int
+auto modelIndexOf(std::span<const std::string> availablePaths, std::string_view relativePath) -> int
 {
-    // generic_string() on both sides: scanned paths come out backslashed on Windows, the preferred literal does not.
-    const std::string preferred = std::filesystem::path(preferredRelativePath).generic_string();
+    if (relativePath.empty()) { return -1; }
+
+    // Scans on Windows come out backslashed, which POSIX paths do not split on, and an override may say "./".
+    const auto normalised = [](std::string_view path) {
+        std::string slashed(path);
+        std::replace(slashed.begin(), slashed.end(), '\\', '/');
+        return std::filesystem::path(slashed).lexically_normal().generic_string();
+    };
+    const std::string wanted = normalised(relativePath);
     for (size_t i = 0; i < availablePaths.size(); ++i) {
-        if (std::filesystem::path(availablePaths[i]).generic_string() == preferred) { return static_cast<int>(i); }
+        if (normalised(availablePaths[i]) == wanted) { return static_cast<int>(i); }
     }
 
-    if (!availablePaths.empty()) { return 0; }
-
+    // No fallback row: marking a model the scene does not hold is the bug this replaced.
     return -1;
 }
 

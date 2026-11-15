@@ -210,11 +210,13 @@ inline auto studioToggle(const char *strId, bool *value) -> bool
 }
 
 // Equal-width segments in one frame. `enabled` may be empty (all enabled); `width` 0 fits the labels, < 0 fills.
+// `reselectable` reports a press on the selected segment too, for a control that shows another value than it stores.
 inline auto studioSegmented(const char *strId,
   int *current,
   std::span<const char *const> labels,
   std::span<const bool> enabled = {},
-  float width = 0.0F) -> bool
+  float width = 0.0F,
+  bool reselectable = false) -> bool
 {
     ImGuiWindow *window = ImGui::GetCurrentWindow();
     if (window->SkipItems || labels.empty()) { return false; }
@@ -254,7 +256,7 @@ inline auto studioSegmented(const char *strId,
         bool held = false;
         bool pressed = false;
         if (ImGui::ItemAdd(segment, id)) { pressed = ImGui::ButtonBehavior(segment, id, &hovered, &held); }
-        if (pressed && !selected) {
+        if (pressed && (reselectable || !selected)) {
             *current = static_cast<int>(index);
             changed = true;
         }

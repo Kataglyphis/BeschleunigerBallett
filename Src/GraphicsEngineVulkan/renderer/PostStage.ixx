@@ -31,10 +31,12 @@ class PostStage
     void recreateFrameResources();
     void destroyFramebuffers();
 
+    // descriptorSets: the post set, then the shared render set, whose GlobalUBO aims the sky under the clouds.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       std::span<const vk::DescriptorSet> descriptorSets,
-      bool cloudsEnabled);
+      bool cloudsEnabled,
+      bool skyboxEnabled);
     void cleanUp();
 
     ~PostStage();

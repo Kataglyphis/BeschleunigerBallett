@@ -66,9 +66,11 @@ function Get-ExpectedPassNames {
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $CppExpectedPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
 }
+# dump_gpu_timings renders the forward path with clouds off and no tracer, so these may be absent.
+$RustOptionalPasses = @('OcclusionCull', 'GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve')
 if (-not $PSBoundParameters.ContainsKey('RustExpectedPasses')) {
     $rustAllPasses = Get-ExpectedPassNames -Engine Rust -Path $RustPassSourcePath
-    $RustExpectedPasses = @($rustAllPasses | Where-Object { $_ -ne 'OcclusionCull' })
+    $RustExpectedPasses = @($rustAllPasses | Where-Object { $_ -notin $RustOptionalPasses })
 }
 
 if ($PrintExpectedPasses) {
@@ -175,7 +177,7 @@ if ((-not $ValidationOnly) -and (Test-Path $suite)) {
 
 if (Test-Path $rustJson) {
     $rust = Get-Content $rustJson -Raw | ConvertFrom-Json
-    Assert-PassesExist -Label 'Rust/WebGPU' -JsonObj $rust -Expected $RustExpectedPasses -Optional @('OcclusionCull')
+    Assert-PassesExist -Label 'Rust/WebGPU' -JsonObj $rust -Expected $RustExpectedPasses -Optional $RustOptionalPasses
     $checked++
 } elseif ($ValidationOnly) {
     Write-Host "WARN: Rust JSON not found at $rustJson - skipping validation." -ForegroundColor Yellow

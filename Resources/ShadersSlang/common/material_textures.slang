@@ -98,16 +98,17 @@ float2 resolved_metallic_roughness(ObjectDescription obj, ObjMaterial material, 
     return material_metallic_roughness(material, mrSample);
 }
 
-float3 resolved_normal_lod0(float3 geometricNormal, float4 tangent, ObjectDescription obj, ObjMaterial material, float2 texCoords)
+// geometricNormal as authored, never pre-flipped; frontFace false turns the result for a doubleSided back face.
+float3 resolved_normal_lod0(float3 geometricNormal, float4 tangent, bool frontFace, ObjectDescription obj, ObjMaterial material, float2 texCoords)
 {
-    if (material.normalTextureID < 0) { return geometricNormal; }
+    if (material.normalTextureID < 0) { return frontFace ? geometricNormal : -geometricNormal; }
     float3 sampled = sample_normal_lod0(obj, material, texCoords);
-    return apply_normal_map(geometricNormal, tangent, sampled, material.normalScale);
+    return apply_normal_map(geometricNormal, tangent, sampled, frontFace, material.normalScale);
 }
 
-float3 resolved_normal(float3 geometricNormal, float4 tangent, ObjectDescription obj, ObjMaterial material, float2 texCoords)
+float3 resolved_normal(float3 geometricNormal, float4 tangent, bool frontFace, ObjectDescription obj, ObjMaterial material, float2 texCoords)
 {
-    if (material.normalTextureID < 0) { return geometricNormal; }
+    if (material.normalTextureID < 0) { return frontFace ? geometricNormal : -geometricNormal; }
     float3 sampled = sample_normal(obj, material, texCoords);
-    return apply_normal_map(geometricNormal, tangent, sampled, material.normalScale);
+    return apply_normal_map(geometricNormal, tangent, sampled, frontFace, material.normalScale);
 }

@@ -18,15 +18,15 @@ import kataglyphis.vulkan.command_buffer_manager;
 
 namespace Kataglyphis {
 
-void Clouds::init(const std::shared_ptr<VulkanDevice> &device,
+void Clouds::init(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool,
   vk::DescriptorSetLayout sharedLayout,
-  uint32_t width,
-  uint32_t height)
+  uint32_t in_width,
+  uint32_t in_height)
 {
-    this->device = device;
-    this->width = width;
-    this->height = height;
+    device = in_device;
+    width = in_width;
+    height = in_height;
     createTextures(commandPool);
     createDescriptorSets();
     createComputePipelines(sharedLayout);
@@ -89,7 +89,7 @@ void Clouds::createTextures(vk::CommandPool commandPool)
       vk::ImageType::e3D,
       vk::ImageViewType::e3D);
 
-    // 2D Texture for Cloud Output. Assume screen size or half-screen size for performance
+    // Full resolution: one cloud texel per swapchain pixel, matching the scene depth it reads.
     cloudOutputTexture =
       createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
 }
@@ -97,7 +97,8 @@ void Clouds::createTextures(vk::CommandPool commandPool)
 void Clouds::createDescriptorSets()
 {
     cloudDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute)
-      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute);
+      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute)
+      .addBinding(2, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute);
     if (!cloudDescriptors.create(device, 1)) { spdlog::error("Failed to create cloud descriptor resources!"); }
 
     noiseDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute);
@@ -196,10 +197,13 @@ void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<c
       1);
 }
 
-void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height)
+void Clouds::setSceneDepth(vk::ImageView sceneDepthView, vk::ImageLayout layout)
+{ cloudDescriptors.writeImage(0, 2, sceneDepthView, layout); }
+
+void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t new_width, uint32_t new_height)
 {
-    this->width = width;
-    this->height = height;
+    width = new_width;
+    height = new_height;
 
     if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); }
 

@@ -14,6 +14,7 @@ static const int SHADOW_MAP_BINDING = 5;
 static const int TLAS_BINDING = 0;
 static const int OUT_IMAGE_BINDING = 1;
 static const int ACCUMULATION_IMAGE_BINDING = 2;
+static const int TRACED_DEPTH_IMAGE_BINDING = 3;
 
 // G-buffer input attachments (set 1): lightingInputRefs positions, not render pass indices (those are +1).
 static const int GBUFFER_NORMAL_BINDING = 0;

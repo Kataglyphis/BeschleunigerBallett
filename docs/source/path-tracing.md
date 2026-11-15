@@ -14,6 +14,20 @@ command buffer, so no queue-family ownership transfer is involved. The post
 pass samples that target like any other mode: path tracing replaces the
 *lighting*, not the presentation path.
 
+Every sample's radiance and the kernel's output pass through `hdr_safe`
+(`common/hdr_safe.slang`): radiance past fp16's 65504 would store as +Inf in
+the `rgba16f` target, ACES would turn that into NaN, and one NaN sample would
+stay in the running mean until the next reset.
+
+A path-traced frame runs neither the raster pass nor the shadow-cascade pass:
+the kernel shades its own visibility, and NEE traces its own shadow rays. The
+RT mode skips both too. For the clouds, which march to the scene depth, the
+kernel also traces one ray through each pixel centre and writes that primary
+hit's NDC depth to `tracedDepth` (`TRACED_DEPTH_IMAGE_BINDING`, `1.0` on a
+miss); see [`clouds.md`](clouds.md). That ray runs only while clouds are on
+(the push constants' `trace_cloud_depth`, set from the frame's
+`clouds_enabled`); until 2026-11 every frame paid for it.
+
 Rays traverse with `GL_EXT_ray_query` against the RT mode's TLAS;
 geometry/material data arrive via buffer-device-address (`ObjectDescription`
 → vertex/index/material-id/material arrays). The record path dispatches only
@@ -42,39 +56,108 @@ estimators is biased).
   square (a box filter) instead of always through the exact centre, so
   `samples_per_pixel` and the temporal running mean anti-alias geometric edges
   rather than just denoise a point-sampled image.
-- **Hit**: throughput *= albedo (texture, or `material.diffuse` when
-  `textureID` is -1). Normals are transformed as directions (inverse-transpose
-  via row-multiplying `worldToObject`); the hit normal is face-forwarded
-  against the ray.
+- **Hit**: the albedo (texture, or `material.diffuse` when `textureID` is
+  -1, times the vertex colour), metallic and roughness as every raster path
+  reads them: the factors times the metallic-roughness texture's B and G
+  channels (`resolved_metallic_roughness_lod0`), the roughness product
+  floored at 0.045 like the factor. Until 2026-11 a texel with G = 0 made
+  GGX alpha 0, the visible-normal density 0/0 and the sample's weight NaN or
+  1e6 times too large. Until 2026-11 only the
+  texture branch applied metallic, so `metallic_card.gltf`'s untextured 0.75
+  rendered as a dielectric. `KHR_materials_unlit` ends the path at its albedo
+  before metallic or a lobe can touch it. Until 2026-11 the metallic multiply
+  ran first, which darkened an unlit material with a metallic-roughness
+  texture, and with the untextured factor applied, blackened one that omits
+  `metallicFactor` (the spec's default is 1). Normals are transformed as
+  directions (inverse-transpose via row-multiplying `worldToObject`). The
+  triangle's winding picks the side (`CommittedTriangleFrontFace()`, as
+  `SV_IsFrontFace` in raster and `HitKind()` in the RT closest-hit): a back
+  face negates the interpolated normal, and a normal map's whole frame with it
+  (`common/normal_map.slang`). The face normal is the triangle's own, from its
+  three positions, turned to oppose the ray. Until 2026-11 both came from the
+  interpolated normal, which near a smooth low-poly silhouette faces away from
+  a camera the triangle faces. `GoldenRender.TracedHitsTakeTheirSideFromTheTriangleWinding`
+  views a card whose vertex normals lean 70 degrees off its +Z winding from
+  60 degrees the other way: ray traced must match forward (2.225 both; 0 with
+  the side from the vertex normal), an emitter behind the card must add
+  nothing to the path-traced card (0.347 either way; 9.71 with the old side
+  and bound), and the path-traced card must shade like a flat twin (0.347
+  both; 0.110 with the old side alone, 0.237 with the old bound alone).
+- **The BRDF is raster's**: `brdf_direct` from OxidANT's `brdf.slang`,
+  Lambert times `(1 - F)(1 - metallic)` plus the GGX lobe `D G F / (4 n.v
+  n.l)`, with `f0 = lerp(0.04, albedo, metallic)`. Until 2026-11 the kernel
+  had no specular lobe, so a metal only lost its diffuse share and a glTF
+  material at the default `metallicFactor` 1 rendered black.
 - **Next-event estimation**: one shadow ray per bounce toward the GUI
-  directional light; unoccluded hits contribute
-  `throughput * NdotL * (1/pi) * dirLight.color.rgb * dirLight.color.w`.
-  The throughput carries the albedo, NEE the Lambertian 1/pi: without it lit
-  surfaces measured 208.5 crop luminance vs 188.2 correct (forward: 158.1, the
-  gap being PT's indirect sky). NEE is the only connection to the GUI light;
-  before it, the mode's sole light source was an accidental radiance-1 "white
-  furnace" on miss. The BOUNCE path needs no 1/pi: cosine-weighted sampling of
-  a Lambertian cancels the pi and the cosine exactly.
-- **Bounce**: RTIOW-style cosine-ish sampling (normal + random unit vector),
-  with the degenerate-scatter guard (a near-zero sum falls back to the
-  normal). The sampled direction is renormalized before it becomes the next
-  segment's `rayDirection`: the unnormalized sum has length in `[0, 2]`, and
-  `TMin`, `TMax` and the miss gradient below are all measured in units of
-  that vector's length. From the fourth segment on, **Russian roulette**
-  terminates low-throughput paths and reweights survivors (unbiased).
+  directional light; an unoccluded hit adds
+  `throughput * brdf_direct(n, v, l, ..., dirLight.color.rgb * dirLight.color.w)`,
+  what forward shades for that hit before its cascaded shadow. NEE is the only
+  connection to the GUI light; before it, the mode's sole light source was an
+  accidental radiance-1 "white furnace" on miss.
+- **Bounce**: one-sample MIS over the two lobes. With probability `p`, the
+  Fresnel share of the lobes at `n.v` floored at 0.1 so a dielectric's
+  highlight still gets samples, a GGX normal visible from the viewer (Heitz
+  2018) reflects the view ray; otherwise the RTIOW cosine sample (normal plus
+  a random unit vector, with the degenerate-scatter guard) runs. The
+  throughput takes `f n.l / (p pdf_GGX + (1 - p) n.l / pi)`, the balance
+  heuristic over the mixture, so either lobe may produce any direction.
+  `pdf_GGX` is `D G1(v) / (4 n.v)` with the unfloored NDF and Smith's exact
+  G1, the density the sampler draws. Since the 2026-11-15 OxidANT pin,
+  `distribution_ggx` floors roughness at `MIN_ROUGHNESS` 0.045 (the
+  material floor) and guards its denominator at 1e-20; its old `1e-6` guard
+  capped the lobe's peak below roughness 0.154, so a smooth surface reflected
+  only part of its light, here as in raster. The estimator needed no change. The shading normal orients both lobes, and the face normal
+  takes its place when it faces away from the viewer; a direction below it or
+  below the triangle ends the path, which keeps a tilted normal map or vertex
+  normal from leaking light through the surface. The sampled
+  direction is renormalized before it becomes the next segment's
+  `rayDirection`: `TMin`, `TMax` and the miss gradient below are all measured
+  in units of that vector's length. From the fourth segment on, **Russian
+  roulette** terminates low-throughput paths and reweights survivors
+  (unbiased).
 - **Miss**: a soft RTIOW gradient sky at half intensity ends the path.
 
-Self-intersection is guarded by a 1e-4 normal offset **and** ray-query
-`t_min = 0.001` (matches the RT path).
+Self-intersection is guarded by a 1e-4 offset along the face normal **and**
+ray-query `t_min = 0.001` (matches the RT path).
 
-`KATAGLYPHIS_PT_FURNACE=<radiance>` forces every hit's albedo to 1 and
-replaces the gradient sky with a uniform `<radiance>` environment; the shader
-gates on `pc_ray.clearColor.w > 0.5`. It is read via `getenv` once per
-`recordCommands` call, not cached, so several tests sharing one process each
-see their own setting. This is the classic white-furnace test: an unbiased
-estimator must converge every pixel to exactly the environment radiance, for
-any geometry. `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` is the
-oracle.
+`KATAGLYPHIS_PT_FURNACE=<radiance>` gives every hit one white surface (albedo
+1) and replaces the gradient sky with a uniform `<radiance>` environment; the
+shader gates on `pc_ray.clearColor.w > 0.5`. `KATAGLYPHIS_PT_FURNACE_METALLIC`
+(default 0) and `KATAGLYPHIS_PT_FURNACE_ROUGHNESS` (default 0.5, clamped to
+`material_roughness`'s 0.045 floor) pick that surface, through the push
+constants' `furnace_metallic` and `furnace_roughness`. All three are read via
+`getenv` once per `recordCommands` call, not cached, so several tests sharing
+one process each see their own setting.
+
+A microfacet lobe scatters once, so the surface returns its directional
+albedo `E(mu)` of the sky, not all of it; the estimator must reproduce that
+integral, for any geometry. `E(mu)` is `brdf_direct` for a white albedo
+integrated over the hemisphere, computed by the golden itself
+(`white_directional_albedo`, a 320 x 320 quadrature uniform in angle), against
+what a lone card returns after one bounce, 2026-11-15 on aarch64 llvmpipe:
+
+| Surface | Roughness | `mu` | `E(mu)` | Measured |
+| --- | --- | --- | --- | --- |
+| metal | 0.3 | 1 | 0.976 | 0.976 |
+| metal | 0.3 | 0.5 | 0.668 | 0.667 |
+| metal | 0.7 | 1 | 0.638 | 0.636 |
+| metal | 0.7 | 0.5 | 0.524 | 0.523 |
+| dielectric | 0.5 | 1 | 0.9943 | 0.9940 |
+| dielectric | 0.5 | 0.5 | 0.9910 | 0.9906 |
+| dielectric | 0.25 | 1 | 0.9994 | 0.9996 |
+| dielectric | 0.25 | 0.5 | 1.0036 | 1.0034 |
+
+The losses are the lobe's, not the estimator's: Epic's `k = (r + 1)^2 / 8`
+masks hard at grazing angles, and at roughness 1 half the microfacets reflect
+below the horizon (`E(1) = 1 - ln 2 = 0.307`). A white dielectric keeps 0.99
+at roughness 0.5, since its diffuse takes what its Fresnel leaves; at 0.25
+the Epic lobe slightly exceeds 1 near `mu` 0.2 (1.04). The oracles, all in
+linear radiance from the HDR target:
+`GoldenRender.PathTracingPassesTheWhiteMetalFurnaceTest` (the metal rows,
+within 0.03) and `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` (the
+dielectric rows within 0.01, then the dielectric at 0.5 on the shadow rig,
+where 16 bounces compound any per-bounce error: its `E(mu) <= 1` caps the
+mean at the sky's 1).
 
 ## Temporal accumulation
 
@@ -91,7 +174,8 @@ The history resets whenever its premises die:
 
 | Trigger | Where |
 | --- | --- |
-| Camera moved (view-matrix compare) | PT branch of `record_commands` |
+| Camera moved or projection changed (view and projection compare: FOV, docks, F1) | `PathTracingHistoryKey`, PT branch of `recordRaytracingOrPathTracing` |
+| Light direction, colour or radiance changed | same |
 | Quality sliders changed (different estimator = biased mean) | same |
 | Swapchain resize (extent-sized image is recreated) | `recreateSwapChain` |
 | AS rebuilt - model load/reload OR GUI transform moved the traced world | `updateRaytracingDescriptorSets` |
@@ -103,9 +187,9 @@ golden pass with per-frame sampling disabled.
 
 ## Verification
 
-<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
+<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, PathTracingHonorsTheUntexturedMetallicFactor, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, PathTracingPassesTheWhiteMetalFurnaceTest, PathTracingFloorsAZeroRoughnessTexel, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
 
-Eight PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
+Eleven PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
 each red/green-proven against the pre-fix shader. Numbers are post-HDR: before
 the HDR unit, lit surfaces clamped at the UNORM ceiling (186 after tonemap)
 and hid most of every light response; lifting it widened several margins
@@ -124,13 +208,35 @@ dramatically.
   quarters of the response) vs exactly 0 for the pre-NEE kernel.
 - `PathTracingHonorsTheQualityControls` - bounce cap 8 vs 1 swings 0.255
   (all indirect sky light vanishes); hardcoded-bounds kernel: 7.3e-5.
+- `PathTracingHonorsTheUntexturedMetallicFactor` - `metallic_card.gltf`
+  (metallicFactor 0.75, no metallic-roughness texture) beside its dielectric
+  twin, mirrored about the view axis at 2 spp and 2 bounces, read as linear
+  radiance from the HDR target: the metal must return under 0.8 of the
+  dielectric. Measured 0.634 against 1.817; the texture-gated kernel lit both
+  alike (1.816).
 - `RaytracedWorldFollowsTheModelTransform` - a GUI move must change the
   traced image: 0.397 vs exactly 0 on a stale TLAS.
-- `PathTracingPassesTheWhiteFurnaceTest` - furnace-mode crop converges to
-  mean luminance ~231.6 (`linear_to_srgb(aces_tonemap(1.0)) * 255`, since
-  `post.slang` encodes for the UNORM swapchain) with >98% of pixels within
-  +-6 of that value; a biased estimator either drifts off 231.6 or leaves
-  visible geometry in the (supposedly uniform) image.
+- `PathTracingPassesTheWhiteFurnaceTest` - a white dielectric on a lone card
+  must return `E(mu)` of a uniform sky within 0.01 (the dielectric rows
+  above), then the shadow rig at roughness 0.5 and 16 bounces must average
+  0.98-1.002 with over 98% of its pixels within ±0.1 of the sky's 1
+  (measured 0.993, all within). Controls, each failing: a mixture density
+  that weights the lobes 50/50 instead of by the selection chance (card
+  1.114-1.605, rig 1.280), one at 1.5 times the selection chance (card
+  1.007-1.034, rig 1.084), a visible-normal density with `1 / (2 n.v)` for
+  `1 / (4 n.v)` (card 0.914-0.965, rig 0.876), and a 1.5 % gain on every
+  bounce (card 1.005-1.018, rig 1.011). Until 2026-11-15 the test graded the
+  rig's tonemapped frame (mean 225.6-237.6, 98 % within ±6 of 231.6); its
+  uniformity check caught the first three, but the 1.5 % gain passed at 232.0.
+- `PathTracingPassesTheWhiteMetalFurnaceTest` - a white metal on a lone card
+  must return `E(mu)` of a uniform sky within 0.03 (the table above). With
+  the sampling density missing Smith's G1, roughness 0.7 at `mu` 0.5 returns
+  0.452 against 0.524, and fails.
+- `PathTracingFloorsAZeroRoughnessTexel` - a white dielectric whose
+  metallic-roughness texel has G = 0 beside one at the 0.045 floor, at 2 spp
+  and 2 bounces: the two radiances must agree within 3%. Measured 1.4305
+  against 1.4317; without the floor on the product the G = 0 card averages
+  6409 (the 0/0 density meets `max(pdf, 1e-6)`), and fails.
 - `RaytracedLargeMeshDoesNotLoseTheDevice` - the RT pipeline must survive
   10 frames against the shipped large dinosaur-mesh debug scene; it scopes the
   `VK_ERROR_DEVICE_LOST` the PT reproducer hit on the same mesh to
@@ -142,6 +248,20 @@ dramatically.
   under 5% of the brightest decile's luminance. Measured 0 vs 244 with the
   fix, 41.6 vs 248 when `raytrace.rchit.slang` seeds its payload with the
   unlit albedo (`e852ac99`).
+
+Five more goldens cover the kernel without the `PathTracing` prefix the
+marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at
+roughness 0.3 mirrors the sky at 219 luma and, tilted halfway to the sun, a
+white highlight; without the lobe 0 and 71),
+`PathTracedUnlitCardKeepsItsAlbedo` (an unlit card's HDR value matches
+forward's to 0.01; metallic first gave 0),
+`HdrTargetStaysBelowTheHalfFloatMaximum` and
+`NormalMappedBackFaceFlipsItsWholeTangentFrame` (all four modes, see
+[`gpu-golden-testing.md`](gpu-golden-testing.md)), and
+`ReloadedModelIsVisibleInPathTracing`, which reloads the dielectric
+`cube_textured.gltf` and finds its green and magenta checker: the metal card
+it reloaded before went black without a lobe, and the frame still changed,
+because the shadow rig vanished.
 
 The instrument cautions these goldens were built on are in
 [`gpu-golden-testing.md`](gpu-golden-testing.md)'s cautions section.

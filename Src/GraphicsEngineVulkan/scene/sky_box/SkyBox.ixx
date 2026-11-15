@@ -42,6 +42,9 @@ class SkyBox
 
     Kataglyphis::Mesh *getMesh() const { return skyMesh.get(); }
 
+    // Null until init(); the post pass samples the same cubemap to put the sky under the clouds.
+    Kataglyphis::Texture *getCubeMapTexture() const { return cubeMapTexture.get(); }
+
     ~SkyBox();
 
   private:

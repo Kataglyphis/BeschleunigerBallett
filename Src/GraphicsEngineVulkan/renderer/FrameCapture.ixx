@@ -68,92 +68,41 @@ class FrameCapture
 
         if (!device || !supportsCapture(swapChain, deviceLostDetected)) { return; }
 
-        const vk::Extent2D extent = swapChain.getSwapChainExtent();
-        if (extent.width == 0 || extent.height == 0) { return; }
+        recordCopy(device,
+          commandBuffer,
+          swapChain.getSwapChainImage(image_index).getImage(),
+          swapChain.getSwapChainExtent(),
+          swapChain.getSwapChainFormat(),
+          CopySource{ .layout = vk::ImageLayout::ePresentSrcKHR,
+            .lastStages = vk::PipelineStageFlagBits::eColorAttachmentOutput,
+            .lastAccess = vk::AccessFlagBits::eColorAttachmentWrite,
+            .nextStages = vk::PipelineStageFlagBits::eBottomOfPipe });
+    }
 
-        const vk::DeviceSize required_size =
-          static_cast<vk::DeviceSize>(extent.width) * static_cast<vk::DeviceSize>(extent.height) * 4ULL;
+    // The same copy from a colour image the frame leaves in `layout` after `lastStages` last touched it.
+    void recordImage(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandBuffer &commandBuffer,
+      vk::Image image,
+      vk::Extent2D extent,
+      vk::Format imageFormat,
+      vk::ImageLayout layout,
+      vk::PipelineStageFlags lastStages,
+      bool deviceLostDetected)
+    {
+        armed = false;
 
-        if (buffer_size < required_size) {
-            // Redundant since create() now releases the previous allocation itself,
-            // but kept: it documents that destroying here (before the new create)
-            // is synchronisation-safe.
-            buffer.cleanUp();
-            buffer.create(device,
-              required_size,
-              vk::BufferUsageFlagBits::eTransferDst,
-              vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            buffer_size = required_size;
-        }
+        if (!device || deviceLostDetected || !image) { return; }
 
-        if (buffer.getMappedData() == nullptr) {
-            spdlog::error("Frame capture staging buffer is not host mapped; capture skipped.");
-            return;
-        }
-
-        vk::Image &swapchain_image = swapChain.getSwapChainImage(image_index).getImage();
-
-        const vk::ImageMemoryBarrier to_transfer_src = Kataglyphis::buildImageMemoryBarrier(swapchain_image,
-          vk::ImageLayout::ePresentSrcKHR,
-          vk::ImageLayout::eTransferSrcOptimal,
-          vk::AccessFlagBits::eColorAttachmentWrite,
-          vk::AccessFlagBits::eTransferRead);
-
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-          vk::PipelineStageFlagBits::eTransfer,
-          vk::DependencyFlags{},
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &to_transfer_src);
-
-        vk::BufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;// tightly packed
-        region.bufferImageHeight = 0;
-        region.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
-        region.imageOffset = vk::Offset3D{ 0, 0, 0 };
-        region.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
-
-        commandBuffer.copyImageToBuffer(
-          swapchain_image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &region);
-
-        // Restore the layout the present expects.
-        const vk::ImageMemoryBarrier back_to_present = Kataglyphis::buildImageMemoryBarrier(swapchain_image,
-          vk::ImageLayout::eTransferSrcOptimal,
-          vk::ImageLayout::ePresentSrcKHR,
-          vk::AccessFlagBits::eTransferRead,
-          vk::AccessFlagBits{});
-
-        // Make the copy visible to host reads of the staging buffer as well.
-        vk::BufferMemoryBarrier buffer_to_host{};
-        buffer_to_host.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-        buffer_to_host.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-        buffer_to_host.buffer = buffer.getBuffer();
-        buffer_to_host.offset = 0;
-        buffer_to_host.size = required_size;
-        buffer_to_host.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        buffer_to_host.dstAccessMask = vk::AccessFlagBits::eHostRead;
-
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-          vk::PipelineStageFlagBits::eBottomOfPipe | vk::PipelineStageFlagBits::eHost,
-          vk::DependencyFlags{},
-          0,
-          nullptr,
-          1,
-          &buffer_to_host,
-          1,
-          &back_to_present);
-
-        width = extent.width;
-        height = extent.height;
-        format = swapChain.getSwapChainFormat();
-        pending = true;
-        // Set to the frame's in-flight fence by bindSubmitFence() right after
-        // the submit.
-        fence = vk::Fence{};
+        // Every later use of the image starts its own barrier, so the restore must chain into all of them.
+        recordCopy(device,
+          commandBuffer,
+          image,
+          extent,
+          imageFormat,
+          CopySource{ .layout = layout,
+            .lastStages = lastStages,
+            .lastAccess = vk::AccessFlags{},
+            .nextStages = vk::PipelineStageFlagBits::eAllCommands });
     }
 
     // Ties the just-submitted frame's in-flight fence to a pending capture, so
@@ -172,7 +121,8 @@ class FrameCapture
 
     // Waits on the recorded fence (never waitIdle) and returns tightly packed
     // RGBA8 pixels, swizzled from BGRA when the swapchain used a B8G8R8A8
-    // format. Returns an empty vector when nothing is pending, the device is
+    // format, or the raw RGBA16F texels of a recordImage() copy of the HDR
+    // target. Returns an empty vector when nothing is pending, the device is
     // lost, or the wait fails. On eErrorDeviceLost, sets deviceLostDetected so
     // the caller's own device-lost bookkeeping stays in sync.
     std::vector<uint8_t> take(const std::shared_ptr<VulkanDevice> &device,
@@ -202,7 +152,7 @@ class FrameCapture
         if (mapped == nullptr || width == 0 || height == 0) { return {}; }
 
         const size_t pixel_count = static_cast<size_t>(width) * static_cast<size_t>(height);
-        std::vector<uint8_t> pixels(pixel_count * 4U);
+        std::vector<uint8_t> pixels(pixel_count * capturedTexelBytes(format));
         std::memcpy(pixels.data(), mapped, pixels.size());
 
         // Normalize to RGBA8 regardless of the swapchain's channel order.
@@ -227,6 +177,107 @@ class FrameCapture
     }
 
   private:
+    // Where the image is when the copy starts, and the stages on either side of it.
+    struct CopySource
+    {
+        vk::ImageLayout layout;
+        vk::PipelineStageFlags lastStages;
+        vk::AccessFlags lastAccess;
+        vk::PipelineStageFlags nextStages;
+    };
+
+    void recordCopy(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandBuffer &commandBuffer,
+      vk::Image image,
+      vk::Extent2D extent,
+      vk::Format imageFormat,
+      const CopySource &source)
+    {
+        const uint32_t texel_bytes = capturedTexelBytes(imageFormat);
+        if (extent.width == 0 || extent.height == 0 || texel_bytes == 0U) { return; }
+
+        const vk::DeviceSize required_size =
+          static_cast<vk::DeviceSize>(extent.width) * static_cast<vk::DeviceSize>(extent.height) * texel_bytes;
+
+        if (buffer_size < required_size) {
+            // Redundant since create() now releases the previous allocation itself,
+            // but kept: it documents that destroying here (before the new create)
+            // is synchronisation-safe.
+            buffer.cleanUp();
+            buffer.create(device,
+              required_size,
+              vk::BufferUsageFlagBits::eTransferDst,
+              vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            buffer_size = required_size;
+        }
+
+        if (buffer.getMappedData() == nullptr) {
+            spdlog::error("Frame capture staging buffer is not host mapped; capture skipped.");
+            return;
+        }
+
+        const vk::ImageMemoryBarrier to_transfer_src = Kataglyphis::buildImageMemoryBarrier(image,
+          source.layout,
+          vk::ImageLayout::eTransferSrcOptimal,
+          source.lastAccess,
+          vk::AccessFlagBits::eTransferRead);
+
+        commandBuffer.pipelineBarrier(source.lastStages,
+          vk::PipelineStageFlagBits::eTransfer,
+          vk::DependencyFlags{},
+          0,
+          nullptr,
+          0,
+          nullptr,
+          1,
+          &to_transfer_src);
+
+        vk::BufferImageCopy region{};
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;// tightly packed
+        region.bufferImageHeight = 0;
+        region.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+        region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+        region.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
+
+        commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &region);
+
+        // Restore the layout the image's next user expects.
+        const vk::ImageMemoryBarrier back_to_source = Kataglyphis::buildImageMemoryBarrier(image,
+          vk::ImageLayout::eTransferSrcOptimal,
+          source.layout,
+          vk::AccessFlagBits::eTransferRead,
+          vk::AccessFlags{});
+
+        // Make the copy visible to host reads of the staging buffer as well.
+        vk::BufferMemoryBarrier buffer_to_host{};
+        buffer_to_host.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+        buffer_to_host.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+        buffer_to_host.buffer = buffer.getBuffer();
+        buffer_to_host.offset = 0;
+        buffer_to_host.size = required_size;
+        buffer_to_host.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        buffer_to_host.dstAccessMask = vk::AccessFlagBits::eHostRead;
+
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+          source.nextStages | vk::PipelineStageFlagBits::eHost,
+          vk::DependencyFlags{},
+          0,
+          nullptr,
+          1,
+          &buffer_to_host,
+          1,
+          &back_to_source);
+
+        width = extent.width;
+        height = extent.height;
+        format = imageFormat;
+        pending = true;
+        // Set to the frame's in-flight fence by bindSubmitFence() right after
+        // the submit.
+        fence = vk::Fence{};
+    }
+
     bool armed{ false };
     bool pending{ false };
     vk::Fence fence{};

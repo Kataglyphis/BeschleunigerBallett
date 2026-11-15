@@ -9,6 +9,7 @@
 
 using Kataglyphis::buildAttachmentDescription;
 using Kataglyphis::buildExternalColorDepthDependency;
+using Kataglyphis::buildSampledOutputDependency;
 using Kataglyphis::destroyRenderPass;
 
 // Usable in a constant expression, matching ViewportHelper.hpp's convention.
@@ -55,18 +56,18 @@ TEST(RenderPassHelperUnit, MatchesForwardRasterizerColorAttachment)
     expectEngineWideAttachmentInvariants(description);
 }
 
-TEST(RenderPassHelperUnit, MatchesForwardRasterizerDepthAttachmentWithDiscardedStore)
+TEST(RenderPassHelperUnit, MatchesForwardRasterizerDepthAttachmentLeftForTheClouds)
 {
-    // Nothing reads Rasterizer's depth afterwards; losing the eDontCare store would cost bandwidth silently.
+    // The clouds sample Rasterizer's depth after the pass, so it must be stored and left in a read layout.
     const vk::AttachmentDescription description = buildAttachmentDescription(vk::Format::eD32Sfloat,
-      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
       vk::AttachmentLoadOp::eClear,
-      vk::AttachmentStoreOp::eDontCare);
+      vk::AttachmentStoreOp::eStore);
 
     EXPECT_EQ(description.loadOp, vk::AttachmentLoadOp::eClear);
-    EXPECT_EQ(description.storeOp, vk::AttachmentStoreOp::eDontCare);
+    EXPECT_EQ(description.storeOp, vk::AttachmentStoreOp::eStore);
     EXPECT_EQ(description.initialLayout, vk::ImageLayout::eUndefined);
-    EXPECT_EQ(description.finalLayout, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    EXPECT_EQ(description.finalLayout, vk::ImageLayout::eShaderReadOnlyOptimal);
     expectEngineWideAttachmentInvariants(description);
 }
 
@@ -77,7 +78,7 @@ TEST(RenderPassHelperUnit, MatchesDeferredGBufferAttachments)
         buildAttachmentDescription(vk::Format::eR16G16B16A16Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal),
         buildAttachmentDescription(vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eShaderReadOnlyOptimal),
         buildAttachmentDescription(vk::Format::eR8G8B8A8Unorm, vk::ImageLayout::eShaderReadOnlyOptimal),
-        buildAttachmentDescription(vk::Format::eD32Sfloat, vk::ImageLayout::eDepthStencilAttachmentOptimal)
+        buildAttachmentDescription(vk::Format::eD32Sfloat, vk::ImageLayout::eShaderReadOnlyOptimal)
     };
 
     for (const vk::AttachmentDescription &description : attachments) {
@@ -87,7 +88,8 @@ TEST(RenderPassHelperUnit, MatchesDeferredGBufferAttachments)
         EXPECT_EQ(description.initialLayout, vk::ImageLayout::eUndefined);
     }
 
-    EXPECT_EQ(attachments[4].finalLayout, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+    // Depth stays in the lighting subpass's read layout, where the clouds sample it next.
+    EXPECT_EQ(attachments[4].finalLayout, vk::ImageLayout::eShaderReadOnlyOptimal);
     EXPECT_EQ(attachments[0].finalLayout, vk::ImageLayout::eShaderReadOnlyOptimal);
 }
 
@@ -161,9 +163,28 @@ TEST(RenderPassHelper, ExternalDependencyCoversDepthWrites)
     EXPECT_EQ(dependency.dstSubpass, 0U);
     EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eEarlyFragmentTests);
     EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eLateFragmentTests);
+    // The previous frame's clouds sampled this depth; the clear must not overwrite it under them.
+    EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eComputeShader);
     EXPECT_TRUE(dependency.srcAccessMask & vk::AccessFlagBits::eDepthStencilAttachmentWrite);
     EXPECT_TRUE(dependency.dstAccessMask & vk::AccessFlagBits::eDepthStencilAttachmentWrite);
     // Not by-region: this is a cross-frame dependency, not a tile-local one.
+    EXPECT_EQ(dependency.dependencyFlags, vk::DependencyFlags{});
+}
+
+TEST(RenderPassHelperUnit, SampledOutputDependencyMakesDepthVisibleToTheClouds)
+{
+    // Without it the clouds' compute read races the pass's depth store.
+    const vk::SubpassDependency dependency = buildSampledOutputDependency(1);
+
+    EXPECT_EQ(dependency.srcSubpass, 1U);
+    EXPECT_EQ(dependency.dstSubpass, VK_SUBPASS_EXTERNAL);
+    EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eLateFragmentTests);
+    EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eColorAttachmentOutput);
+    EXPECT_TRUE(dependency.srcAccessMask & vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+    EXPECT_TRUE(dependency.srcAccessMask & vk::AccessFlagBits::eColorAttachmentWrite);
+    EXPECT_TRUE(dependency.dstStageMask & vk::PipelineStageFlagBits::eComputeShader);
+    EXPECT_TRUE(dependency.dstStageMask & vk::PipelineStageFlagBits::eFragmentShader);
+    EXPECT_EQ(dependency.dstAccessMask, vk::AccessFlags(vk::AccessFlagBits::eShaderRead));
     EXPECT_EQ(dependency.dependencyFlags, vk::DependencyFlags{});
 }
 

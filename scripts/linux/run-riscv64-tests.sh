@@ -8,13 +8,20 @@ RISCV64_GPU_SOLO_TESTS=(
   PathTracingAntiAliasesGeometricEdges
   PathTracingRespondsToTheDirectionalLight
   PathTracingHonorsTheQualityControls
+  PathTracingHonorsTheUntexturedMetallicFactor
   PathTracingPassesTheWhiteFurnaceTest
+  PathTracingPassesTheWhiteMetalFurnaceTest
+  PathTracingFloorsAZeroRoughnessTexel
+  PathTracedMetalCardReflectsTheSkyAndTheSun
   PathTracedMaskCardShowsItsCutout
   AddedModelAppearsInPathTracing
   ReloadedModelIsVisibleInPathTracing
   RaytracingFrameSkipsTheRasterPass
 )
+# The clouds cost 22-28x, too much for the raster shard's 90 min a test.
 RISCV64_GPU_CLOUD_TESTS='CloudsAcrossManyFramesDoesNotLoseTheDevice|EnablingCloudsChangesTheFrameAndAddsDetail'
+RISCV64_GPU_CLOUD_TESTS+='|CloudOffsetMovesTheCloudVolume|CloudsStopAtTheSceneDepth|CloudsStopAtTracedGeometry'
+RISCV64_GPU_CLOUD_TESTS+='|CloudsCompositeOverTheSkyAsOverGeometry|CloudsInFrontOfGeometryCoverItInEveryMode'
 RISCV64_GPU_SWEEP_TEST='GuiInputSweepNeverCrashesOrLosesTheDevice'
 
 # The weekly matrix reads its shards here, before any hub library loads, so the list has one home.
@@ -104,7 +111,7 @@ test -f "${GPU_SHIM_DIR}/libkata_fp16_helpers.so" || { err "[gpu] the shim did n
 export KATAGLYPHIS_PT_GOLDEN_VARIANT="${KATAGLYPHIS_PT_GOLDEN_VARIANT:-light}"
 info "[gpu] path-traced goldens: KATAGLYPHIS_PT_GOLDEN_VARIANT=${KATAGLYPHIS_PT_GOLDEN_VARIANT}"
 # --no-tests=error: a shard whose filter matches nothing must fail, not pass empty; -V keeps a passing test's log, variant line included.
-xvfb-run -a -s "-screen 0 1920x1080x24" \
+xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \
   ctest --test-dir "${TEST_DIR}" -C Debug -j1 "${CTEST_GPU_ARGS[@]}" \
     --no-tests=error --output-on-failure -V

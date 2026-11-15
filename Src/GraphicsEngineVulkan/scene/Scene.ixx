@@ -4,6 +4,7 @@ module;
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -137,6 +138,10 @@ class Scene
         return mesh != nullptr ? mesh->getBounds() : unknown;
     };
     std::vector<ObjectDescription> getObjectDescriptions() const { return object_descriptions; };
+    /// The scene's primary model (index 0) as its load named it, relative to
+    /// Resources/ like the model library; empty while nothing has loaded or
+    /// after a failed reload. Additional models leave it alone.
+    [[nodiscard]] const std::string &getLoadedModelPath() const { return loadedModelPath; }
     std::vector<std::shared_ptr<Model>> const &get_model_list() const { return model_list; };
 
     void loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
@@ -195,6 +200,8 @@ class Scene
   private:
     AsyncModelParse pendingModelParse;
     bool modelLoadPending{ false };
+    std::string pendingModelPath{};
+    std::string loadedModelPath{};
     std::vector<ObjectDescription> object_descriptions;
     std::vector<std::shared_ptr<Model>> model_list;
 };

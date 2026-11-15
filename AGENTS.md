@@ -64,7 +64,8 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
 - **A configure fetches two**: `crytek-sponza` (the Release default, the one scene the packages
   install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, four `ObjParseUnit`
   fixtures, the renderer comparisons), named by `KATAGLYPHIS_DEFAULT_ASSETS` in the module.
-  `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other twelve for the model picker;
+  `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other fourteen for the model picker, among them
+  `Colosseum-gltf` (117 MiB) and `Colosseum-web`;
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` fetches nothing (the tests that read a scene then skip or fail).
   The shipped scene also carries its official CC BY 3.0 text and source notice from `licenses/`;
   CMake installs both alongside the scene without changing its pinned AssetANT archive.
@@ -88,7 +89,10 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
   the ignored `docs/source/_webgpu_demo/` on every docs build, which CI's release job runs. Without
   `wasm-bindgen` the docs publish without the demo (a warning in CI); without a wasm-bindgen version
   in OxidANT's `Cargo.lock` the script stops, since 2026-10-20. Until 2026-10-17 an 8 MiB snapshot
-  was committed instead.
+  was committed instead. Since 2026-11-15 it also fetches `Colosseum-web` through the hub's
+  fetcher and puts `Colosseum-web.glb` beside the demo, which the demo's Colosseum row loads, with
+  the scene's notices in `webgpu-demo/Colosseum-web/` and the editor fonts' in
+  `webgpu-demo/fonts/`; an unfetchable archive is a warning, not a failure.
 
 Still large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`), frozen with
 two test fixtures in `large-files.allow` for the hub's `large-files` gate. The engine screenshots
@@ -661,7 +665,7 @@ opt-ins before that are gone. Linux x64 still skips a docs-only commit through `
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | on request (`on-request.yml`) or by hand; builds no docs site (the docs steps need `runner == 'ubuntu-26.04'`) |
-| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 11 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 15 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
 | Windows ARM64 (cross build in the arm64 bundle, then the Release commit suite, the Profile perf suite and the Debug (ASan) suite on `windows-11-arm`, dda807b0; below) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | on request (`on-request.yml`) or by hand |
 
 The top two are their own workflows, not jobs inside the build lanes, which is what makes "always"
@@ -801,11 +805,11 @@ hub CON48; why and how:
 the host, builds the `linux-riscv64-cross` preset (Debug,
 `Rust_CARGO_TARGET=riscv64gc-unknown-linux-gnu`) and runs ctest.
 
-- **What runs:** 700 of the 703 Debug tests, against the image's riscv64 Vulkan loader, GLFW and
+- **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
-  push runs the 658 CPU tests (523 s of ctest, 32 min end to end in run 38165366757), the weekly
-  shards the 42 GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end from a cold
-  build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
+  push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
+  the weekly shards the 61 GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
   `LD_PRELOAD` built from `scripts/riscv64/fp16_helpers.c` (riscv64 glibc lacks the fp16 conversion
@@ -822,12 +826,26 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (33 today, two of them disabled), 90 min per test;
-  - `clouds`: the two cloud goldens, 150 min per test;
-  - one solo shard each, 300 min, for the eight path-traced tests (the five
+  - `raster`: every GPU test in no other shard (43 today, two of them disabled), 90 min per test;
+  - `clouds`: the seven cloud goldens, 150 min per test;
+  - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
-    `AddedModelAppearsInPathTracing`, `ReloadedModelIsVisibleInPathTracing`) and for
-    `RaytracingFrameSkipsTheRasterPass`, the costliest ray-traced one.
+    `PathTracedMetalCardReflectsTheSkyAndTheSun`, `AddedModelAppearsInPathTracing`,
+    `ReloadedModelIsVisibleInPathTracing`) and for `RaytracingFrameSkipsTheRasterPass`, the
+    costliest ray-traced one.
+
+  The five cloud goldens and the four path-traced ones added 2026-11-15 are unmeasured under
+  QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
+  `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
+  17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
+  tests timed below to 41 runnable ones, also untimed under QEMU, and five of them path-trace
+  besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` (4 spp
+  for 12 frames, after forward, deferred and ray-traced ones),
+  `TracedHitsTakeTheirSideFromTheTriangleWinding` (a lone card, 4 spp for three 8-frame
+  histories), `HdrTargetStaysBelowTheHalfFloatMaximum`, `PathTracedUnlitCardKeepsItsAlbedo` and
+  `TracedFramesSkipTheShadowPass`. The rewritten `PathTracingPassesTheWhiteFurnaceTest` adds four
+  lone-card histories to the rig's (below), and every path-traced frame now pays for a GGX lobe;
+  only a frame with clouds on still traces the extra cloud-depth ray.
 
   The first weekly run (38015523987, 2026-10-10, at 4910c545), against a 360 min job:
 
@@ -865,7 +883,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   | --- | --- | --- |
   | `PathTracedMaskCardShowsItsCutout` | 133 → 61 | about 200 min |
   | `AddedModelAppearsInPathTracing` | 133 → 61 | about 200 min |
-  | `PathTracingPassesTheWhiteFurnaceTest` | 86 → 46 | about 195 min |
+  | `PathTracingPassesTheWhiteFurnaceTest` | 86 → 46 in the rig, plus 41 → 25 lone-card frames at 4 spp (2026-11-15) | about 195 min for the rig; untimed with the card |
   | `PathTracingAntiAliasesGeometricEdges` | 87 → 57 | about 185 min |
 
   The projection takes 190 s a frame, and 1.3 times that for a furnace frame at 16 bounces (the x64
@@ -874,7 +892,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md) § The riscv64 light variant.
 
   Each shard cross-builds for itself (23-33 min before ctest starts), because the hub's reusable
-  lane takes no build artifact; the 11 jobs restore the push lane's `riscv64-clang-debug` cache
+  lane takes no build artifact; the 15 jobs restore the push lane's `riscv64-clang-debug` cache
   and, off a push, never save it. The CPU and GPU runs sit in different concurrency groups, so a
   push cannot cancel the weekly run. `ctest --no-tests=error` fails a shard whose filter matches
   nothing, and an unknown shard name stops before the build. `RISCV64_GPU_SHARD=all` is the old

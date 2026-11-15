@@ -86,7 +86,10 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
     EXPECT_EQ(offsetof(PushConstantPathTracing, frame_index), 24U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, samples_per_pixel), 28U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, max_bounces), 32U);
-    EXPECT_GE(sizeof(PushConstantPathTracing), 36U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_metallic), 36U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_roughness), 40U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, trace_cloud_depth), 44U);
+    EXPECT_GE(sizeof(PushConstantPathTracing), 48U);
     EXPECT_LE(sizeof(PushConstantPathTracing), 128U);
 }
 
@@ -94,7 +97,8 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
 TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 0U);
-    EXPECT_EQ(sizeof(PushConstantPost), 4U);
+    EXPECT_EQ(offsetof(PushConstantPost, skybox_enabled), 4U);
+    EXPECT_EQ(sizeof(PushConstantPost), 8U);
 }
 
 // Mirrored in raytracing/rt_types.slang.
