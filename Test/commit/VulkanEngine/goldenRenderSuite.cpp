@@ -288,6 +288,10 @@ constexpr const char *TILTED_NORMAL_PNG =
 constexpr const char *TILTED_AGAINST_BITANGENT_PNG =
   "data:image/png;base64,"
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNoULsFAAKqAYGCutYQAAAAAElFTkSuQmCC";
+// One mid-grey texel (128, 128, 128), as a glTF data URI.
+constexpr const char *GREY_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mNoaGgAAAMEAYF1LgG8AAAAAElFTkSuQmCC";
 // One metallic-roughness texel (0, 0, 0): roughness and metallic both 0 whatever their factors.
 constexpr const char *ZERO_ROUGHNESS_PNG =
   "data:image/png;base64,"
@@ -2875,6 +2879,34 @@ TEST(GoldenRender, DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards)
          "or a BLAS build's scratch write lost its barrier (DeferredRasterizer.cpp, ASManager.cpp)";
 }
 
+namespace {
+struct CheckerFractions
+{
+    double green = 0.0;
+    double magenta = 0.0;
+};
+
+// cube_textured.gltf's green and magenta cells over the centre crop its front face fills from 2.2 units away.
+CheckerFractions cube_checker_fractions(const std::vector<uint8_t> &rgba, uint32_t width, uint32_t height)
+{
+    size_t green = 0;
+    size_t magenta = 0;
+    size_t total = 0;
+    for (uint32_t y = height / 2U - 150U; y < height / 2U + 150U; ++y) {
+        for (uint32_t x = width / 2U - 150U; x < width / 2U + 150U; ++x) {
+            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+            const int red = rgba[base];
+            const int grn = rgba[base + 1U];
+            if (grn > red + 40) { ++green; }
+            if (red > grn + 40) { ++magenta; }
+            ++total;
+        }
+    }
+    return { static_cast<double>(green) / static_cast<double>(total),
+        static_cast<double>(magenta) / static_cast<double>(total) };
+}
+}// namespace
+
 // Drivers tolerate a descriptor on the destroyed TLAS, so validation errors are the primary oracle.
 TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
 {
@@ -2923,27 +2955,189 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(after.empty());
 
-    // The face's green and magenta checker, cells about 90 px wide; a stale TLAS shows the rig's grey, an empty one sky.
-    size_t green = 0;
-    size_t magenta = 0;
-    size_t total = 0;
-    for (uint32_t y = height / 2U - 150U; y < height / 2U + 150U; ++y) {
-        for (uint32_t x = width / 2U - 150U; x < width / 2U + 150U; ++x) {
-            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
-            const int red = after[base];
-            const int grn = after[base + 1U];
-            if (grn > red + 40) { ++green; }
-            if (red > grn + 40) { ++magenta; }
-            ++total;
-        }
-    }
-    GTEST_LOG_(INFO) << "reloaded cube, centre crop: " << green << " green and " << magenta << " magenta of " << total
-                     << " px";
+    // A stale TLAS shows the rig's grey, an empty one sky.
+    const CheckerFractions checker = cube_checker_fractions(after, width, height);
+    GTEST_LOG_(INFO) << "reloaded cube, centre crop: " << checker.green << " green and " << checker.magenta
+                     << " magenta";
 
-    EXPECT_GT(static_cast<double>(green), 0.05 * static_cast<double>(total))
-      << "no green checker texels: the reloaded cube is not shaded in path tracing";
-    EXPECT_GT(static_cast<double>(magenta), 0.05 * static_cast<double>(total))
-      << "no magenta checker texels: the reloaded cube is not shaded in path tracing";
+    EXPECT_GT(checker.green, 0.05) << "no green checker texels: the reloaded cube is not shaded in path tracing";
+    EXPECT_GT(checker.magenta, 0.05) << "no magenta checker texels: the reloaded cube is not shaded in path tracing";
+}
+
+// A full rebuild counts two builds for the add and replaces the rig's BLAS; BlasReuse.hpp decides what stays.
+TEST(GoldenRender, AddedModelBuildsOnlyItsOwnBlas)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = true;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    const std::vector<vk::AccelerationStructureKHR> loaded = harness.renderer->bottomLevelHandles();
+    ASSERT_EQ(loaded.size(), 1U) << "the loaded rig has no BLAS";
+    EXPECT_EQ(harness.renderer->bottomLevelBuildCount(), 1U);
+
+    ScopedValidationErrorCounter validation_errors;
+    const glm::mat4 beside = glm::translate(glm::mat4(1.0F), glm::vec3(3.0F, 1.0F, 8.0F));
+    ASSERT_TRUE(harness.renderer->addModel(DIELECTRIC_CUBE_MODEL, beside).has_value()) << "adding the cube failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    const std::vector<vk::AccelerationStructureKHR> added = harness.renderer->bottomLevelHandles();
+    ASSERT_EQ(added.size(), 2U);
+    EXPECT_EQ(harness.renderer->bottomLevelBuildCount(), 2U)
+      << "adding one model rebuilt the BLAS of the model already in the scene";
+    EXPECT_EQ(added[0], loaded[0]) << "the rig's BLAS was replaced by an addModel";
+
+    // A reload replaces model 0, so neither BLAS may stay: one build, for the reloaded model.
+    const int reload_index = sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), DIELECTRIC_CUBE_MODEL);
+    ASSERT_GE(reload_index, 0) << DIELECTRIC_CUBE_MODEL << " not found among the scanned models";
+    scene_vars.selected_model_index = reload_index;
+    scene_vars.model_reload_requested = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    const std::vector<vk::AccelerationStructureKHR> reloaded = harness.renderer->bottomLevelHandles();
+    ASSERT_EQ(reloaded.size(), 1U) << "the reload kept a BLAS of a model the scene no longer holds";
+    EXPECT_EQ(harness.renderer->bottomLevelBuildCount(), 3U);
+
+    // The next add appends to the reloaded scene, not to the BLAS the reload discarded.
+    ASSERT_TRUE(harness.renderer->addModel(MASK_CARD_MODEL, beside).has_value()) << "adding the card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    const std::vector<vk::AccelerationStructureKHR> appended = harness.renderer->bottomLevelHandles();
+    ASSERT_EQ(appended.size(), 2U);
+    EXPECT_EQ(harness.renderer->bottomLevelBuildCount(), 4U);
+    EXPECT_EQ(appended[0], reloaded[0]) << "the reloaded cube's BLAS was replaced by an addModel";
+    EXPECT_EQ(validation_errors.errorCount(), 0) << "a traced frame or an AS build logged an error";
+}
+
+// Nothing rewrites the traced sets per frame, so each change they depend on must reach updateAllDescriptorSets.
+TEST(GoldenRender, TracedFramesFollowTheRasterModeAndTheSwapchain)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = true;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    ScopedValidationErrorCounter validation_errors;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> forward = harness.capture_frame(width, height);
+    ASSERT_FALSE(forward.empty());
+    ASSERT_GT(distinct_luminance_buckets(forward), 16U) << "the traced rig frame is blank - check the scene";
+
+    const auto differing = [&](const std::vector<uint8_t> &other) {
+        size_t count = 0;
+        for (size_t pixel = 0; pixel < forward.size() / 4U; ++pixel) {
+            if (channel_delta(forward, other, pixel) > 8) { ++count; }
+        }
+        return static_cast<double>(count) / static_cast<double>(forward.size() / 4U);
+    };
+
+    // The traced pass writes the mode's offscreen image, which post then reads.
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> deferred = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(deferred.size(), forward.size());
+    const double deferred_differing = differing(deferred);
+
+    // A recreated swapchain recreates every image the traced sets name.
+    harness.renderer->recreateSwapChain();
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> recreated = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(recreated.size(), forward.size());
+    const double recreated_differing = differing(recreated);
+
+    GTEST_LOG_(INFO) << "traced rig, pixels differing from the forward-mode frame: " << deferred_differing
+                     << " in deferred mode, " << recreated_differing << " after the swapchain recreation";
+    EXPECT_LT(deferred_differing, 0.01) << "the traced frame did not follow the switch to deferred mode: the traced "
+                                           "pass still writes the forward image while post reads the deferred one";
+    EXPECT_LT(recreated_differing, 0.01) << "the traced frame changed across a swapchain recreation";
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "a traced frame logged an error - a descriptor still naming an image the recreation destroyed";
+}
+
+// Model 0 has two meshes and one texture, so the second model's hits need its mesh base and its texture offset.
+TEST(GoldenRender, TracedSecondModelResolvesItsOwnMeshAndTextures)
+{
+    SKIP_WITHOUT_GPU();
+
+    // The second primitive makes the cube's mesh base 2 against an instance index of 1; the grey texel fills slot 0.
+    const auto first = write_gltf_variant(DIELECTRIC_CUBE_MODEL, "kataglyphis_grey_two_mesh_cube.gltf", [](auto &gltf) {
+        gltf["images"][0]["uri"] = GREY_PNG;
+        gltf["meshes"][0]["primitives"].push_back(gltf["meshes"][0]["primitives"][0]);
+    });
+    ASSERT_TRUE(first.has_value()) << "could not write the grey two-mesh cube";
+
+    ScopedModelOverride first_model(first->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
+
+    auto &renderer_vars = harness.useForwardRaster();
+    renderer_vars.pathTracingSamplesPerPixel = 2;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_EQ(harness.scene->getMeshCountPerModel(), (std::vector<uint32_t>{ 2U }))
+      << "the first cube is not two meshes";
+    ASSERT_EQ(harness.scene->getTextureCount(0), 1U) << "the first cube must own texture slot 0";
+
+    // Far enough along +X that the first cube stays out of the frame.
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, 0.0F, 0.0F));
+    ASSERT_TRUE(harness.renderer->addModel(DIELECTRIC_CUBE_MODEL, placement).has_value()) << "adding the cube failed";
+    harness.camera->set_camera_position(glm::vec3(10.0F, 0.6F, 2.2F));
+    harness.camera->set_orientation(-90.0F, -15.0F);
+
+    const auto measure = [&](const char *mode, int frames) {
+        harness.render_frames(frames);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        EXPECT_FALSE(harness.renderer->hasDeviceLost());
+        if (frame.empty()) { return CheckerFractions{}; }
+        const CheckerFractions checker = cube_checker_fractions(frame, width, height);
+        GTEST_LOG_(INFO) << mode << ": second cube, centre crop: " << checker.green << " green and " << checker.magenta
+                         << " magenta";
+        return checker;
+    };
+
+    const CheckerFractions forward = measure("forward", SETTLE_FRAMES);
+    ASSERT_GT(forward.green, 0.05) << "the forward frame shows no green checker - check the framing";
+    ASSERT_GT(forward.magenta, 0.05) << "the forward frame shows no magenta checker - check the framing";
+
+    renderer_vars.raytracing = true;
+    const CheckerFractions traced = measure("ray traced", SETTLE_FRAMES);
+    EXPECT_GT(traced.green, 0.05) << "ray traced: the second cube shades with the first's grey - its object index "
+                                     "lost InstanceID()'s mesh base, or its texture its offset";
+    EXPECT_GT(traced.magenta, 0.05) << "ray traced: the second cube's magenta checker cells are missing";
+
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    const CheckerFractions path_traced = measure("path traced", 8);
+    EXPECT_GT(path_traced.green, 0.05) << "path traced: the second cube shades with the first's grey - its object "
+                                          "index lost CommittedInstanceID()'s mesh base, or its texture its offset";
+    EXPECT_GT(path_traced.magenta, 0.05) << "path traced: the second cube's magenta checker cells are missing";
 }
 
 // The library marks what the startup load opened; it once marked the default scene whatever the override said.

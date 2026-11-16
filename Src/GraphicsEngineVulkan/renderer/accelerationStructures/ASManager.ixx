@@ -1,4 +1,6 @@
 ﻿module;
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -12,6 +14,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.mesh;
+import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.buffer;
 
 export namespace Kataglyphis::VulkanRendererInternals {
@@ -37,15 +40,17 @@ class ASManager
     vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
     [[nodiscard]] bool hasTLAS() const { return static_cast<bool>(tlas.vulkanAS); }
 
+    // Keeps the BLAS of the leading models the scene still holds and builds the rest, then the TLAS.
     void createASForScene(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       Kataglyphis::Scene *scene);
 
-    bool
-      createBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
-
     void
       createTLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+
+    // Every BLAS built so far, compaction copies not counted; the incremental-append golden reads it.
+    [[nodiscard]] std::uint64_t getBlasBuildCount() const { return blasBuildCount; }
+    [[nodiscard]] std::vector<vk::AccelerationStructureKHR> getBlasHandles() const;
 
     void cleanUp();
 
@@ -56,14 +61,23 @@ class ASManager
     Kataglyphis::VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;
+    // blas[i] was built from blasModels[i]; a model the scene no longer holds at index i invalidates it and the rest.
+    std::vector<std::weak_ptr<Model>> blasModels;
+    std::uint64_t blasBuildCount = 0;
     TopLevelAccelerationStructure tlas;
 
-    // Replaces every freshly built BLAS with a compacted copy. Compaction
+    // Builds one BLAS per model from blas.size() on, in one batch through one scratch buffer.
+    bool
+      createBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+
+    void destroyBLASFrom(std::size_t first);
+
+    // Replaces every BLAS from `first` on with a compacted copy. Compaction
     // typically reclaims a large fraction of BLAS memory at no trace-time
     // cost; it is legal because the builds carry eAllowCompaction and the
     // build submission is fully synchronous before this runs. TLAS is built
     // AFTER, so it picks up the compacted device addresses naturally.
-    void compactBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
+    void compactBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, std::size_t first);
 
     static void createSingleBlas(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandBuffer command_buffer,

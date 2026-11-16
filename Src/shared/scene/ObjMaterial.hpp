@@ -52,8 +52,6 @@ struct ObjMaterial
 
     // OBJ map_d opacity slot; -1 = none, always for glTF, which keeps opacity in baseColorTexture.a.
     int alphaTextureID{ -1 };
-
-    int get_textureID() const { return textureID; }
 };
 
 // A constructor or base class would silently break designated initializers and the offsetof layout gates.

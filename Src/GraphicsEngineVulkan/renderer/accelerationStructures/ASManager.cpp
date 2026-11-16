@@ -2,6 +2,7 @@ module;
 #include "common/Utilities.hpp"
 #include "renderer/accelerationStructures/BlasCompaction.hpp"
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+#include "renderer/accelerationStructures/BlasReuse.hpp"
 #include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
 #include <algorithm>
 #include <cstddef>
@@ -35,6 +36,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(const std
 {
     this->vulkanDevice = device;
     if (scene == nullptr || scene->getModelCount() == 0) { return; }
+    // An addModel or a finished async load appends, so only the new model builds; a reload replaces model 0.
+    destroyBLASFrom(Kataglyphis::reusableBlasPrefix(blasModels, scene->get_model_list()));
     if (!createBLAS(device, commandPool, scene)) {
         spdlog::error(
           "ASManager::createASForScene: BLAS build failed; no acceleration structure this scene change; ray "
@@ -48,19 +51,16 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
-    // Clear old BLAS if any
-    for (auto &bla : blas) {
-        if (bla.vulkanAS) { vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS); }
-        bla.vulkanBuffer.cleanUp();
-    }
-    blas.clear();
+    const std::size_t first = blas.size();
+    if (first >= scene->getModelCount()) { return true; }
+    const std::size_t new_count = scene->getModelCount() - first;
 
-    std::vector<BlasInput> blas_input(scene->getModelCount());
+    std::vector<BlasInput> blas_input(new_count);
 
-    for (uint32_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
-        std::shared_ptr<Model> const mesh_model = scene->get_model_list()[model_index];
-        blas_input[model_index].as_geometry.reserve(mesh_model->getMeshCount());
-        blas_input[model_index].as_build_offset_info.reserve(mesh_model->getMeshCount());
+    for (std::size_t input_index = 0; input_index < new_count; input_index++) {
+        std::shared_ptr<Model> const mesh_model = scene->get_model_list()[first + input_index];
+        blas_input[input_index].as_geometry.reserve(mesh_model->getMeshCount());
+        blas_input[input_index].as_build_offset_info.reserve(mesh_model->getMeshCount());
 
         for (size_t mesh_index = 0; mesh_index < mesh_model->getMeshCount(); mesh_index++) {
             vk::AccelerationStructureGeometryKHR acceleration_structure_geometry{};
@@ -71,17 +71,17 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
               acceleration_structure_geometry,
               acceleration_structure_build_range_info);
 
-            blas_input[model_index].as_geometry.push_back(acceleration_structure_geometry);
-            blas_input[model_index].as_build_offset_info.push_back(acceleration_structure_build_range_info);
+            blas_input[input_index].as_geometry.push_back(acceleration_structure_geometry);
+            blas_input[input_index].as_build_offset_info.push_back(acceleration_structure_build_range_info);
         }
     }
 
     std::vector<BuildAccelerationStructure> build_as_structures;
-    build_as_structures.resize(scene->getModelCount());
+    build_as_structures.resize(new_count);
 
     vk::DeviceSize max_scratch_size = 0;
 
-    for (unsigned int i = 0; i < scene->getModelCount(); i++) {
+    for (std::size_t i = 0; i < new_count; i++) {
         vk::DeviceSize current_scratch_size = 0;
         vk::DeviceSize current_size = 0;
 
@@ -115,7 +115,7 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
         return false;
     }
 
-    for (size_t i = 0; i < scene->getModelCount(); i++) {
+    for (std::size_t i = 0; i < new_count; i++) {
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
 
         // The next model's build writes the same scratch buffer, so a read-only dst scope left a WAW (sync validation).
@@ -138,25 +138,49 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
         spdlog::error(
           "ASManager::createBLAS: failed to submit BLAS build commands for {} model(s); no "
           "acceleration structures were built.",
-          scene->getModelCount());
+          new_count);
         scratchBuffer.cleanUp();
         return false;
     }
 
-    for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
+    for (std::size_t i = 0; i < new_count; i++) {
+        blas.emplace_back(std::move(build_as_structures[i].single_blas));
+        blasModels.emplace_back(scene->get_model_list()[first + i]);
+    }
+    blasBuildCount += new_count;
 
     scratchBuffer.cleanUp();
 
-    compactBLAS(device, commandPool);
+    compactBLAS(device, commandPool, first);
     return true;
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::shared_ptr<VulkanDevice> &device,
-  vk::CommandPool commandPool)
+void Kataglyphis::VulkanRendererInternals::ASManager::destroyBLASFrom(std::size_t first)
 {
-    if (blas.empty()) { return; }
+    for (std::size_t i = first; i < blas.size(); i++) {
+        if (blas[i].vulkanAS) { vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(blas[i].vulkanAS); }
+        blas[i].vulkanBuffer.cleanUp();
+    }
+    if (first < blas.size()) { blas.resize(first); }
+    if (first < blasModels.size()) { blasModels.resize(first); }
+}
+
+auto Kataglyphis::VulkanRendererInternals::ASManager::getBlasHandles() const
+  -> std::vector<vk::AccelerationStructureKHR>
+{
+    std::vector<vk::AccelerationStructureKHR> handles;
+    handles.reserve(blas.size());
+    for (auto const &entry : blas) { handles.push_back(entry.vulkanAS); }
+    return handles;
+}
+
+void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::shared_ptr<VulkanDevice> &device,
+  vk::CommandPool commandPool,
+  std::size_t first)
+{
+    if (first >= blas.size()) { return; }
     vk::Device const logical = device->getLogicalDevice();
-    auto const count = static_cast<uint32_t>(blas.size());
+    auto const count = static_cast<uint32_t>(blas.size() - first);
 
     // 1. Query compacted sizes; legal only after the (synchronous) build, for eAllowCompaction structures.
     vk::QueryPoolCreateInfo query_pool_create_info{};
@@ -168,7 +192,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
 
     std::vector<vk::AccelerationStructureKHR> handles;
     handles.reserve(count);
-    for (auto const &entry : blas) { handles.push_back(entry.vulkanAS); }
+    for (uint32_t i = 0; i < count; ++i) { handles.push_back(blas[first + i].vulkanAS); }
 
     vk::CommandBuffer query_cmd =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(logical, commandPool);
@@ -240,7 +264,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
         compacted[i].vulkanAS = compacted_as_result.value;
 
         vk::CopyAccelerationStructureInfoKHR copy_info{};
-        copy_info.src = blas[i].vulkanAS;
+        copy_info.src = blas[first + i].vulkanAS;
         copy_info.dst = compacted[i].vulkanAS;
         copy_info.mode = vk::CopyAccelerationStructureModeKHR::eCompact;
         copy_cmd.copyAccelerationStructureKHR(copy_info);
@@ -259,10 +283,10 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
 
     // 3. The submit was synchronous, so the originals can go; the TLAS is built later from the new addresses.
     for (uint32_t i = 0; i < count; ++i) {
-        logical.destroyAccelerationStructureKHR(blas[i].vulkanAS);
-        blas[i].vulkanBuffer.cleanUp();
+        logical.destroyAccelerationStructureKHR(blas[first + i].vulkanAS);
+        blas[first + i].vulkanBuffer.cleanUp();
+        blas[first + i] = std::move(compacted[i]);
     }
-    blas = std::move(compacted);
     logical.destroyQueryPool(query_pool);
 
     spdlog::info("ASManager: compacted {} BLAS, {} bytes total after compaction.", count, total_compacted);
@@ -464,6 +488,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
         bla.vulkanBuffer.cleanUp();
     }
     blas.clear();
+    blasModels.clear();
 
     vulkanDevice.reset();
 }

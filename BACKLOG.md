@@ -126,12 +126,6 @@ No P0 item is open.
 - [ ] `C++` **Dynamic rendering + synchronization2 are not enabled** (L, `VulkanDevice.cpp`).
   Dynamic rendering would delete the framebuffer rebuild in `recreateSwapChain`, where the
   image-count edge cases live. Test: the whole golden suite under both paths behind a toggle.
-- [ ] `C++` **Incremental BLAS append** (M, an optimisation). `addModel` and `reloadModel` call
-  `createASForScene`, which rebuilds every model's BLAS to add one. `createBLAS` is a batched
-  build (one scratch buffer, one compaction pass across all models), so an
-  `ASManager::appendBlas(model)` means extracting a single-model build path with its own
-  scratch and compaction, then `createTLAS`. Guard it with the RT goldens and
-  `GoldenRender.AddedModelAppearsInPathTracing`.
 - [b] `Rust` **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder and a test asset**).
   KTX2 BCn passthrough is done; supercompressed files are rejected with a clear error
   (`ktx2_loader.rs`). The viable transcoder is the `basis-universal` crate, a C++ binding,
@@ -184,13 +178,6 @@ committed to.
 
 ## C++ engine ideas
 
-- **[P3] Drop the per-frame `update_raytracing_descriptor_set` call in `drawFrame`.** It runs on
-  `.raytracing` only, and every state change that invalidates those descriptors already goes
-  through `updateAllDescriptorSets`. Saves three descriptor writes per frame; CI runs the RT
-  goldens, so the change is checkable.
-- **[P3] `VulkanDevice` creates a queue on `compute_family` that it never retrieves.** Harmless
-  (a graphics+compute family always exists, so it equals `graphics_family`), and checkable in
-  CI.
 - **[P3] A `vkCheck()` helper** for the `auto r = device...createX(info); ASSERT_VULKAN(...);`
   idiom (52 sites, about 20 files). A whole-codebase sweep, so it wants a deliberate moment.
 - **[P3] `GUI*` is a mutable cross-cutting dependency**: `VulkanRenderer` reads GUI state each
@@ -198,15 +185,6 @@ committed to.
 - **[P3] A stage registry**, so adding a pass does not mean editing `VulkanRenderer`. (A
   `SwapchainTarget` extraction was investigated 2026-07-23 and rejected: recreation is
   inherently cross-cutting.)
-- **[P3] Prove the multi-object index arithmetic in the tracers.**
-  `GoldenRender.SecondModelShadesWithItsOwnTextures` proves per-model texture offsets in raster;
-  the ray- and path-traced index is only checked by reading the source.
-- **[P3]** Small, fold into the next change that touches the file:
-  - `ObjMaterial::get_textureID()` has no production caller; switch the two test call sites
-    to the public member and delete it.
-  - `sample_alpha`/`sample_alpha_lod0` transform their UV with the base-colour slot's
-    `KHR_texture_transform`. A no-op today (only OBJ `map_d` sets `alphaTextureID`, with
-    identity transforms); give it an `alpha_uv()` accessor or a comment.
 
 ## Rust renderer ideas (OxidANT)
 

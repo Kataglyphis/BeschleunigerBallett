@@ -2,9 +2,12 @@
 
 #include <array>
 #include <gtest/gtest.h>
+#include <memory>
+#include <vector>
 
 #include "renderer/accelerationStructures/BlasCompaction.hpp"
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+#include "renderer/accelerationStructures/BlasReuse.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 
 static_assert(Kataglyphis::blasTriangleLimits(100, 300).maxVertex == 99,
@@ -85,6 +88,42 @@ TEST(BlasCompactionUnit, RejectsEmptyAndZeroSizedResults)
 
     const std::array<vk::DeviceSize, 3> all_positive = { 128, 256, 512 };
     EXPECT_TRUE(Kataglyphis::compactedSizesAreUsable(all_positive));
+}
+
+TEST(BlasReuseUnit, AnAppendedModelKeepsEveryEarlierBlas)
+{
+    const std::vector<std::shared_ptr<int>> models = { std::make_shared<int>(0), std::make_shared<int>(1) };
+    const std::vector<std::weak_ptr<int>> built = { models[0] };
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(built, models), 1U);
+}
+
+TEST(BlasReuseUnit, AReplacedModelInvalidatesItselfAndEverythingAfterIt)
+{
+    std::vector<std::shared_ptr<int>> models = {
+        std::make_shared<int>(0), std::make_shared<int>(1), std::make_shared<int>(2)
+    };
+    const std::vector<std::weak_ptr<int>> built = { models[0], models[1], models[2] };
+    models[1] = std::make_shared<int>(1);
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(built, models), 1U);
+}
+
+TEST(BlasReuseUnit, AReloadKeepsNothingEvenAtTheFreedModelsAddress)
+{
+    std::vector<std::shared_ptr<int>> models = { std::make_shared<int>(0) };
+    const std::vector<std::weak_ptr<int>> built = { models[0] };
+    // The address may repeat once the old model is freed; the owner may not, since the weak_ptr keeps its block.
+    models.clear();
+    models.push_back(std::make_shared<int>(0));
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(built, models), 0U);
+}
+
+TEST(BlasReuseUnit, BlasForModelsTheSceneDroppedAreNotKept)
+{
+    const std::vector<std::shared_ptr<int>> models = { std::make_shared<int>(0) };
+    const std::vector<std::weak_ptr<int>> built = { models[0], std::weak_ptr<int>() };
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(built, models), 1U);
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(built, std::vector<std::shared_ptr<int>>{}), 0U);
+    EXPECT_EQ(Kataglyphis::reusableBlasPrefix(std::vector<std::weak_ptr<int>>{}, models), 0U);
 }
 
 }// namespace

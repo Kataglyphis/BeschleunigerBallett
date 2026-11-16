@@ -119,7 +119,12 @@ meshes feeds the systems that were already mesh-aware:
   multi-mesh model culls per mesh instead of all-or-nothing.
 - **Acceleration structures** — one BLAS per model with one **geometry** per
   mesh; RT/PT kernels fetch the per-mesh material with
-  `instanceCustomIndex (= the model's first-mesh flat index) + gl_GeometryIndexEXT`.
+  `instanceCustomIndex (= the model's first-mesh flat index) + gl_GeometryIndexEXT`
+  (`GoldenRender.TracedSecondModelResolvesItsOwnMeshAndTextures`). An `addModel`
+  or a finished load builds only the new model's BLAS: a BLAS stays while the
+  scene holds the model object it was built from at its index (`BlasReuse.hpp`),
+  so a reload rebuilds; every scene change rebuilds the TLAS
+  (`GoldenRender.AddedModelBuildsOnlyItsOwnBlas`).
 
 ## Material fields and where they come from
 

@@ -13,7 +13,6 @@ module;
 #include <fstream>
 #include <limits>
 #include <optional>
-#include <set>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -279,19 +278,15 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         }
     }
 
-    // vector for queue creation information and set for family indices
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
-    std::set<int> const queue_family_indices = {
-        indices.graphics_family, indices.presentation_family, indices.compute_family
-    };
+    std::vector<uint32_t> const queue_family_indices = indices.queueFamiliesToCreate();
     std::vector<float> queue_priorities(queue_family_indices.size(), 1.0F);
     queue_create_infos.reserve(queue_family_indices.size());
 
     std::size_t priority_index = 0;
-    for (int const queue_family_index : queue_family_indices) {
+    for (uint32_t const queue_family_index : queue_family_indices) {
         vk::DeviceQueueCreateInfo queue_create_info{};
-        queue_create_info.queueFamilyIndex =
-          static_cast<uint32_t>(queue_family_index);// the index of the family to create a queue from
+        queue_create_info.queueFamilyIndex = queue_family_index;// the index of the family to create a queue from
         queue_create_info.queueCount = 1;// number of queues to create
         queue_create_info.pQueuePriorities =
           &queue_priorities[priority_index];// Vulkan schedules multiple queues by priority (1 = highest)

@@ -599,13 +599,10 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
-      gui->getGuiRendererSharedVars();
     const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
     // The mode this frame draws, not the GUI's pick: without a TLAS a ray- or path-tracing pick still draws raster.
     const char *const render_mode =
       Kataglyphis::VulkanRendererInternals::FrontendShared::renderModeLogName(drawnRenderMode());
-    if (raytracing_available && guiRendererSharedVars.raytracing) { update_raytracing_descriptor_set(image_index); }
 
     if (!record_commands(image_index, guiSceneSharedVars)) {
         std::ignore = command_buffers[image_index].end();
@@ -834,18 +831,6 @@ void Kataglyphis::VulkanRenderer::initDescriptorResources()
     createSharedRenderDescriptorResources();
     create_post_descriptor_resources();
     create_gbuffer_descriptor_resources();
-}
-
-void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t image_index)
-{
-    if (image_index >= raytracingDescriptors.sets().size()) {
-        spdlog::error(fmt::format("Raytracing descriptor set index out of range: {}", image_index));
-        return;
-    }
-
-    if (!asManager.getTLAS()) { return; }
-
-    writeRaytracingDescriptorsForImage(image_index);
 }
 
 void Kataglyphis::VulkanRenderer::writeRaytracingDescriptorsForImage(uint32_t image_index)

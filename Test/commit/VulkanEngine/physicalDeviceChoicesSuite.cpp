@@ -2,6 +2,11 @@
 
 #include "vulkan_base/PhysicalDeviceChoices.hpp"
 
+#include <cstdint>
+#include <vector>
+
+import kataglyphis.vulkan.queue_family_indices;
+
 namespace {
 
 vk::PhysicalDeviceProperties makeProperties(vk::PhysicalDeviceType type, uint32_t maxImageDimension2D)
@@ -58,6 +63,19 @@ TEST(PhysicalDeviceChoicesUnit, MaxAnisotropyIsClampedToTheDeviceLimit)
     EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 16.0F), 16.0F);
     EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 2.0F), 2.0F);
     EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 1.0F), 1.0F);
+}
+
+TEST(QueueFamilyIndicesUnit, CreatesNoQueueOnTheComputeFamily)
+{
+    using Kataglyphis::VulkanRendererInternals::QueueFamilyIndices;
+    const QueueFamilyIndices separate{ .graphics_family = 0, .presentation_family = 1, .compute_family = 2 };
+    EXPECT_EQ(separate.queueFamiliesToCreate(), (std::vector<uint32_t>{ 0U, 1U }));
+
+    const QueueFamilyIndices shared{ .graphics_family = 0, .presentation_family = 0, .compute_family = 0 };
+    EXPECT_EQ(shared.queueFamiliesToCreate(), (std::vector<uint32_t>{ 0U }));
+
+    const QueueFamilyIndices present_first{ .graphics_family = 2, .presentation_family = 1, .compute_family = 3 };
+    EXPECT_EQ(present_first.queueFamiliesToCreate(), (std::vector<uint32_t>{ 1U, 2U }));
 }
 
 }// namespace

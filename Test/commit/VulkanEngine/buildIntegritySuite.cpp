@@ -2884,6 +2884,7 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
         { "normal_uv(", 2U },
         { "metallic_roughness_uv(", 2U },
         { "emissive_uv(", 2U },
+        { "alpha_uv(", 2U },
     };
     for (const auto &[accessor, expected_count] : kExpectedCounts) {
         std::size_t count = 0;
@@ -2897,17 +2898,17 @@ TEST(BuildIntegrity, NonBaseTextureSlotsUseTheirOwnUvTransformRows)
           << ") exactly once from its explicit-LOD helper and once from its implicit-LOD helper. " << kFailureMessage;
     }
 
-    // The OBJ-only map_d slot has no transform of its own, so its two samplers legitimately use the bare overload.
+    // Even map_d, which shares the base-colour rows, names that through alpha_uv().
     std::size_t bareTransformUvCalls = 0;
     std::size_t pos = 0;
     while ((pos = text.find("transform_uv(", pos)) != std::string::npos) {
         ++bareTransformUvCalls;
         pos += std::strlen("transform_uv(");
     }
-    EXPECT_EQ(bareTransformUvCalls, 2U)
+    EXPECT_EQ(bareTransformUvCalls, 0U)
       << path.string()
-      << " must call the bare transform_uv(uv, material) overload exactly twice (sample_alpha_lod0 "
-         "and sample_alpha); every other slot must go through its own named accessor instead. "
+      << " must not call the bare transform_uv(uv, material) overload; every slot, map_d's alpha_uv() included, "
+         "goes through its own named accessor. "
       << kFailureMessage;
 }
 

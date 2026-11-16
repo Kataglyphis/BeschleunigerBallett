@@ -13,13 +13,13 @@ import normal_map;
 float sample_alpha_lod0(ObjectDescription obj, ObjMaterial material, float2 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[alphaTexId].SampleLevel(textureSamplers[alphaTexId], transform_uv(texCoords, material), 0.0).r;
+    return textures[alphaTexId].SampleLevel(textureSamplers[alphaTexId], alpha_uv(texCoords, material), 0.0).r;
 }
 
 float sample_alpha(ObjectDescription obj, ObjMaterial material, float2 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[alphaTexId].Sample(textureSamplers[alphaTexId], transform_uv(texCoords, material)).r;
+    return textures[alphaTexId].Sample(textureSamplers[alphaTexId], alpha_uv(texCoords, material)).r;
 }
 
 float3 sample_normal_lod0(ObjectDescription obj, ObjMaterial material, float2 texCoords)

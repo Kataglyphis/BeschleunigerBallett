@@ -35,3 +35,9 @@ float2 emissive_uv(float2 uv, ObjMaterial material)
 {
     return transform_uv(uv, material.emissive_uv_transform_row0, material.emissive_uv_transform_row1);
 }
+
+// OBJ map_d slot: no transform rows of its own, so it shares the base-colour pair, identity for every OBJ material.
+float2 alpha_uv(float2 uv, ObjMaterial material)
+{
+    return transform_uv(uv, material);
+}

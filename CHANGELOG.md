@@ -23,6 +23,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- `GoldenRender.TracedSecondModelResolvesItsOwnMeshAndTextures` proves the ray and path tracers'
+  per-model object index and texture offset: a second cube must show its own checker after a
+  two-mesh first model whose texture is grey.
+- `GoldenRender.TracedFramesFollowTheRasterModeAndTheSwapchain`: a ray-traced frame is unchanged
+  by a switch to deferred mode and by a swapchain recreation.
 - A docked editor replaces the floating ImGui window: menu bar with a renderer switch, scene
   outliner, a model library grouped by folder, an inspector per object (Model, Sun, Camera, Sky,
   Renderer), a profiler with frame-time and GPU pass graphs, and a status bar. A graphite theme
@@ -156,6 +161,15 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- Adding a model builds only that model's bottom-level acceleration structure and rebuilds the
+  TLAS; the models already in the scene keep theirs. A reload still rebuilds, since it replaces
+  the model.
+- The ray-tracing descriptor sets are no longer rewritten every ray-traced frame: every change
+  they depend on (the TLAS, the raster mode, the swapchain) already rewrites them.
+- The device creates queues on the graphics and presentation families only; the compute family
+  it also created one on was never used, since compute work runs on the graphics queue.
+- The OBJ `map_d` cut-out samples through its own `alpha_uv()` accessor, which shares the
+  base-colour transform, and `ObjMaterial::get_textureID()` is gone.
 - OxidANT moves to its Rust renderer parity work (`eb97c364`): the Rust WebGPU renderer gets the
   C++ editor (docks, model library, inspectors, profiler), the fly camera, the Colosseum as its
   default scene, a deferred path, the C++ shadow controls and cube-map skybox, volumetric clouds,

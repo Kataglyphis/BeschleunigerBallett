@@ -85,6 +85,10 @@ class VulkanRenderer
     // still be reported as a failure.
     [[nodiscard]] bool hasFatalFrameError() const { return fatal_frame_error; }
     bool supportsHardwareRaytracing() const;
+    // Test instrumentation: an addModel must build one BLAS and keep the others' handles.
+    [[nodiscard]] std::uint64_t bottomLevelBuildCount() const { return asManager.getBlasBuildCount(); }
+    [[nodiscard]] std::vector<vk::AccelerationStructureKHR> bottomLevelHandles() const
+    { return asManager.getBlasHandles(); }
 
     // -- headless frame capture (test / tooling instrumentation)
     //
@@ -306,12 +310,8 @@ class VulkanRenderer
 
     DescriptorSetGroup raytracingDescriptors;
     void createRaytracingDescriptorResources();
-    void update_raytracing_descriptor_set(uint32_t image_index);
+    // Every change those sets depend on (TLAS, raster mode, extent, image count) ends in updateAllDescriptorSets.
     void updateRaytracingDescriptorSets();
-
-    // The three raytracingDescriptors.write* calls (TLAS, output image,
-    // accumulation image) shared verbatim by update_raytracing_descriptor_set
-    // (per-image) and updateRaytracingDescriptorSets (all images).
     void writeRaytracingDescriptorsForImage(uint32_t image_index);
 
     void finishModelLoad();
@@ -319,8 +319,9 @@ class VulkanRenderer
     // The single entry point every scene-changing path (finishModelLoad,
     // addModel, handleModelTransformChange, handleModelReloadRequest) must go
     // through: rebuilds the object-description buffer, rebuilds the
-    // acceleration structure (BLAS+TLAS via createASForScene when geometry
-    // changed, TLAS-only via createTLAS for a transform-only change), then
+    // acceleration structure (the new models' BLAS plus the TLAS via
+    // createASForScene when geometry changed, TLAS-only via createTLAS for a
+    // transform-only change), then
     // refreshes every descriptor set that could be bound to stale data. A
     // caller that rebuilds the AS without also going through this helper is
     // exactly the bug this consolidates away - see BuildIntegrity's

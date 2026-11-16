@@ -1544,7 +1544,7 @@ TEST(GltfParseUnit, HighContrastMaskCardExtractsItsTexture)
     ASSERT_GT(loader.getMaterials().size(), 0U);
 
     EXPECT_NEAR(loader.getMaterials()[0].alphaCutoff, 0.5F, 1e-6F) << "MASK cutoff must survive";
-    EXPECT_GE(loader.getMaterials()[0].get_textureID(), 0)
+    EXPECT_GE(loader.getMaterials()[0].textureID, 0)
       << "the base-colour texture must extract and set a valid textureID (else the card "
          "samples the diffuse fallback - the white-in-PT symptom)";
     EXPECT_EQ(loader.getTextureImages().size(), 1U) << "exactly one extracted base-colour image";

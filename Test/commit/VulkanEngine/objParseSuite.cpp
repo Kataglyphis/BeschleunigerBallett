@@ -85,7 +85,7 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
 
     ASSERT_FALSE(loader.getMaterials().empty());
     for (const auto &material : loader.getMaterials()) {
-        EXPECT_EQ(material.get_textureID(), -1) << "a material without map_Kd must route to the diffuse fallback";
+        EXPECT_EQ(material.textureID, -1) << "a material without map_Kd must route to the diffuse fallback";
     }
 }
 
