@@ -152,8 +152,6 @@ committed to.
   the runtime matches the compiler or value profiling can be turned off.
 - **[P3] `bugprone-unchecked-optional-access` is off for `Test/`**: clang-tidy 23.1.1 segfaults in
   its dataflow on gtest bodies. Re-enable it once an LLVM release fixes the crash.
-- **[P3] The `windows-clang-release-wix` package preset is still unbuilt.** It builds on
-  `x64-ClangCL-Windows-Release` since 2026-10-21; no lane runs `cpack --preset` on it.
 - **[P3] The GUI input sweep runs in no CI lane**, for time (`docs/source/gpu-golden-testing.md`);
   every other suite runs on every arch lane. By design, not gaps: TSan is Linux-only (clang-cl has
   none), coverage is measured on Linux only, the Pester suites test Windows scripts on Windows x64,
@@ -204,3 +202,7 @@ So the next sweep stops here instead of re-deriving them.
   throw-on-permission-denied finding.
 - `Camera::set_near_plane`/`set_far_plane` have no GUI control on purpose: their defaults
   differ between debug and release, and `far_plane` feeds the cascade fit.
+- The `windows-clang-release-wix` package preset needs no lane of its own: `Build-Windows.ps1`'s
+  `--target package` on the same `x64-ClangCL-Windows-Release` tree runs the same CPack generators
+  (NSIS, ZIP and WIX, the hub's `CPackCommon` with `WIX_DEFAULT ON`), and the Windows x64 lane's
+  MSI lands in `dist/windows-x64` from it.
