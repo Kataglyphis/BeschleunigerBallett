@@ -9,6 +9,7 @@ _harness="$(antfrastructure_path linux/scripts/lib/test-harness.sh)" || exit 1
 # shellcheck source=third_party/ANTfrastructure/linux/scripts/lib/test-harness.sh
 source "${_harness}"
 logging="$(antfrastructure_path linux/scripts/01-core/logging.sh)" || exit 1
+toolchain="$(antfrastructure_path linux/scripts/lib/rust-toolchain.sh)" || exit 1
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
@@ -20,8 +21,8 @@ make_repo() {
   local repo="${work}/$1" web="${work}/$1/third_party/OxidANT/crates/webgpu_renderer/web"
   mkdir -p "${repo}/scripts/linux/lib" "${repo}/bin" "${web}"
   cp "${here}/../docs-build-web.sh" "${repo}/scripts/linux/"
-  printf 'source %q\nantfrastructure_source() { :; }\nantfrastructure_path() { case "$1" in *stage-cargo-licenses.py) echo "${PWD}/stager.py" ;; *) echo "${PWD}/fetcher.py" ;; esac; }\nensure_wasm32_target() { :; }\ndocs_build_main() { echo "docs_build_main reached"; }\n' \
-    "${logging}" > "${repo}/scripts/linux/lib/common.sh"
+  printf 'source %q\nsource %q\nantfrastructure_source() { :; }\nantfrastructure_path() { case "$1" in *stage-cargo-licenses.py) echo "${PWD}/stager.py" ;; *) echo "${PWD}/fetcher.py" ;; esac; }\nensure_wasm32_target() { :; }\ndocs_build_main() { echo "docs_build_main reached"; }\n' \
+    "${logging}" "${toolchain}" > "${repo}/scripts/linux/lib/common.sh"
   local fonts="${repo}/third_party/OxidANT/crates/webgpu_renderer/assets/fonts"
   mkdir -p "${fonts}" && touch "${fonts}/NOTICE" "${fonts}/Apache-2.0.txt" "${fonts}/OFL-1.1.txt"
   # The fetcher stub unpacks a Colosseum-web unless a fetch-fails marker says the release is missing.
@@ -43,10 +44,11 @@ out = pathlib.Path(sys.argv[sys.argv.index("--output-dir") + 1])
 out.mkdir(parents=True, exist_ok=True)
 (out / "manifest.json").write_text(" ".join(sys.argv[1:]))
 EOF
-  printf '#!/usr/bin/env bash\necho "cargo $*" >> %q\n' "${repo}/calls" > "${repo}/bin/cargo"
+  # The cargo stub records the version it installs, which the wasm-bindgen stub then reports, as a real install would.
+  printf '#!/usr/bin/env bash\necho "cargo $*" >> %q\n[ "$1" != install ] || echo "$5" > %q\n' "${repo}/calls" "${repo}/wb-version" > "${repo}/bin/cargo"
   cat > "${repo}/bin/wasm-bindgen" <<'EOF'
 #!/usr/bin/env bash
-[ "$1" != --version ] || { echo "wasm-bindgen 0.0.0"; exit 0; }
+[ "$1" != --version ] || { echo "wasm-bindgen $(cat "$(dirname "$0")/../wb-version" 2>/dev/null || echo 0.0.0)"; exit 0; }
 mkdir -p "$3" && touch "$3/kataglyphis_webgpu_renderer.js" "$3/kataglyphis_webgpu_renderer_bg.wasm"
 EOF
   chmod +x "${repo}/bin/cargo" "${repo}/bin/wasm-bindgen"
