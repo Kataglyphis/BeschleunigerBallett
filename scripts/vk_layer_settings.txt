@@ -33,3 +33,6 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 # This found 10 real WRITE-AFTER-WRITE hazards in July 2026 (see BACKLOG.md,
 # "Recurring validation runs").
 khronos_validation.validate_sync = true
+# Both default to false in the 1.4.363 layer and hide a load-after-store and a compute-write-to-shader-read hazard.
+khronos_validation.syncval_load_op_after_store_op_validation = true
+khronos_validation.syncval_shader_accesses_heuristic = true
