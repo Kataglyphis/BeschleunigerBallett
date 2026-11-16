@@ -36,41 +36,12 @@ No P0 item is open.
 
 ### P1: high value
 
-- [b] `CI` **Prove the 2026-11-15 renderer integration on the lanes no Linux run covers** (S,
-  **blocked on a push**). The OxidANT pin with the Rust parity work, the clouds on the shared
-  `volumetric_clouds.slang`, the shared `brdf.slang` NDF fix and the C++ renderer fixes passed the
-  full Linux x64 suite on llvmpipe (`run-ctest.sh --virtual-display`, 0 `SYNC-HAZARD`). Still
-  unrun: both Windows lanes (`[ci windows]`: the clang-cl build, the lavapipe GPU suites, Pester),
-  both arm64 lanes (`[ci arm64]`), the riscv64 GPU shards (dispatch `linux-riscv64.yml` with
-  `gpu-tests`), and on the RX 9070 XT the golden suites plus `Invoke-SyncValidation.ps1`. The
-  cloud goldens and the glossy-material goldens are the ones to watch: the NDF change brightens
-  every highlight below roughness 0.154.
-- [b] `CI` **Golden-render cases fail now and then on the arm64 device** (S–M). In
-  `windows-arm64-cross.yml`'s *GPU suites + source checks (arm64, lavapipe)*,
-  `EnablingCloudsChangesTheFrameAndAddsDetail` stopped after 7 s with no assertion printed
-  (release dry run 38879106284, 2026-10-16), and `DeferredMatchesForwardRoughly` died after
-  8 s right after `ASManager: compacted 1 BLAS` (run 39033701859 attempt 1, 2026-10-17). Each
-  rerun on the same commit passed, and the 15 GPU jobs since 2026-10-07 otherwise passed both
-  cases. No failure message means a crash or timeout of the case, not a pixel mismatch. On
-  2026-10-27 590abe0a crashed in 3 of 4 cases over two attempts while 3857d44c passed both,
-  although both test binaries differ only in their link timestamp: the crash is intermittent,
-  not caused by a commit. WER LocalDumps wrote nothing on the runner, so every test executable
-  now links the hub's crash handler and the job uploads its dump with the suite's PDB; the next
-  crash names its thread and frame. Until then it can stop any release, since `release.yml`
-  needs every lane green; rerunning the failed jobs gets past it.
-  - **Suspect: `LP_NATIVE_VECTOR_WIDTH=256` on arm64.** NEON is 128 bits, so llvmpipe's AArch64 JIT
-    splits every vector; at 256 it aborted OxidANT's renderer tests about one Linux arm64 run in
-    five (`run-cargo-tests.sh` sets 128 there), and these crashes are on a worker thread in the
-    compute-heavy cloud passes. The pin exists only for the 8-lane BVH radix sort, deleted
-    upstream by Mesa `ebcfbe60` ("Delete radix_sort_vk"), which is in `mesa-26.3.0` and in no
-    26.2.x tag. The dump decides it: a frame with no module (`?+0x…`, JIT code) or in
-    `vulkan_lvp.dll` confirms it, one in `commitTestSuite.exe` points back at the engine.
-  - **Fix applied, waiting for proof (2026-11-14):** mmozeiko/build-mesa published 26.3.0 on
-    2026-11-10, so the hub moves `LAVAPIPE_VERSION` to 26.3.0 and no Windows lane sets
-    `LP_NATIVE_VECTOR_WIDTH` any more (arm64 runs its native 128). Once the hub pin carrying it is
-    in (it is since `b6b009604`), watch the `[ci windows]` rounds: when the arm64 GPU job stays
-    green, remove the rerun advice above and tick this item. A crash at 26.3.0 is not the pin;
-    read its dump. Blocked on those CI rounds, not on work.
+- [b] `CI` **Prove the 2026-11-15 renderer integration on riscv64 and the RX 9070 XT** (S,
+  **waits for the Saturday shards and the host**). Both Windows lanes and both arm64 lanes passed it
+  at 146919ad (on-request run 43895022074: the clang-cl build, both lavapipe GPU suites, Pester, every
+  arm64 job). Still unrun: the riscv64 GPU shards (Saturday's schedule, or dispatch
+  `linux-riscv64.yml` with `gpu-tests`) and, on the RX 9070 XT, the golden suites plus
+  `Invoke-SyncValidation.ps1`. The cloud and glossy-material goldens are the ones to watch.
 - [b] `Assets` **The DOOM2016 skybox ships without a known licence** (S, **blocked on the owner**).
   `Resources/Textures/Skybox/DOOM2016` (six `DOOM16*.png` faces) is the one skybox the C++
   renderer loads and every package installs, but no notice, source or licence for it exists in the
@@ -150,8 +121,12 @@ committed to.
   runtime comes from Microsoft's ASan DLL, and `initializeValueProfRuntimeRecord`
   dereferences a bad pointer (run 36997000491). Coverage stays OFF on Windows; revisit when
   the runtime matches the compiler or value profiling can be turned off.
-- **[P3] `bugprone-unchecked-optional-access` is off for `Test/`**: clang-tidy 23.1.1 segfaults in
-  its dataflow on gtest bodies. Re-enable it once an LLVM release fixes the crash.
+- **[P3] `bugprone-unchecked-optional-access` is off for `Test/`**: clang-tidy segfaults in its
+  dataflow on gtest bodies. Re-tested 2026-11-16 with the pinned 23.1.5 in the arm64 image, the
+  check alone over every `Test/` TU: still a SIGSEGV in `dataflow::transfer`, now on one TU
+  (`buildIntegritySuite.cpp`, `ShadowLightMatricesAreProvisionedInOnePlace`'s `reinit_span->first`);
+  the other 67 finish, with 100 findings, every one behind an `ASSERT`. Re-enable it, and rewrite
+  those, once an LLVM release fixes the crash.
 - **[P3] The GUI input sweep runs in no CI lane**, for time (`docs/source/gpu-golden-testing.md`);
   every other suite runs on every arch lane. By design, not gaps: TSan is Linux-only (clang-cl has
   none), coverage is measured on Linux only, the Pester suites test Windows scripts on Windows x64,
