@@ -254,6 +254,14 @@ class GpuTimingSubsystem
         gpu_timing_slice_recorded[imageIndex] = true;
     }
 
+    // For a slice whose recording was never submitted: its queries hold nothing to read back.
+    void clearPassRecordedMask(uint32_t imageIndex)
+    {
+        if (imageIndex >= gpu_timing_pass_mask.size()) { return; }
+        gpu_timing_pass_mask[imageIndex] = 0U;
+        gpu_timing_slice_recorded[imageIndex] = false;
+    }
+
   private:
     bool gpu_timings_supported{ false };
     float gpu_timestamp_period{ 0.0f };

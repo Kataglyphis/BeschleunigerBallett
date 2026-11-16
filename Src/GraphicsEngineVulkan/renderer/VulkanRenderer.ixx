@@ -128,6 +128,8 @@ class VulkanRenderer
     // Drains the GPU first, since the stage's closures may own resources a frame in flight still reads.
     bool removeRenderStage(std::string_view name);
     [[nodiscard]] const RenderStageRegistry &renderStageRegistry() const { return renderStages; }
+    // Benchmark seam, called by no production code: records image 0's commands and never submits them.
+    bool recordCommandsUnsubmittedForBenchmark();
 
     VulkanRenderer(const VulkanRenderer &) = delete;
     VulkanRenderer &operator=(const VulkanRenderer &) = delete;

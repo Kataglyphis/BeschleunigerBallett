@@ -531,6 +531,30 @@ bool Kataglyphis::VulkanRenderer::removeRenderStage(std::string_view name)
     return renderStages.remove(name);
 }
 
+bool Kataglyphis::VulkanRenderer::recordCommandsUnsubmittedForBenchmark()
+{
+    constexpr uint32_t image_index = 0;
+    if (command_buffers.empty() || frameSync.imagesInFlightFenceCount() == 0) { return false; }
+    // The buffer's last submit must have finished before it is reset.
+    if (frameSync.imageInFlightFence(image_index)
+        && device->getLogicalDevice().waitForFences(1, &frameSync.imageInFlightFence(image_index), VK_TRUE, UINT64_MAX)
+             != vk::Result::eSuccess) {
+        return false;
+    }
+    vk::CommandBuffer commandBuffer = command_buffers[image_index];
+    vk::CommandBufferBeginInfo begin_info{};
+    begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    if (commandBuffer.reset(vk::CommandBufferResetFlags{}) != vk::Result::eSuccess
+        || commandBuffer.begin(&begin_info) != vk::Result::eSuccess) {
+        return false;
+    }
+    const bool recorded = record_commands(image_index);
+    const bool ended = commandBuffer.end() == vk::Result::eSuccess;
+    // None of these queries reach the GPU, so the next readback must not read them.
+    gpuTiming.clearPassRecordedMask(image_index);
+    return recorded && ended;
+}
+
 void Kataglyphis::VulkanRenderer::drawFrame(const RenderSettings &settings, RendererFeedback &feedback)
 {
     frameSettings = settings;

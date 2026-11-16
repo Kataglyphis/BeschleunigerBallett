@@ -9134,6 +9134,34 @@ TEST(BuildIntegrity, DeviceLossSimulationIsArmedOnlyByTests)
     EXPECT_TRUE(violations.empty()) << "engine source arms the simulated device loss:" << joinViolations(violations);
 }
 
+// The benchmark seam records without submitting, so a frame of engine code that called it would never be presented.
+TEST(BuildIntegrity, UnsubmittedRecordingIsCalledOnlyByBenchmarks)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path renderer_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer";
+    const std::set<fs::path> declaring_files = { renderer_dir / "VulkanRenderer.ixx",
+        renderer_dir / "VulkanRenderer.cpp" };
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || declaring_files.contains(path)) { continue; }
+        const auto contents = readFileText(path);
+        if (contents && contents->find("recordCommandsUnsubmittedForBenchmark") != std::string::npos) {
+            violations.push_back(fs::relative(path, repo_root).generic_string());
+        }
+    }
+    EXPECT_TRUE(violations.empty()) << "engine source records frames it never submits:" << joinViolations(violations);
+
+    const auto perf_suite = readFileText(repo_root / "Test" / "perf" / "perfSuite.cpp");
+    ASSERT_TRUE(perf_suite.has_value()) << "could not open Test/perf/perfSuite.cpp";
+    EXPECT_NE(perf_suite->find("recordCommandsUnsubmittedForBenchmark()"), std::string::npos)
+      << "no benchmark calls the seam any more; delete it from VulkanRenderer";
+}
+
 // A pass recorded straight from record_commands skips the registry's order, timestamps, resize and reload hooks.
 TEST(BuildIntegrity, RecordCommandsRecordsPassesOnlyThroughTheStageRegistry)
 {

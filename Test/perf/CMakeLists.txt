@@ -25,6 +25,9 @@ target_link_libraries(
           tinyobjloader
           cgltf)
 
+# BM_RecordCommands* reaches the renderer; without delay-loading, a host with no Vulkan loader could not start the suite.
+kataglyphis_enable_windows_vulkan_delay_load(${PERF_TEST_SUITE})
+
 # Gates on the suite running, not on time: wall-clock thresholds are toothless or flaky, so the JSON is compared.
 add_test(
   NAME perf_suite_runs

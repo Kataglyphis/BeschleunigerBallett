@@ -503,6 +503,66 @@
       "cpu_time": 2.0127775510204101e+06,
       "time_unit": "ns",
       "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
+    },
+    {
+      "name": "BM_RecordCommandsForward",
+      "family_index": 21,
+      "per_family_instance_index": 0,
+      "run_name": "BM_RecordCommandsForward",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 88633,
+      "real_time": 8.9004747793268404e+00,
+      "cpu_time": 8.7897092505038081e+00,
+      "time_unit": "us",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host, llvmpipe under Xvfb, median of 3; refresh on the RX 9070 XT host"
+    },
+    {
+      "name": "BM_RecordCommandsDeferred",
+      "family_index": 22,
+      "per_family_instance_index": 0,
+      "run_name": "BM_RecordCommandsDeferred",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 81190,
+      "real_time": 1.0010144712403646e+01,
+      "cpu_time": 9.7862409163752009e+00,
+      "time_unit": "us",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host, llvmpipe under Xvfb, median of 3; refresh on the RX 9070 XT host"
+    },
+    {
+      "name": "BM_RecordCommandsRaytracing",
+      "family_index": 23,
+      "per_family_instance_index": 0,
+      "run_name": "BM_RecordCommandsRaytracing",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 126848,
+      "real_time": 5.2279939917799725e+00,
+      "cpu_time": 5.1265128342686479e+00,
+      "time_unit": "us",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host, llvmpipe under Xvfb, median of 3; refresh on the RX 9070 XT host"
+    },
+    {
+      "name": "BM_RecordCommandsPathTracing",
+      "family_index": 24,
+      "per_family_instance_index": 0,
+      "run_name": "BM_RecordCommandsPathTracing",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 118892,
+      "real_time": 5.7575174806374081e+00,
+      "cpu_time": 5.6656873464983946e+00,
+      "time_unit": "us",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host, llvmpipe under Xvfb, median of 3; refresh on the RX 9070 XT host"
     }
   ]
 }

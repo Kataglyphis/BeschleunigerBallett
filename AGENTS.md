@@ -539,7 +539,10 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
 - **Benchmarks**: `clangcl-profile` builds `perfTestSuite.exe`; `Build-Windows.ps1` runs it without
   `-SkipPerfTests`. The Windows x64 lane runs it as a functional gate like Linux's: every benchmark
   must run, one that reports `error_occurred` (a model it cannot find) fails the lane, and timings
-  are never gated. `scripts/windows/Compare-PerfBaseline.ps1`, `Compare-RendererPixels.ps1` and
+  are never gated. `BM_RecordCommands*` (one per render mode) needs a display and a Vulkan device,
+  so on every CI lane it reports `skipped` through `SkipWithMessage`, which neither gate counts;
+  it measures only on a host with a GPU, or under Xvfb on llvmpipe.
+  `scripts/windows/Compare-PerfBaseline.ps1`, `Compare-RendererPixels.ps1` and
   `Compare-RendererTimings.ps1` are local comparison tools. The lane's `Invoke-WindowsLane.ps1` runs
   the two renderer comparisons in validation-only mode, where both exit 2 when they found nothing to
   check (a warning on a GPU-less runner, never a pass); `Compare-PerfBaseline.ps1` is not in CI at

@@ -1,4 +1,4 @@
-// GPU-free so it runs in adapter-less CI containers; only optimized (clangcl-profile) timings mean anything.
+// Only BM_RecordCommands* needs a device, and it skips (not errors) without one; optimized timings alone mean anything.
 
 #include <benchmark/benchmark.h>
 
@@ -9,12 +9,21 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <optional>
 #include <random>
 #include <span>
 #include <string>
+#include <tuple>
 #include <vector>
+
+#include <vulkan/vulkan.hpp>
+#define GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -27,11 +36,18 @@
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.gltf_loader;
+import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.obj_loader;
+import kataglyphis.vulkan.render_settings;
+import kataglyphis.vulkan.renderer;
+import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.window;
 
 namespace {
 
@@ -549,6 +565,186 @@ void BM_UploadCpuHalf(benchmark::State &state)
 }
 BENCHMARK(BM_UploadCpuHalf)->Arg(64)->Arg(4096)->Arg(65536);
 
+// record_commands per render mode, on the golden scene and camera; the GPU never runs what is recorded.
+
+enum class RecordedMode : std::uint8_t { Forward, Deferred, Raytracing, PathTracing };
+
+// The CI lanes have no display or Vulkan device: SkipWithMessage reports "skipped", never error_occurred.
+bool vulkanWindowAvailable()
+{
+    if (glfwInit() == 0) { return false; }
+    const bool supported = glfwVulkanSupported() != 0;
+    glfwTerminate();
+    return supported;
+}
+
+// Pins the scene the goldens use, whatever the build type's default, and restores the caller's choice.
+class ScopedModelOverride
+{
+  public:
+    explicit ScopedModelOverride(const char *model)
+    {
+        if (const char *previous_value = std::getenv(kName); previous_value != nullptr) { previous = previous_value; }
+        set(model);
+    }
+    ScopedModelOverride(const ScopedModelOverride &) = delete;
+    ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
+    ~ScopedModelOverride() { set(previous.has_value() ? previous->c_str() : nullptr); }
+
+  private:
+    static constexpr const char *kName = "KATAGLYPHIS_MODEL_OVERRIDE";
+    static void set(const char *value)
+    {
+#ifdef _WIN32
+        _putenv_s(kName, value != nullptr ? value : "");
+#else
+        if (value != nullptr) {
+            setenv(kName, value, 1);
+        } else {
+            unsetenv(kName);
+        }
+#endif
+    }
+    std::optional<std::string> previous;
+};
+
+// App::run's objects in its declaration order, so they tear down as it does.
+struct RecordingRig
+{
+    ScopedModelOverride model{ "Models/Dinosaurs/dinosaurs.obj" };
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
+    std::unique_ptr<Kataglyphis::Frontend::Window> window;
+    std::unique_ptr<Kataglyphis::Scene> scene;
+    std::unique_ptr<Kataglyphis::Frontend::GUI> gui;
+    std::unique_ptr<Camera> camera;
+    std::unique_ptr<Kataglyphis::VulkanRenderer> renderer;
+
+    RecordingRig()
+      : window(std::make_unique<Kataglyphis::Frontend::Window>(1200, 768)),
+        scene(std::make_unique<Kataglyphis::Scene>()),
+        gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)),
+        camera(std::make_unique<Camera>())
+    {
+        camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+        camera->set_orientation(-90.0F, -10.0F);
+        camera->set_near_plane(0.1F);
+        camera->set_far_plane(150.0F);
+        camera->set_fov(45.0F);
+        gui->setOverlayVisible(false);
+        renderer =
+          std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
+        gui->initializeVulkanContext(renderer->sharedDevice(),
+          renderer->vulkanInstance(),
+          renderer->swapChainFormat(),
+          renderer->swapChainImageCount());
+        gui->setUserSelectionForRRT(renderer->supportsHardwareRaytracing());
+    }
+
+    void renderFrame()
+    {
+        glfwPollEvents();
+        gui->render();
+        renderer->updateStateDueToUserInput(settings, feedback);
+        Kataglyphis::applyRendererFeedback(settings, feedback);
+        renderer->updateUniforms(scene.get(), camera.get(), settings);
+        renderer->drawFrame(settings, feedback);
+    }
+};
+
+// Google Benchmark calls a benchmark once per iteration-count probe; one rig per mode spares a reload each time.
+std::unique_ptr<RecordingRig> recording_rig;
+std::optional<RecordedMode> recording_rig_mode;
+
+void releaseRecordingRig()
+{
+    recording_rig.reset();
+    recording_rig_mode.reset();
+}
+
+// The rig for this mode, warmed up; nullptr once the state was skipped with a reason.
+RecordingRig *recordingRigFor(benchmark::State &state, RecordedMode mode)
+{
+    if (recording_rig != nullptr && recording_rig_mode == mode) { return recording_rig.get(); }
+    releaseRecordingRig();
+    if (!vulkanWindowAvailable()) {
+        state.SkipWithMessage("no display or Vulkan runtime; record_commands needs a device");
+        return nullptr;
+    }
+
+    recording_rig = std::make_unique<RecordingRig>();
+    RecordingRig &rig = *recording_rig;
+    const bool traced = mode == RecordedMode::Raytracing || mode == RecordedMode::PathTracing;
+    if (traced && !rig.renderer->supportsHardwareRaytracing()) {
+        releaseRecordingRig();
+        state.SkipWithMessage("the device has no hardware ray tracing");
+        return nullptr;
+    }
+
+    auto &renderer_vars = rig.settings.renderer;
+    renderer_vars.rasterizationMode =
+      mode == RecordedMode::Deferred ? Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Deferred
+                                     : Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
+    renderer_vars.raytracing = mode == RecordedMode::Raytracing;
+    renderer_vars.pathTracing = mode == RecordedMode::PathTracing;
+    rig.settings.scene.shadows_enabled = true;
+
+    constexpr int kMaxLoadFrames = 20000;
+    for (int frame = 0; frame < kMaxLoadFrames && rig.renderer->isModelLoadPending(); ++frame) { rig.renderFrame(); }
+    // A few more frames, so the mode switch and its descriptor rebinds have landed.
+    for (int frame = 0; frame < 3; ++frame) { rig.renderFrame(); }
+    if (rig.renderer->isModelLoadPending() || rig.renderer->hasDeviceLost()) {
+        releaseRecordingRig();
+        skipWithError(state, "the golden scene never loaded, or the device was lost");
+        return nullptr;
+    }
+    if (traced && !rig.feedback.tracingReady) {
+        releaseRecordingRig();
+        skipWithError(state, "the traced mode has no acceleration structure to draw with");
+        return nullptr;
+    }
+    // The warm-up's frames must be done: the recordings below rewrite ImGui's vertex buffers they may still read.
+    std::ignore = rig.renderer->sharedDevice()->getLogicalDevice().waitIdle();
+    recording_rig_mode = mode;
+    return recording_rig.get();
+}
+
+void recordCommandsIn(benchmark::State &state, RecordedMode mode)
+{
+    RecordingRig *const found = recordingRigFor(state, mode);
+    if (found == nullptr) { return; }
+    RecordingRig &rig = *found;
+    const auto &renderer_vars = rig.settings.renderer;
+
+    for (auto _ : state) {
+        // ImGui's frame is begun outside the timing; post's ImGui::Render inside the recording ends it.
+        state.PauseTiming();
+        rig.gui->render();
+        state.ResumeTiming();
+        if (!rig.renderer->recordCommandsUnsubmittedForBenchmark()) {
+            skipWithError(state, "record_commands refused the frame");
+            break;
+        }
+    }
+    // The meshes the recorded frame covers, so a row timed against an empty scene shows it.
+    state.counters["scene_meshes"] = static_cast<double>(rig.scene->getObjectDescriptions().size());
+    state.SetLabel(Kataglyphis::VulkanRendererInternals::FrontendShared::renderModeLogName(
+      Kataglyphis::VulkanRendererInternals::FrontendShared::drawnRenderMode(
+        renderer_vars.raytracing, renderer_vars.pathTracing, rig.feedback.tracingReady)));
+}
+
+void BM_RecordCommandsForward(benchmark::State &state) { recordCommandsIn(state, RecordedMode::Forward); }
+BENCHMARK(BM_RecordCommandsForward)->Unit(benchmark::kMicrosecond);
+
+void BM_RecordCommandsDeferred(benchmark::State &state) { recordCommandsIn(state, RecordedMode::Deferred); }
+BENCHMARK(BM_RecordCommandsDeferred)->Unit(benchmark::kMicrosecond);
+
+void BM_RecordCommandsRaytracing(benchmark::State &state) { recordCommandsIn(state, RecordedMode::Raytracing); }
+BENCHMARK(BM_RecordCommandsRaytracing)->Unit(benchmark::kMicrosecond);
+
+void BM_RecordCommandsPathTracing(benchmark::State &state) { recordCommandsIn(state, RecordedMode::PathTracing); }
+BENCHMARK(BM_RecordCommandsPathTracing)->Unit(benchmark::kMicrosecond);
+
 }// namespace
 
 // BENCHMARK_MAIN's body, returning non-zero when any benchmark skipped with an error.
@@ -558,6 +754,8 @@ int main(int argc, char **argv)
     benchmark::Initialize(&argc, argv);
     if (benchmark::ReportUnrecognizedArguments(argc, argv)) { return 1; }
     benchmark::RunSpecifiedBenchmarks();
+    // Before static destruction, which would tear the device down after GLFW and the loader are gone.
+    releaseRecordingRig();
     benchmark::Shutdown();
     return skipped_with_error.load() == 0 ? 0 : 1;
 }

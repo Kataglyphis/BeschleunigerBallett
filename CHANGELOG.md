@@ -23,6 +23,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- `BM_RecordCommandsForward`, `...Deferred`, `...Raytracing` and `...PathTracing` time
+  `record_commands` on the golden scene and camera, recording image 0 without submitting it.
+  Without a display or Vulkan device (every CI lane) they report skipped, not an error; without
+  hardware ray tracing the traced two skip.
 - Wind for the C++ clouds: the sky inspector's Wind row (units per second, default 4, 0, 1.5 as
   OxidANT's) drifts the noise through the box by velocity times the app's time, wrapped in double
   to the 256-unit noise period, in `cloudLightMarch.yzw`. Tests leave the time at 0, where nothing

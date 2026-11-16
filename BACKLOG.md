@@ -121,12 +121,10 @@ committed to.
 
 ## Testing and performance
 
-- **[P3] A `record_commands` benchmark** per render mode at a fixed scene and camera. It needs a
-  device, and `perfTestSuite` fails on a benchmark that cannot run, so it must skip without an
-  adapter in a way the lane does not count as an error. The pure-CPU ones are in `perfSuite.cpp`.
-- **[P3] Refresh the five placeholder perf baseline rows** (`BM_ObjLoaderParseCpu_Suzanne`,
-  `BM_GltfLoaderParseCpu_CubeTextured`, `BM_UploadCpuHalf/*`, their `label` says so): they come
-  from an aarch64 WSL host, not the RX 9070 XT host the file is named for.
+- **[P3] Refresh the nine placeholder perf baseline rows** (`BM_ObjLoaderParseCpu_Suzanne`,
+  `BM_GltfLoaderParseCpu_CubeTextured`, `BM_UploadCpuHalf/*`, `BM_RecordCommands*`, their `label`
+  says so): they come from an aarch64 WSL host (the last four on llvmpipe under Xvfb), not the
+  RX 9070 XT host the file is named for.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
   `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
