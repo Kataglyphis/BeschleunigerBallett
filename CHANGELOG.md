@@ -247,6 +247,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
   a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
   failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
+- OxidANT moves to `04f7a0e`. Its texture streaming evicts levels the camera no longer needs,
+  copies resident levels on the GPU when a texture steps, and caps the CPU level chains it keeps
+  (256 MiB interactive). Rust only: no shader, crate or licence text changes.
 - OxidANT moves to `216b0a1`. Its Rust renderer draws every scene draw indirectly, from
   arguments a GPU draw cull writes (frustum and occlusion per draw, casters per cascade; a new
   `DrawCull` GPU timing pass, which `Compare-RendererTimings.ps1` requires of the Rust dump, as

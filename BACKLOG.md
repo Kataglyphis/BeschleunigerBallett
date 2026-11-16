@@ -77,10 +77,10 @@ committed to.
 
 ## Rust renderer ideas (OxidANT)
 
-- **[P3] Texture streaming past the mip tail, and bindless** for photogrammetry-scale scenes.
-  OxidANT streams material mips by screen-space need since 216b0a1; open there are eviction,
-  re-uploading only the new level by a GPU copy, and bindless material textures (OxidANT's
-  `BACKLOG.md`, "Texture streaming past the mip tail").
+- **[P3] Bindless material textures** for scenes with thousands of materials. OxidANT streams,
+  evicts and GPU-copies material mips since 04f7a0e; bindless is blocked on slangc's WGSL output
+  (no `binding_array`, no `NonUniformResourceIndex`; OxidANT's `BACKLOG.md`, "Texture streaming
+  past the mip tail").
 - **[P3] Golden-image CI** with reference images per GPU vendor, to catch shader regressions the
   driver-independent structural assertions miss.
 
