@@ -127,8 +127,10 @@ committed to.
   (`buildIntegritySuite.cpp`, `ShadowLightMatricesAreProvisionedInOnePlace`'s `reinit_span->first`);
   the other 67 finish, with 100 findings, every one behind an `ASSERT`. Re-enable it, and rewrite
   those, once an LLVM release fixes the crash.
-- **[P3] The GUI input sweep runs in no CI lane**, for time (`docs/source/gpu-golden-testing.md`);
-  every other suite runs on every arch lane. By design, not gaps: TSan is Linux-only (clang-cl has
+- **[P3] The GUI input sweep runs weekly, on x64 only** (`linux-x64.yml`'s `gui-sweep`, since
+  2026-11-16; 613 s on 8 aarch64 llvmpipe cores, unmeasured on a 4-vCPU runner until its first
+  Sunday): set its job and ctest timeouts from that run. Every other suite runs on every arch lane
+  and every push. By design, not gaps: TSan is Linux-only (clang-cl has
   none), coverage is measured on Linux only, the Pester suites test Windows scripts on Windows x64,
   `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only, and riscv64 runs
   four path-traced goldens in their light variant (AGENTS.md § The riscv64 lane). OxidANT's own

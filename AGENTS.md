@@ -582,7 +582,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   this repo's 2-3 h Windows lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows container and run for real
   on the host GPU. Linux CI's `clang-tests` job (x64 and arm64) runs them on the image's llvmpipe
-  under Xvfb (`run-ctest.sh --virtual-display`), minus the GUI input sweep (too slow for a runner).
+  under Xvfb (`run-ctest.sh --virtual-display`), minus the GUI input sweep (too slow for a push),
+  which `linux-x64.yml`'s weekly `gui-sweep` job runs alone (Sundays, or dispatch with `gui-sweep`).
   Both Windows lanes run them on lavapipe on the runner, outside the image
   (`scripts/windows/Invoke-LavapipeTests.ps1`; x64 on the runner host after the container build,
   arm64 on `windows-11-arm`; a skip fails the run). Preserve fresh per-test JSON and stdout/stderr
@@ -677,6 +678,7 @@ opt-ins before that are gone. Linux x64 still skips a docs-only commit through `
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
+| Linux x86_64 GUI input sweep (`gui-sweep`: the debug build, then only `GuiInputSweepNeverCrashesOrLosesTheDevice` on llvmpipe) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gui-sweep`; skips every other job of the lane |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | on request (`on-request.yml`) or by hand; builds no docs site (the docs steps need `runner == 'ubuntu-26.04'`) |
 | Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 15 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |

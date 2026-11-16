@@ -29,9 +29,12 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   the reset failed with `GLFW Error 65550: Failed to detect any supported platform`, one test in a
   few full runs (`RaytracedLargeMeshDoesNotLoseTheDevice`, then
   `Integration.RasterSegmentCancelsAPendingTracingPick`). `run-riscv64-tests.sh` passes it too.
-- **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a runner.** It passes on llvmpipe
-  (266 s on 32 cores; 12 s on an RTX 2080) but hit ctest's 1500 s timeout on a 4-vCPU GitHub runner
-  (run 36627716804), so CI excludes it. It is the only exclusion: the five goldens once excluded
+- **`GuiInputSweepNeverCrashesOrLosesTheDevice` is too slow for a push.** It passes on llvmpipe
+  (266 s on 32 cores; 613 s on 8 aarch64 cores with sync validation, 2026-11-16; 12 s on an RTX
+  2080) but hit ctest's 1500 s timeout on a 4-vCPU GitHub runner (run 36627716804), so every push
+  excludes it. `linux-x64.yml`'s `gui-sweep` job runs it alone, Sundays and on a dispatch with
+  `gui-sweep`: the `linux-debug-clang` build, then `run-ctest.sh --virtual-display` with
+  `--timeout 5400`, nothing else of the lane. It is the only exclusion: the five goldens once excluded
   here failed on an RTX 2080 too, because their oracles were wrong, and were fixed (`BACKLOG.md`,
   "GPU suites on llvmpipe", pruned in `162e41d3`).
 - **The image sets `LP_NATIVE_VECTOR_WIDTH=256`** (hub CON44, `:latest` of 2026-10-01;

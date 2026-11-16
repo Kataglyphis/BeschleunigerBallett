@@ -226,6 +226,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` runs in CI again, weekly: `linux-x64.yml`'s
+  `gui-sweep` job (Sundays, or a dispatch with `gui-sweep`) builds the debug tree and runs only it on
+  llvmpipe with sync validation, under a 90-minute ctest timeout; every push still excludes it.
 - The Linux x64 lane uploads the gcc job's coverage to Codecov too, flagged `gcc` (the
   `gcovr.cfg` Cobertura report over `Src/`, from the CPU suites); clang's upload is now flagged `clang`.
 - The C++ renderer records its passes through a stage registry
