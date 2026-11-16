@@ -26,17 +26,16 @@ class SkyBox
 
     void init(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
-    void createRenderPass(vk::Format format);
-    void createFramebuffers(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height);
-    void createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout);
+    // colorFormat: the swapchain format this pass renders into; kept for shaderHotReload().
+    void createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout, vk::Format colorFormat);
     void shaderHotReload(vk::DescriptorSetLayout sharedLayout);
+    // Clears target (a swapchain image, from UNDEFINED) and draws the sky; leaves it for the post pass to load.
     void recordCommands(vk::CommandBuffer &commandBuffer,
-      uint32_t image_index,
+      vk::Image target,
+      vk::ImageView targetView,
+      vk::Extent2D extent,
       std::span<const vk::DescriptorSet> descriptorSets,
       bool skyboxEnabled);
-
-    void recreateFrameResources(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height);
-    void destroyFramebuffers();
 
     void cleanUp();
 
@@ -56,10 +55,7 @@ class SkyBox
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
     DescriptorSetGroup cubemapDescriptors;
-    vk::RenderPass renderPass{};
-    std::vector<vk::Framebuffer> framebuffers{};
-    uint32_t framebufferWidth{ 0 };
-    uint32_t framebufferHeight{ 0 };
+    vk::Format colorFormat{ vk::Format::eUndefined };
 
     void loadCubeMap(vk::CommandPool commandPool);
     void loadFallbackCubeMap(vk::CommandPool commandPool);

@@ -74,9 +74,9 @@ class FrameCapture
           swapChain.getSwapChainExtent(),
           swapChain.getSwapChainFormat(),
           CopySource{ .layout = vk::ImageLayout::ePresentSrcKHR,
-            .lastStages = vk::PipelineStageFlagBits::eColorAttachmentOutput,
-            .lastAccess = vk::AccessFlagBits::eColorAttachmentWrite,
-            .nextStages = vk::PipelineStageFlagBits::eBottomOfPipe });
+            .lastStages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .lastAccess = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .nextStages = vk::PipelineStageFlagBits2::eBottomOfPipe });
     }
 
     // The same copy from a colour image the frame leaves in `layout` after `lastStages` last touched it.
@@ -86,7 +86,7 @@ class FrameCapture
       vk::Extent2D extent,
       vk::Format imageFormat,
       vk::ImageLayout layout,
-      vk::PipelineStageFlags lastStages,
+      vk::PipelineStageFlags2 lastStages,
       bool deviceLostDetected)
     {
         armed = false;
@@ -101,8 +101,8 @@ class FrameCapture
           imageFormat,
           CopySource{ .layout = layout,
             .lastStages = lastStages,
-            .lastAccess = vk::AccessFlags{},
-            .nextStages = vk::PipelineStageFlagBits::eAllCommands });
+            .lastAccess = vk::AccessFlagBits2::eNone,
+            .nextStages = vk::PipelineStageFlagBits2::eAllCommands });
     }
 
     // Ties the just-submitted frame's in-flight fence to a pending capture, so
@@ -181,9 +181,9 @@ class FrameCapture
     struct CopySource
     {
         vk::ImageLayout layout;
-        vk::PipelineStageFlags lastStages;
-        vk::AccessFlags lastAccess;
-        vk::PipelineStageFlags nextStages;
+        vk::PipelineStageFlags2 lastStages;
+        vk::AccessFlags2 lastAccess;
+        vk::PipelineStageFlags2 nextStages;
     };
 
     void recordCopy(const std::shared_ptr<VulkanDevice> &device,
@@ -216,21 +216,14 @@ class FrameCapture
             return;
         }
 
-        const vk::ImageMemoryBarrier to_transfer_src = Kataglyphis::buildImageMemoryBarrier(image,
-          source.layout,
-          vk::ImageLayout::eTransferSrcOptimal,
-          source.lastAccess,
-          vk::AccessFlagBits::eTransferRead);
-
-        commandBuffer.pipelineBarrier(source.lastStages,
-          vk::PipelineStageFlagBits::eTransfer,
-          vk::DependencyFlags{},
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &to_transfer_src);
+        Kataglyphis::recordImageBarrier(commandBuffer,
+          Kataglyphis::buildImageMemoryBarrier(image,
+            source.layout,
+            vk::ImageLayout::eTransferSrcOptimal,
+            source.lastStages,
+            source.lastAccess,
+            vk::PipelineStageFlagBits2::eCopy,
+            vk::AccessFlagBits2::eTransferRead));
 
         vk::BufferImageCopy region{};
         region.bufferOffset = 0;
@@ -243,31 +236,32 @@ class FrameCapture
         commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &region);
 
         // Restore the layout the image's next user expects.
-        const vk::ImageMemoryBarrier back_to_source = Kataglyphis::buildImageMemoryBarrier(image,
+        const vk::ImageMemoryBarrier2 back_to_source = Kataglyphis::buildImageMemoryBarrier(image,
           vk::ImageLayout::eTransferSrcOptimal,
           source.layout,
-          vk::AccessFlagBits::eTransferRead,
-          vk::AccessFlags{});
+          vk::PipelineStageFlagBits2::eCopy,
+          vk::AccessFlagBits2::eTransferRead,
+          source.nextStages,
+          vk::AccessFlagBits2::eNone);
 
         // Make the copy visible to host reads of the staging buffer as well.
-        vk::BufferMemoryBarrier buffer_to_host{};
+        vk::BufferMemoryBarrier2 buffer_to_host{};
+        buffer_to_host.srcStageMask = vk::PipelineStageFlagBits2::eCopy;
+        buffer_to_host.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        buffer_to_host.dstStageMask = vk::PipelineStageFlagBits2::eHost;
+        buffer_to_host.dstAccessMask = vk::AccessFlagBits2::eHostRead;
         buffer_to_host.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
         buffer_to_host.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
         buffer_to_host.buffer = buffer.getBuffer();
         buffer_to_host.offset = 0;
         buffer_to_host.size = required_size;
-        buffer_to_host.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        buffer_to_host.dstAccessMask = vk::AccessFlagBits::eHostRead;
 
-        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-          source.nextStages | vk::PipelineStageFlagBits::eHost,
-          vk::DependencyFlags{},
-          0,
-          nullptr,
-          1,
-          &buffer_to_host,
-          1,
-          &back_to_source);
+        vk::DependencyInfo after_copy{};
+        after_copy.bufferMemoryBarrierCount = 1;
+        after_copy.pBufferMemoryBarriers = &buffer_to_host;
+        after_copy.imageMemoryBarrierCount = 1;
+        after_copy.pImageMemoryBarriers = &back_to_source;
+        commandBuffer.pipelineBarrier2(after_copy);
 
         width = extent.width;
         height = extent.height;

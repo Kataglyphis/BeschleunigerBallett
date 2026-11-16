@@ -53,7 +53,7 @@ buffer of its own.
 
 Binding 2 holds the NDC depth of whatever the frame's main pass drew: the
 forward or the deferred raster path's depth buffer (both stored and left in
-`eShaderReadOnlyOptimal` by their render passes), or, when ray or path tracing
+`eShaderReadOnlyOptimal` by their passes' closing barriers), or, when ray or path tracing
 owns the frame, `tracedDepth`, an `r32f` image both tracers write at
 `TRACED_DEPTH_IMAGE_BINDING` (the primary hit through the pixel centre, `1.0` on
 a miss, like a cleared depth buffer). The path tracer traces that extra ray only
@@ -159,7 +159,7 @@ with two explicit barriers around `clouds.recordComputeCommands`. Both are
    guarantees the submission several frames prior has completed.
 2. A compute-shader -> fragment-shader barrier *after* the dispatch orders
    this frame's write before the post pass's read of the same image
-   (`PostStage`'s own subpass dependency only covers
+   (`PostStage`'s own barrier on the swapchain image only covers
    `eColorAttachmentOutput` -> `eColorAttachmentOutput` and cannot order a
    compute-shader write).
 
@@ -169,11 +169,10 @@ which derives both stages from the layout alone: `eAllCommands` ->
 `eAllCommands`, a full pipeline stall every frame, for what needs one edge.
 
 The scene depth needs two more edges. A raster depth buffer reaches the
-compute read through its render pass's outgoing dependency
-(`buildSampledOutputDependency` in `RenderPassHelper.hpp`: fragment tests ->
-compute and fragment shader reads), and the next frame's clear waits for that
-read because `buildExternalColorDepthDependency` lists the compute stage among
-its sources. `tracedDepth` is single too, so the same helper orders it: the
+compute read through the barrier that closes its pass (`Rasterizer` and
+`DeferredRasterizer::recordCommands`: fragment tests -> compute and fragment
+shader sampled reads), and the next frame's clear waits for that read because
+the barrier that opens the pass lists the compute stage among its sources. `tracedDepth` is single too, so the same helper orders it: the
 tracer's write before the clouds' read, and, before the next frame's tracer
 writes it again, the previous write and read.
 

@@ -11,10 +11,11 @@ export namespace Kataglyphis {
 
 // The device-free half of PipelineBuilder::build: every sub-state a
 // vk::GraphicsPipelineCreateInfo points at, assembled without touching a
-// vk::Device. Freely movable - dynamic_states/color_states are owned here,
-// and moving a std::vector never reallocates its buffer, so the pointers
-// dynamic_state_create_info.pDynamicStates and color_blending.pAttachments
-// stay valid across the move out of PipelineBuilder::buildState().
+// vk::Device. Freely movable - dynamic_states/color_states/color_formats are
+// owned here, and moving a std::vector never reallocates its buffer, so the
+// pointers dynamic_state_create_info.pDynamicStates, color_blending.pAttachments
+// and rendering_create_info.pColorAttachmentFormats stay valid across the
+// move out of PipelineBuilder::buildState().
 struct GraphicsPipelineState
 {
     vk::PipelineVertexInputStateCreateInfo vertex_input_create_info;
@@ -28,24 +29,27 @@ struct GraphicsPipelineState
     std::vector<vk::PipelineColorBlendAttachmentState> color_states;
     vk::PipelineColorBlendStateCreateInfo color_blending;
     bool use_color_blend_state = true;
+    // Dynamic rendering: the attachment formats stand in for a render pass and must match vkCmdBeginRendering's.
+    std::vector<vk::Format> color_formats;
+    vk::PipelineRenderingCreateInfo rendering_create_info;
 };
 
-// Wires the shader stages, pipeline layout, render pass and subpass onto a
-// GraphicsPipelineState and returns the top-level create-info ready for
-// vk::Device::createGraphicsPipelines. Borrows into both state and stages -
-// both must outlive the createGraphicsPipelines call that consumes the
-// returned value, the same lifetime rule PipelineLayoutHelper.hpp documents.
+// Wires the shader stages and pipeline layout onto a GraphicsPipelineState,
+// chains its vk::PipelineRenderingCreateInfo (no render pass), and returns the
+// top-level create-info ready for vk::Device::createGraphicsPipelines. Borrows
+// into both state and stages - both must outlive the createGraphicsPipelines
+// call that consumes the returned value, the same lifetime rule
+// PipelineLayoutHelper.hpp documents.
 [[nodiscard]] vk::GraphicsPipelineCreateInfo linkGraphicsPipelineCreateInfo(const GraphicsPipelineState &state,
   std::span<const vk::PipelineShaderStageCreateInfo> stages,
-  vk::PipelineLayout layout,
-  vk::RenderPass render_pass,
-  uint32_t subpass);
+  vk::PipelineLayout layout);
 
 // Fluent builder for the graphics pipeline construction that was previously
 // copy-pasted across the render stages. Defaults match the most common
 // variant: triangle list, dynamic viewport/scissor, fill mode, back-face
-// culling, counter-clockwise front face, no blending on a single color
-// attachment, depth test + write with CompareOp::eLess, single sample.
+// culling, counter-clockwise front face, no blending, depth test + write
+// with CompareOp::eLess, single sample. There is no default attachment
+// format: every caller names its pass's formats through setRenderingFormats.
 // Pipeline LAYOUT creation stays in the stages; this builder only builds
 // the vk::Pipeline.
 class PipelineBuilder
@@ -60,9 +64,13 @@ class PipelineBuilder
     // When enabled uses the standard alpha blending factors
     // (srcAlpha/oneMinusSrcAlpha for color, one/zero for alpha, both eAdd).
     PipelineBuilder &setAlphaBlending(bool enable);
-    PipelineBuilder &setColorAttachmentCount(uint32_t count);
-    // Pass false for depth-only pipelines (no pColorBlendState at all).
-    PipelineBuilder &setUseColorBlendState(bool use_color_blend_state);
+    // The pass's attachment formats, in vkCmdBeginRendering's order: one blend
+    // state per colour format, and none at all (no pColorBlendState) for a
+    // depth-only pass. eUndefined depth means the pass has no depth attachment.
+    PipelineBuilder &setRenderingFormats(std::vector<vk::Format> color_formats,
+      vk::Format depth_format = vk::Format::eUndefined);
+    // Multiview: the view mask the pass's vkCmdBeginRendering names (0 = off).
+    PipelineBuilder &setViewMask(uint32_t view_mask);
     PipelineBuilder &setDepthTest(bool enable);
     PipelineBuilder &setDepthWrite(bool enable);
     PipelineBuilder &setDepthCompareOp(vk::CompareOp compare_op);
@@ -87,9 +95,7 @@ class PipelineBuilder
     // pipeline_cache may be null (no caching).
     [[nodiscard]] vk::Pipeline build(vk::Device device,
       vk::PipelineLayout pipeline_layout,
-      vk::RenderPass render_pass,
       vk::PipelineCache pipeline_cache = nullptr,
-      uint32_t subpass = 0,
       const char *error_message = "Failed to create a graphics pipeline!") const;
 
   private:
@@ -103,8 +109,9 @@ class PipelineBuilder
 
     vk::CullModeFlags cull_mode = vk::CullModeFlagBits::eBack;
     bool alpha_blending = false;
-    uint32_t color_attachment_count = 1;
-    bool use_color_blend_state = true;
+    std::vector<vk::Format> color_formats;
+    vk::Format depth_format = vk::Format::eUndefined;
+    uint32_t view_mask = 0;
     bool depth_test = true;
     bool depth_write = true;
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;

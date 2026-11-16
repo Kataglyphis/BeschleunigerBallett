@@ -1019,7 +1019,14 @@ OFF, so none of them fetches Kompute's `fmt`.
   will not compile. `ASSERT_VULKAN(val, "msg")` (`common/Utilities.hpp`) logs critical and aborts;
   use it on creation/allocation calls only.
 - Graphics pipelines are built via `kataglyphis.vulkan.pipeline_builder`
-  (`vulkan_base/PipelineBuilder.ixx`); do not hand-roll the create-info chain.
+  (`vulkan_base/PipelineBuilder.ixx`); do not hand-roll the create-info chain. A pipeline names
+  its pass's attachment formats (`setRenderingFormats`, `setViewMask`), not a render pass.
+- Every pass renders with Vulkan 1.3 dynamic rendering (`vkCmdBeginRendering` through
+  `common/RenderingHelper.hpp`) and records sync2 barriers (`buildImageMemoryBarrier`,
+  `recordImageBarriers` in `common/ImageBarrierHelper.hpp`); a pass owns the layout transitions
+  around it. There is no `VkRenderPass` or `VkFramebuffer`, so `recreateSwapChain` rebuilds none
+  (`BuildIntegrity.NoPassUsesARenderPassFramebufferOrLegacyBarrier`). A device without
+  `dynamicRendering` and `synchronization2` is rejected at selection, with the reason logged.
 - Buffer/image memory goes through VMA (allocator owned by `VulkanDevice`);
   `VulkanBuffer`/`VulkanImage` are move-only with destructor release (`cleanUp()` remains for
   explicit early teardown and is idempotent).

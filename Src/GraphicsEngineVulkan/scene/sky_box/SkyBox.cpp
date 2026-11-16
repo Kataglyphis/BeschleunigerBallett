@@ -12,9 +12,9 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include "common/FramebufferHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
-#include "common/RenderPassHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
@@ -227,67 +227,10 @@ void SkyBox::updateDescriptorSetForCubeMap()
       0, 1, cubeMapTexture->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, cubeMapTexture->getSampler());
 }
 
-void SkyBox::createRenderPass(vk::Format format)
+void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout, vk::Format in_color_format)
 {
-    // Left in eColorAttachmentOptimal, not presentable: the post stage loads this attachment next.
-    const vk::AttachmentDescription colorAttachment =
-      buildAttachmentDescription(format, vk::ImageLayout::eColorAttachmentOptimal);
+    colorFormat = in_color_format;
 
-    std::array attachments = { colorAttachment };
-
-    vk::AttachmentReference colorRef{};
-    colorRef.attachment = 0;
-    colorRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-    const vk::SubpassDescription subpass =
-      Kataglyphis::buildSubpassDescription(std::span<const vk::AttachmentReference>(&colorRef, 1), nullptr);
-
-    std::array<vk::SubpassDependency, 2> dependencies{};
-
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    dependencies[0].dstAccessMask =
-      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
-    dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-    dependencies[1].srcSubpass = 0;
-    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[1].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    dependencies[1].dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
-    dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
-
-    vk::RenderPassCreateInfo const renderPassInfo =
-      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
-
-    auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(result.result, "Failed to create skybox render pass!");
-    renderPass = result.value;
-}
-
-void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
-{
-    framebufferWidth = width;
-    framebufferHeight = height;
-    framebuffers.resize(imageViews.size());
-    for (size_t i = 0; i < imageViews.size(); i++) {
-        std::array attachments = { imageViews[i] };
-        const vk::FramebufferCreateInfo fbInfo =
-          Kataglyphis::buildFramebufferCreateInfo(renderPass, attachments, vk::Extent2D{ width, height });
-        auto fbResult = device->getLogicalDevice().createFramebuffer(fbInfo);
-        ASSERT_VULKAN(fbResult.result, "Failed to create skybox framebuffer!");
-        framebuffers[i] = fbResult.value;
-    }
-}
-
-void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
-{
     // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 
@@ -323,18 +266,17 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
         .setDepthTest(false)
         .setDepthWrite(false)
         .setDepthCompareOp(vk::CompareOp::eAlways)
+        .setRenderingFormats({ colorFormat })
         .build(device->getLogicalDevice(),
           pipelineLayout,
-          renderPass,
           device->getPipelineCache(),
-          0,
           "Failed to create skybox graphics pipeline!");
 }
 
 void SkyBox::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 {
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
-    createGraphicsPipeline(sharedLayout);
+    createGraphicsPipeline(sharedLayout, colorFormat);
 }
 
 void SkyBox::createMesh(vk::CommandPool commandPool)
@@ -356,12 +298,14 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
 }
 
 void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
-  uint32_t image_index,
+  vk::Image target,
+  vk::ImageView targetView,
+  vk::Extent2D extent,
   std::span<const vk::DescriptorSet> descriptorSets,
   bool skyboxEnabled)
 {
-    if (image_index >= framebuffers.size() || framebuffers.empty()) {
-        spdlog::error("SkyBox: framebuffer not created or index out of range!");
+    if (!target || !targetView) {
+        spdlog::error("SkyBox::recordCommands called without a target image");
         return;
     }
 
@@ -370,16 +314,28 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
         return;
     }
 
-    spdlog::debug(
-      "SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
+    spdlog::debug("SkyBox: enabled={}, indexCount={}", skyboxEnabled, skyMesh->getIndexCount());
 
-    std::array clearValues = { vk::ClearValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } } };
-    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
-      renderPass, framebuffers[image_index], vk::Extent2D{ framebufferWidth, framebufferHeight }, clearValues);
+    // UNDEFINED: the clear overwrites it. The source stage is the submit's wait stage on the acquire semaphore.
+    recordImageBarrier(commandBuffer,
+      buildImageMemoryBarrier(target,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite));
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    // Left in eColorAttachmentOptimal, not presentable: the post stage loads this attachment next.
+    const vk::RenderingAttachmentInfo color_attachment = buildRenderingAttachmentInfo(targetView,
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 1.0F } } });
+    commandBuffer.beginRendering(
+      buildRenderingInfo(extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), nullptr));
 
-    setFullExtentViewportAndScissor(commandBuffer, vk::Extent2D{ framebufferWidth, framebufferHeight });
+    setFullExtentViewportAndScissor(commandBuffer, extent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
@@ -397,7 +353,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
     commandBuffer.bindIndexBuffer(skyMesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
 
     commandBuffer.drawIndexed(skyMesh->getIndexCount(), 1, 0, 0, 0);
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
 }
 
 void SkyBox::cleanUp()
@@ -405,10 +361,8 @@ void SkyBox::cleanUp()
     // Idempotent: the destructor calls it again as a safety net.
     if (!device) { return; }
 
-    destroyFramebuffers();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     cubemapDescriptors.cleanUp();
-    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), renderPass);
     if (skyMesh) { skyMesh->cleanUp(); }
     skyMesh.reset();
     if (cubeMapTexture) { cubeMapTexture->cleanUp(); }
@@ -418,11 +372,5 @@ void SkyBox::cleanUp()
 }
 
 SkyBox::~SkyBox() { cleanUp(); }
-
-void SkyBox::destroyFramebuffers() { Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers); }
-
-// Does not destroy the old framebuffers: recreateSwapChain() must, while their swapchain images still exist.
-void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
-{ createFramebuffers(imageViews, width, height); }
 
 }// namespace Kataglyphis

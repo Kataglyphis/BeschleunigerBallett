@@ -8,6 +8,7 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ImageBarrierHelper.hpp"
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 
@@ -126,33 +127,20 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_b
   vk::ImageAspectFlags aspectMask,
   uint32_t array_layers)
 {
-    vk::ImageMemoryBarrier memory_barrier{};
-    memory_barrier.oldLayout = old_layout;
-    memory_barrier.newLayout = new_layout;
-    memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition from
-    memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition to
-    memory_barrier.image = image;// image being accessed and modified as part of barrier
-    memory_barrier.subresourceRange.aspectMask = aspectMask;// aspect of image being altered
-    memory_barrier.subresourceRange.baseMipLevel = 0;// first mip level to start alterations on
-    memory_barrier.subresourceRange.levelCount = mip_levels;// number of mip levels to alter starting from baseMipLevel
-    memory_barrier.subresourceRange.baseArrayLayer = 0;// first layer to start alterations on
-    memory_barrier.subresourceRange.layerCount = array_layers;// number of layers to alter starting from baseArrayLayer
-
-    memory_barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(old_layout);
-    memory_barrier.dstAccessMask = Kataglyphis::accessFlagsForImageLayout(new_layout);
-
-    vk::PipelineStageFlags const src_stage = Kataglyphis::pipelineStageForLayout(old_layout);
-    vk::PipelineStageFlags const dst_stage = Kataglyphis::pipelineStageForLayout(new_layout);
-
-    // if transitioning from new image to image ready to receive data
-
-    command_buffer.pipelineBarrier(src_stage,
-      dst_stage,// pipeline stages (match to src and dst accessmask)
-      {},// no dependency flags
-      nullptr,// memory barriers
-      nullptr,// buffer memory barriers
-      memory_barrier// image memory barriers
-    );
+    // Stages and access derive from the layouts; eAllCommands for shader-read layouts lets any later reader wait.
+    Kataglyphis::recordImageBarrier(command_buffer,
+      Kataglyphis::buildImageMemoryBarrier(image,
+        old_layout,
+        new_layout,
+        Kataglyphis::pipelineStageForLayout(old_layout),
+        Kataglyphis::accessFlagsForImageLayout(old_layout),
+        Kataglyphis::pipelineStageForLayout(new_layout),
+        Kataglyphis::accessFlagsForImageLayout(new_layout),
+        aspectMask,
+        0,
+        mip_levels,
+        0,
+        array_layers));
 }
 
 void Kataglyphis::VulkanImage::setImage(vk::Image in_image)

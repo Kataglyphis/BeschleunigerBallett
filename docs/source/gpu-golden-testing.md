@@ -380,7 +380,9 @@ WRITE-AFTER-WRITE classes, both fixed the same day:
 
 - **The deferred render pass** (`DeferredRasterizer.cpp`). The geometry-to-lighting dependency
   left the G-buffers' store ops, and depth's load-op clear, outside its scopes. The
-  lighting-to-external one left depth's store before the final layout transition.
+  lighting-to-external one left depth's store before the final layout transition. Since
+  2026-11-16 the two halves are separate dynamic-rendering passes with sync2 barriers between
+  them (`cpp-renderer-improvements.md`).
 - **Back-to-back BLAS builds** (`ASManager.cpp`). One scratch buffer serves every model, and the
   barrier between builds only made the next one *read*.
 

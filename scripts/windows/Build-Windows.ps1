@@ -377,7 +377,7 @@ try {
         $suite = Join-Path $buildPathClangRelease 'commitTestSuite.exe'
         if (-not (Test-Path -LiteralPath $suite -PathType Leaf)) { throw "The Release build made no $suite; KATAGLYPHIS_RELEASE_COMMIT_TESTS did not take" }
         # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
-        $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment'
+        $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*'
         $manifest = [System.Collections.Generic.List[object]]::new()
         $manifest.Add(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
         $staged = @($suite)

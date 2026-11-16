@@ -258,10 +258,6 @@ class VulkanRenderer
     // for the new settings. Consumed (and cleared) by update_uniform_buffers(),
     // the first point in the frame where cascadeData is guaranteed fresh.
     bool lightMatricesNeedFullReseed{ false };
-    // One image view per swapchain image, for the skybox framebuffers - the
-    // depth attachment is a single loop-invariant handle (PostStage owns just
-    // one depth buffer) and is passed to SkyBox separately, not through this.
-    std::vector<vk::ImageView> swapchainImageViews();
 
     // -- synchronization
     // All frame-sync primitives (current_frame, frame_sync_count, the per-frame

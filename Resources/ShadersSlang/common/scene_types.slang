@@ -16,7 +16,7 @@ static const int OUT_IMAGE_BINDING = 1;
 static const int ACCUMULATION_IMAGE_BINDING = 2;
 static const int TRACED_DEPTH_IMAGE_BINDING = 3;
 
-// G-buffer input attachments (set 1): lightingInputRefs positions, not render pass indices (those are +1).
+// G-buffer textures (set 1), sampled by the deferred lighting pass.
 static const int GBUFFER_NORMAL_BINDING = 0;
 static const int GBUFFER_ALBEDO_BINDING = 1;
 static const int GBUFFER_MATERIAL_BINDING = 2;

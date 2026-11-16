@@ -25,12 +25,9 @@ class PostStage
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
-    vk::RenderPass &getRenderPass() { return render_pass; };
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
 
-    void recreateFrameResources();
-    void destroyFramebuffers();
-
+    // Loads the skybox pass's output in the swapchain image, draws post and the GUI over it, leaves it presentable.
     // descriptorSets: the post set, then the shared render set, whose GlobalUBO aims the sky under the clouds.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
@@ -45,19 +42,14 @@ class PostStage
     std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    std::vector<vk::Framebuffer> framebuffers;
-
     vk::Sampler offscreenTextureSampler{};
     void createOffscreenTextureSampler();
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
-    vk::RenderPass render_pass{};
     vk::Pipeline graphics_pipeline{};
     vk::PipelineLayout pipeline_layout{};
 
     void createPushConstantRange();
-    void createRenderpass();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
-    void createFramebuffer();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

@@ -156,7 +156,6 @@ class CascadedShadowMap
     void recordSkippedPass(vk::CommandBuffer &commandBuffer);
 
     Kataglyphis::Texture *getShadowMapArray() const { return shadowMapArray.get(); }
-    vk::RenderPass getRenderPass() const { return renderPass; }
 
     // Passes the map resolution through, so live cascades are stabilized.
     void updateCascades(const glm::mat4 &cameraView,
@@ -197,12 +196,10 @@ class CascadedShadowMap
     vk::CommandPool commandPool{};
 
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
-    // Depth format chosen in init() via chooseDepthFormat(). The render pass
-    // and framebuffers must use exactly this format; defaulted to eD32Sfloat so
+    // Depth format chosen in init() via chooseDepthFormat(). The pipeline's
+    // rendering formats must name exactly this format; defaulted to eD32Sfloat so
     // nothing changes on current hardware (it is first in the preference list).
     vk::Format depth_format{ vk::Format::eD32Sfloat };
-    vk::RenderPass renderPass;
-    vk::Framebuffer framebuffer{};
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
@@ -218,8 +215,8 @@ class CascadedShadowMap
 
     std::vector<CascadeData> cascadeData;
 
-    void createRenderPass();
-    void createFramebuffers();
+    // One bit per cascade layer: the pipeline and vkCmdBeginRendering must name the same mask.
+    [[nodiscard]] uint32_t cascadeViewMask() const { return (1U << numCascades) - 1U; }
     void createDescriptorSetAndPipeline();
     void buildGraphicsPipeline();
 };

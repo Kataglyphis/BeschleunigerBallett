@@ -86,19 +86,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
     // eUndefined: rgen overwrites every pixel, whether or not the raster pass ran this frame.
-    const vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier =
+    Kataglyphis::recordImageBarrier(commandBuffer,
       Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
-        {},
-        vk::AccessFlagBits::eShaderWrite);
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
-      vk::PipelineStageFlagBits::eRayTracingShaderKHR,
-      {},
-      {},
-      {},
-      rasterizerToRaytracingImageBarrier);
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+        vk::AccessFlagBits2::eShaderStorageWrite));
 
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
@@ -110,19 +105,15 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.traceRaysKHR(
       rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
 
-    const vk::ImageMemoryBarrier raytracingToPostImageBarrier =
+    // The consumer is post.slang's fragment shader.
+    Kataglyphis::recordImageBarrier(commandBuffer,
       Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
         vk::ImageLayout::eGeneral,
         vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::AccessFlagBits::eShaderWrite,
-        vk::AccessFlagBits::eShaderRead);
-
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eRayTracingShaderKHR,
-      vk::PipelineStageFlagBits::eFragmentShader,
-      {},
-      {},
-      {},
-      raytracingToPostImageBarrier);
+        vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+        vk::AccessFlagBits2::eShaderStorageWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead));
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()

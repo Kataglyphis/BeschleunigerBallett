@@ -110,7 +110,7 @@ jobs:
         run: >-
           ./scripts/windows/Invoke-LavapipeTests.ps1
           -Suite dist/windows-arm64-tests/commitTestSuite.exe
-          -Filter 'GoldenRender.*:Integration.*:BuildIntegrity.*:RenderPassCreateHelperUnit.PostAndSkyboxPassesDeclareNoDepthAttachment:-GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice'
+          -Filter 'GoldenRender.*:Integration.*:BuildIntegrity.*:-GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice'
 
       - name: Upload lavapipe test evidence
         if: ${{ failure() && steps.gpu_suites.outcome == 'failure' }}

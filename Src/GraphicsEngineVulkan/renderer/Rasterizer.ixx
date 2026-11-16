@@ -56,13 +56,12 @@ class Rasterizer
     unsigned int getMeshesConsidered() const { return meshesConsidered; }
 
     void recreateFrameResources(vk::CommandPool commandPool);
-    void destroyFramebuffers();
 
     void cleanUp();
 
     ~Rasterizer();
 
-    // HDR offscreen target format. The render pass attachment and the offscreen
+    // HDR offscreen target format. The pipeline's rendering format and the offscreen
     // textures MUST agree on this, so it lives in one place: lighting scales
     // with the GUI light radiance (default 10), so the lit scene exceeds 1.0
     // everywhere - a UNORM target clamps it flat before post's tonemap runs
@@ -77,12 +76,11 @@ class Rasterizer
     std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    std::vector<vk::Framebuffer> framebuffer;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
     // Resolved once by createTextures(), which init() always runs before
-    // createRenderPass() - reuse it there rather than querying again, so the
-    // attachment and the image it is paired with cannot diverge.
+    // createGraphicsPipeline() - reuse it there rather than querying again, so the
+    // pipeline's depth format and the image it renders to cannot diverge.
     vk::Format depth_format{ vk::Format::eUndefined };
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
@@ -90,13 +88,10 @@ class Rasterizer
 
     vk::Pipeline graphics_pipeline{};
     vk::PipelineLayout pipeline_layout{};
-    vk::RenderPass render_pass{};
 
     void createTextures(vk::CommandPool &commandPool);
     void releaseFrameTextures();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
-    void createRenderPass();
-    void createFramebuffer();
     void createPushConstantRange();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

@@ -41,15 +41,18 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setAlphaBlending(boo
     return *this;
 }
 
-Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setColorAttachmentCount(uint32_t count)
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setRenderingFormats(
+  std::vector<vk::Format> in_color_formats,
+  vk::Format in_depth_format)
 {
-    color_attachment_count = count;
+    color_formats = std::move(in_color_formats);
+    depth_format = in_depth_format;
     return *this;
 }
 
-Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setUseColorBlendState(bool in_use_color_blend_state)
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setViewMask(uint32_t in_view_mask)
 {
-    use_color_blend_state = in_use_color_blend_state;
+    view_mask = in_view_mask;
     return *this;
 }
 
@@ -143,23 +146,31 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
         color_state.blendEnable = VK_FALSE;
     }
 
-    state.color_states.assign(color_attachment_count, color_state);
+    state.color_states.assign(color_formats.size(), color_state);
 
     state.color_blending.logicOpEnable = VK_FALSE;
     state.color_blending.attachmentCount = static_cast<uint32_t>(state.color_states.size());
     state.color_blending.pAttachments = state.color_states.data();
-    state.use_color_blend_state = use_color_blend_state;
+    // A depth-only pass has nothing to blend, so it passes no pColorBlendState at all.
+    state.use_color_blend_state = !color_formats.empty();
+
+    state.color_formats = color_formats;
+    state.rendering_create_info.viewMask = view_mask;
+    state.rendering_create_info.colorAttachmentCount = static_cast<uint32_t>(state.color_formats.size());
+    state.rendering_create_info.pColorAttachmentFormats =
+      state.color_formats.empty() ? nullptr : state.color_formats.data();
+    state.rendering_create_info.depthAttachmentFormat = depth_format;
+    state.rendering_create_info.stencilAttachmentFormat = vk::Format::eUndefined;
 
     return state;
 }
 
 vk::GraphicsPipelineCreateInfo Kataglyphis::linkGraphicsPipelineCreateInfo(const GraphicsPipelineState &state,
   std::span<const vk::PipelineShaderStageCreateInfo> stages,
-  vk::PipelineLayout layout,
-  vk::RenderPass render_pass,
-  uint32_t subpass)
+  vk::PipelineLayout layout)
 {
     vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info;
+    graphics_pipeline_create_info.pNext = &state.rendering_create_info;
     graphics_pipeline_create_info.stageCount = static_cast<uint32_t>(stages.size());
     graphics_pipeline_create_info.pStages = stages.data();
     graphics_pipeline_create_info.pVertexInputState = &state.vertex_input_create_info;
@@ -171,8 +182,8 @@ vk::GraphicsPipelineCreateInfo Kataglyphis::linkGraphicsPipelineCreateInfo(const
     graphics_pipeline_create_info.pDepthStencilState = &state.depth_stencil_create_info;
     graphics_pipeline_create_info.pColorBlendState = state.use_color_blend_state ? &state.color_blending : nullptr;
     graphics_pipeline_create_info.layout = layout;
-    graphics_pipeline_create_info.renderPass = render_pass;
-    graphics_pipeline_create_info.subpass = subpass;
+    graphics_pipeline_create_info.renderPass = nullptr;
+    graphics_pipeline_create_info.subpass = 0;
     graphics_pipeline_create_info.basePipelineHandle = nullptr;
     graphics_pipeline_create_info.basePipelineIndex = -1;
     return graphics_pipeline_create_info;
@@ -180,14 +191,12 @@ vk::GraphicsPipelineCreateInfo Kataglyphis::linkGraphicsPipelineCreateInfo(const
 
 vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
   vk::PipelineLayout pipeline_layout,
-  vk::RenderPass render_pass,
   vk::PipelineCache pipeline_cache,
-  uint32_t subpass,
   const char *error_message) const
 {
     const GraphicsPipelineState state = buildState();
     const vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info =
-      linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout, render_pass, subpass);
+      linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout);
 
     auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
     if (pipeline_result.result != vk::Result::eSuccess) { ASSERT_VULKAN(pipeline_result.result, error_message); }

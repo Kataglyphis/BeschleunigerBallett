@@ -471,12 +471,12 @@ GUI::GUI(Window *window) : window(window), studio(std::make_unique<StudioState>(
 
 void GUI::initializeVulkanContext(const std::shared_ptr<VulkanDevice> &vulkan_device,
   const vk::Instance &instance,
-  const vk::RenderPass &post_render_pass,
+  vk::Format post_color_format,
   uint32_t image_count)
 {
     this->device = vulkan_device;
 
-    create_gui_context(window, instance, post_render_pass, image_count);
+    create_gui_context(window, instance, post_color_format, image_count);
 }
 
 void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable)
@@ -1557,7 +1557,7 @@ void GUI::cleanUp()
 
 void GUI::create_gui_context(Window *frontend_window,
   const vk::Instance &instance,
-  const vk::RenderPass &post_render_pass,
+  vk::Format post_color_format,
   uint32_t image_count)
 {
     IMGUI_CHECKVERSION();
@@ -1612,17 +1612,24 @@ void GUI::create_gui_context(Window *frontend_window,
     init_info.Device = device->getLogicalDevice();
     init_info.QueueFamily = static_cast<uint32_t>(indices.graphics_family);
     init_info.Queue = device->getGraphicsQueue();
-    init_info.PipelineInfoMain.RenderPass = post_render_pass;
+    // Core 1.3 vkCmdBeginRendering, not the KHR alias: the device requires Vulkan 1.3.
+    init_info.ApiVersion = VK_API_VERSION_1_3;
+    // Drawn inside the post pass's vkCmdBeginRendering; imgui deep-copies the format array.
+    init_info.UseDynamicRendering = true;
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo = {};
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+    const VkFormat color_format = static_cast<VkFormat>(post_color_format);
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+    init_info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &color_format;
     init_info.DescriptorPool = gui_descriptor_pool;
     init_info.PipelineCache = device->getPipelineCache();
     init_info.MinImageCount = 2;
     init_info.ImageCount = image_count;
     init_info.Allocator = VK_NULL_HANDLE;
     init_info.CheckVkResultFn = VK_NULL_HANDLE;
-    init_info.PipelineInfoMain.Subpass = 0;
     init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
-    ImGui_ImplVulkan_Init(&init_info);// post_render_pass
+    ImGui_ImplVulkan_Init(&init_info);
 }
 
 GUI::~GUI() { cleanUp(); }

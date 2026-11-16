@@ -119,17 +119,17 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
 
         // The next model's build writes the same scratch buffer, so a read-only dst scope left a WAW (sync validation).
-        vk::MemoryBarrier barrier;
-        barrier.srcAccessMask = vk::AccessFlagBits::eAccelerationStructureWriteKHR;
+        vk::MemoryBarrier2 barrier;
+        barrier.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
+        barrier.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+        barrier.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
         barrier.dstAccessMask =
-          vk::AccessFlagBits::eAccelerationStructureReadKHR | vk::AccessFlagBits::eAccelerationStructureWriteKHR;
+          vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
 
-        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-          vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-          {},
-          barrier,
-          {},
-          {});
+        vk::DependencyInfo dependency_info{};
+        dependency_info.memoryBarrierCount = 1;
+        dependency_info.pMemoryBarriers = &barrier;
+        command_buffer.pipelineBarrier2(dependency_info);
     }
 
     bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
@@ -369,15 +369,15 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
       VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
         reinterpret_cast<VkBufferDeviceAddressInfo *>(&geometry_instance_buffer_device_address_info));
 
-    vk::MemoryBarrier barrier;
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eAccelerationStructureWriteKHR;
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-      vk::PipelineStageFlagBits::eAccelerationStructureBuildKHR,
-      {},
-      barrier,
-      {},
-      {});
+    vk::MemoryBarrier2 barrier;
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+    barrier.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+    vk::DependencyInfo dependency_info{};
+    dependency_info.memoryBarrierCount = 1;
+    dependency_info.pMemoryBarriers = &barrier;
+    command_buffer.pipelineBarrier2(dependency_info);
 
     vk::AccelerationStructureGeometryInstancesDataKHR acceleration_structure_geometry_instances_data{};
     acceleration_structure_geometry_instances_data.data.deviceAddress = geometry_instance_buffer_address;

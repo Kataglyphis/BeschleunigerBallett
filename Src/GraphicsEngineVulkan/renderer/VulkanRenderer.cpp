@@ -79,14 +79,14 @@ namespace {
 // Not transitionImageLayout's eGeneral overload: it derives eAllCommands -> eAllCommands, a full stall every frame.
 void recordGeneralImageBarrier(vk::CommandBuffer commandBuffer,
   vk::Image image,
-  vk::PipelineStageFlags srcStage,
-  vk::PipelineStageFlags dstStage,
-  vk::AccessFlags srcAccess,
-  vk::AccessFlags dstAccess)
+  vk::PipelineStageFlags2 srcStage,
+  vk::PipelineStageFlags2 dstStage,
+  vk::AccessFlags2 srcAccess,
+  vk::AccessFlags2 dstAccess)
 {
-    const vk::ImageMemoryBarrier barrier = Kataglyphis::buildImageMemoryBarrier(
-      image, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, srcAccess, dstAccess);
-    commandBuffer.pipelineBarrier(srcStage, dstStage, {}, nullptr, nullptr, barrier);
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(
+        image, vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, srcStage, srcAccess, dstStage, dstAccess));
 }
 
 }// namespace
@@ -157,10 +157,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateAllDescriptorSets();
 
     skyBox.init(device, graphics_command_pool);
-    skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat());
-    skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout());
-    skyBox.createFramebuffers(
-      swapchainImageViews(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainFormat());
 
     // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
     scene->beginModelLoadAsync();
@@ -170,8 +167,10 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateAllDescriptorSets();
     bindCloudSceneDepth();
 
-    gui->initializeVulkanContext(
-      device, instance.getVulkanInstance(), postStage.getRenderPass(), vulkanSwapChain.getNumberSwapChainImages());
+    gui->initializeVulkanContext(device,
+      instance.getVulkanInstance(),
+      vulkanSwapChain.getSwapChainFormat(),
+      vulkanSwapChain.getNumberSwapChainImages());
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }
 
@@ -718,12 +717,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    // Before recreate(): these framebuffers reference the old swapchain image views.
-    postStage.destroyFramebuffers();
-    rasterizer.destroyFramebuffers();
-    deferredRasterizer.destroyFramebuffers();
-    skyBox.destroyFramebuffers();
-
+    // No framebuffers to rebuild: every pass names its swapchain image view at vkCmdBeginRendering.
     vulkanSwapChain.recreate(device, surface);
 
     // The query pool is sized per swapchain image.
@@ -731,8 +725,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    // Recreate depth buffers and framebuffers with new swapchain
-    postStage.recreateFrameResources();
+    // The extent-sized offscreen, G-buffer and depth targets follow the new swapchain.
     rasterizer.recreateFrameResources(graphics_command_pool);
     deferredRasterizer.recreateFrameResources();
     clouds.recreateFrameResources(
@@ -743,9 +736,6 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
         createPathTracingAccumulationResources();
         createTracedDepthResources();
     }
-
-    skyBox.recreateFrameResources(
-      swapchainImageViews(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // A new image count re-provisions every per-image resource, not just the descriptor pools.
     if (newImageCount != oldImageCount) {
@@ -857,15 +847,6 @@ auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Text
              : deferredRasterizer.getOffscreenTexture(index);
 }
 
-std::vector<vk::ImageView> Kataglyphis::VulkanRenderer::swapchainImageViews()
-{
-    std::vector<vk::ImageView> views(vulkanSwapChain.getNumberSwapChainImages());
-    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        views[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
-    }
-    return views;
-}
-
 bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GUISceneSharedVars &guiSceneSharedVars)
 {
     if (image_index >= command_buffers.size() || image_index >= sharedRenderDescriptors.sets().size()
@@ -958,30 +939,30 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
         recordGeneralImageBarrier(commandBuffer,
           clouds.getCloudOutputTexture()->getImage(),
-          vk::PipelineStageFlagBits::eFragmentShader,
-          vk::PipelineStageFlagBits::eComputeShader,
-          {},
-          vk::AccessFlagBits::eShaderWrite);
+          vk::PipelineStageFlagBits2::eFragmentShader,
+          vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eNone,
+          vk::AccessFlagBits2::eShaderStorageWrite);
 
-        // A raster depth buffer reaches this read through its render pass's outgoing dependency; traced depth does not.
+        // A raster depth buffer reaches this read through its pass's closing barrier; traced depth does not.
         if (tracing_owns_frame) {
             recordGeneralImageBarrier(commandBuffer,
               tracedDepth.getImage(),
-              vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
-              vk::PipelineStageFlagBits::eComputeShader,
-              vk::AccessFlagBits::eShaderWrite,
-              vk::AccessFlagBits::eShaderRead);
+              vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
+              vk::PipelineStageFlagBits2::eComputeShader,
+              vk::AccessFlagBits2::eShaderStorageWrite,
+              vk::AccessFlagBits2::eShaderSampledRead);
         }
 
         clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
 
-        // PostStage's subpass dependency cannot order this compute write before the post pass samples it.
+        // The post pass samples the clouds; nothing else orders this compute write before it.
         recordGeneralImageBarrier(commandBuffer,
           clouds.getCloudOutputTexture()->getImage(),
-          vk::PipelineStageFlagBits::eComputeShader,
-          vk::PipelineStageFlagBits::eFragmentShader,
-          vk::AccessFlagBits::eShaderWrite,
-          vk::AccessFlagBits::eShaderRead);
+          vk::PipelineStageFlagBits2::eComputeShader,
+          vk::PipelineStageFlagBits2::eFragmentShader,
+          vk::AccessFlagBits2::eShaderStorageWrite,
+          vk::AccessFlagBits2::eShaderSampledRead);
 
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
@@ -989,12 +970,17 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     write_pass_timestamp(GpuTimedPass::Sky, true);
     {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "sky", { 0.30F, 0.70F, 0.90F, 1.0F });
-        skyBox.recordCommands(
-          commandBuffer, image_index, rasterizer_descriptor_sets, guiSceneSharedVars.skybox_enabled);
+        Texture &swap_chain_image = vulkanSwapChain.getSwapChainImage(image_index);
+        skyBox.recordCommands(commandBuffer,
+          swap_chain_image.getImage(),
+          swap_chain_image.getImageView(),
+          vulkanSwapChain.getSwapChainExtent(),
+          rasterizer_descriptor_sets,
+          guiSceneSharedVars.skybox_enabled);
     }
     write_pass_timestamp(GpuTimedPass::Sky, false);
 
-    // No swapchain barrier here: the post render pass's external dependency orders it.
+    // No swapchain barrier here: PostStage orders its load after the sky and leaves the image presentable.
     write_pass_timestamp(GpuTimedPass::Post, true);
     {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "post", { 0.35F, 0.80F, 0.40F, 1.0F });
@@ -1020,7 +1006,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
           vulkanSwapChain.getSwapChainExtent(),
           Kataglyphis::VulkanRendererInternals::Rasterizer::OFFSCREEN_FORMAT,
           vk::ImageLayout::eShaderReadOnlyOptimal,
-          vk::PipelineStageFlagBits::eFragmentShader,
+          vk::PipelineStageFlagBits2::eFragmentShader,
           device_lost_detected);
     }
 
@@ -1089,10 +1075,10 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     // One traced-depth image across frames: the last frame's write and the clouds' read of it come first.
     recordGeneralImageBarrier(commandBuffer,
       tracedDepth.getImage(),
-      vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
-      vk::PipelineStageFlagBits::eRayTracingShaderKHR | vk::PipelineStageFlagBits::eComputeShader,
-      vk::AccessFlagBits::eShaderWrite,
-      vk::AccessFlagBits::eShaderWrite);
+      vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
+      vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
+      vk::AccessFlagBits2::eShaderStorageWrite,
+      vk::AccessFlagBits2::eShaderStorageWrite);
 
     const int mode = drawnRenderMode();
     if (mode == 1) {
@@ -1593,13 +1579,13 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 
 void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 {
-    // Must match deferred.slang's GBUFFER_*_BINDING input attachments.
+    // Must match deferred.slang's GBUFFER_*_BINDING textures, which the lighting pass texel-fetches (no sampler).
     static constexpr std::array<uint32_t, 4> kGBufferBindings = {
         GBUFFER_NORMAL_BINDING, GBUFFER_ALBEDO_BINDING, GBUFFER_MATERIAL_BINDING, GBUFFER_DEPTH_BINDING
     };
     for (const uint32_t binding : kGBufferBindings) {
         gbufferDescriptors.addBinding(
-          binding, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
+          binding, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eFragment);
     }
 
     if (!gbufferDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {

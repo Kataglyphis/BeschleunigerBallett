@@ -242,7 +242,9 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     }
 
     if (!physical_device) {
-        spdlog::critical("Failed to find a suitable Vulkan physical device.");
+        spdlog::critical(
+          "Failed to find a suitable Vulkan physical device: one needs graphics and present queues, "
+          "VK_KHR_swapchain, and Vulkan 1.3 dynamic rendering + synchronization2 (errors above name what each lacks).");
         std::abort();
     }
 
@@ -318,6 +320,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     vk::PhysicalDeviceVulkan13Features features13{};
     features13.shaderDemoteToHelperInvocation = available_features13.shaderDemoteToHelperInvocation;
+    // Always VK_TRUE here: check_device_suitable() rejected every device lacking either.
+    features13.dynamicRendering = available_features13.dynamicRendering;
+    features13.synchronization2 = available_features13.synchronization2;
     // Chains the ray-tracing structs only in the hardware-RT block: they must not ride along for unenabled extensions.
     features13.pNext = nullptr;
 
@@ -605,8 +610,22 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
         swap_chain_valid = !swap_chain_details.presentation_mode.empty() && !swap_chain_details.formats.empty();
     }
 
+    vk::PhysicalDeviceVulkan13Features features13{};
+    vk::PhysicalDeviceFeatures2 features2{};
+    features2.pNext = &features13;
+    device.getFeatures2(&features2);
+    const char *const missing_rendering_requirement = firstMissingRenderingRequirement(
+      device.getProperties().apiVersion, features13.dynamicRendering, features13.synchronization2);
+    if (missing_rendering_requirement != nullptr) {
+        spdlog::error(
+          "Vulkan device '{}' lacks {}, which the renderer requires (dynamic rendering and "
+          "synchronization2); skipping it.",
+          device.getProperties().deviceName.data(),
+          missing_rendering_requirement);
+    }
+
     // samplerAnisotropy is not required: it has a fallback, and requiring it rejects software Vulkan such as lavapipe.
-    return indices.is_valid() && extensions_supported && swap_chain_valid;
+    return indices.is_valid() && extensions_supported && swap_chain_valid && missing_rendering_requirement == nullptr;
 }
 
 auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevice device) -> bool

@@ -13,9 +13,9 @@
 #include <vector>
 
 #include "common/FormatHelper.hpp"
-#include "common/FramebufferHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
-#include "common/RenderPassHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 
@@ -47,9 +47,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::init(const std::shared_ptr
     createOffscreenTextureSampler();
 
     createPushConstantRange();
-    createRenderpass();
     createGraphicsPipeline(descriptorSetLayouts);
-    createFramebuffer();
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
@@ -66,12 +64,26 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
   bool skyboxEnabled)
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(image_index);
 
-    // No clear values: the colour attachment loads the skybox pass's output.
-    const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
-      render_pass, framebuffers[image_index], swap_chain_extent, std::span<const vk::ClearValue>{});
+    // Orders this pass's load against SkyBox's earlier write to the same swapchain image.
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(swap_chain_image.getImage(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite));
 
-    commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+    // eLoad, no clear value: the colour attachment keeps the skybox pass's output.
+    const vk::RenderingAttachmentInfo color_attachment =
+      Kataglyphis::buildRenderingAttachmentInfo(swap_chain_image.getImageView(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AttachmentLoadOp::eLoad,
+        vk::AttachmentStoreOp::eStore);
+    commandBuffer.beginRendering(Kataglyphis::buildRenderingInfo(
+      swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), nullptr));
 
     setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
@@ -93,7 +105,17 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
     }
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    // Colour output as the destination, not none: a frame capture's barrier chains from it.
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(swap_chain_image.getImage(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::ePresentSrcKHR,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eNone));
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
@@ -101,25 +123,16 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
     // Idempotent: the destructor calls it again after an explicit cleanUp.
     if (!device) { return; }
 
-    destroyFramebuffers();
-
     if (offscreenTextureSampler) {
         device->getLogicalDevice().destroySampler(offscreenTextureSampler);
         offscreenTextureSampler = nullptr;
     }
-    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), render_pass);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
 
     device.reset();
 }
 
 Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() { cleanUp(); }
-
-void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
-{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers); }
-
-// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
-void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources() { createFramebuffer(); }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
@@ -142,36 +155,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
     push_constant_range.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantPost);
-}
-
-void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
-{
-    // Loads the skybox pass's output instead of clearing it, then hands it to presentation.
-    const vk::AttachmentDescription color_attachment = buildAttachmentDescription(vulkanSwapChain->getSwapChainFormat(),
-      vk::ImageLayout::ePresentSrcKHR,
-      vk::AttachmentLoadOp::eLoad,
-      vk::AttachmentStoreOp::eStore,
-      vk::ImageLayout::eColorAttachmentOptimal);
-
-    vk::AttachmentReference color_attachment_reference;
-    color_attachment_reference.attachment = 0;
-    color_attachment_reference.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-    const vk::SubpassDescription subpass =
-      buildSubpassDescription(std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), nullptr);
-
-    // Colour only: this pass has no depth to order.
-    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDependency() };
-
-    std::array<vk::AttachmentDescription, 1> render_pass_attachments = { color_attachment };
-    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
-
-    vk::RenderPassCreateInfo const render_pass_create_info =
-      Kataglyphis::buildRenderPassCreateInfo(render_pass_attachments, subpasses, subpass_dependencies);
-
-    auto result = device->getLogicalDevice().createRenderPass(render_pass_create_info);
-    ASSERT_VULKAN(result.result, "Failed to create render pass!");
-    render_pass = result.value;
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
@@ -200,23 +183,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
                           .setAlphaBlending(true)
                           .setDepthTest(false)
                           .setDepthWrite(false)
-                          .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
-}
-
-void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
-{
-    framebuffers.resize(vulkanSwapChain->getNumberSwapChainImages());
-
-    for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
-        Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(static_cast<uint32_t>(i));
-
-        std::array<vk::ImageView, 1> attachments = { swap_chain_image.getImageView() };
-
-        const vk::FramebufferCreateInfo frame_buffer_create_info =
-          Kataglyphis::buildFramebufferCreateInfo(render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
-
-        auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
-        ASSERT_VULKAN(result.result, "Failed to create framebuffer!");
-        framebuffers[i] = result.value;
-    }
+                          .setRenderingFormats({ vulkanSwapChain->getSwapChainFormat() })
+                          .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 }

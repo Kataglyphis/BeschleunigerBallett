@@ -83,10 +83,11 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
 // The lighting pass reads the geometry pass's globalUBO: a second name on its binding drew Slang's overlap warning.
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO_lighting;
 
-[[vk::binding(GBUFFER_NORMAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_NORMAL_BINDING)]] SubpassInput<float4> inNormal;
-[[vk::binding(GBUFFER_ALBEDO_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_ALBEDO_BINDING)]] SubpassInput<float4> inAlbedo;
-[[vk::binding(GBUFFER_MATERIAL_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_MATERIAL_BINDING)]] SubpassInput<float4> inMaterial;
-[[vk::binding(GBUFFER_DEPTH_BINDING, 1)]] [[vk::input_attachment_index(GBUFFER_DEPTH_BINDING)]] SubpassInput<float4> inDepth;
+// Sampled images, texel-fetched at this pixel: the geometry pass is its own vkCmdBeginRendering, not a subpass.
+[[vk::binding(GBUFFER_NORMAL_BINDING, 1)]] Texture2D<float4> inNormal;
+[[vk::binding(GBUFFER_ALBEDO_BINDING, 1)]] Texture2D<float4> inAlbedo;
+[[vk::binding(GBUFFER_MATERIAL_BINDING, 1)]] Texture2D<float4> inMaterial;
+[[vk::binding(GBUFFER_DEPTH_BINDING, 1)]] Texture2D<float4> inDepth;
 
 // SV_VulkanVertexID: SV_VertexID subtracts BaseVertex, which needs draw parameters a Raspberry Pi 5's v3dv lacks.
 [shader("vertex")]
@@ -98,16 +99,18 @@ FullscreenVsOut lighting_vs_main(uint vid : SV_VulkanVertexID)
 [shader("fragment")]
 float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
 {
-    float depth = inDepth.SubpassLoad().r;
+    // The lighting pass covers the G-buffer's full extent, so SV_Position names the texel the geometry pass wrote.
+    int3 texel = int3(int2(In.svPosition.xy), 0);
+    float depth = inDepth.Load(texel).r;
     if (depth >= 1.0) discard;
 
     float4 clipPos = float4(fullscreen_uv_to_ndc(In.uv), depth, 1.0);
     float4 worldPos = mul(globalUBO.inv_view, mul(globalUBO.inv_projection, clipPos));
     worldPos /= worldPos.w;
 
-    float4 normal = inNormal.SubpassLoad();
-    float4 albedo = inAlbedo.SubpassLoad();
-    float4 material = inMaterial.SubpassLoad();
+    float4 normal = inNormal.Load(texel);
+    float4 albedo = inAlbedo.Load(texel);
+    float4 material = inMaterial.Load(texel);
 
     // KHR_materials_unlit (outAlbedo.a): skip lighting, shadowing and emissive alike.
     if (albedo.a > 0.5) return float4(hdr_safe(albedo.rgb), 1.0);

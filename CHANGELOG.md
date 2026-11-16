@@ -161,6 +161,13 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The C++ renderer requires Vulkan 1.3's dynamic rendering and synchronization2, and a device
+  without either is skipped with the reason logged. Every pass (shadow cascades, forward,
+  deferred geometry and lighting, sky, post with the editor) begins with `vkCmdBeginRendering`
+  instead of a render pass and framebuffer, so a swapchain recreation rebuilds no framebuffers.
+  Every barrier is a `vkCmdPipelineBarrier2` with explicit stage and access masks. The deferred
+  lighting pass texel-fetches the G-buffer as sampled images instead of reading input
+  attachments.
 - Adding a model builds only that model's bottom-level acceleration structure and rebuilds the
   TLAS; the models already in the scene keep theirs. A reload still rebuilds, since it replaces
   the model.

@@ -65,6 +65,19 @@ inline auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties,
 constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
 { return extensionPresent && quadsSupported == VK_TRUE; }
 
+// Every pass renders through dynamic rendering and records sync2 barriers: nullptr, or the first thing missing.
+constexpr const char *
+  firstMissingRenderingRequirement(uint32_t apiVersion, vk::Bool32 dynamicRendering, vk::Bool32 synchronization2)
+{
+    if (VK_API_VERSION_MAJOR(apiVersion) < 1
+        || (VK_API_VERSION_MAJOR(apiVersion) == 1 && VK_API_VERSION_MINOR(apiVersion) < 3)) {
+        return "Vulkan 1.3";
+    }
+    if (dynamicRendering != VK_TRUE) { return "the dynamicRendering feature"; }
+    if (synchronization2 != VK_TRUE) { return "the synchronization2 feature"; }
+    return nullptr;
+}
+
 // Clamped per VUID-VkSamplerCreateInfo-anisotropyEnable-01071; a fixed 16x keeps texture quality equal across GPUs.
 constexpr float resolveMaxAnisotropy(bool anisotropyEnabled, float deviceLimit)
 { return anisotropyEnabled ? std::clamp(16.0F, 1.0F, deviceLimit) : 1.0F; }

@@ -26,11 +26,11 @@ const int MAX_PCF_RADIUS = 5;
 #define TRACED_DEPTH_IMAGE_BINDING 3
 // ---- RAYTRACING BINDING ---- END
 
-// ----- GBUFFER INPUT ATTACHMENT SET ----- START (lightingInputRefs positions; render pass indices are +1)
+// ----- GBUFFER TEXTURE SET ----- START (sampled by the deferred lighting pass)
 #define GBUFFER_NORMAL_BINDING 0
 #define GBUFFER_ALBEDO_BINDING 1
 #define GBUFFER_MATERIAL_BINDING 2
 #define GBUFFER_DEPTH_BINDING 3
-// ----- GBUFFER INPUT ATTACHMENT SET ----- END
+// ----- GBUFFER TEXTURE SET ----- END
 
 #endif

@@ -2,6 +2,7 @@ module;
 #include <memory>
 
 #include "common/FormatHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
@@ -323,7 +324,7 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer,
   int32_t width,
   int32_t height)
 {
-    vk::ImageMemoryBarrier barrier{};
+    vk::ImageMemoryBarrier2 barrier{};
     barrier.image = image;
     barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
     barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
@@ -340,15 +341,12 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer,
         barrier.subresourceRange.baseMipLevel = i - 1;
         barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
         barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-        barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+        barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        barrier.dstStageMask = vk::PipelineStageFlagBits2::eTransfer;
+        barrier.dstAccessMask = vk::AccessFlagBits2::eTransferRead;
 
-        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-          vk::PipelineStageFlagBits::eTransfer,
-          vk::DependencyFlags{},
-          {},
-          {},
-          barrier);
+        Kataglyphis::recordImageBarrier(command_buffer, barrier);
 
         vk::ImageBlit blit{};
 
@@ -376,15 +374,12 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer,
         // Raster, ray-tracing and compute shaders all sample these mips; a raster-only stage leaves two unsynchronized.
         barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
         barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
         barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.oldLayout);
+        barrier.dstStageMask = Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
         barrier.dstAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.newLayout);
 
-        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-          Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
-          vk::DependencyFlags{},
-          {},
-          {},
-          barrier);
+        Kataglyphis::recordImageBarrier(command_buffer, barrier);
 
         if (tmp_width > 1) { tmp_width /= 2; }
         if (tmp_height > 1) { tmp_height /= 2; }
@@ -393,13 +388,10 @@ void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer,
     barrier.subresourceRange.baseMipLevel = mip_levels - 1;
     barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
     barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
     barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.oldLayout);
+    barrier.dstStageMask = Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
     barrier.dstAccessMask = Kataglyphis::accessFlagsForImageLayout(barrier.newLayout);
 
-    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-      Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal),
-      vk::DependencyFlags{},
-      {},
-      {},
-      barrier);
+    Kataglyphis::recordImageBarrier(command_buffer, barrier);
 }

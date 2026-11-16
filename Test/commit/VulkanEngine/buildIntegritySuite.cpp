@@ -6862,10 +6862,35 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
     };
 
-    // Barriers come from buildImageMemoryBarrier, whose third argument is newLayout.
-    static const std::regex kBarrierConstruction(R"((\w+)\s*=\s*Kataglyphis::buildImageMemoryBarrier\(([\s\S]*?)\);)");
-    static const std::regex kPipelineBarrierCall(R"(commandBuffer\.pipelineBarrier\(([\s\S]*?)\);)");
-    static const std::regex kIdentifier(R"([A-Za-z_]\w*)");
+    // Sync2: (image, oldLayout, newLayout, srcStage, srcAccess, dstStage, dstAccess, ...), split at top-level commas.
+    static const std::string kCall = "buildImageMemoryBarrier(";
+    const auto split_call_arguments = [](const std::string &text, std::size_t open_paren) {
+        std::vector<std::string> args;
+        std::string current;
+        int depth = 0;
+        for (std::size_t i = open_paren; i < text.size(); ++i) {
+            const char c = text[i];
+            if (c == '(' || c == '{') {
+                if (depth++ > 0) { current += c; }
+                continue;
+            }
+            if (c == ')' || c == '}') {
+                if (--depth == 0) {
+                    args.push_back(current);
+                    break;
+                }
+                current += c;
+                continue;
+            }
+            if (c == ',' && depth == 1) {
+                args.push_back(current);
+                current.clear();
+                continue;
+            }
+            current += c;
+        }
+        return args;
+    };
 
     std::size_t gated_barriers_found = 0;
     std::vector<std::string> violations;
@@ -6876,73 +6901,20 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         ASSERT_TRUE(contentsOpt.has_value()) << "missing " << path.string();
         const std::string &contents = *contentsOpt;
 
-        std::set<std::string> transitions_to_shader_read_only;
-        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kBarrierConstruction);
-          it != std::sregex_iterator();
-          ++it) {
-            const std::string barrier_name = (*it)[1].str();
-            const std::string call_args = (*it)[2].str();
-
-            std::vector<std::string> args;
-            std::size_t arg_start = 0;
-            while (true) {
-                const std::size_t comma = call_args.find(',', arg_start);
-                if (comma == std::string::npos) {
-                    args.push_back(call_args.substr(arg_start));
-                    break;
-                }
-                args.push_back(call_args.substr(arg_start, comma - arg_start));
-                arg_start = comma + 1;
-            }
-            ASSERT_GE(args.size(), 3u)
+        for (std::size_t at = contents.find(kCall); at != std::string::npos; at = contents.find(kCall, at + 1)) {
+            const std::vector<std::string> args = split_call_arguments(contents, at + kCall.size() - 1);
+            ASSERT_GE(args.size(), 7u)
               << relative_path
-              << ": buildImageMemoryBarrier call does not have the expected (image, oldLayout, newLayout, ...) "
-                 "shape - the scan needs updating:\n"
-              << call_args;
+              << ": buildImageMemoryBarrier call does not have the expected (image, oldLayout, newLayout, srcStage, "
+                 "srcAccess, dstStage, dstAccess, ...) shape - the scan needs updating";
 
-            if (args[2].find("eShaderReadOnlyOptimal") != std::string::npos) {
-                transitions_to_shader_read_only.insert(barrier_name);
-            }
-        }
-
-        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kPipelineBarrierCall);
-          it != std::sregex_iterator();
-          ++it) {
-            const std::string call_args = (*it)[1].str();
-
-            std::vector<std::string> parts;
-            std::size_t start = 0;
-            while (true) {
-                const std::size_t comma = call_args.find(',', start);
-                if (comma == std::string::npos) {
-                    parts.push_back(call_args.substr(start));
-                    break;
-                }
-                parts.push_back(call_args.substr(start, comma - start));
-                start = comma + 1;
-            }
-            ASSERT_EQ(parts.size(), 6u) << relative_path
-                                        << ": pipelineBarrier call does not have the expected 6 arguments - either "
-                                           "this file grew a differently-shaped call the scan needs updating for, "
-                                           "or the naive comma-split broke on one containing a literal comma:\n"
-                                        << call_args;
-
-            const std::string &dst_stage = parts[1];
-            const std::string &image_barrier_arg = parts[5];
-
-            std::smatch identifier_match;
-            if (!std::regex_search(image_barrier_arg, identifier_match, kIdentifier)) { continue; }
-            const std::string barrier_name = identifier_match.str();
-
-            if (transitions_to_shader_read_only.find(barrier_name) == transitions_to_shader_read_only.end()) {
-                continue;
-            }
+            if (args[2].find("eShaderReadOnlyOptimal") == std::string::npos) { continue; }
 
             ++gated_barriers_found;
-            if (dst_stage.find("eFragmentShader") == std::string::npos) {
-                violations.push_back(std::string(relative_path) + ": barrier '" + barrier_name
-                                     + "' transitions to eShaderReadOnlyOptimal but names dst stage '" + dst_stage
-                                     + "' instead of eFragmentShader");
+            if (args[5].find("eFragmentShader") == std::string::npos) {
+                violations.push_back(std::string(relative_path)
+                                     + ": a barrier transitions to eShaderReadOnlyOptimal but names dst stage '"
+                                     + args[5] + "' instead of eFragmentShader");
             }
         }
     }
@@ -8128,8 +8100,8 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
                                  "this check too";
 }
 
-// Raster stages share buildExternalColorDepthDependency; SkyBox and CascadedShadowMap keep a genuinely different edge.
-TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
+// Every pass renders through vkCmdBeginRendering and records sync2 barriers; nothing builds a render pass any more.
+TEST(BuildIntegrity, NoPassUsesARenderPassFramebufferOrLegacyBarrier)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
@@ -8137,16 +8109,19 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
 
-    static const char *const kExternalAssign = "srcSubpass = VK_SUBPASS_EXTERNAL";
-    static const char *const kStageAssign = "srcStageMask =";
-    // The helper's own definition and the two passes with a genuinely different dependency.
-    static const std::set<std::string> kAllowedFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp",
-        "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
-        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp" };
-    // Hand-rolled sites set srcStageMask within a couple of lines of srcSubpass.
-    static constexpr std::size_t kLookaheadLines = 4;
+    // A render pass or framebuffer brings back the recreateSwapChain rebuild; a sync1 barrier mixes two stage models.
+    static const std::array<const char *, 9> kForbidden = { "vk::RenderPass",
+        "vk::Framebuffer",
+        "beginRenderPass(",
+        "nextSubpass(",
+        "createRenderPass(",
+        "createFramebuffer(",
+        "VK_SUBPASS_EXTERNAL",
+        ".pipelineBarrier(",
+        "vk::ImageMemoryBarrier " };
 
     std::vector<std::string> violations;
+    std::set<std::string> files_beginning_rendering;
     std::error_code error;
     for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
@@ -8155,18 +8130,15 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
         if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
 
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
-        if (kAllowedFiles.contains(relative_file)) { continue; }
-
         const auto lines_opt = readFileLines(path);
         if (!lines_opt) { continue; }
-        const auto &lines = *lines_opt;
-
-        for (std::size_t i = 0; i < lines.size(); ++i) {
-            if (lines[i].find(kExternalAssign) == std::string::npos) { continue; }
-            const std::size_t window_end = std::min(lines.size(), i + 1 + kLookaheadLines);
-            for (std::size_t j = i; j < window_end; ++j) {
-                if (lines[j].find(kStageAssign) == std::string::npos) { continue; }
-                violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + lines[i]);
+        std::size_t line_number = 0;
+        for (const auto &line : *lines_opt) {
+            ++line_number;
+            if (line.find("beginRendering(") != std::string::npos) { files_beginning_rendering.insert(relative_file); }
+            for (const char *forbidden : kForbidden) {
+                if (line.find(forbidden) == std::string::npos) { continue; }
+                violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
                 break;
             }
         }
@@ -8174,10 +8146,53 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " hand-rolled external subpass dependency/dependencies found under Src/GraphicsEngineVulkan/ - route "
-         "single-depth-image raster stages through Kataglyphis::buildExternalColorDepthDependency "
-         "(common/RenderPassHelper.hpp) instead:"
+      << " render pass, framebuffer or sync1 barrier use(s) found under Src/GraphicsEngineVulkan/ - begin passes "
+         "with vkCmdBeginRendering (common/RenderingHelper.hpp) and record barriers through "
+         "Kataglyphis::recordImageBarriers / vkCmdPipelineBarrier2 (common/ImageBarrierHelper.hpp):"
       << joinViolations(violations);
+
+    // Control: the scan must see the passes it guards, or deleting every pass would pass it.
+    static const std::array<const char *, 5> kPassFiles = { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/PostStage.cpp",
+        "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
+        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp" };
+    for (const char *pass_file : kPassFiles) {
+        EXPECT_TRUE(files_beginning_rendering.contains(pass_file))
+          << pass_file << " no longer calls beginRendering( - the scan above no longer sees that pass";
+    }
+}
+
+// Nothing reads a Post or SkyBox depth attachment, so neither pass may render with one.
+TEST(BuildIntegrity, PostAndSkyboxPassesRenderWithoutDepth)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    for (const char *relative_path :
+      { "Src/GraphicsEngineVulkan/renderer/PostStage.cpp", "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp" }) {
+        const auto contents_opt = readFileText(repo_root / relative_path);
+        ASSERT_TRUE(contents_opt.has_value()) << "missing " << relative_path;
+        const std::string &contents = *contents_opt;
+
+        EXPECT_EQ(contents.find("eDepthStencilAttachment"), std::string::npos)
+          << relative_path << " references a depth-stencil attachment layout or access - this pass has no depth";
+        EXPECT_EQ(contents.find("depthBufferImage"), std::string::npos)
+          << relative_path << " references a depth buffer - this pass has no depth";
+        EXPECT_NE(contents.find("std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), nullptr)"),
+          std::string::npos)
+          << relative_path << " no longer begins rendering with one colour attachment and a null depth attachment";
+    }
+
+    // Control: the rasterizers own real depth buffers and must keep rendering into them.
+    for (const char *relative_path : { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
+           "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp" }) {
+        const auto contents_opt = readFileText(repo_root / relative_path);
+        ASSERT_TRUE(contents_opt.has_value()) << "missing " << relative_path;
+        EXPECT_NE(contents_opt->find("&depth_attachment"), std::string::npos)
+          << relative_path << " no longer renders with a depth attachment - this gate must not pass by deleting "
+          << "depth everywhere";
+    }
 }
 
 // Plain colour attachments come from createColorAttachment; other views are exempt only by their line marker.
@@ -8237,7 +8252,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
                                  "removed, delete this check too";
 }
 
-// The framebuffer reuses the shadow array's sampled view instead of a byte-identical second one.
+// The multiview depth attachment reuses the shadow array's sampled view instead of a byte-identical second one.
 TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
 {
     const fs::path repo_root = repoRoot();
@@ -8266,206 +8281,17 @@ TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
 
     EXPECT_EQ(count_occurrences(cpp_contents, "createImageView("), 1U)
       << "CascadedShadowMap.cpp should build exactly one image view for the shadow map array (the sampled "
-         "view in init()) - the framebuffer attachment in createFramebuffers() must reuse it via "
+         "view in init()) - the depth attachment in recordCommands() must reuse it via "
          "shadowMapArray->getImageView() rather than creating a second, byte-identical view";
     EXPECT_EQ(count_occurrences(cpp_contents, "buildImageViewCreateInfo("), 0U)
-      << "CascadedShadowMap.cpp should no longer hand-roll an image-view create info for the framebuffer "
+      << "CascadedShadowMap.cpp should not hand-roll an image-view create info for the depth "
          "attachment - reuse shadowMapArray->getImageView() instead";
     EXPECT_EQ(cpp_contents.find("shadowMapArrayView"), std::string::npos)
-      << "CascadedShadowMap.cpp still references shadowMapArrayView - the framebuffer attachment view "
+      << "CascadedShadowMap.cpp still references shadowMapArrayView - the depth attachment view "
          "should come from shadowMapArray->getImageView() instead of a second owned view";
     EXPECT_EQ(ixx_contents.find("shadowMapArrayView"), std::string::npos)
-      << "CascadedShadowMap.ixx still declares the shadowMapArrayView member - it should be removed now "
-         "that createFramebuffers() reuses shadowMapArray's own image view";
-}
-
-// Framebuffers are destroyed only through destroyFramebuffers and destroyFramebuffer.
-TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
-{
-    const fs::path repo_root = repoRoot();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
-    ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
-
-    static const char *const kRawTeardownCall = ".destroyFramebuffer(";
-
-    // FramebufferHelper.hpp is the helper's own definition.
-    static const std::array<const char *, 1> kExemptFiles = { "Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp" };
-
-    std::vector<std::string> violations;
-    std::error_code error;
-    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        const fs::path &path = it->path();
-        if (!it->is_regular_file(error)) { continue; }
-        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
-
-        const std::string relative_file = fs::relative(path, repo_root).generic_string();
-        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
-
-        const auto lines = readFileLines(path);
-        if (!lines) { continue; }
-        std::size_t line_number = 0;
-        for (const auto &line : *lines) {
-            ++line_number;
-            if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
-            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
-        }
-    }
-
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " hand-rolled .destroyFramebuffer(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy "
-         "framebuffers through Kataglyphis::destroyFramebuffers (common/FramebufferHelper.hpp) instead:"
-      << joinViolations(violations);
-}
-
-// Render passes are destroyed only through destroyRenderPass.
-TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
-{
-    const fs::path repo_root = repoRoot();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
-    ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
-
-    static const char *const kRawTeardownCall = ".destroyRenderPass(";
-
-    // RenderPassHelper.hpp is the helper's own definition.
-    static const std::array<const char *, 1> kExemptFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp" };
-
-    std::vector<std::string> violations;
-    std::error_code error;
-    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        const fs::path &path = it->path();
-        if (!it->is_regular_file(error)) { continue; }
-        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
-
-        const std::string relative_file = fs::relative(path, repo_root).generic_string();
-        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
-
-        const auto lines = readFileLines(path);
-        if (!lines) { continue; }
-        std::size_t line_number = 0;
-        for (const auto &line : *lines) {
-            ++line_number;
-            if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
-            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
-        }
-    }
-
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " hand-rolled .destroyRenderPass(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy render "
-         "passes through Kataglyphis::destroyRenderPass (common/RenderPassHelper.hpp) instead:"
-      << joinViolations(violations);
-}
-
-// recreateSwapChain() destroys stage framebuffers first; a missed one leaks per resize, seen only at vkDestroyDevice.
-TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)
-{
-    const fs::path repo_root = repoRoot();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path renderer_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    const auto contentsOpt = readFileText(renderer_cpp);
-    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << renderer_cpp.string();
-    const std::string &contents = *contentsOpt;
-
-    static const std::string kFunctionSignature = "Kataglyphis::VulkanRenderer::recreateSwapChain(";
-    const std::size_t signature_pos = contents.find(kFunctionSignature);
-    ASSERT_NE(signature_pos, std::string::npos)
-      << "VulkanRenderer::recreateSwapChain is no longer defined in " << renderer_cpp.string();
-
-    const std::size_t body_open = contents.find('{', signature_pos);
-    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of recreateSwapChain";
-
-    int brace_depth = 0;
-    std::size_t body_close = std::string::npos;
-    for (std::size_t i = body_open; i < contents.size(); ++i) {
-        if (contents[i] == '{') {
-            ++brace_depth;
-        } else if (contents[i] == '}') {
-            --brace_depth;
-            if (brace_depth == 0) {
-                body_close = i;
-                break;
-            }
-        }
-    }
-    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of recreateSwapChain";
-
-    const std::string body = contents.substr(body_open, body_close - body_open + 1);
-
-    // Blank out comment lines, offsets kept, so a commented-out call cannot satisfy the checks.
-    std::string code_only = body;
-    for (std::size_t line_start = 0; line_start < code_only.size();) {
-        std::size_t line_end = code_only.find('\n', line_start);
-        if (line_end == std::string::npos) { line_end = code_only.size(); }
-        const std::size_t first_non_space = code_only.find_first_not_of(" \t", line_start);
-        if (first_non_space != std::string::npos && first_non_space < line_end
-            && code_only.compare(first_non_space, 2, "//") == 0) {
-            std::fill(code_only.begin() + static_cast<std::ptrdiff_t>(line_start),
-              code_only.begin() + static_cast<std::ptrdiff_t>(line_end),
-              ' ');
-        }
-        line_start = line_end + 1;
-    }
-
-    const std::size_t recreate_pos = code_only.find("vulkanSwapChain.recreate(");
-    ASSERT_NE(recreate_pos, std::string::npos)
-      << "recreateSwapChain no longer calls vulkanSwapChain.recreate(...) - update this gate";
-
-    // Receiver -> the file defining its destroyFramebuffers(); an unmapped receiver fails, so no stage slips in.
-    static const std::map<std::string, const char *> kReceiverFiles = {
-        { "postStage", "Src/GraphicsEngineVulkan/renderer/PostStage.cpp" },
-        { "rasterizer", "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp" },
-        { "deferredRasterizer", "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp" },
-        { "skyBox", "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp" },
-        { "clouds", "Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp" },
-    };
-
-    static const std::regex kReceiverPattern(R"((\w+)\.recreateFrameResources\()");
-    std::set<std::string> receivers;
-    for (auto it = std::sregex_iterator(code_only.begin(), code_only.end(), kReceiverPattern),
-              end = std::sregex_iterator();
-      it != end;
-      ++it) {
-        receivers.insert((*it)[1].str());
-    }
-    ASSERT_FALSE(receivers.empty()) << "found no X.recreateFrameResources(...) calls in recreateSwapChain";
-
-    for (const std::string &receiver : receivers) {
-        const auto map_it = kReceiverFiles.find(receiver);
-        ASSERT_NE(map_it, kReceiverFiles.end())
-          << "recreateSwapChain calls " << receiver
-          << ".recreateFrameResources(...) but this gate has no entry for it - add " << receiver
-          << " to kReceiverFiles above (pointing at the file that defines its ::destroyFramebuffers(), "
-             "or that owns none, like clouds) so a sixth stage cannot silently skip this check";
-
-        const fs::path stage_path = repo_root / map_it->second;
-        const auto stage_contents_opt = readFileText(stage_path);
-        ASSERT_TRUE(stage_contents_opt.has_value()) << "missing " << stage_path.string();
-        const std::string &stage_contents = *stage_contents_opt;
-        const bool owns_framebuffers = stage_contents.find("::destroyFramebuffers()") != std::string::npos;
-
-        if (!owns_framebuffers) { continue; }// e.g. clouds - nothing to require here
-
-        const std::string destroy_call = receiver + ".destroyFramebuffers();";
-        const std::size_t destroy_pos = code_only.find(destroy_call);
-        EXPECT_NE(destroy_pos, std::string::npos)
-          << receiver << " owns framebuffers (destroyFramebuffers() is defined in " << map_it->second
-          << ") but recreateSwapChain never calls " << destroy_call
-          << " - its framebuffers reference the outgoing swapchain image views and must be destroyed "
-             "before vulkanSwapChain.recreate(), or vkDestroyDevice will report them as live objects";
-        EXPECT_LT(destroy_pos, recreate_pos)
-          << receiver
-          << ".destroyFramebuffers() is called after vulkanSwapChain.recreate() in "
-             "recreateSwapChain - its framebuffers reference the outgoing swapchain image views, so the "
-             "destroy must happen before the swapchain is recreated, not after";
-    }
+      << "CascadedShadowMap.ixx still declares the shadowMapArrayView member - the depth attachment "
+         "reuses shadowMapArray's own image view";
 }
 
 // createImage must record mip_levels itself, or getMipLevel() and maxLod disagree; text-checked, as it needs a device.
@@ -8820,11 +8646,10 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
 
     // Per-file budgets rather than exemptions; every unlisted file has a budget of 0.
     static const std::map<std::string, std::size_t> kBarrierBudgets = {
-        { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
         { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
     };
 
-    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
+    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier2\s+\w+\s*\{\s*\}\s*;)");
 
     std::map<std::string, std::size_t> counts;
     std::error_code error;
@@ -8860,10 +8685,11 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
         }
     }
 
-    EXPECT_TRUE(violations.empty()) << violations.size()
-                                    << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier declarations under "
-                                       "Src/GraphicsEngineVulkan/:"
-                                    << joinViolations(violations);
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier2 declarations under "
+         "Src/GraphicsEngineVulkan/:"
+      << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
@@ -8872,11 +8698,10 @@ TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::map<std::string, std::size_t> kBarrierBudgets = {
-        { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
         { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
     };
 
-    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
+    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier2\s+\w+\s*\{\s*\}\s*;)");
 
     for (const auto &[file, budget] : kBarrierBudgets) {
         EXPECT_GT(budget, 0u) << file << ": a budgeted file must have a non-zero budget, or it is a dead entry";
@@ -10066,14 +9891,11 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
       << post_stage_path.string()
       << " builds a ClearColorValue for a pass whose attachment is eLoad - this pass loads its attachment, so a "
          "clear value can never be consumed";
-    // The empty-span idiom still names the type; only a populated clear-value container is dead.
-    EXPECT_EQ(post_stage_text.find("std::array<vk::ClearValue"), std::string::npos)
+    // buildRenderingAttachmentInfo defaults the clear value, so a loading attachment names none at all.
+    EXPECT_EQ(post_stage_text.find("vk::ClearValue"), std::string::npos)
       << post_stage_path.string()
-      << " builds an array of vk::ClearValue for a pass whose attachment is eLoad - this pass loads its "
+      << " builds a vk::ClearValue for a pass whose attachment is eLoad - this pass loads its "
          "attachment, so a clear value can never be consumed";
-    EXPECT_NE(post_stage_text.find("std::span<const vk::ClearValue>{}"), std::string::npos)
-      << post_stage_path.string()
-      << " no longer passes an empty std::span<const vk::ClearValue> to buildRenderPassBeginInfo";
 
     const fs::path post_slang_path = slangRoot() / "post" / "post.slang";
     const auto post_slang_text_opt = readFileText(post_slang_path);

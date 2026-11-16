@@ -13,9 +13,9 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 #include "common/FormatHelper.hpp"
-#include "common/FramebufferHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
-#include "common/RenderPassHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/ViewportHelper.hpp"
 
 #include "common/Utilities.hpp"
@@ -44,10 +44,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::init(const std::shared_pt
     this->vulkanSwapChain = swap_chain;
 
     createTextures(commandPool);
-    createRenderPass();
     createPushConstantRange();
     createGraphicsPipeline(descriptorSetLayouts);
-    createFramebuffer();
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
@@ -76,15 +74,48 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     }
 
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
+    const vk::Image depth_image = depthBufferImage->getImage();
+    const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
 
-    std::array<vk::ClearValue, 2> clear_values = {};
-    clear_values[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } };
-    clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
+    // UNDEFINED: both cleared; the shared depth waits out the clouds' read, the offscreen image post and the tracers.
+    const std::array<vk::ImageMemoryBarrier2, 2> to_attachment = {
+        buildImageMemoryBarrier(offscreen_image,
+          vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eFragmentShader
+            | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite),
+        buildImageMemoryBarrier(depth_image,
+          vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+            | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+          vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          depth_aspect),
+    };
+    recordImageBarriers(commandBuffer, to_attachment);
 
-    const vk::RenderPassBeginInfo render_pass_begin_info =
-      Kataglyphis::buildRenderPassBeginInfo(render_pass, framebuffer[image_index], swap_chain_extent, clear_values);
+    const vk::RenderingAttachmentInfo color_attachment =
+      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore,
+        vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } } });
+    // Stored: the clouds stop their march at it.
+    const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(depthBufferImage->getImageView(),
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
+    const vk::RenderingInfo rendering_info = buildRenderingInfo(
+      swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), &depth_attachment);
 
-    commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+    commandBuffer.beginRendering(rendering_info);
 
     setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
@@ -101,7 +132,27 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     meshesDrawn = draw_stats.drawn;
     meshesConsidered = draw_stats.considered;
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    // Both leave for sampling: post reads the colour, the clouds' compute pass the depth.
+    const std::array<vk::ImageMemoryBarrier2, 2> to_sampled = {
+        buildImageMemoryBarrier(offscreen_image,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eShaderSampledRead),
+        buildImageMemoryBarrier(depth_image,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eShaderSampledRead,
+          depth_aspect),
+    };
+    recordImageBarriers(commandBuffer, to_sampled);
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
@@ -109,20 +160,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
     // Idempotent: the destructor calls it again after an explicit cleanUp.
     if (!device) { return; }
 
-    destroyFramebuffers();
-
     releaseFrameTextures();
 
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
-    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), render_pass);
 
     device.reset();
 }
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
-
-void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
-{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
 {
@@ -135,74 +180,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
     depthBufferImage.reset();
 }
 
-// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
 {
     releaseFrameTextures();
 
     createTextures(commandPool);
-    createFramebuffer();
-}
-
-void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
-{
-    // The offscreen colour target is sampled by the post stage afterwards.
-    const vk::AttachmentDescription color_attachment =
-      buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-    // Stored and left sampleable: the clouds stop their march at it. Reuses createTextures()'s depth_format.
-    const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(depth_format,
-      vk::ImageLayout::eShaderReadOnlyOptimal,
-      vk::AttachmentLoadOp::eClear,
-      vk::AttachmentStoreOp::eStore);
-
-    vk::AttachmentReference color_attachment_reference;
-    color_attachment_reference.attachment = 0;
-    color_attachment_reference.layout = vk::ImageLayout::eColorAttachmentOptimal;
-
-    vk::AttachmentReference depth_attachment_reference;
-    depth_attachment_reference.attachment = 1;
-    depth_attachment_reference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
-    const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
-
-    // Without the fragment-test stages the depth clear races the layout transition (SYNC-HAZARD-WRITE-AFTER-WRITE).
-    const std::array<vk::SubpassDependency, 2> subpass_dependencies = { buildExternalColorDepthDependency(),
-        buildSampledOutputDependency(0) };
-
-    std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
-    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
-
-    vk::RenderPassCreateInfo const render_pass_create_info =
-      Kataglyphis::buildRenderPassCreateInfo(render_pass_attachments, subpasses, subpass_dependencies);
-
-    auto result = device->getLogicalDevice().createRenderPass(render_pass_create_info);
-    if (result.result == vk::Result::eSuccess) {
-        render_pass = result.value;
-    } else {
-        ASSERT_VULKAN(result.result, "Failed to create render pass!");
-    }
-}
-
-void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
-{
-    framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
-
-    for (size_t i = 0; i < framebuffer.size(); i++) {
-        std::array<vk::ImageView, 2> attachments = { offscreenTextures[i]->getImageView(),
-            depthBufferImage->getImageView() };
-
-        const vk::FramebufferCreateInfo frame_buffer_create_info =
-          Kataglyphis::buildFramebufferCreateInfo(render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
-
-        auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
-        if (result.result == vk::Result::eSuccess) {
-            framebuffer[i] = result.value;
-        } else {
-            ASSERT_VULKAN(result.result, "Failed to create framebuffer!");
-        }
-    }
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
@@ -284,5 +266,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         .setAlphaBlending(true)
         // Dynamic, so doubleSided glTF meshes skip back-face culling and mirrored models flip their winding per draw.
         .setDynamicCulling(true)
-        .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
+        .setRenderingFormats({ OFFSCREEN_FORMAT }, depth_format)
+        .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 }

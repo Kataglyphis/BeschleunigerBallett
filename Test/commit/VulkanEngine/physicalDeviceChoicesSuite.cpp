@@ -65,6 +65,18 @@ TEST(PhysicalDeviceChoicesUnit, MaxAnisotropyIsClampedToTheDeviceLimit)
     EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 1.0F), 1.0F);
 }
 
+TEST(PhysicalDeviceChoicesUnit, RenderingNeedsVulkan13WithDynamicRenderingAndSynchronization2)
+{
+    EXPECT_EQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_3, VK_TRUE, VK_TRUE), nullptr);
+    EXPECT_EQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_4, VK_TRUE, VK_TRUE), nullptr);
+    // A 1.2 device is named by its version first, even when it exposes the features through extensions.
+    EXPECT_STREQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_2, VK_TRUE, VK_TRUE), "Vulkan 1.3");
+    EXPECT_STREQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_3, VK_FALSE, VK_TRUE),
+      "the dynamicRendering feature");
+    EXPECT_STREQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_3, VK_TRUE, VK_FALSE),
+      "the synchronization2 feature");
+}
+
 TEST(QueueFamilyIndicesUnit, CreatesNoQueueOnTheComputeFamily)
 {
     using Kataglyphis::VulkanRendererInternals::QueueFamilyIndices;

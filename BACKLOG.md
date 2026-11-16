@@ -123,9 +123,6 @@ No P0 item is open.
     every shader that reads UVs and both loaders. Defer until a real dual-UV asset needs it.
   - Adding a field to `ObjMaterial` crosses the C++/Slang module boundary: cold-build after
     it (delete the build tree, use `-FreshContainer`).
-- [ ] `C++` **Dynamic rendering + synchronization2 are not enabled** (L, `VulkanDevice.cpp`).
-  Dynamic rendering would delete the framebuffer rebuild in `recreateSwapChain`, where the
-  image-count edge cases live. Test: the whole golden suite under both paths behind a toggle.
 - [b] `Rust` **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder and a test asset**).
   KTX2 BCn passthrough is done; supercompressed files are rejected with a clear error
   (`ktx2_loader.rs`). The viable transcoder is the `basis-universal` crate, a C++ binding,
@@ -289,8 +286,9 @@ So the next sweep stops here instead of re-deriving them.
   `pNext` chain of stack locals, and extracting it into returning helpers dangles them.
 - The AS rebuild and descriptor refresh around `rebuildObjectDescriptions()` stay inline: the
   four scene-changed paths genuinely differ.
-- The per-stage `createRenderPass` bodies differ (1, 2 and 3 subpass dependencies, different
-  attachments) and are not a consolidation target.
+- The per-pass barrier pairs around each `vkCmdBeginRendering` differ (which images, which
+  earlier readers, which later consumers) and are not a consolidation target beyond
+  `buildImageMemoryBarrier`/`recordImageBarriers`.
 - `FileReader.ixx`'s `readTextFile` and `fileExists` have no production caller but stay: the
   fuzz target drives all four readers, and `fileExists`'s comment records the
   throw-on-permission-denied finding.

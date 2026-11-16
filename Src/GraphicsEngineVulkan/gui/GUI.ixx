@@ -20,7 +20,7 @@ class GUI
 
     void initializeVulkanContext(const std::shared_ptr<VulkanDevice> &device,
       const vk::Instance &instance,
-      const vk::RenderPass &post_render_pass,
+      vk::Format post_color_format,
       uint32_t image_count);
 
     GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
@@ -49,7 +49,7 @@ class GUI
 
     void create_gui_context(Window *window,
       const vk::Instance &instance,
-      const vk::RenderPass &post_render_pass,
+      vk::Format post_color_format,
       uint32_t image_count);
 
     [[nodiscard]] int renderMode() const;

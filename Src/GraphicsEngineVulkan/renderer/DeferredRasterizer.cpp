@@ -10,9 +10,9 @@
 #include <vulkan/vulkan.hpp>
 
 #include "common/FormatHelper.hpp"
-#include "common/FramebufferHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
-#include "common/RenderPassHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
@@ -42,10 +42,8 @@ void DeferredRasterizer::init(const std::shared_ptr<VulkanDevice> &in_device,
     vulkanSwapChain = swap_chain;
 
     createTextures();
-    createRenderPass();
     createPushConstantRange();
     createPipelines(descriptorSetLayouts);
-    createFramebuffer();
 }
 
 void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
@@ -82,25 +80,22 @@ void DeferredRasterizer::createTextures()
       FINAL_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
         | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
-    // No position attachment: the lighting pass reconstructs position from depth, saving an rgba16f target.
+    // Sampled, no position target: the lighting pass texel-fetches these and rebuilds position from depth.
     createAttachment(gBufferNormals,
       GBUFFER_NORMAL_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
     createAttachment(gBufferAlbedos,
       GBUFFER_ALBEDO_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
     createAttachment(gBufferMaterials,
       GBUFFER_MATERIAL_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
 
-    // No transition here: the render pass performs the first one from eUndefined.
+    // No transition here: recordCommands() performs the first one from eUndefined every frame.
     depthBufferImage = std::make_unique<Texture>();
-    // Input-attachment and sampled view: exactly one aspect, not depthStencilTransitionAspect. See its doc comment.
-    depth_format = createDepthAttachment(*depthBufferImage,
-      device,
-      extent,
-      vk::ImageUsageFlagBits::eInputAttachment | vk::ImageUsageFlagBits::eSampled,
-      vk::ImageAspectFlagBits::eDepth);
+    // Sampled view: exactly one aspect, not depthStencilTransitionAspect. See its doc comment.
+    depth_format = createDepthAttachment(
+      *depthBufferImage, device, extent, vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eDepth);
 }
 
 void DeferredRasterizer::createPushConstantRange()
@@ -119,9 +114,6 @@ void DeferredRasterizer::cleanUp()
     auto logicalDevice = device->getLogicalDevice();
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, geometryPipeline, geometryPipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, lightingPipeline, lightingPipelineLayout);
-    Kataglyphis::destroyRenderPass(logicalDevice, renderPass);
-
-    destroyFramebuffers();
 
     releaseFrameTextures();
 
@@ -129,9 +121,6 @@ void DeferredRasterizer::cleanUp()
 }
 
 DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
-
-void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
-{ Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextures()
 {
@@ -155,87 +144,11 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextu
     depthBufferImage.reset();
 }
 
-// Does not destroy the old framebuffers: recreateSwapChain() does that while their swapchain images still exist.
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
 {
     releaseFrameTextures();
 
     createTextures();
-    createFramebuffer();
-}
-
-void DeferredRasterizer::createRenderPass()
-{
-    // Reuses createTextures()'s depth_format so the attachment and its image cannot diverge.
-    std::array<vk::AttachmentDescription, 5> attachments = {
-        buildAttachmentDescription(FINAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 0: Final Output
-        buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 1: Normal
-        buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 2: Albedo
-        buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal),// 3: Material
-        // Left in the lighting subpass's read layout: the clouds stop their march at it.
-        buildAttachmentDescription(depth_format, vk::ImageLayout::eShaderReadOnlyOptimal)// 4: Depth
-    };
-
-    // Subpass 0: Geometry Pass
-    std::array<vk::AttachmentReference, 3> geometryColorRefs = {
-        vk::AttachmentReference{ 1, vk::ImageLayout::eColorAttachmentOptimal },// Normal
-        vk::AttachmentReference{ 2, vk::ImageLayout::eColorAttachmentOptimal },// Albedo
-        vk::AttachmentReference{ 3, vk::ImageLayout::eColorAttachmentOptimal }// Material
-    };
-    vk::AttachmentReference geometryDepthRef{ 4, vk::ImageLayout::eDepthStencilAttachmentOptimal };
-
-    const vk::SubpassDescription geometrySubpass =
-      buildSubpassDescription(std::span<const vk::AttachmentReference>(geometryColorRefs), &geometryDepthRef);
-
-    // Subpass 1: Lighting Pass
-    vk::AttachmentReference lightingColorRef{ 0, vk::ImageLayout::eColorAttachmentOptimal };
-
-    std::array<vk::AttachmentReference, 4> lightingInputRefs = {
-        vk::AttachmentReference{ 1, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_NORMAL_BINDING
-        vk::AttachmentReference{ 2, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_ALBEDO_BINDING
-        vk::AttachmentReference{ 3, vk::ImageLayout::eShaderReadOnlyOptimal },// -> GBUFFER_MATERIAL_BINDING
-        vk::AttachmentReference{ 4, vk::ImageLayout::eShaderReadOnlyOptimal }// -> GBUFFER_DEPTH_BINDING
-    };
-
-    const vk::SubpassDescription lightingSubpass =
-      buildSubpassDescription(std::span<const vk::AttachmentReference>(&lightingColorRef, 1),
-        nullptr,
-        std::span<const vk::AttachmentReference>(lightingInputRefs));
-
-    // Dependencies
-    std::array<vk::SubpassDependency, 3> dependencies;
-
-    // External -> Geometry Subpass
-    dependencies[0] = buildExternalColorDepthDependency();
-
-    // Geometry Subpass -> Lighting Subpass
-    dependencies[1].srcSubpass = 0;
-    dependencies[1].dstSubpass = 1;
-    // Early tests too: depth's loadOp clear writes there, before this subpass boundary moves it to a read layout.
-    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests
-                                   | vk::PipelineStageFlagBits::eLateFragmentTests;
-    // Attachments 1-4 store in subpass 1, after the transition this orders: sync validation saw a WAW without it.
-    dependencies[1].dstStageMask =
-      vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eColorAttachmentOutput
-      | vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[1].srcAccessMask =
-      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[1].dstAccessMask = vk::AccessFlagBits::eInputAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite
-                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-    // Lighting Subpass -> External: depth's store in subpass 1 must land before the clouds sample it.
-    dependencies[2] = buildSampledOutputDependency(1);
-
-    std::array<vk::SubpassDescription, 2> subpasses = { geometrySubpass, lightingSubpass };
-
-    vk::RenderPassCreateInfo const renderPassInfo =
-      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
-
-    auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(result.result, "Failed to create deferred render pass!");
-    renderPass = result.value;
 }
 
 void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
@@ -267,10 +180,10 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     geometryPipeline =
       geometryPipelineBuilder.setShaderStages({ geomStages.stages().begin(), geomStages.stages().end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
-        .setColorAttachmentCount(3)
         // Dynamic, so doubleSided meshes skip culling and mirrored models flip their winding here too.
         .setDynamicCulling(true)
-        .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
+        .setRenderingFormats({ GBUFFER_NORMAL_FORMAT, GBUFFER_ALBEDO_FORMAT, GBUFFER_MATERIAL_FORMAT }, depth_format)
+        .build(device->getLogicalDevice(), geometryPipelineLayout, device->getPipelineCache());
 
     // Lighting Pipeline (Slang-emitted SPIR-V)
     ShaderStagePair lightStages{
@@ -285,39 +198,17 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     lightingPipelineLayout = lighting_pipeline_layout_result.value;
 
     PipelineBuilder lightingPipelineBuilder;
-    lightingPipeline =
-      lightingPipelineBuilder
-        .setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
-        // Fullscreen triangle from SV_VertexID: no vertex buffer.
-        .setVertexInput({}, {})
-        .setCullMode(vk::CullModeFlagBits::eNone)
-        .setDepthTest(false)
-        .setDepthWrite(false)
-        .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
+    lightingPipeline = lightingPipelineBuilder
+                         .setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
+                         // Fullscreen triangle from SV_VertexID: no vertex buffer.
+                         .setVertexInput({}, {})
+                         .setCullMode(vk::CullModeFlagBits::eNone)
+                         .setDepthTest(false)
+                         .setDepthWrite(false)
+                         // No depth attachment: the lighting pass samples the geometry pass's depth instead.
+                         .setRenderingFormats({ FINAL_FORMAT })
+                         .build(device->getLogicalDevice(), lightingPipelineLayout, device->getPipelineCache());
 }
-
-void DeferredRasterizer::createFramebuffer()
-{
-    std::array<vk::ImageView, 5> attachments;
-    const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
-
-    framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
-    for (uint32_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
-        attachments[0] = offscreenTextures[i]->getImageView();
-        attachments[1] = gBufferNormals[i]->getImageView();
-        attachments[2] = gBufferAlbedos[i]->getImageView();
-        attachments[3] = gBufferMaterials[i]->getImageView();
-        attachments[4] = depthBufferImage->getImageView();
-
-        const vk::FramebufferCreateInfo framebufferInfo =
-          Kataglyphis::buildFramebufferCreateInfo(renderPass, attachments, extent);
-
-        auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
-        ASSERT_VULKAN(result.result, "Failed to create deferred framebuffer!");
-        framebuffer[i] = result.value;
-    }
-}
-
 
 void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
@@ -325,29 +216,75 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   std::span<const vk::DescriptorSet> descriptorSets,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
-    // Both subpasses bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
+    // Both passes bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
     if (descriptorSets.empty()) {
         spdlog::error("DeferredRasterizer::recordCommands called with an empty shared descriptor set span");
         return;
     }
 
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
+    const std::array<vk::Image, 3> gbuffer_images = { gBufferNormals[image_index]->getImage(),
+        gBufferAlbedos[image_index]->getImage(),
+        gBufferMaterials[image_index]->getImage() };
+    const vk::Image depth_image = depthBufferImage->getImage();
+    const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
 
-    std::array<vk::ClearValue, 5> clearValues{};
-    clearValues[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
-    clearValues[1].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
-    clearValues[2].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 0.0f } };
-    clearValues[3].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0f, 0.0f, 0.0f, 1.0f } };
-    clearValues[4].depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 };
+    // UNDEFINED: all cleared; the shared depth waits out the clouds' read, the colour targets their last sampling.
+    const auto colour_to_attachment = [](vk::Image image) {
+        return buildImageMemoryBarrier(image,
+          vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eFragmentShader
+            | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite);
+    };
+    const std::array<vk::ImageMemoryBarrier2, 5> to_attachment = { colour_to_attachment(gbuffer_images[0]),
+        colour_to_attachment(gbuffer_images[1]),
+        colour_to_attachment(gbuffer_images[2]),
+        colour_to_attachment(offscreen_image),
+        buildImageMemoryBarrier(depth_image,
+          vk::ImageLayout::eUndefined,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+            | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+          vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          depth_aspect) };
+    recordImageBarriers(commandBuffer, to_attachment);
 
-    const vk::RenderPassBeginInfo renderPassInfo =
-      Kataglyphis::buildRenderPassBeginInfo(renderPass, framebuffer[image_index], swap_chain_extent, clearValues);
-
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    // Geometry pass: the three G-buffer targets and depth.
+    const vk::ClearValue clear_zero{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } } };
+    const std::array<vk::RenderingAttachmentInfo, 3> gbuffer_attachments = {
+        buildRenderingAttachmentInfo(gBufferNormals[image_index]->getImageView(),
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::AttachmentLoadOp::eClear,
+          vk::AttachmentStoreOp::eStore,
+          clear_zero),
+        buildRenderingAttachmentInfo(gBufferAlbedos[image_index]->getImageView(),
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::AttachmentLoadOp::eClear,
+          vk::AttachmentStoreOp::eStore,
+          clear_zero),
+        buildRenderingAttachmentInfo(gBufferMaterials[image_index]->getImageView(),
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::AttachmentLoadOp::eClear,
+          vk::AttachmentStoreOp::eStore,
+          vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 1.0F } } }),
+    };
+    // Stored: the lighting pass reconstructs position from it and the clouds stop their march at it.
+    const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(depthBufferImage->getImageView(),
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
+    commandBuffer.beginRendering(buildRenderingInfo(swap_chain_extent, gbuffer_attachments, &depth_attachment));
 
     setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
-    // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
     // Set 0 is identical for every mesh: bind once, not per draw.
@@ -360,12 +297,47 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     meshesDrawn = draw_stats.drawn;
     meshesConsidered = draw_stats.considered;
 
-    // Transition to Subpass 1: Lighting
-    commandBuffer.nextSubpass(vk::SubpassContents::eInline);
+    commandBuffer.endRendering();
+
+    // The lighting fragment shader samples the G-buffer and depth; depth stays sampleable for the clouds' compute read.
+    const auto colour_to_sampled = [](vk::Image image, vk::PipelineStageFlags2 consumers) {
+        return buildImageMemoryBarrier(image,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          consumers,
+          vk::AccessFlagBits2::eShaderSampledRead);
+    };
+    const std::array<vk::ImageMemoryBarrier2, 4> gbuffer_to_sampled = { colour_to_sampled(gbuffer_images[0],
+                                                                          vk::PipelineStageFlagBits2::eFragmentShader),
+        colour_to_sampled(gbuffer_images[1], vk::PipelineStageFlagBits2::eFragmentShader),
+        colour_to_sampled(gbuffer_images[2], vk::PipelineStageFlagBits2::eFragmentShader),
+        buildImageMemoryBarrier(depth_image,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+          vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eShaderSampledRead,
+          depth_aspect) };
+    recordImageBarriers(commandBuffer, gbuffer_to_sampled);
+
+    // Lighting pass: one fullscreen triangle into the offscreen target.
+    const vk::RenderingAttachmentInfo lighting_attachment =
+      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore,
+        clear_zero);
+    commandBuffer.beginRendering(buildRenderingInfo(
+      swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&lighting_attachment, 1), nullptr));
+
+    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightingPipeline);
 
-    // descriptorSets[1] holds the G-buffer inputs (set 1).
+    // descriptorSets[1] holds the G-buffer textures (set 1).
     if (descriptorSets.size() > 1) {
         commandBuffer.bindDescriptorSets(
           vk::PipelineBindPoint::eGraphics, lightingPipelineLayout, 1, 1, &descriptorSets[1], 0, nullptr);
@@ -375,5 +347,10 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
 
     commandBuffer.draw(3, 1, 0, 0);// Fullscreen triangle
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    // Post samples the lit result.
+    recordImageBarrier(commandBuffer,
+      colour_to_sampled(
+        offscreen_image, vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader));
 }

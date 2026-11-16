@@ -58,18 +58,16 @@ class DeferredRasterizer
     unsigned int getMeshesConsidered() const { return meshesConsidered; }
 
     void recreateFrameResources();
-    void destroyFramebuffers();
 
     void cleanUp();
 
     ~DeferredRasterizer();
 
     // GBuffer / final-target formats, written once here and read by both
-    // createTextures() and createRenderPass(): a mismatch between the image
-    // and the attachment description backing it is a validation error at
-    // framebuffer creation, not a compile error, so both call sites must use
-    // these instead of re-spelling the literals. Indices match the attachment
-    // order documented in createRenderPass()'s "0: Final Color ... 4: Depth" comment.
+    // createTextures() and createPipelines(): a mismatch between the image and
+    // the pipeline's rendering format is a validation error at vkCmdBeginRendering,
+    // not a compile error, so both call sites must use these instead of
+    // re-spelling the literals.
     static constexpr vk::Format FINAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     static constexpr vk::Format GBUFFER_NORMAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     static constexpr vk::Format GBUFFER_ALBEDO_FORMAT = vk::Format::eR8G8B8A8Srgb;
@@ -84,20 +82,18 @@ class DeferredRasterizer
     std::shared_ptr<VulkanDevice> device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    std::vector<vk::Framebuffer> framebuffer;
-
     // The final color output (offscreen texture, consumed by PostStage)
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
 
-    // GBuffer attachments
+    // GBuffer attachments: written by the geometry pass, sampled by the lighting pass
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferNormals;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferAlbedos;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials;// Metallic, Roughness, AO
 
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
     // Resolved once by createTextures(), which init() always runs before
-    // createRenderPass() - reuse it there rather than querying again, so the
-    // attachment and the image it is paired with cannot diverge.
+    // createPipelines() - reuse it there rather than querying again, so the
+    // pipeline's depth format and the image it renders to cannot diverge.
     vk::Format depth_format{ vk::Format::eUndefined };
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
@@ -111,13 +107,9 @@ class DeferredRasterizer
     vk::Pipeline lightingPipeline{};
     vk::PipelineLayout lightingPipelineLayout{};
 
-    vk::RenderPass renderPass{};
-
     void createTextures();
     void releaseFrameTextures();
-    void createRenderPass();
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
-    void createFramebuffer();
     void createPushConstantRange();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

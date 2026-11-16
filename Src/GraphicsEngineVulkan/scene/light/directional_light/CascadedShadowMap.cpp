@@ -1,9 +1,8 @@
 module;
 #include "common/FormatHelper.hpp"
-#include "common/FramebufferHelper.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
-#include "common/RenderPassHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/SceneUBO.hpp"
@@ -57,7 +56,7 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device,
     cascadeData.resize(numCascades);
 
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
-    // Cached so createRenderPass() and createFramebuffers() attach the very same format.
+    // Cached so the pipeline's rendering formats name the very same format as the image.
     depth_format = depthFormat;
 
     shadowMapArray = std::make_unique<Texture>();
@@ -79,9 +78,6 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device,
     // Comparison sampler: linear filtering gives a free 2x2 PCF tap; eLessOrEqual matches the Rust shadow_sampler.
     shadowMapArray->createTextureSampler(
       device, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge, VK_TRUE, vk::CompareOp::eLessOrEqual);
-
-    createRenderPass();
-    createFramebuffers();
 }
 
 // The pure cascade math lives in CascadedShadowMapMath.cpp, so perfSuite links it without this TU's device deps.
@@ -138,76 +134,11 @@ void CascadedShadowMap::uploadLightMatrices(uint32_t image_index)
     }
 }
 
-void CascadedShadowMap::createRenderPass()
-{
-    // Stored and left in eShaderReadOnlyOptimal: the lighting pass samples this depth map.
-    const vk::AttachmentDescription depthAttachment =
-      buildAttachmentDescription(depth_format, vk::ImageLayout::eShaderReadOnlyOptimal);
-
-    vk::AttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 0;
-    depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
-    const vk::SubpassDescription subpass =
-      buildSubpassDescription(std::span<const vk::AttachmentReference>{}, &depthAttachmentRef);
-
-    std::array<vk::SubpassDependency, 2> dependencies;
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
-    dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-    dependencies[1].srcSubpass = 0;
-    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
-    dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
-
-    // Multiview broadcasts each draw to every cascade layer; needs features11.multiview, requested at device creation.
-    const uint32_t view_mask = (1U << numCascades) - 1U;
-    vk::RenderPassMultiviewCreateInfo multiviewInfo{};
-    multiviewInfo.subpassCount = 1;
-    multiviewInfo.pViewMasks = &view_mask;
-    multiviewInfo.correlationMaskCount = 1;
-    multiviewInfo.pCorrelationMasks = &view_mask;
-
-    const std::array<vk::AttachmentDescription, 1> attachments = { depthAttachment };
-    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
-
-    vk::RenderPassCreateInfo renderPassInfo =
-      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
-    renderPassInfo.pNext = &multiviewInfo;
-
-    auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(result.result, "Failed to create cascaded shadow map render pass!");
-    renderPass = result.value;
-}
-
-void CascadedShadowMap::createFramebuffers()
-{
-    // Multiview wants one layer-1 framebuffer whose view spans every cascade: the sampled view already does.
-    const vk::ImageView attachment = shadowMapArray->getImageView();
-    const vk::FramebufferCreateInfo framebufferInfo = Kataglyphis::buildFramebufferCreateInfo(
-      renderPass, std::span<const vk::ImageView>(&attachment, 1), vk::Extent2D{ shadowWidth, shadowHeight });
-
-    auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
-    ASSERT_VULKAN(fbResult.result, "Failed to create shadow map framebuffer!");
-    framebuffer = fbResult.value;
-}
-
 void CascadedShadowMap::cleanUp()
 {
     // Idempotent and leaves the object reusable: VulkanRenderer re-inits this stage when shadow settings change.
     if (!device) { return; }
 
-    Kataglyphis::destroyFramebuffer(device->getLogicalDevice(), framebuffer);
-
-    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), renderPass);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     lightMatricesDescriptors.cleanUp();
     if (shadowMapArray) {
@@ -316,12 +247,13 @@ void CascadedShadowMap::buildGraphicsPipeline()
         .setCullMode(vk::CullModeFlagBits::eNone)
         // Pancake casters in front of the near plane rather than clip them; a wider depth range would scale the bias.
         .setDepthClamp(device->supportsDepthClamp())
-        .setUseColorBlendState(false)
+        // Depth only: no colour attachment, so no colour blend state either.
+        .setRenderingFormats({}, depth_format)
+        // Multiview draws to every cascade layer at once; features11.multiview is requested at device creation.
+        .setViewMask(cascadeViewMask())
         .build(device->getLogicalDevice(),
           pipelineLayout,
-          renderPass,
           device->getPipelineCache(),
-          0,
           "Failed to create shadow map graphics pipeline!");
 }
 
@@ -353,12 +285,35 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
         }
     }
 
-    std::array<vk::ClearValue, 1> clearValues{};
-    clearValues[0].depthStencil = vk::ClearDepthStencilValue{ 1.0f, 0 };
-    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
-      renderPass, framebuffer, vk::Extent2D{ shadowWidth, shadowHeight }, clearValues);
+    const vk::ImageAspectFlags depth_aspect = Kataglyphis::depthStencilTransitionAspect(depth_format);
+    // UNDEFINED: the clear overwrites every layer. The source stage waits out the previous frame's sampling.
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(shadowMapArray->getImage(),
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        depth_aspect,
+        0,
+        1,
+        0,
+        numCascades));
 
-    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    // Multiview renders one layer per view-mask bit through the sampled view, which already spans every cascade.
+    const vk::RenderingAttachmentInfo depth_attachment =
+      Kataglyphis::buildRenderingAttachmentInfo(shadowMapArray->getImageView(),
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eStore,
+        vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
+    const vk::RenderingInfo rendering_info = Kataglyphis::buildRenderingInfo(vk::Extent2D{ shadowWidth, shadowHeight },
+      std::span<const vk::RenderingAttachmentInfo>{},
+      &depth_attachment,
+      cascadeViewMask());
+
+    commandBuffer.beginRendering(rendering_info);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
     setFullExtentViewportAndScissor(commandBuffer, vk::Extent2D{ shadowWidth, shadowHeight });
@@ -403,7 +358,22 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
     castersDrawn = stats.drawn;
     castersConsidered = stats.considered;
 
-    commandBuffer.endRenderPass();
+    commandBuffer.endRendering();
+
+    // The forward and deferred lighting fragment shaders sample the cascades next.
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(shadowMapArray->getImage(),
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead,
+        depth_aspect,
+        0,
+        1,
+        0,
+        numCascades));
 }
 
 void CascadedShadowMap::recordSkippedPass(vk::CommandBuffer &commandBuffer)
@@ -412,26 +382,19 @@ void CascadedShadowMap::recordSkippedPass(vk::CommandBuffer &commandBuffer)
     castersConsidered = 0;
     if (!shadowMapArray) { return; }
 
-    // The contents are never read (the scene UBO says zero cascades), so UNDEFINED discards nothing that matters.
-    const vk::ImageMemoryBarrier to_sampled = Kataglyphis::buildImageMemoryBarrier(shadowMapArray->getImage(),
-      vk::ImageLayout::eUndefined,
-      vk::ImageLayout::eShaderReadOnlyOptimal,
-      vk::AccessFlags{},
-      vk::AccessFlagBits::eShaderRead,
-      Kataglyphis::depthStencilTransitionAspect(depth_format),
-      0,
-      1,
-      0,
-      numCascades);
-    // The source stage waits out the previous frame's sampling before the transition.
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
-      vk::PipelineStageFlagBits::eFragmentShader,
-      vk::DependencyFlags{},
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &to_sampled);
+    // Never read (the scene UBO says zero cascades), so UNDEFINED is safe; it waits out the last frame's sampling.
+    Kataglyphis::recordImageBarrier(commandBuffer,
+      Kataglyphis::buildImageMemoryBarrier(shadowMapArray->getImage(),
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead,
+        Kataglyphis::depthStencilTransitionAspect(depth_format),
+        0,
+        1,
+        0,
+        numCascades));
 }
 }// namespace Kataglyphis
