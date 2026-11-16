@@ -1,10 +1,12 @@
 module;
 
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <vector>
 
 export module kataglyphis.shared.util.resource_paths;
 
@@ -41,6 +43,44 @@ inline auto searchAncestorsForRelative(const std::filesystem::path &start,
     return std::nullopt;
 }
 
+// The `<ancestor>/Resources` directories searchAncestorsForRelative would probe, nearest first;
+// an ancestor without one can never hold `Resources/<relative>`.
+inline auto resourceRootsAbove(const std::filesystem::path &start, int maxDepth) -> std::vector<std::filesystem::path>
+{
+    std::vector<std::filesystem::path> roots;
+    std::filesystem::path search_path = start;
+    for (int depth = 0; depth < maxDepth; ++depth) {
+        // exists() first: status() and is_directory() report a missing path as an error, exists() does not.
+        std::error_code exists_ec;
+        std::filesystem::path candidate = search_path / "Resources";
+        if (std::filesystem::exists(candidate, exists_ec) && !exists_ec
+            && std::filesystem::is_directory(candidate, exists_ec) && !exists_ec) {
+            roots.push_back(std::move(candidate));
+        }
+        if (exists_ec || !search_path.has_parent_path()) { break; }
+
+        const std::filesystem::path parent = search_path.parent_path();
+        if (parent == search_path) { break; }
+        search_path = parent;
+    }
+    return roots;
+}
+
+// Keyed on the working directory; an empty walk is not kept, so a Resources tree created later is still found.
+inline auto cachedResourceRootsAbove(const std::filesystem::path &cwd) -> std::vector<std::filesystem::path>
+{
+    static std::mutex mutex;
+    static std::filesystem::path cached_cwd;
+    static std::vector<std::filesystem::path> cached_roots;
+
+    const std::scoped_lock lock(mutex);
+    if (cached_roots.empty() || cached_cwd != cwd) {
+        cached_roots = resourceRootsAbove(cwd, kResourceSearchDepth);
+        cached_cwd = cwd;
+    }
+    return cached_roots;
+}
+
 #if defined(RELATIVE_RESOURCE_PATH)
 // Resources-tree resolver shared by scene-config model lookup and the skybox
 // texture loader: try the build-relative RELATIVE_RESOURCE_PATH candidate
@@ -63,7 +103,13 @@ inline auto resolveResourceRelativePath(std::string_view relative) -> std::optio
     std::error_code exists_ec;
     if (std::filesystem::exists(direct_candidate, exists_ec) && !exists_ec) { return direct_candidate; }
 
-    return searchAncestorsForRelative(cwd, std::filesystem::path("Resources") / relativePath, kResourceSearchDepth);
+    // A miss then costs one probe per Resources directory instead of one per ancestor.
+    for (const std::filesystem::path &root : cachedResourceRootsAbove(cwd)) {
+        const std::filesystem::path candidate = root / relativePath;
+        if (std::filesystem::exists(candidate, exists_ec) && !exists_ec) { return candidate; }
+        if (exists_ec) { break; }
+    }
+    return std::nullopt;
 }
 
 inline auto resourcesRootOrEmpty() -> std::filesystem::path

@@ -177,7 +177,7 @@ BENCHMARK(BM_FrustumCullShadowCaster)->Arg(64)->Arg(512);
 
 // Scene config
 
-// A miss probes up to 8 parent directories, far slower than a hit; mind that in per-frame loops.
+// A miss probes each cached Resources root once (one per tree, not one per parent directory).
 void BM_ResolveModelPath_Hit(benchmark::State &state)
 {
     for (auto _ : state) { benchmark::DoNotOptimize(sceneConfig::resolveModelPath("Models/plane.obj")); }

@@ -158,8 +158,6 @@ committed to.
 - **[P3] No budget on the GPU timings.** `KATAGLYPHIS_GPU_TIMING_JSON` and
   `Compare-RendererTimings.ps1` make per-pass timings comparable, but nothing asserts a budget
   for any `GpuTimedPass`.
-- **[P3] `resolveModelPath` is about 4x slower on a miss** (8 parent-directory probes;
-  `Test/perf/baselines/win-9070xt-32core.json`). Fine at startup, bad in a loop.
 
 ## Recurring validation runs
 

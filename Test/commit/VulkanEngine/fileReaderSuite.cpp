@@ -296,6 +296,71 @@ TEST(ResourcePathsUnit, MissesPastTheDepthCap)
     std::filesystem::remove_all(root, ec);
 }
 
+// The cached Resources roots must not stop the walk at the nearest tree: an outer one can hold what an inner lacks.
+TEST(ResourcePathsUnit, FindsAnOuterResourcesTreeWhenTheInnerOneLacksTheFile)
+{
+    const auto root = uniqueTempPath("kat_respath_nested");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "inner" / "Resources", ec);
+    std::filesystem::create_directories(root / "Resources" / "Models", ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(root / "inner");
+    const auto resolved = resolveResourceRelativePath("Models");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
+
+    std::filesystem::remove_all(root, ec);
+}
+
+// Only the Resources directories are cached, never an answer: a file that appears after a miss is found.
+TEST(ResourcePathsUnit, AFileCreatedAfterAMissResolves)
+{
+    const auto root = uniqueTempPath("kat_respath_late_file");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "Resources", ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(root);
+    EXPECT_FALSE(resolveResourceRelativePath("Models").has_value());
+    std::filesystem::create_directories(root / "Resources" / "Models", ec);
+    ASSERT_FALSE(ec);
+    const auto resolved = resolveResourceRelativePath("Models");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
+
+    std::filesystem::remove_all(root, ec);
+}
+
+// The cache is keyed on the working directory, so a chdir must not keep answering from the old tree.
+TEST(ResourcePathsUnit, FollowsAWorkingDirectoryChange)
+{
+    const auto first = uniqueTempPath("kat_respath_cwd_a");
+    const auto second = uniqueTempPath("kat_respath_cwd_b");
+    std::error_code ec;
+    std::filesystem::remove_all(first, ec);
+    std::filesystem::remove_all(second, ec);
+    std::filesystem::create_directories(first / "Resources" / "OnlyInFirst", ec);
+    std::filesystem::create_directories(second / "Resources" / "OnlyInSecond", ec);
+    ASSERT_FALSE(ec);
+
+    {
+        ScopedWorkingDirectory cwdGuard(first);
+        EXPECT_TRUE(resolveResourceRelativePath("OnlyInFirst").has_value());
+        EXPECT_FALSE(resolveResourceRelativePath("OnlyInSecond").has_value());
+    }
+    {
+        ScopedWorkingDirectory cwdGuard(second);
+        EXPECT_TRUE(resolveResourceRelativePath("OnlyInSecond").has_value());
+        EXPECT_FALSE(resolveResourceRelativePath("OnlyInFirst").has_value());
+    }
+
+    std::filesystem::remove_all(first, ec);
+    std::filesystem::remove_all(second, ec);
+}
+
 TEST(ResourcePathsUnit, RejectsRelativePathEscapingTheTree)
 {
     const auto root = uniqueTempPath("kat_respath_escape");

@@ -192,6 +192,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- `resolveModelPath` and the skybox lookup cache the `Resources` directories above the working
+  directory, so a miss probes each of them once instead of every parent directory up to eight
+  levels. Hits resolve to the same path as before; a chdir or a file created after a miss is
+  still seen.
 - Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
   a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
   failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
