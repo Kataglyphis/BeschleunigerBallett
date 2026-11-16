@@ -92,12 +92,6 @@ No P0 item is open.
 
 ### P3: low
 
-- [b] `Rust` **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder and a test asset**).
-  KTX2 BCn passthrough is done; supercompressed files are rejected with a clear error
-  (`ktx2_loader.rs`). The viable transcoder is the `basis-universal` crate, a C++ binding,
-  and the repo has no Basis-compressed KTX2 test asset. Do it as a deliberate cycle: vendor
-  `basis-universal`, generate an ETC1S and a UASTC `.ktx2` with `toktx`/`basisu`, then
-  transcode to a BCn `CompressedFormat` on desktop and to ETC2/ASTC on the web path.
 - [b] `Rust` **Indirect draws** (M, blocked until GPU culling emits indirect draw arguments).
   Current culling reads visibility back to the CPU and the render pass still calls
   `draw_indexed`; GPU-generated arguments must replace that readback first.
@@ -120,9 +114,6 @@ committed to.
   (`cloud_ambient_analytic_sky`), not the DOOM2016 cube map. Pass a `CloudAmbient` of the cube
   map's hemisphere means (the navy clear colour with the skybox off) through the eight-argument
   overload, as the Rust host does; the cloud goldens move.
-- **[P3] Drop `tracer/traced.slang`'s dead `import sky_model` in OxidANT.** Unused since OxidANT
-  `18e178a`; `BuildIntegrity.EveryImportedSlangModuleIsUsed` exempts it through
-  `kSharedDeadImportsAtThePin`, and that row must go with the pin that drops the import.
 - **[P3] C++ clouds at half resolution.** OxidANT marches at half resolution on request and
   upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
   `clouds_main` dispatch and an upsample pass importing it.
@@ -139,8 +130,6 @@ committed to.
 
 ## Rust renderer ideas (OxidANT)
 
-- **[P2] Render-graph v2**: automatic barrier placement and transient-resource aliasing; the
-  deferred, cloud and traced passes have grown the pass count.
 - **[P3] Texture streaming / bindless** for photogrammetry-scale scenes.
 - **[P3] Golden-image CI** with reference images per GPU vendor, to catch shader regressions the
   driver-independent structural assertions miss.
@@ -167,6 +156,11 @@ committed to.
   every push; the script covers the real GPU.
 - **Release build**: the only configuration with logging compiled out and validation layers
   absent.
+- **ETC2/ASTC Basis transcodes on real hardware**: OxidANT's
+  `a_khr_texture_basisu_cube_draws_its_ramp_from_etc2_or_astc` (`tests/ktx2.rs`) skips on
+  llvmpipe and lavapipe, which sample neither, so those targets are CPU-verified only. Run it
+  on a device that samples ETC2 or ASTC (an Android or Apple GPU, or a desktop driver exposing
+  either).
 
 ## Toolchain and CI notes
 

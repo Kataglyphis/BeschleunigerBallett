@@ -4703,12 +4703,6 @@ std::optional<std::string> resolve_slang_module(const std::map<std::string, std:
 
 }// namespace
 
-// Dead imports in OxidANT files this repo cannot edit at its pin, {file, module}; delete a row once the pin drops it.
-const std::vector<std::pair<std::string, std::string>> kSharedDeadImportsAtThePin{
-    // OxidANT 18e178a stopped calling sky_gradient here; trace_shading.slang imports sky_model for itself.
-    { "tracer/traced.slang", "sky_model" },
-};
-
 // An import whose functions and structs the importer never names is stale, and so is any comment justifying it.
 TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 {
@@ -4749,7 +4743,6 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 
     int imports_checked = 0;
     std::vector<std::string> violations;
-    std::vector<bool> shared_dead_import_seen(kSharedDeadImportsAtThePin.size(), false);
 
     for (const auto &relative_path : all_relative_paths) {
         const auto lines = readFileLines(slang_root / relative_path);
@@ -4790,13 +4783,6 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
                               && std::any_of(exported->second.begin(),
                                 exported->second.end(),
                                 [&identifiers](const std::string &name) { return identifiers.contains(name); });
-            const auto pinned = std::find(kSharedDeadImportsAtThePin.begin(),
-              kSharedDeadImportsAtThePin.end(),
-              std::pair<std::string, std::string>{ relative_path, module_name });
-            if (!used && pinned != kSharedDeadImportsAtThePin.end()) {
-                shared_dead_import_seen[static_cast<std::size_t>(pinned - kSharedDeadImportsAtThePin.begin())] = true;
-                continue;
-            }
             if (!used) {
                 violations.push_back(relative_path + ": import " + module_name + " (" + *resolved
                                       + ") is unused - none of its exported function, struct or constant names "
@@ -4813,11 +4799,6 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
       << " Slang import(s) pull in a module whose exported functions/structs are never referenced by the "
          "importing file - delete the dead import (and any comment justifying it):"
       << joinViolations(violations);
-    for (std::size_t idx = 0; idx < kSharedDeadImportsAtThePin.size(); ++idx) {
-        EXPECT_TRUE(shared_dead_import_seen[idx])
-          << kSharedDeadImportsAtThePin[idx].first << "'s import " << kSharedDeadImportsAtThePin[idx].second
-          << " is used again or gone - delete its kSharedDeadImportsAtThePin row";
-    }
 }
 
 // The inverse of the manifest-driven checks: every source with an entry point needs an enabled manifest row.

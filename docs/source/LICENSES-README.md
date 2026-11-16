@@ -11,6 +11,7 @@ Created in the repository on request. Verification history:
 - **2026-11-15 (later)**: OxidANT moved to `eb97c364`, its renderer parity work merged with its `develop`. `LICENSE` is unchanged across the range (`git diff` empty); `Cargo.lock` adds `epaint_default_fonts` 0.37.0 for OxidANT's `gui` crate (which neither the bridge nor the renderer uses) and `sha2` to the renderer's dev-dependencies. The renderer takes `image` 0.25.10 as a normal dependency (it was a dev-dependency); the C++ bridge (`kataglyphis_cxx_bridge`, `cxx` only) does not depend on the renderer, so the packaged crate texts are unchanged. The renderer embeds Dear ImGui's Roboto Medium and Cousine (byte-identical to `third_party/IMGUI/misc/fonts`, SHA-256 checked), and the docs site's demo carries the Colosseum: both in *The docs site's WebGPU demo* below.
 - **2026-11-15**: OxidANT moved on to `f8b8c587` and ANTfrastructure to `2c81ef49`, pulled before the commit. Both `LICENSE` files and OxidANT's `Cargo.lock` are unchanged across the moved ranges (`git diff` empty); at `2c81ef49` all 589 SPDX headers of the hub's own files say MIT.
 - **2026-11-16**: OxidANT moved to `78303c2`. `LICENSE` and `Cargo.lock` are unchanged across the range (`git diff` empty). The renderer's editor now also embeds two symbol subsets of egui's emoji fonts (`epaint_default_fonts` 0.37.0): Noto Emoji (OFL-1.1) and emoji-icon-font (MIT); OxidANT's fonts `NOTICE` records each source, hash and `pyftsubset` command and carries the MIT text, and its cargo-license policy re-pins that `NOTICE`. Both in *The docs site's WebGPU demo* below.
+- **2026-11-16 (later)**: OxidANT moved to `026ef42`. `LICENSE` is unchanged across the range (`git diff` empty). `Cargo.lock` adds `basisu` 0.1.0 (Apache-2.0) as a normal dependency of the renderer, with its dependency `ruzstd` 0.7.3 (MIT); `portable-atomic`, its other one, was already in the graph. Both are pure Rust, so they reach the docs site's wasm demo, whose staged crate texts grow from 258 to 260 packages (the hub stager over OxidANT's unchanged policy, run in the CI image: each crate ships its own `LICENSE`, so no policy row is needed). The C++ bridge (`cxx` only) still does not depend on the renderer, so the packaged crate texts are unchanged.
 
 ## What every package ships
 
@@ -106,7 +107,7 @@ which file was actually read.
 
 | Project | URL | Pin | Licence | Source checked |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | eb97c364 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | 026ef42 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
 | ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 2c81ef49 (develop) | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); all 589 of its own files with an SPDX header carry `SPDX-License-Identifier: MIT`; OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
 
 ## Rust crate dependencies (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
@@ -155,11 +156,12 @@ neighbouring version or a guess.
 | egui-winit | 0.37.0 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-14) |
 | ktx2 | 0.5.0 | Apache-2.0 | `cargo metadata` (exact lock version, container) |
 | image (`png` only) | 0.25.10 | MIT OR Apache-2.0 | `Cargo.toml` of the exact lock version (container registry, 2026-11-15) |
+| basisu | 0.1.0 | Apache-2.0 | `Cargo.toml` and `LICENSE` of the exact lock version (container registry, 2026-11-16); pulls in `ruzstd` 0.7.3 (MIT, same check) |
 
 Notes on single entries:
 
-- **winit 0.30.13** and **ktx2 0.5.0** are *not* dual-licensed but plain
-  Apache-2.0, unlike the other crates in this table.
+- **winit 0.30.13**, **ktx2 0.5.0** and **basisu 0.1.0** are *not*
+  dual-licensed but plain Apache-2.0, unlike the other crates in this table.
 - **bevy_mikktspace 1.0.0** is a compound expression: the vendored MikkTSpace C
   code is under Zlib, the Rust part dual MIT/Apache-2.0; both conditions apply
   at once (`AND`).

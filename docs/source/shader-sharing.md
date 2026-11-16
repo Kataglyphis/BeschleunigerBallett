@@ -77,7 +77,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 - `common/aces.slang` — ACES filmic tonemap (Narkowicz 2015) + exact IEC
   61966-2-1 sRGB encode.
 - `common/brdf.slang` — the Epic Games / Unreal 4 microfacet PBR model
-  (`distribution_ggx`, `geometry_smith`, `fresnel_schlick`, `brdf_direct`),
+  (`distribution_ggx`, `geometry_smith_k`, `fresnel_schlick`, `brdf_direct`),
   used by both renderers' forward/RT shading and next-event estimation, and
   `brdf_sampled`, the same BRDF with Epic's Smith remap for sampled light
   (`k = alpha / 2` instead of the analytic `(r + 1)^2 / 8`), which both path
@@ -256,10 +256,9 @@ tonemap shader.
 `import` a shared math module and dual-emit to SPIR-V + WGSL, so a change that
 breaks either target's compile fails the manifest run in
 `Build-SlangShaders.ps1` before it reaches either renderer; `brdf_test` calls
-every public `brdf.slang` function, `geometry_smith` included, which no
-renderer calls any more. OxidANT's `tests/path_estimator_test.slang` does the
-same for `path_estimator`. The table above excludes them (see its gating
-test). A spirv-only module has nothing to guard until it gains a real wgsl
+every public `brdf.slang` function. OxidANT's
+`tests/path_estimator_test.slang` does the same for `path_estimator`. The
+table above excludes them (see its gating test). A spirv-only module has nothing to guard until it gains a real wgsl
 consumer, which the table below makes checkable. OxidANT's
 `tests/volumetric_clouds_test.slang` and `tests/shadow_pcf_test.slang` are the
 reverse guards: SPIR-V only, they import `volumetric_clouds` with a
