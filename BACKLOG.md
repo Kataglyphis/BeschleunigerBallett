@@ -179,12 +179,6 @@ committed to.
 
 ## Testing and performance
 
-- **[P2] Few input-level tests for the editor.** The GUI sweep writes the shared vars directly, so
-  flows such as "a library click picks, Enter loads" (`GUI::renderModelLibrary`) are checked by
-  reading ImGui's source, not by a test. `Integration.RasterSegmentCancelsAPendingTracingPick`
-  shows one way: it rebuilds a control's ID from its ID-stack scope and presses it with
-  `ImGui::ActivateItemByID`. A click versus a double-click needs `ImGuiIO`'s mouse events instead,
-  with the row rects taken from ImGui's item data.
 - **[P3] Headless assertions for the shadow path** beyond the single darkened-pixel ratio, and for
   the post-processing chain. Both need careful oracle design (`docs/source/gpu-golden-testing.md`
   on why the tonemap is hard to isolate).

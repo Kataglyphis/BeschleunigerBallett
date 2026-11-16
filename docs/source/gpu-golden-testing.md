@@ -260,7 +260,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=67 runnable=65 integration=6 total=71 excluded=3 -->
+<!-- golden-counts: defined=67 runnable=65 integration=12 total=77 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -302,6 +302,13 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   `HdrTargetStaysBelowTheHalfFloatMaximum` every texel to the fp16-safe 65000. That last one is
   the only way to see the overflow on lavapipe, which rounds radiance past 65504 to 65504 rather
   than +Inf, so its 8-bit frame looks right either way.
+- **Drive an editor flow with input, not the shared vars**: a write to `GuiSceneSharedVars` skips
+  the click, focus and frame order the flow depends on. `ImGuiInputDriver`
+  (`Test/commit/VulkanEngine/ImGuiInputDriver.hpp`) sends cursor, button and key events through
+  the callbacks the window installed, one transition per frame as ImGui takes them, and finds a
+  control by moving the pointer along a line until ImGui's hit test reports its ID (rebuilt from
+  its ID-stack scope); `editorInputSuite.cpp` uses it. A line that never hovers the ID fails the
+  test, so a moved scope cannot pass by pressing nothing.
 - **Prefer counting to averaging for sparse signals.** Changed-pixel / swung-pixel / detail
   fractions discriminate where means drown (a UNORM ceiling clamps, a texture is near-greyscale,
   a skeleton is 3% of the frame).

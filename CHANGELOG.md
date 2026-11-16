@@ -60,6 +60,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - Verify the Renovate wrapper and shared config in CI without applying updates.
 - Shared CI quality reports, Ruff/ty analysis, PowerShell lint and complexity reporting,
   and a manual Python refactor preview. Generated reports stay under ignored `logs/`.
+- Input-level tests for the editor's main flows (`editorInputSuite.cpp`): mouse and key events
+  through the window's GLFW callbacks, one transition per frame, with each control found by
+  ImGui's own hit test (`ImGuiInputDriver.hpp`). A library click picks without loading and Enter
+  loads the pick; a double-click loads the row; the outliner's Renderer row opens its tab, whose
+  culling switch reaches the renderer; View > Inspector closes the dock and an outliner row
+  reopens it; the outliner's eye toggles the skybox; F1 hides and restores the editor.
 
 ### Fixed
 
