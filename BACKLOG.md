@@ -128,8 +128,8 @@ committed to.
   the other 67 finish, with 100 findings, every one behind an `ASSERT`. Re-enable it, and rewrite
   those, once an LLVM release fixes the crash.
 - **[P3] The GUI input sweep runs weekly, on x64 only** (`linux-x64.yml`'s `gui-sweep`, since
-  2026-11-16; 613 s on 8 aarch64 llvmpipe cores, unmeasured on a 4-vCPU runner until its first
-  Sunday): set its job and ctest timeouts from that run. Every other suite runs on every arch lane
+  2026-11-16; 862 s of a 22 min job on its first run, 43948778560, so ctest stops it at 3600 s and
+  the job at 120 min). Every other suite runs on every arch lane
   and every push. By design, not gaps: TSan is Linux-only (clang-cl has
   none), coverage is measured on Linux only, the Pester suites test Windows scripts on Windows x64,
   `FileReaderUnit.ReadersRefuseCharacterDevicesInsteadOfBlocking` is POSIX-only, and riscv64 runs

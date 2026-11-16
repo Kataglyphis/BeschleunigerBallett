@@ -120,8 +120,8 @@ jobs:
     name: GUI input sweep (llvmpipe)
     if: ${{ github.event_name == 'schedule' || inputs.gui-sweep }}
     runs-on: ubuntu-26.04
-    # A cold debug build like clang-tests', then the sweep: 613 s on 8 aarch64 cores, over 1500 s on 4 vCPUs.
-    timeout-minutes: 180
+    # A debug build like clang-tests', then the sweep: 22 min in all, 862 s of sweep, on its first run (43948778560).
+    timeout-minutes: 120
     steps:
       - name: Prepare host
         uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
@@ -157,5 +157,5 @@ jobs:
             --build-dir build
             --build-type Debug
             -- -R "^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
-            --timeout 5400 --no-tests=error
+            --timeout 3600 --no-tests=error
           log-file: output.log
