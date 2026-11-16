@@ -63,6 +63,17 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- Shutting down after a lost device no longer releases the scene's and the editor's GPU
+  resources on a destroyed VMA allocator: `App::run` skipped their cleanup on a lost device, the
+  renderer then destroyed the allocator and the device under them, and a Debug build aborted in
+  VMA ("Some allocations were not freed"). Every resource holds the device, which holds the
+  instance and owns the window surface, so the device goes with its last user whatever the
+  order; `App::run` tears down by scope alone, the renderer first, which drains the GPU, and has
+  no device-lost branch. `VulkanRenderer::simulateDeviceLossForTesting()` makes every later
+  fence wait report `VK_ERROR_DEVICE_LOST`;
+  `Integration.SimulatedDeviceLossEndsTheRunAsAFailureAndTearsDownCleanly` and
+  `Integration.TeardownAfterACleanRunReleasesTheDeviceAfterItsLastUser` tear down in
+  `App::run`'s order and check when the device and the instance go.
 - A model placed with a mirroring transform (a negative scale) renders right side out in the
   forward and deferred rasterizers, which cull it by its reversed winding now, and its normal map
   keeps its relief in every mode, since the bitangent follows the mirror.

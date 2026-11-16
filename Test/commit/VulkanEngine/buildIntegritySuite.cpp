@@ -8926,10 +8926,8 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
 
-    // Mesh and VulkanBufferManager are fully RAII; VulkanRenderer owns the device and instance teardown order.
-    static const std::array<const char *, 4> kExemptClasses = {
-        "Mesh", "VulkanBufferManager", "VulkanDevice", "VulkanInstance"
-    };
+    // Mesh and VulkanBufferManager are fully RAII.
+    static const std::array<const char *, 2> kExemptClasses = { "Mesh", "VulkanBufferManager" };
 
     // Anchored at line start, so prose mentioning a class cannot pass for a declaration.
     const std::regex class_pattern(R"(\nclass\s+(\w+))");
@@ -8992,6 +8990,43 @@ TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
       << "App.cpp contains a bare \"return EXIT_SUCCESS;\" - App::run()'s exit code must be derived from "
          "whether the frame loop hit a device loss or fatal frame error (Kataglyphis::appExitCode), not "
          "hard-coded, or a broken run is reported as a clean quit again.";
+}
+
+// Teardown is the locals' destruction order; an explicit cleanUp() there could free the device under the scene again.
+TEST(BuildIntegrity, AppRunTearsDownByScopeAlone)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto contents = readFileText(repo_root / "Src" / "GraphicsEngineVulkan" / "app" / "App.cpp");
+    ASSERT_TRUE(contents.has_value()) << "could not open App.cpp";
+
+    EXPECT_EQ(contents->find("cleanUp("), std::string::npos)
+      << "App.cpp calls a cleanUp() - App::run tears down by its locals' reverse declaration order, the renderer "
+         "first, and the scene and GUI keep the device alive until they release theirs (Integration.SimulatedDevice"
+         "LossEndsTheRunAsAFailureAndTearsDownCleanly).";
+}
+
+// The device-loss seam is test instrumentation: no engine code may arm it.
+TEST(BuildIntegrity, DeviceLossSimulationIsArmedOnlyByTests)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path declaring_file = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx";
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path == declaring_file) { continue; }
+        const auto contents = readFileText(path);
+        if (contents && contents->find("simulateDeviceLossForTesting") != std::string::npos) {
+            violations.push_back(fs::relative(path, repo_root).generic_string());
+        }
+    }
+
+    EXPECT_TRUE(violations.empty()) << "engine source arms the simulated device loss:" << joinViolations(violations);
 }
 
 // By value costs two atomic refcount ops per call, so non-sinks take const &; sinks carry a DEVICE_SINK_OK marker.

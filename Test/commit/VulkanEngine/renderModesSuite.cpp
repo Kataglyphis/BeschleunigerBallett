@@ -73,21 +73,8 @@ struct EditorEngine
         Kataglyphis::TestSupport::waitForModelLoad(renderer.get(), [this] { frame(); });
     }
 
-    ~EditorEngine()
-    {
-        if (!renderer->hasDeviceLost()) {
-            renderer->finishAllRenderCommands();
-            scene->cleanUp();
-            gui->cleanUp();
-        }
-        renderer->cleanUp();
-        renderer.reset();
-        camera.reset();
-        gui.reset();
-        scene.reset();
-        window->cleanUp();
-        window.reset();
-    }
+    // Members go in reverse declaration order, the renderer first, as App::run's locals do.
+    ~EditorEngine() = default;
 };
 
 // One iteration of the App::run frame loop (App.cpp) minus camera input.
@@ -189,19 +176,11 @@ TEST(Integration, RenderModesSelectableInGui)
         GTEST_LOG_(INFO) << "Hardware raytracing not supported - raytracing/path tracing modes not exercised.";
     }
 
-    if (!renderer->hasDeviceLost()) { renderer->finishAllRenderCommands(); }
-
-    if (!renderer->hasDeviceLost()) {
-        scene->cleanUp();
-        gui->cleanUp();
-    }
-
-    renderer->cleanUp();
+    // App::run's order: the renderer first, while the scene and GUI it drew for keep its device alive.
     renderer.reset();
     camera.reset();
     gui.reset();
     scene.reset();
-    window->cleanUp();
     window.reset();
 }
 

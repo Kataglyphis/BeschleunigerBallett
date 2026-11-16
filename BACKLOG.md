@@ -103,17 +103,6 @@ No P0 item is open.
 
 ### P3: low
 
-- [b] `C++` **Renderer-level RAII cleanup consolidation** (M, **blocked on being testable**) —
-  `VulkanRenderer`'s hand-ordered `cleanUp()`
-  and the device-lost special case in `App.cpp`, which skips `scene->cleanUp()` and
-  `gui->cleanUp()` when the device is lost. Device loss cannot be induced here, so removing
-  that guard would be an untestable change to a path that only runs after a failure. First
-  add a way to simulate device loss (a device-simulation layer, or fault injection behind a
-  debug flag).
-  Related, owned by this entry: `Scene`'s destructor undoes that guard. `scene` is declared
-  before `vulkan_renderer` (`App.cpp`), so `~Scene()` runs its `cleanUp()` after
-  `VulkanRenderer::cleanUp()` has destroyed the VMA allocator and the logical device. Benign
-  only because the leaf `cleanUp()`s are idempotent.
 - [b] `Rust` **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder and a test asset**).
   KTX2 BCn passthrough is done; supercompressed files are rejected with a clear error
   (`ktx2_loader.rs`). The viable transcoder is the `basis-universal` crate, a C++ binding,

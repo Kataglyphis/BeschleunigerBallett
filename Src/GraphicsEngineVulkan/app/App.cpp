@@ -47,6 +47,7 @@ auto Kataglyphis::App::run() -> int
     std::unique_ptr<Kataglyphis::Frontend::GUI> const gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
     std::unique_ptr<Camera> const camera = std::make_unique<Camera>();
 
+    // Declared last, so destroyed first: it drains the GPU, and the scene and GUI keep the device alive past it.
     Kataglyphis::VulkanRenderer vulkan_renderer{ window.get(), scene.get(), gui.get(), camera.get() };
 
     while (!window->get_should_close()) {
@@ -69,18 +70,6 @@ auto Kataglyphis::App::run() -> int
         // Finally draw the frame with the updated state
         vulkan_renderer.drawFrame(guiSceneSharedVars);
     }
-
-    if (!vulkan_renderer.hasDeviceLost()) { vulkan_renderer.finishAllRenderCommands(); }
-
-    if (!vulkan_renderer.hasDeviceLost()) {
-        scene->cleanUp();
-        gui->cleanUp();
-    } else {
-        spdlog::warn("Skipping scene/gui Vulkan teardown because device is lost.");
-    }
-
-    vulkan_renderer.cleanUp();
-    window->cleanUp();
 
     return Kataglyphis::appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());
 }

@@ -76,7 +76,6 @@ class VulkanRenderer
     // rasterization mode, hot-reload trigger, ...) is unrelated to scene
     // settings and still comes from the `gui` member.
     void updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars);
-    void finishAllRenderCommands();
     bool hasDeviceLost() const { return device_lost_detected; }
     // True once any frame has hit a fatal (non-recoverable) error - a failed
     // wait/submit or an invalid sync handle - that forced the window closed.
@@ -84,6 +83,10 @@ class VulkanRenderer
     // that App::run() still tears down normally, but the run itself must
     // still be reported as a failure.
     [[nodiscard]] bool hasFatalFrameError() const { return fatal_frame_error; }
+    // Test seam, called by no production code: every later fence wait reports eErrorDeviceLost, as after a real loss.
+    void simulateDeviceLossForTesting() { device_loss_simulated = true; }
+    // Observes the device without extending its life, so a test can see when its last owner lets go.
+    [[nodiscard]] std::weak_ptr<VulkanDevice> deviceLifetime() const { return device; }
     bool supportsHardwareRaytracing() const;
     // Test instrumentation: an addModel must build one BLAS and keep the others' handles.
     [[nodiscard]] std::uint64_t bottomLevelBuildCount() const { return asManager.getBlasBuildCount(); }
@@ -113,11 +116,14 @@ class VulkanRenderer
     void requestHdrCapture();
     std::vector<uint8_t> takeCapturedHdrFrame(uint32_t &outWidth, uint32_t &outHeight);
 
-    void cleanUp();
-
     void recreateSwapChain();
     void reprovisionPerImageResources();
 
+    VulkanRenderer(const VulkanRenderer &) = delete;
+    VulkanRenderer &operator=(const VulkanRenderer &) = delete;
+    VulkanRenderer(VulkanRenderer &&) = delete;
+    VulkanRenderer &operator=(VulkanRenderer &&) = delete;
+    // Drains the GPU; the members then release in reverse declaration order.
     ~VulkanRenderer();
 
   private:
@@ -154,14 +160,11 @@ class VulkanRenderer
     // helper class for managing our buffers
     VulkanBufferManager vulkanBufferManager;
 
-    // Vulkan instance, stores all per-application states
-    VulkanInstance instance;
+    // Shared with the device, which owns the surface, so both live while the scene or GUI holds the device.
+    std::shared_ptr<VulkanInstance> instance;
+    [[nodiscard]] vk::SurfaceKHR create_surface();
 
-    // surface defined on windows as WIN32 window system, Linux f.e. X11, MacOS
-    // also their own
-    vk::SurfaceKHR surface{};
-    void create_surface();
-
+    // Every Vulkan-owning member below releases before this reference, so it never outlives the device.
     std::shared_ptr<VulkanDevice> device;
 
     VulkanSwapChain vulkanSwapChain;
@@ -204,8 +207,8 @@ class VulkanRenderer
     // record_commands.
     void recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index, bool clouds_enabled);
     void create_command_pool();
-    void cleanUpCommandPools();
-    vk::CommandPool graphics_command_pool{};
+    // Destroyed after every member below it, all of which allocate or record from it.
+    vk::UniqueCommandPool graphics_command_pool;
 
     // uniform buffers
     VulkanRendererInternals::GlobalUBO globalUBO{};
@@ -266,7 +269,6 @@ class VulkanRenderer
     // kataglyphis.vulkan.frame_sync for why the sizing split is load-bearing.
     FrameSync frameSync;
     void createSynchronization();
-    void cleanUpSync();
 
     // -- per-pass GPU timing (timestamp query pool); see
     // kataglyphis.vulkan.gpu_timing for the layout invariants (the per-image
@@ -331,5 +333,6 @@ class VulkanRenderer
     bool checkChangedFramebufferSize();
     bool device_lost_detected{ false };
     bool fatal_frame_error{ false };
+    bool device_loss_simulated{ false };
 };
 }// namespace Kataglyphis

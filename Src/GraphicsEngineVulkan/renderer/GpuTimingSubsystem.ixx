@@ -30,6 +30,13 @@ export namespace Kataglyphis {
 class GpuTimingSubsystem
 {
   public:
+    GpuTimingSubsystem() = default;
+    GpuTimingSubsystem(const GpuTimingSubsystem &) = delete;
+    GpuTimingSubsystem &operator=(const GpuTimingSubsystem &) = delete;
+    GpuTimingSubsystem(GpuTimingSubsystem &&) = delete;
+    GpuTimingSubsystem &operator=(GpuTimingSubsystem &&) = delete;
+    ~GpuTimingSubsystem() { destroy(); }
+
     static constexpr uint32_t QUERIES_PER_PASS = 2;
     static constexpr uint32_t QUERIES_PER_IMAGE =
       QUERIES_PER_PASS * static_cast<uint32_t>(FrontendShared::GPU_TIMED_PASS_COUNT);
@@ -70,7 +77,7 @@ class GpuTimingSubsystem
     // inline.
     void create(VulkanDevice &device, uint32_t imageCount, FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
     {
-        destroy(device);
+        destroy();
 
         const uint32_t valid_bits = device.getGraphicsQueueTimestampValidBits();
         gpu_timestamp_period = device.getTimestampPeriod();
@@ -102,14 +109,15 @@ class GpuTimingSubsystem
             return;
         }
         gpu_timing_query_pool = pool_result.value;
+        query_pool_device = device.getLogicalDevice();
         gpu_timing_pass_mask.assign(imageCount, 0U);
         gpu_timing_slice_recorded.assign(imageCount, false);
     }
 
-    void destroy(VulkanDevice &device)
+    void destroy()
     {
         if (gpu_timing_query_pool) {
-            device.getLogicalDevice().destroyQueryPool(gpu_timing_query_pool);
+            query_pool_device.destroyQueryPool(gpu_timing_query_pool);
             gpu_timing_query_pool = nullptr;
         }
         gpu_timing_pass_mask.clear();
@@ -191,7 +199,7 @@ class GpuTimingSubsystem
     }
 
     // Writes the per-pass averages as JSON when KATAGLYPHIS_GPU_TIMING_JSON
-    // names a file. Called from cleanUp, while the accumulators and the
+    // names a file. Called from the renderer's destructor, while the accumulators and the
     // supported flag still describe the finished run.
     void writeJsonIfRequested()
     {
@@ -253,6 +261,7 @@ class GpuTimingSubsystem
     float gpu_timestamp_period{ 0.0f };
     uint64_t gpu_timestamp_mask{ ~0ULL };
     vk::QueryPool gpu_timing_query_pool{};
+    vk::Device query_pool_device{};
     // Per swapchain image: bitmask of passes actually recorded last time.
     std::vector<uint32_t> gpu_timing_pass_mask;
     // Per swapchain image: whether the slice was ever reset+written (freshly

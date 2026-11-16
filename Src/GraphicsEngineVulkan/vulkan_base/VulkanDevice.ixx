@@ -1,6 +1,7 @@
 module;
 
 #include "renderer/SwapChainDetails.hpp"
+#include <memory>
 #include <vector>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
@@ -15,10 +16,17 @@ export namespace Kataglyphis {
 class VulkanDevice
 {
   public:
-    VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface);
+    // Owns surface from here on; every resource holds the device, so it is destroyed after the last of them.
+    VulkanDevice(const std::shared_ptr<VulkanInstance> &instance, vk::SurfaceKHR surface);
+    VulkanDevice(const VulkanDevice &) = delete;
+    VulkanDevice &operator=(const VulkanDevice &) = delete;
+    VulkanDevice(VulkanDevice &&) = delete;
+    VulkanDevice &operator=(VulkanDevice &&) = delete;
 
     vk::PhysicalDevice getPhysicalDevice() const { return physical_device; };
     vk::Device getLogicalDevice() const { return logical_device; };
+    vk::SurfaceKHR getSurface() const { return surface; };
+    [[nodiscard]] const std::shared_ptr<VulkanInstance> &getInstance() const { return instance; };
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
     vk::Queue getGraphicsQueue() const { return graphics_queue; };
     vk::Queue getPresentationQueue() const { return presentation_queue; };
@@ -61,8 +69,6 @@ class VulkanDevice
     // family does not support timestamp queries at all.
     uint32_t getGraphicsQueueTimestampValidBits() const { return graphics_queue_timestamp_valid_bits; };
 
-    void cleanUp();
-
     ~VulkanDevice();
 
   private:
@@ -71,8 +77,8 @@ class VulkanDevice
 
     vk::Device logical_device{};
 
-    VulkanInstance *instance;
-    vk::SurfaceKHR *surface;
+    std::shared_ptr<VulkanInstance> instance;
+    vk::SurfaceKHR surface{};
 
     vk::Queue graphics_queue{};
     vk::Queue presentation_queue{};
@@ -87,11 +93,11 @@ class VulkanDevice
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
 
     // VMA allocator owning all buffer/image memory. Created right after the
-    // logical device; destroyed in cleanUp() right before the logical device.
+    // logical device; destroyed in the destructor right before the logical device.
     Allocator allocator;
 
     // Pipeline cache seeded from disk on startup and written back in
-    // cleanUp(). All cache file I/O failures are non-fatal.
+    // the destructor. All cache file I/O failures are non-fatal.
     vk::PipelineCache pipeline_cache{};
 
     void get_physical_device();

@@ -11,10 +11,13 @@ class VulkanInstance
 {
   public:
     VulkanInstance();
+    // Shared by the device, so the instance and its debug messenger outlive every child object.
+    VulkanInstance(const VulkanInstance &) = delete;
+    VulkanInstance &operator=(const VulkanInstance &) = delete;
+    VulkanInstance(VulkanInstance &&) = delete;
+    VulkanInstance &operator=(VulkanInstance &&) = delete;
 
     vk::Instance &getVulkanInstance() { return instance; };
-
-    void cleanUp();
 
     ~VulkanInstance();
 

@@ -64,18 +64,10 @@ TEST(Integration, VulkanEngine)
     auto vulkan_renderer =
       std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
 
-    if (!vulkan_renderer->hasDeviceLost()) { vulkan_renderer->finishAllRenderCommands(); }
-
-    if (!vulkan_renderer->hasDeviceLost()) {
-        scene->cleanUp();
-        gui->cleanUp();
-    }
-
-    vulkan_renderer->cleanUp();
+    // App::run's order: the renderer first, while the scene and GUI it drew for keep its device alive.
     vulkan_renderer.reset();
     camera.reset();
     gui.reset();
     scene.reset();
-    window->cleanUp();
     window.reset();
 }

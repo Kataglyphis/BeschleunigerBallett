@@ -80,6 +80,11 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     instance = instance_result.value;
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
+
+    if (Kataglyphis::validationLayersEnabled()) {
+        debug::setupDebugging(
+          instance, vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning, nullptr);
+    }
 }
 
 auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
@@ -121,12 +126,9 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::span<con
     return true;
 }
 
-void Kataglyphis::VulkanInstance::cleanUp()
+Kataglyphis::VulkanInstance::~VulkanInstance()
 {
     if (!instance) { return; }
+    debug::freeDebugCallback(instance);
     instance.destroy();
-    instance = nullptr;
 }
-
-// No cleanUp() here: VulkanRenderer::cleanUp() owns the device-versus-instance teardown order.
-Kataglyphis::VulkanInstance::~VulkanInstance() = default;

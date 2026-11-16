@@ -108,7 +108,7 @@ void frame_golden_view(Camera &camera)
     camera.set_fov(45.0F);
 }
 
-// Tears the engine down in the same order as the other integration suites.
+// Declared in App::run's order, so the default destruction tears down as App::run does.
 struct EngineHarness
 {
     // Only when the test picked no scene of its own; ScopedModelOverride clears the variable on exit.
@@ -192,25 +192,8 @@ struct EngineHarness
         return renderer_vars;
     }
 
-    ~EngineHarness()
-    {
-        if (renderer && !renderer->hasDeviceLost()) {
-            renderer->finishAllRenderCommands();
-            scene->cleanUp();
-            gui->cleanUp();
-        }
-        if (renderer) {
-            renderer->cleanUp();
-            renderer.reset();
-        }
-        camera.reset();
-        gui.reset();
-        scene.reset();
-        if (window) {
-            window->cleanUp();
-            window.reset();
-        }
-    }
+    // Members go in reverse declaration order, the renderer first, as App::run's locals do.
+    ~EngineHarness() = default;
 };
 
 // Mean luminance over the whole frame, on a 0..255 scale.
@@ -1619,7 +1602,7 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
         // Fresh query pools are unreadable until recorded once, so the first readbacks measure nothing.
         harness.render_frames(30);
         ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while rendering.";
-    }// harness teardown calls renderer->cleanUp(), which writes the dump
+    }// the renderer's destructor writes the dump
 
     ASSERT_TRUE(std::filesystem::exists(json_path, filesystem_error))
       << "Renderer teardown did not write " << json_path;

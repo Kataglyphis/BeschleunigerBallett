@@ -74,7 +74,7 @@ const std::vector<const char *> device_extensions_for_raytracing = { VK_KHR_ACCE
     VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
     VK_KHR_RAY_QUERY_EXTENSION_NAME };
 
-Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface)
+Kataglyphis::VulkanDevice::VulkanDevice(const std::shared_ptr<VulkanInstance> &instance, vk::SurfaceKHR surface)
   : instance(instance), surface(surface)
 {
 
@@ -87,15 +87,17 @@ Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR
 auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRendererInternals::SwapChainDetails
 { return getSwapchainDetails(physical_device); }
 
-void Kataglyphis::VulkanDevice::cleanUp()
+// The surface goes after the device that presented to it; the instance member, released last, outlives both.
+Kataglyphis::VulkanDevice::~VulkanDevice()
 {
-    if (!logical_device) { return; }
-    // The pipeline cache must be saved while the device that created it still exists.
-    save_and_destroy_pipeline_cache();
-    // The allocator outlives every allocation but must go before the logical device.
-    allocator.cleanUp();
-    logical_device.destroy();
-    logical_device = nullptr;
+    if (logical_device) {
+        // The pipeline cache must be saved while the device that created it still exists.
+        save_and_destroy_pipeline_cache();
+        // The allocator outlives every allocation but must go before the logical device.
+        allocator.cleanUp();
+        logical_device.destroy();
+    }
+    if (surface) { instance->getVulkanInstance().destroySurfaceKHR(surface); }
 }
 
 void Kataglyphis::VulkanDevice::create_pipeline_cache()
@@ -188,9 +190,6 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
     logical_device.destroyPipelineCache(pipeline_cache);
     pipeline_cache = nullptr;
 }
-
-// No cleanUp() here: VulkanRenderer::cleanUp() owns the device-versus-instance teardown order.
-Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices
 { return getQueueFamilies(physical_device); }
@@ -546,7 +545,7 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
         }
 
         // A failed query must not read as "no presentation support", which misreports device selection.
-        auto presentation_support_result = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface);
+        auto presentation_support_result = selectedPhysicalDevice.getSurfaceSupportKHR(index, surface);
         ASSERT_VULKAN(presentation_support_result.result, "Failed to query surface presentation support!");
         vk::Bool32 presentation_support = presentation_support_result.value;
         if (queue_family.queueCount > 0 && presentation_support) {
@@ -568,12 +567,12 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     Kataglyphis::VulkanRendererInternals::SwapChainDetails swapchain_details{};
 
     // Fatal: default-constructed capabilities would silently build a zero-sized swapchain.
-    auto surface_capabilities_result = device.getSurfaceCapabilitiesKHR(*surface);
+    auto surface_capabilities_result = device.getSurfaceCapabilitiesKHR(surface);
     ASSERT_VULKAN(surface_capabilities_result.result, "Failed to query surface capabilities!");
     swapchain_details.surface_capabilities = surface_capabilities_result.value;
 
     // get list of formats
-    auto formats_result = device.getSurfaceFormatsKHR(*surface);
+    auto formats_result = device.getSurfaceFormatsKHR(surface);
     if (formats_result.result != vk::Result::eSuccess) {
         spdlog::warn(
           "vkGetPhysicalDeviceSurfaceFormatsKHR failed for device '{}' (result {}); treating as no "
@@ -584,7 +583,7 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     swapchain_details.formats = formats_result.value;
 
     // get list of presentation modes
-    auto presentation_modes_result = device.getSurfacePresentModesKHR(*surface);
+    auto presentation_modes_result = device.getSurfacePresentModesKHR(surface);
     if (presentation_modes_result.result != vk::Result::eSuccess) {
         spdlog::warn(
           "vkGetPhysicalDeviceSurfacePresentModesKHR failed for device '{}' (result {}); treating as no "

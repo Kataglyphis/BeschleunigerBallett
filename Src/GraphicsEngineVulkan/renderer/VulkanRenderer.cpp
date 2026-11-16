@@ -98,21 +98,12 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
   Camera *camera)
   : window(window), scene(scene), gui(gui), camera(camera)
 {
-    instance = VulkanInstance();
-
-    vk::DebugReportFlagsEXT const debugReportFlags =
-      vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning;
-    if (Kataglyphis::validationLayersEnabled()) {
-        debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, nullptr);
-    }
-
-    create_surface();
-
-    device = std::make_shared<VulkanDevice>(&instance, &surface);
+    instance = std::make_shared<VulkanInstance>();
+    device = std::make_shared<VulkanDevice>(instance, create_surface());
 
     create_command_pool();
 
-    vulkanSwapChain.initVulkanContext(device, window, surface);
+    vulkanSwapChain.initVulkanContext(device, window, device->getSurface());
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), gui->getGuiRendererSharedVars());
     create_uniform_buffers();
     create_command_buffers();
@@ -128,11 +119,11 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
     };
 
-    rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
+    rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool.get());
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
 
     clouds.init(device,
-      graphics_command_pool,
+      graphics_command_pool.get(),
       sharedRenderDescriptors.getLayout(),
       vulkanSwapChain.getSwapChainExtent().width,
       vulkanSwapChain.getSwapChainExtent().height);
@@ -157,7 +148,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateUniforms(scene, camera, gui->getGuiSceneSharedVars());
     updateAllDescriptorSets();
 
-    skyBox.init(device, graphics_command_pool);
+    skyBox.init(device, graphics_command_pool.get());
     skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainFormat());
 
     // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
@@ -169,7 +160,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     bindCloudSceneDepth();
 
     gui->initializeVulkanContext(device,
-      instance.getVulkanInstance(),
+      instance->getVulkanInstance(),
       vulkanSwapChain.getSwapChainFormat(),
       vulkanSwapChain.getNumberSwapChainImages());
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
@@ -266,9 +257,9 @@ void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLeve
     // Before updateAllDescriptorSets, which binds the new TLAS and resets the path-tracing history.
     if (device->supportsHardwareAcceleratedRRT()) {
         if (rebuildBottomLevel) {
-            asManager.createASForScene(device, graphics_command_pool, scene);
+            asManager.createASForScene(device, graphics_command_pool.get(), scene);
         } else {
-            asManager.createTLAS(device, graphics_command_pool, scene);
+            asManager.createTLAS(device, graphics_command_pool.get(), scene);
         }
     }
 
@@ -278,7 +269,7 @@ void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLeve
 void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars)
 {
     // Polled first, so the rest of the frame sees a model on the frame it arrives.
-    if (scene->pollModelLoad(device, graphics_command_pool)) {
+    if (scene->pollModelLoad(device, graphics_command_pool.get())) {
         finishModelLoad();
         // A reload requested this frame replaces the model below and publishes its own.
         if (!guiSceneSharedVars.model_reload_requested) { publishLoadedModel(guiSceneSharedVars); }
@@ -384,7 +375,7 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
       cascade_count,
       sharedRenderDescriptors.getLayout(),
       vulkanSwapChain.getNumberSwapChainImages(),
-      graphics_command_pool);
+      graphics_command_pool.get());
     dirShadowMap.createGraphicsPipeline();
 
     // The pipeline was seeded from stale cascadeData; re-seed every image once updateUniforms() has run.
@@ -437,7 +428,7 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(GUISceneSharedVars &g
 
             (void)device->getLogicalDevice().waitIdle();
 
-            scene->reloadModel(device, graphics_command_pool, selected_path);
+            scene->reloadModel(device, graphics_command_pool.get(), selected_path);
 
             // New geometry: full BLAS+TLAS rebuild, or RT/PT keep the destroyed TLAS bound.
             refreshAfterSceneChange(true);
@@ -445,8 +436,6 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(GUISceneSharedVars &g
         }
     }
 }
-
-void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { std::ignore = device->getLogicalDevice().waitIdle(); }
 
 // Must reach every SPIR-V-loading stage (BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload).
 void Kataglyphis::VulkanRenderer::shaderHotReload()
@@ -531,6 +520,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
 
     vk::Result result = device->getLogicalDevice().waitForFences(
       1, &frameSync.inFlightFence(), VK_TRUE, std::numeric_limits<uint64_t>::max());
+    if (device_loss_simulated) { result = vk::Result::eErrorDeviceLost; }
     if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to wait for fences!", result);
         return;
@@ -720,7 +710,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
     // No framebuffers to rebuild: every pass names its swapchain image view at vkCmdBeginRendering.
-    vulkanSwapChain.recreate(device, surface);
+    vulkanSwapChain.recreate(device, device->getSurface());
 
     // The query pool is sized per swapchain image.
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), gui->getGuiRendererSharedVars());
@@ -728,10 +718,11 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
     // The extent-sized offscreen, G-buffer and depth targets follow the new swapchain.
-    rasterizer.recreateFrameResources(graphics_command_pool);
+    rasterizer.recreateFrameResources(graphics_command_pool.get());
     deferredRasterizer.recreateFrameResources();
-    clouds.recreateFrameResources(
-      graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    clouds.recreateFrameResources(graphics_command_pool.get(),
+      vulkanSwapChain.getSwapChainExtent().width,
+      vulkanSwapChain.getSwapChainExtent().height);
 
     // The accumulation history is extent-sized; recreating it also resets the frame counter.
     if (device->supportsHardwareAcceleratedRRT()) {
@@ -794,7 +785,7 @@ std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string 
     std::ignore = device->getLogicalDevice().waitIdle();
 
     const std::optional<uint32_t> index =
-      scene->loadAdditionalModel(device, graphics_command_pool, modelPath, modelMatrix);
+      scene->loadAdditionalModel(device, graphics_command_pool.get(), modelPath, modelMatrix);
     if (!index.has_value()) { return std::nullopt; }
 
     // New geometry needs its BLAS too, or ray and path tracing never see it.
@@ -1153,65 +1144,20 @@ void Kataglyphis::VulkanRenderer::cleanUpUBOs()
     sceneUBOMapped.clear();
 }
 
-void Kataglyphis::VulkanRenderer::cleanUp()
+Kataglyphis::VulkanRenderer::~VulkanRenderer()
 {
     if (!device) { return; }
-
+    // Nothing may still be in flight when the members release; on a lost device the wait returns at once.
     std::ignore = device->getLogicalDevice().waitIdle();
-
-    // Behind the !device guard so it runs once, though cleanUp is reached twice (explicitly, then the destructor).
     gpuTiming.writeJsonIfRequested();
-
-    if (device->supportsHardwareAcceleratedRRT()) {
-        pathTracingAccumulation.cleanUp();
-        tracedDepth.cleanUp();
-        pathTracing.cleanUp();
-        raytracingStage.cleanUp();
-        asManager.cleanUp();
-    }
-
-    rasterizer.cleanUp();
-    deferredRasterizer.cleanUp();
-    skyBox.cleanUp();
-    clouds.cleanUp();
-    dirShadowMap.cleanUp();
-    postStage.cleanUp();
-
-    objectDescriptionBuffer.cleanUp();
-    frameCapture.cleanUp();
-    hdrCapture.cleanUp();
-    // Before device->cleanUp(), which tears down the VMA allocator.
-    vulkanBufferManager.cleanUp();
-
-    gpuTiming.destroy(*device);
-    cleanUpSync();
-    cleanUpUBOs();
-    cleanUpCommandPools();
-    cleanUpDescriptorResources();
-    raytracingDescriptors.cleanUp();
-
-    vulkanSwapChain.cleanUp();
-    // Last: the VMA allocator must outlive every buffer and image above.
-    device->cleanUp();
-    device.reset();
-
-    if (surface) {
-        instance.getVulkanInstance().destroySurfaceKHR(surface);
-        surface = nullptr;
-    }
-
-    if (Kataglyphis::validationLayersEnabled()) { debug::freeDebugCallback(instance.getVulkanInstance()); }
-    instance.cleanUp();
 }
 
-Kataglyphis::VulkanRenderer::~VulkanRenderer() { cleanUp(); }
-
-void Kataglyphis::VulkanRenderer::create_surface()
+auto Kataglyphis::VulkanRenderer::create_surface() -> vk::SurfaceKHR
 {
     VkSurfaceKHR rawSurface = VK_NULL_HANDLE;
-    ASSERT_VULKAN(glfwCreateWindowSurface(instance.getVulkanInstance(), window->get_window(), nullptr, &rawSurface),
+    ASSERT_VULKAN(glfwCreateWindowSurface(instance->getVulkanInstance(), window->get_window(), nullptr, &rawSurface),
       "Failed to create a surface!");
-    surface = vk::SurfaceKHR(rawSurface);
+    return vk::SurfaceKHR(rawSurface);
 }
 
 void Kataglyphis::VulkanRenderer::create_post_descriptor_resources()
@@ -1275,7 +1221,7 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
 
     // Storage images stay in eGeneral for their whole lifetime.
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool);
+      device->getLogicalDevice(), graphics_command_pool.get());
     if (!commandBuffer) {
         spdlog::error("Failed to begin command buffer for path tracing accumulation image transition!");
         pathTracingAccumulation.cleanUp();
@@ -1285,7 +1231,7 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     // clang-format off: BuildIntegrity reads a submit's result off the call's own line.
     bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+      device->getLogicalDevice(), graphics_command_pool.get(), device->getGraphicsQueue(), commandBuffer);
     // clang-format on
     if (!transition_submitted) {
         spdlog::error("Failed to submit path tracing accumulation image transition!");
@@ -1308,7 +1254,7 @@ void Kataglyphis::VulkanRenderer::createTracedDepthResources()
 
     // RT/PT write it as a storage image and the clouds sample it, so it stays in eGeneral.
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool);
+      device->getLogicalDevice(), graphics_command_pool.get());
     if (!commandBuffer) {
         spdlog::error("Failed to begin command buffer for the traced depth image transition!");
         tracedDepth.cleanUp();
@@ -1317,15 +1263,13 @@ void Kataglyphis::VulkanRenderer::createTracedDepthResources()
     tracedDepth.getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     // clang-format off: BuildIntegrity reads a submit's result off the call's own line.
-    bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+    bool const transition_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), graphics_command_pool.get(), device->getGraphicsQueue(), commandBuffer);
     // clang-format on
     if (!transition_submitted) {
         spdlog::error("Failed to submit the traced depth image transition!");
         tracedDepth.cleanUp();
     }
 }
-
-void Kataglyphis::VulkanRenderer::cleanUpSync() { frameSync.cleanUp(device->getLogicalDevice()); }
 
 void Kataglyphis::VulkanRenderer::rebuildObjectDescriptions()
 {
@@ -1343,7 +1287,7 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 
     if (!objectDescriptions.empty()) {
         if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-              graphics_command_pool,
+              graphics_command_pool.get(),
               objectDescriptionBuffer,
               vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
               vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -1355,7 +1299,7 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     } else {
         // Create an empty buffer (1 byte) if no object descriptions are present to avoid validation error
         if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-              graphics_command_pool,
+              graphics_command_pool.get(),
               objectDescriptionBuffer,
               vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
               vk::MemoryPropertyFlagBits::eDeviceLocal,
@@ -1458,32 +1402,25 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
         pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
         pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.graphics_family);
 
-        vk::Result const result =
-          device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &graphics_command_pool);
+        vk::CommandPool pool{};
+        vk::Result const result = device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &pool);
         if (result != vk::Result::eSuccess) {
             spdlog::error("Failed to create graphics command pool! Error: {}", static_cast<int>(result));
             std::abort();
         }
-    }
-}
-
-void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
-{
-    if (graphics_command_pool) {
-        device->getLogicalDevice().destroyCommandPool(graphics_command_pool);
-        graphics_command_pool = nullptr;
+        graphics_command_pool = vk::UniqueCommandPool(pool, device->getLogicalDevice());
     }
 }
 
 void Kataglyphis::VulkanRenderer::create_command_buffers()
 {
     if (!command_buffers.empty()) {
-        device->getLogicalDevice().freeCommandBuffers(graphics_command_pool, command_buffers);
+        device->getLogicalDevice().freeCommandBuffers(graphics_command_pool.get(), command_buffers);
     }
     command_buffers.resize(vulkanSwapChain.getNumberSwapChainImages());
 
     vk::CommandBufferAllocateInfo command_buffer_alloc_info{};
-    command_buffer_alloc_info.commandPool = graphics_command_pool;
+    command_buffer_alloc_info.commandPool = graphics_command_pool.get();
     command_buffer_alloc_info.level = vk::CommandBufferLevel::ePrimary;
 
     command_buffer_alloc_info.commandBufferCount = static_cast<uint32_t>(command_buffers.size());

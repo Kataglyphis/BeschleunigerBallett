@@ -25,6 +25,13 @@ export namespace Kataglyphis {
 class FrameSync
 {
   public:
+    FrameSync() = default;
+    FrameSync(const FrameSync &) = delete;
+    FrameSync &operator=(const FrameSync &) = delete;
+    FrameSync(FrameSync &&) = delete;
+    FrameSync &operator=(FrameSync &&) = delete;
+    ~FrameSync() { cleanUp(owner_device); }
+
     // Allocates image_available/in_flight_fences sized frame_sync_count and
     // render_finished_by_image/images_in_flight_fences sized imageCount,
     // recreating from scratch (destroys any existing set first). On any
@@ -90,6 +97,7 @@ class FrameSync
     void resetAndSize(vk::Device logicalDevice, uint32_t imageCount)
     {
         cleanUp(logicalDevice);
+        owner_device = logicalDevice;
 
         frame_sync_count = std::min<uint32_t>(static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), imageCount);
 
@@ -160,6 +168,8 @@ class FrameSync
     vk::Fence &imageInFlightFence(uint32_t image_index) { return images_in_flight_fences[image_index]; }
 
   private:
+    // The device the handles came from, for the destructor.
+    vk::Device owner_device{};
     uint32_t current_frame{ 0 };
     uint32_t frame_sync_count{ 1 };
     std::vector<vk::Semaphore> image_available;

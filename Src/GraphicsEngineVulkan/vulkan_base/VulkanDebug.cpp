@@ -82,7 +82,10 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
 
 void freeDebugCallback(vk::Instance instance)
 {
-    if (debugUtilsMessenger) { instance.destroyDebugUtilsMessengerEXT(debugUtilsMessenger, nullptr); }
+    if (debugUtilsMessenger) {
+        instance.destroyDebugUtilsMessengerEXT(debugUtilsMessenger, nullptr);
+        debugUtilsMessenger = nullptr;
+    }
 }
 
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
