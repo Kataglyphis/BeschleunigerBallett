@@ -23,6 +23,7 @@ RISCV64_GPU_CLOUD_TESTS='CloudsAcrossManyFramesDoesNotLoseTheDevice|EnablingClou
 RISCV64_GPU_CLOUD_TESTS+='|CloudOffsetMovesTheCloudVolume|CloudsStopAtTheSceneDepth|CloudsStopAtTracedGeometry'
 RISCV64_GPU_CLOUD_TESTS+='|CloudsCompositeOverTheSkyAsOverGeometry|CloudsInFrontOfGeometryCoverItInEveryMode'
 RISCV64_GPU_CLOUD_TESTS+='|CloudsAreLitByTheSkyTheyDraw|CloudWindMovesTheNoiseAndRepeatsWithItsPeriod'
+RISCV64_GPU_CLOUD_TESTS+='|HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch'
 RISCV64_GPU_SWEEP_TEST='GuiInputSweepNeverCrashesOrLosesTheDevice'
 
 # The weekly matrix reads its shards here, before any hub library loads, so the list has one home.

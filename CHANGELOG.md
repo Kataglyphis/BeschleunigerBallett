@@ -23,6 +23,13 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Half-resolution C++ clouds, OxidANT's switch: the sky inspector's Half resolution (off by
+  default, as OxidANT's) marches a half-size target, each texel to the nearest depth of its 2x2
+  pixels, and a new `cloud_upsample` stage fills the full-size one from its four nearest texels,
+  weighted by OxidANT's shared `cloud_upsample_depth_weight`. The upsample is timed as
+  `CloudUpsample`, optional to `Compare-RendererTimings.ps1`. On aarch64 llvmpipe the clouds cost 41 ms
+  instead of 100 (25 the march, 16 the upsample) and stay within 0.013 levels on average, with no
+  cloud on the geometry in front. `GoldenRender.HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch`.
 - `BM_RecordCommandsForward`, `...Deferred`, `...Raytracing` and `...PathTracing` time
   `record_commands` on the golden scene and camera, recording image 0 without submitting it.
   Without a display or Vulkan device (every CI lane) they report skipped, not an error; without

@@ -6241,8 +6241,14 @@ TEST(BuildIntegrity, CppCloudsMarchThroughTheSharedModule)
       << clouds_path.string() << " must march through volumetric_clouds.slang's march_clouds";
     EXPECT_NE(contents->find("cloud_unpack("), std::string::npos)
       << clouds_path.string() << " must unpack the SceneUBO through volumetric_clouds.slang's cloud_unpack";
-    for (const char *local :
-      { "float sample_density(", "float phase_HG(", "bool box_intersect(", "float light_optical_depth(" }) {
+    // The half-resolution upsample weighs its texels by OxidANT's depth weight, so both renderers fill alike.
+    EXPECT_NE(contents->find("cloud_upsample_depth_weight("), std::string::npos)
+      << clouds_path.string() << " must upsample through volumetric_clouds.slang's cloud_upsample_depth_weight";
+    for (const char *local : { "float sample_density(",
+           "float phase_HG(",
+           "bool box_intersect(",
+           "float light_optical_depth(",
+           "float cloud_upsample_depth_weight(" }) {
         EXPECT_EQ(contents->find(local), std::string::npos)
           << clouds_path.string() << " defines its own " << local << "...), a copy of the shared cloud math";
     }
@@ -6284,6 +6290,23 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
       << Kataglyphis::kCloudWorkgroupSize << ')';
     EXPECT_EQ((*cloud_threads)[2], 1) << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", "
                                       << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
+
+    // The march and the upsample both dispatch over kCloudWorkgroupSize tiles, so every entry must declare it.
+    const auto clouds_contents = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_contents.has_value()) << "missing " << clouds_path.string();
+    static const std::regex kEveryNumThreads(R"(\[numthreads\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\])");
+    std::size_t entries = 0;
+    for (auto it = std::sregex_iterator(clouds_contents->begin(), clouds_contents->end(), kEveryNumThreads);
+      it != std::sregex_iterator();
+      ++it) {
+        ++entries;
+        const std::string tile = (*it)[1].str() + ", " + (*it)[2].str() + ", " + (*it)[3].str();
+        const std::string expected = std::to_string(Kataglyphis::kCloudWorkgroupSize) + ", "
+                                     + std::to_string(Kataglyphis::kCloudWorkgroupSize) + ", 1";
+        EXPECT_EQ(tile, expected) << clouds_path.string() << " has an entry with [numthreads(" << tile
+                                  << ")], not CloudDispatch.hpp's kCloudWorkgroupSize tile";
+    }
+    EXPECT_EQ(entries, 2U) << clouds_path.string() << " should hold the march and the upsample entry";
 }
 
 // [min, max] of the num_march_steps clamp; std::nullopt when the expression is not found.
@@ -6973,6 +6996,27 @@ TEST(BuildIntegrity, PostKeepsItsSkyAndCloudBarriers)
       << "the clouds-to-post barrier must make the compute shader's storage write available";
     EXPECT_NE(after_dispatch.find("vk::PipelineStageFlagBits2::eFragmentShader"), std::string::npos)
       << "the clouds-to-post barrier must name post's fragment shader as its consumer";
+    EXPECT_NE(after_dispatch.find("getCloudHalfTexture()"), std::string::npos)
+      << "nothing orders the half-resolution march's write before the upsample's read of it";
+    EXPECT_NE(after_dispatch.find("vk::AccessFlagBits2::eShaderSampledRead"), std::string::npos)
+      << "the march's closing barriers must make its write visible to sampled reads";
+
+    // At half resolution the upsample writes what post reads, so the clouds-to-post edge is its too.
+    const auto upsample_stage = function_body_span(*renderer, "Kataglyphis::VulkanRenderer::recordCloudUpsampleStage");
+    ASSERT_TRUE(upsample_stage.has_value()) << "VulkanRenderer::recordCloudUpsampleStage was not found";
+    const std::size_t upsample = renderer->find("clouds.recordUpsampleCommands(", upsample_stage->first);
+    ASSERT_TRUE(upsample != std::string::npos && upsample < upsample_stage->second)
+      << "the clouds' upsample dispatch is not in recordCloudUpsampleStage";
+    const std::string before_upsample = renderer->substr(upsample_stage->first, upsample - upsample_stage->first);
+    EXPECT_NE(before_upsample.find("getCloudOutputTexture()"), std::string::npos)
+      << "nothing orders the previous frame's post read of the cloud output before the upsample writes it";
+    const std::string after_upsample = renderer->substr(upsample, upsample_stage->second - upsample);
+    EXPECT_NE(after_upsample.find("getCloudOutputTexture()"), std::string::npos)
+      << "nothing orders the upsample's compute write before post's fragment read of the cloud output";
+    EXPECT_NE(after_upsample.find("vk::AccessFlagBits2::eShaderStorageWrite"), std::string::npos)
+      << "the upsample-to-post barrier must make the compute shader's storage write available";
+    EXPECT_NE(after_upsample.find("vk::PipelineStageFlagBits2::eFragmentShader"), std::string::npos)
+      << "the upsample-to-post barrier must name post's fragment shader as its consumer";
 }
 
 // The acquire wait and the sky's first barrier share one constant, and the signal covers the present transition.
@@ -9177,6 +9221,7 @@ TEST(BuildIntegrity, RecordCommandsRecordsPassesOnlyThroughTheStageRegistry)
       << "record_commands no longer records the frame through renderStages.recordFrame";
     for (const char *direct : { "recordCommands(",
            "recordComputeCommands(",
+           "recordUpsampleCommands(",
            "recordRasterPass(",
            "recordRaytracingOrPathTracing(",
            "recordSkippedPass(" }) {

@@ -1252,6 +1252,9 @@ void GUI::renderSkyInspector()
         studioSlider("##cirrus", &guiSceneSharedVars.cloud_cirrus_effect, 0.0F, 1.0F, "%.3f");
         studioPropertyLabel("Powder effect", "cloud.powder_effect");
         studioToggle("##powder_effect", &guiSceneSharedVars.cloud_powder_effect);
+        studioPropertyLabel(
+          "Half resolution", "March a quarter of the pixels and fill the rest by depth: faster, softer at cloud edges");
+        studioToggle("##cloud_half_resolution", &guiSceneSharedVars.cloud_half_resolution);
         // Logarithmic drags step in the normalized range, so 2.5 crosses 0.001..1000 in about 400 px.
         studioPropertyLabel("Scale", "Half extent of the cloud box in tens of units (cloud.radius)");
         studioDragAxes("##cloud_scale",

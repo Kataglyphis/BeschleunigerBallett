@@ -87,24 +87,47 @@ void Clouds::createTextures(vk::CommandPool commandPool)
       vk::ImageType::e3D,
       vk::ImageViewType::e3D);
 
+    createFrameTextures(commandPool);
+}
+
+void Clouds::createFrameTextures(vk::CommandPool commandPool)
+{
     // Full resolution: one cloud texel per swapchain pixel, matching the scene depth it reads.
     cloudOutputTexture =
       createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
+    // Both exist at every setting, so switching half resolution rewrites no descriptor.
+    cloudHalfTexture = createStorageTexture(
+      commandPool, cloudHalfExtent(width), cloudHalfExtent(height), 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
+}
+
+void Clouds::writeFrameTextureDescriptors()
+{
+    cloudDescriptors.writeImage(kCloudFullMarchSet, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
+    cloudDescriptors.writeImage(kCloudHalfMarchSet, 0, cloudHalfTexture->getImageView(), vk::ImageLayout::eGeneral);
+    cloudDescriptors.writeImage(kCloudUpsampleSet, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
+    for (uint32_t set = 0; set < kCloudDescriptorSetCount; ++set) {
+        cloudDescriptors.writeImage(set, 3, cloudHalfTexture->getImageView(), vk::ImageLayout::eGeneral);
+    }
 }
 
 void Clouds::createDescriptorSets()
 {
     cloudDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute)
       .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute)
-      .addBinding(2, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute);
-    if (!cloudDescriptors.create(device, 1)) { spdlog::error("Failed to create cloud descriptor resources!"); }
+      .addBinding(2, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute)
+      .addBinding(3, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eCompute);
+    if (!cloudDescriptors.create(device, kCloudDescriptorSetCount)) {
+        spdlog::error("Failed to create cloud descriptor resources!");
+    }
 
     noiseDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute);
     if (!noiseDescriptors.create(device, 1)) { spdlog::error("Failed to create noise descriptor resources!"); }
 
-    cloudDescriptors.writeImage(0, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
-    cloudDescriptors.writeImage(
-      0, 1, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral, cloudNoiseTexture->getSampler());
+    writeFrameTextureDescriptors();
+    for (uint32_t set = 0; set < kCloudDescriptorSetCount; ++set) {
+        cloudDescriptors.writeImage(
+          set, 1, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral, cloudNoiseTexture->getSampler());
+    }
     noiseDescriptors.writeImage(0, 0, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral);
 }
 
@@ -118,6 +141,11 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
       createComputePipeline(device, "Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv", cloudLayouts);
     cloudPipelineLayout = cloudHandles.layout;
     cloudComputePipeline = cloudHandles.pipeline;
+
+    ComputePipelineHandles upsampleHandles = createComputePipeline(
+      device, "Resources/ShadersSlang/build/spirv/compute/clouds.cloud_upsample_main.spv", cloudLayouts);
+    upsamplePipelineLayout = upsampleHandles.layout;
+    upsampleComputePipeline = upsampleHandles.pipeline;
 
     // Noise pipeline (Slang-emitted SPIR-V)
     std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptors.getLayout() };
@@ -167,20 +195,23 @@ void Clouds::dispatchNoiseGeneration(vk::CommandPool commandPool)
 void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 {
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), cloudComputePipeline, cloudPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), upsampleComputePipeline, upsamplePipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), noiseComputePipeline, noisePipelineLayout);
     // The noise volume is content, not pipeline state, so it is not regenerated.
     createComputePipelines(sharedLayout);
 }
 
-void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets)
+void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  bool halfResolution)
 {
     if (descriptorSets.empty()) {
         spdlog::error("Clouds::recordComputeCommands called with an empty shared descriptor set span");
         return;
     }
 
-    // Bind cloud compute pipeline and dispatch thread groups based on screen extent
-    const vk::DescriptorSet cloudDescriptorSet = cloudDescriptors.sets()[0];
+    const vk::DescriptorSet cloudDescriptorSet =
+      cloudDescriptors.sets()[halfResolution ? kCloudHalfMarchSet : kCloudFullMarchSet];
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, cloudComputePipeline);
     commandBuffer.bindDescriptorSets(
       vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 0, 1, &cloudDescriptorSet, 0, nullptr);
@@ -189,14 +220,38 @@ void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<c
     commandBuffer.bindDescriptorSets(
       vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 1, 1, &descriptorSets[0], 0, nullptr);
 
-    // Image size is dynamically set to width x height
+    const uint32_t march_width = halfResolution ? cloudHalfExtent(width) : width;
+    const uint32_t march_height = halfResolution ? cloudHalfExtent(height) : height;
+    commandBuffer.dispatch((march_width + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize,
+      (march_height + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize,
+      1);
+}
+
+void Clouds::recordUpsampleCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets)
+{
+    if (descriptorSets.empty()) {
+        spdlog::error("Clouds::recordUpsampleCommands called with an empty shared descriptor set span");
+        return;
+    }
+
+    const vk::DescriptorSet upsampleDescriptorSet = cloudDescriptors.sets()[kCloudUpsampleSet];
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, upsampleComputePipeline);
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eCompute, upsamplePipelineLayout, 0, 1, &upsampleDescriptorSet, 0, nullptr);
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eCompute, upsamplePipelineLayout, 1, 1, &descriptorSets[0], 0, nullptr);
+
     commandBuffer.dispatch((width + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize,
       (height + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize,
       1);
 }
 
 void Clouds::setSceneDepth(vk::ImageView sceneDepthView, vk::ImageLayout layout)
-{ cloudDescriptors.writeImage(0, 2, sceneDepthView, layout); }
+{
+    for (uint32_t set = 0; set < kCloudDescriptorSetCount; ++set) {
+        cloudDescriptors.writeImage(set, 2, sceneDepthView, layout);
+    }
+}
 
 void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t new_width, uint32_t new_height)
 {
@@ -204,11 +259,10 @@ void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t new_wi
     height = new_height;
 
     if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); }
+    if (cloudHalfTexture) { cloudHalfTexture->cleanUp(); }
 
-    cloudOutputTexture =
-      createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
-
-    cloudDescriptors.writeImage(0, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
+    createFrameTextures(commandPool);
+    writeFrameTextureDescriptors();
 }
 
 void Clouds::cleanUp()
@@ -220,10 +274,13 @@ void Clouds::cleanUp()
     noiseDescriptors.cleanUp();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), noiseComputePipeline, noisePipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), cloudComputePipeline, cloudPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), upsampleComputePipeline, upsamplePipelineLayout);
     if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); }
     cloudNoiseTexture.reset();
     if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); }
     cloudOutputTexture.reset();
+    if (cloudHalfTexture) { cloudHalfTexture->cleanUp(); }
+    cloudHalfTexture.reset();
 
     device.reset();
 }

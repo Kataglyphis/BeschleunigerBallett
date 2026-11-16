@@ -127,6 +127,15 @@
       ]
     },
     {
+      "_comment": "Compute cloud upsample: the half-resolution march by depth to full size (SPIR-V only).",
+      "file": "compute/clouds.slang",
+      "entry": "cloud_upsample_main",
+      "stage": "compute",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
       "_comment": "Forward rasterizer (SPIR-V only).",
       "file": "rasterizer/rasterizer.slang",
       "entry": "vs_main",

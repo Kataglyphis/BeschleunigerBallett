@@ -569,6 +569,12 @@ TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
       (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "sky", "post" }));
 
+    // The upsample records only while the clouds march at half resolution, between the march and the sky.
+    scene_vars.cloud_half_resolution = true;
+    harness.render_frame();
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }));
+
     scene_vars.shadows_enabled = false;
     scene_vars.clouds_enabled = false;
     harness.render_frame();
@@ -4648,6 +4654,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         s.cloud_pillowness = rng.uf(0.0F, 1.0F);
         s.cloud_cirrus_effect = rng.uf(0.0F, 1.0F);
         s.cloud_powder_effect = rng.ub();
+        s.cloud_half_resolution = rng.ub();
 
         const std::string desc = "iter " + std::to_string(iter) + ": mode=" + std::to_string(mode)
                                  + " shadows=" + std::to_string(static_cast<int>(s.shadows_enabled))
@@ -5316,6 +5323,128 @@ TEST(GoldenRender, CloudWindMovesTheNoiseAndRepeatsWithItsPeriod)
     EXPECT_EQ(three_vs_three, 0U) << "the same time rendered a different cloud";
     EXPECT_EQ(periods_vs_windless, 0U) << "a whole number of noise periods moved the cloud: the wrap is off";
     EXPECT_GT(three_vs_windless, 1000U) << "3 s of wind (6, 244, 1.5 units) did not move the cloud";
+}
+
+// Half resolution marches a quarter of the pixels and fills the rest by depth, as OxidANT's switch does.
+TEST(GoldenRender, HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const ScopedValidationErrorCounter validation;
+
+    EXPECT_FALSE(GUISceneSharedVars{}.cloud_half_resolution)
+      << "half resolution must stay off by default, as OxidANT's";
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.skybox_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    // Behind the slab, as in CloudsStopAtTheSceneDepth: the sky around the slab clouds, the slab must not.
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, -20.0F), glm::vec3(40.0F, 6.0F, 4.0F), 1.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](bool clouds, bool half) {
+        scene_vars.clouds_enabled = clouds;
+        scene_vars.cloud_half_resolution = half;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+
+    for (const RasterizationMode path : { RasterizationMode::Forward, RasterizationMode::Deferred }) {
+        const char *name = path == RasterizationMode::Forward ? "forward" : "deferred";
+        renderer_vars.rasterizationMode = path;
+        const std::vector<uint8_t> off = capture(false, false);
+        const std::vector<uint8_t> full = capture(true, false);
+        const std::vector<uint8_t> half = capture(true, true);
+        EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+          (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }))
+          << name;
+        // The half target and its descriptors follow a swapchain recreation.
+        harness.renderer->recreateSwapChain();
+        const std::vector<uint8_t> recreated = capture(true, true);
+        const std::vector<uint8_t> again = capture(true, false);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << name;
+        ASSERT_FALSE(off.empty()) << name;
+        for (const std::vector<uint8_t> *frame : { &full, &half, &recreated, &again }) {
+            ASSERT_EQ(frame->size(), off.size()) << name;
+        }
+        dump_cloud_frame(std::string("half-") + name + "-full", full, width, height);
+        dump_cloud_frame(std::string("half-") + name + "-half", half, width, height);
+
+        const size_t pixels = off.size() / 4U;
+        std::vector<bool> geometry(pixels);
+        for (size_t pixel = 0; pixel < pixels; ++pixel) { geometry[pixel] = !is_disabled_sky(off, pixel); }
+        // Sky within three pixels of the slab, where only the depth weight keeps out texels that marched to it.
+        std::vector<bool> rim(pixels, false);
+        for (uint32_t y = 0; y < height; ++y) {
+            for (uint32_t x = 0; x < width; ++x) {
+                const size_t pixel = static_cast<size_t>(y) * width + x;
+                if (geometry[pixel]) { continue; }
+                for (int dy = -3; dy <= 3 && !rim[pixel]; ++dy) {
+                    for (int dx = -3; dx <= 3 && !rim[pixel]; ++dx) {
+                        const int nx = static_cast<int>(x) + dx;
+                        const int ny = static_cast<int>(y) + dy;
+                        if (nx < 0 || ny < 0 || nx >= static_cast<int>(width) || ny >= static_cast<int>(height)) {
+                            continue;
+                        }
+                        rim[pixel] = geometry[static_cast<size_t>(ny) * width + static_cast<size_t>(nx)];
+                    }
+                }
+            }
+        }
+
+        size_t geometry_pixels = 0;
+        size_t geometry_clouded = 0;
+        double rim_full = 0.0;
+        double rim_half = 0.0;
+        double delta_sum = 0.0;
+        size_t over_eight = 0;
+        size_t half_differing = 0;
+        size_t recreated_differing = 0;
+        size_t again_differing = 0;
+        for (size_t pixel = 0; pixel < pixels; ++pixel) {
+            if (geometry[pixel]) {
+                ++geometry_pixels;
+                if (channel_delta(off, half, pixel) > 2) { ++geometry_clouded; }
+            }
+            if (rim[pixel]) {
+                rim_full += channel_delta(off, full, pixel);
+                rim_half += channel_delta(off, half, pixel);
+            }
+            const int delta = channel_delta(full, half, pixel);
+            delta_sum += delta;
+            if (delta > 0) { ++half_differing; }
+            if (delta > 8) { ++over_eight; }
+            if (channel_delta(half, recreated, pixel) > 0) { ++recreated_differing; }
+            if (channel_delta(full, again, pixel) > 0) { ++again_differing; }
+        }
+        const double mean_delta = delta_sum / static_cast<double>(pixels);
+        const double rim_kept = rim_full > 0.0 ? rim_half / rim_full : 0.0;
+        GTEST_LOG_(INFO) << name << ": half against full mean " << mean_delta << " levels, " << half_differing
+                         << " px differ, " << over_eight << " px over 8 of " << pixels << "; " << geometry_clouded
+                         << " of " << geometry_pixels << " slab px clouded; the rim kept " << rim_kept
+                         << " of its cloud; recreated " << recreated_differing << " px, full again " << again_differing
+                         << " px differ";
+
+        ASSERT_GT(geometry_pixels, pixels / 10U) << name << ": the rig fills too little of the frame to judge";
+        ASSERT_GT(rim_full, 0.0) << name << ": no cloud next to the slab - nothing for the upsample to keep";
+        EXPECT_GT(half_differing, 0U) << name << ": the half frame equals the full one - did the half march run?";
+        // A march to the texel's own pixel instead of its block's nearest depth clouded 6 px; the full march 0.
+        EXPECT_EQ(geometry_clouded, 0U)
+          << name << ": the half march drew cloud over the slab - it ignores the depth of the pixels it covers";
+        EXPECT_GT(rim_kept, 0.95) << name << ": the sky beside the slab lost its cloud - the upsample mixes in texels "
+                                  << "that marched to the slab";
+        EXPECT_LT(mean_delta, 0.5) << name << ": the half march is far from the full one on average";
+        EXPECT_LT(static_cast<double>(over_eight), 0.005 * static_cast<double>(pixels))
+          << name << ": too many pixels are more than 8 levels from the full march";
+        EXPECT_EQ(recreated_differing, 0U) << name << ": the half march changed across a swapchain recreation";
+        EXPECT_EQ(again_differing, 0U) << name << ": switching half resolution off did not restore the full march";
+    }
+    EXPECT_EQ(validation.errorCount(), 0) << "a half-resolution frame logged an error";
 }
 
 // A box in front of the slab and an unlit card must cloud them in every mode; RT once put an unlit hit at the eye.

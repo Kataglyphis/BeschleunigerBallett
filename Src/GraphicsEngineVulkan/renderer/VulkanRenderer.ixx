@@ -199,6 +199,7 @@ class VulkanRenderer
     void recordShadowStage(const RenderStageFrame &frame);
     void recordMainStage(const RenderStageFrame &frame);
     void recordCloudsStage(const RenderStageFrame &frame);
+    void recordCloudUpsampleStage(const RenderStageFrame &frame);
     void recordSkyStage(const RenderStageFrame &frame);
     void recordPostStage(const RenderStageFrame &frame);
 

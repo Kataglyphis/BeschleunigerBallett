@@ -63,8 +63,11 @@ function Get-ExpectedPassNames {
     return , $names
 }
 
+# The upsample runs only while the clouds march at half resolution, which the golden harness leaves off.
+$CppOptionalPasses = @('CloudUpsample')
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
-    $CppExpectedPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
+    $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
+    $CppExpectedPasses = @($cppAllPasses | Where-Object { $_ -notin $CppOptionalPasses })
 }
 # dump_gpu_timings renders the forward path with clouds off and no tracer (FXAA defaults on for deferred only); DrawCull runs every raster frame.
 $RustOptionalPasses = @('OcclusionCull', 'GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')
@@ -146,7 +149,7 @@ if ((-not $ValidationOnly) -and (Test-Path $suite)) {
 $checked = 0
 if (Test-Path $cppJson) {
     $cpp = Get-Content $cppJson -Raw | ConvertFrom-Json
-    Assert-PassesExist -Label 'C++/Vulkan' -JsonObj $cpp -Expected $CppExpectedPasses -Optional @('Tonemap')
+    Assert-PassesExist -Label 'C++/Vulkan' -JsonObj $cpp -Expected $CppExpectedPasses -Optional (@('Tonemap') + $CppOptionalPasses)
     $checked++
 } elseif ($ValidationOnly) {
     Write-Host "WARN: C++ JSON not found at $cppJson - skipping validation." -ForegroundColor Yellow

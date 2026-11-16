@@ -13,7 +13,7 @@ enum class RasterizationMode { Forward, Deferred };
 // "Main" is forward/deferred rasterization or, in its place, the ray-/path-
 // tracing stage; "Post" includes the GUI draw (ImGui renders inside the post
 // render pass).
-enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, Count };
+enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, CloudUpsample, Count };
 
 // Single source of truth for the pass count: bumping this table is the only
 // edit needed to add a pass, and the static_asserts below catch every other
@@ -24,6 +24,7 @@ inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
   "Main (raster/RT)",
   "Sky",
   "Post + GUI",
+  "Clouds upsample",
 });
 inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
@@ -37,6 +38,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "Main",
   "Sky",
   "Post",
+  "CloudUpsample",
 });
 
 static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(),

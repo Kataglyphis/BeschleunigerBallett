@@ -27,7 +27,13 @@ class Clouds
       uint32_t in_width,
       uint32_t in_height);
 
-    void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
+    // Marches into the half-resolution target when halfResolution is set, else into the full-size output.
+    void recordComputeCommands(vk::CommandBuffer &commandBuffer,
+      std::span<const vk::DescriptorSet> descriptorSets,
+      bool halfResolution);
+
+    // Fills the full-size output from the half-resolution march, by depth.
+    void recordUpsampleCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 
     // The depth the march stops at: what the main pass drew, as NDC depth in `layout` at dispatch time.
     void setSceneDepth(vk::ImageView sceneDepthView, vk::ImageLayout layout);
@@ -39,6 +45,7 @@ class Clouds
     void cleanUp();
 
     Kataglyphis::Texture *getCloudOutputTexture() const { return cloudOutputTexture.get(); }
+    Kataglyphis::Texture *getCloudHalfTexture() const { return cloudHalfTexture.get(); }
 
     ~Clouds() { cleanUp(); }
 
@@ -47,6 +54,7 @@ class Clouds
 
     std::unique_ptr<Kataglyphis::Texture> cloudNoiseTexture;
     std::unique_ptr<Kataglyphis::Texture> cloudOutputTexture;
+    std::unique_ptr<Kataglyphis::Texture> cloudHalfTexture;
 
     DescriptorSetGroup cloudDescriptors;
     DescriptorSetGroup noiseDescriptors;
@@ -57,10 +65,15 @@ class Clouds
     vk::Pipeline cloudComputePipeline;
     vk::PipelineLayout cloudPipelineLayout;
 
+    vk::Pipeline upsampleComputePipeline;
+    vk::PipelineLayout upsamplePipelineLayout;
+
     uint32_t width{ 1920 };
     uint32_t height{ 1080 };
 
     void createTextures(vk::CommandPool commandPool);
+    void createFrameTextures(vk::CommandPool commandPool);
+    void writeFrameTextureDescriptors();
     void createDescriptorSets();
     void createComputePipelines(vk::DescriptorSetLayout sharedLayout);
     void dispatchNoiseGeneration(vk::CommandPool commandPool);// Run once during init

@@ -41,6 +41,8 @@ namespace RenderStageOrder {
     inline constexpr int ShadowCascades = 100;
     inline constexpr int Main = 200;
     inline constexpr int Clouds = 300;
+    // Only while the clouds march at half resolution.
+    inline constexpr int CloudUpsample = 350;
     inline constexpr int Sky = 400;
     inline constexpr int Post = 500;
 }// namespace RenderStageOrder

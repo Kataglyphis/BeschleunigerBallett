@@ -440,7 +440,7 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 void Kataglyphis::VulkanRenderer::registerBuiltInStages()
 {
     using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
-    std::array<RenderStage, 5> built_in{};
+    std::array<RenderStage, 6> built_in{};
 
     built_in[0].name = "shadow_cascades";
     built_in[0].order = RenderStageOrder::ShadowCascades;
@@ -498,6 +498,15 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
         clouds.recreateFrameResources(graphics_command_pool.get(), resize.extent.width, resize.extent.height);
     };
     built_in[2].shaderHotReload = [this] { clouds.shaderHotReload(sharedRenderDescriptors.getLayout()); };
+
+    built_in[5].name = "cloud_upsample";
+    built_in[5].order = RenderStageOrder::CloudUpsample;
+    built_in[5].timedPass = GpuTimedPass::CloudUpsample;
+    built_in[5].labelColor = std::array{ 0.70F, 0.75F, 0.95F, 1.0F };
+    built_in[5].enabled = [this](const RenderStageFrame &) {
+        return frameSettings.scene.clouds_enabled && frameSettings.scene.cloud_half_resolution;
+    };
+    built_in[5].record = [this](const RenderStageFrame &frame) { recordCloudUpsampleStage(frame); };
 
     built_in[3].name = "sky";
     built_in[3].order = RenderStageOrder::Sky;
@@ -1044,10 +1053,11 @@ void Kataglyphis::VulkanRenderer::recordCloudsStage(const RenderStageFrame &fram
         sharedRenderDescriptors.sets()[frame.imageIndex]
     };
 
-    // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
+    const bool half_resolution = frameSettings.scene.cloud_half_resolution;
+    // Cross-frame WAR on the march's single target: post reads the full one, the upsample the half one.
     recordGeneralImageBarrier(commandBuffer,
-      clouds.getCloudOutputTexture()->getImage(),
-      vk::PipelineStageFlagBits2::eFragmentShader,
+      half_resolution ? clouds.getCloudHalfTexture()->getImage() : clouds.getCloudOutputTexture()->getImage(),
+      half_resolution ? vk::PipelineStageFlagBits2::eComputeShader : vk::PipelineStageFlagBits2::eFragmentShader,
       vk::PipelineStageFlagBits2::eComputeShader,
       vk::AccessFlagBits2::eNone,
       vk::AccessFlagBits2::eShaderStorageWrite);
@@ -1062,7 +1072,44 @@ void Kataglyphis::VulkanRenderer::recordCloudsStage(const RenderStageFrame &fram
           vk::AccessFlagBits2::eShaderSampledRead);
     }
 
-    clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
+    clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets, half_resolution);
+
+    if (half_resolution) {
+        // The upsample stage reads the half march next.
+        recordGeneralImageBarrier(commandBuffer,
+          clouds.getCloudHalfTexture()->getImage(),
+          vk::PipelineStageFlagBits2::eComputeShader,
+          vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eShaderStorageWrite,
+          vk::AccessFlagBits2::eShaderSampledRead);
+        return;
+    }
+    // The post pass samples the clouds; nothing else orders this compute write before it.
+    recordGeneralImageBarrier(commandBuffer,
+      clouds.getCloudOutputTexture()->getImage(),
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::PipelineStageFlagBits2::eFragmentShader,
+      vk::AccessFlagBits2::eShaderStorageWrite,
+      vk::AccessFlagBits2::eShaderSampledRead);
+}
+
+// After the half-resolution march: the full-size target post composites, filled by depth.
+void Kataglyphis::VulkanRenderer::recordCloudUpsampleStage(const RenderStageFrame &frame)
+{
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = {
+        sharedRenderDescriptors.sets()[frame.imageIndex]
+    };
+
+    // Cross-frame WAR on the single cloudOutputTexture, which the previous frame's post sampled.
+    recordGeneralImageBarrier(commandBuffer,
+      clouds.getCloudOutputTexture()->getImage(),
+      vk::PipelineStageFlagBits2::eFragmentShader,
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::AccessFlagBits2::eNone,
+      vk::AccessFlagBits2::eShaderStorageWrite);
+
+    clouds.recordUpsampleCommands(commandBuffer, rasterizer_descriptor_sets);
 
     // The post pass samples the clouds; nothing else orders this compute write before it.
     recordGeneralImageBarrier(commandBuffer,

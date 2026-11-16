@@ -104,12 +104,6 @@ committed to.
 - **`pointShadowMap`** was removed as dead allocation. Re-add it, or the whole omni pass,
   when the point-light shadow feature is built.
 
-## Shared shader ideas (OxidANT `shaders/`, both renderers)
-
-- **[P3] C++ clouds at half resolution.** OxidANT marches at half resolution on request and
-  upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
-  `clouds_main` dispatch and an upsample pass importing it.
-
 ## Rust renderer ideas (OxidANT)
 
 - **[P3] Texture streaming past the mip tail, and bindless** for photogrammetry-scale scenes.

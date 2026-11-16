@@ -7,8 +7,8 @@ four-`vec4` `SceneUBO` block and its own GUI section. Everything here is
 
 ## Pipeline shape
 
-Two compute kernels, both Slang-authored and SPIR-V-only
-(`Resources/ShadersSlang/compute/noise_volume.slang`, `compute/clouds.slang`). Both only bind
+Three compute kernels, all Slang-authored and SPIR-V-only
+(`Resources/ShadersSlang/compute/noise_volume.slang`, and `compute/clouds.slang` with two entries). Both only bind
 the engine's resources: the noise texel, the box, the density and the march are OxidANT's
 shared `third_party/OxidANT/shaders/common/volumetric_clouds.slang`, which the Rust WebGPU
 renderer's clouds (`clouds/cloud_noise.slang`, `clouds/cloud_march.slang`) import too, so the two
@@ -32,6 +32,9 @@ samples the combined `Sampler3D` with an explicit LOD. A local copy of the math 
   ray-marching the noise volume into a screen-sized 2D storage texture. It runs
   **after the main pass**, because the march stops at the depth that pass wrote
   (see The estimator, below).
+- **`cloud_upsample_main`** runs after it only while the inspector's Half resolution
+  is on: `clouds_main` then marches a half-size target, and the upsample fills the
+  screen-sized one from it by depth (see Half resolution, below).
 
 `Clouds::init` runs `createTextures` -> `createDescriptorSets` ->
 `createComputePipelines` -> `dispatchNoiseGeneration`, so the noise dispatch
@@ -44,7 +47,8 @@ noise texture stays zero-initialized haze.
 
 `clouds_main` binds two descriptor sets: its own (set 0: binding 0 the
 `RWTexture2D` output, binding 1 a combined-image-sampler over the noise
-volume, binding 2 the scene depth as a sampled image) and the engine's shared
+volume, binding 2 the scene depth as a sampled image, binding 3 the half-size
+march as a sampled image, which only the upsample reads) and the engine's shared
 render descriptor set (set 1: `GlobalUBO` at binding 0, `SceneUBO` at
 binding 1), the one every other shading stage binds. That is how
 `clouds_main` reads `globalUBO.inv_projection`/`inv_view` and
@@ -60,9 +64,11 @@ a miss, like a cleared depth buffer). The path tracer traces that extra ray only
 on a frame with clouds on (`trace_cloud_depth`). The RT closest-hit shader records the
 hit distance before its `KHR_materials_unlit` early return: after it, an unlit
 hit kept distance 0, which projected the eye itself, so the march stopped at
-once and a cloud in front of an unlit surface vanished in RT alone. The set
-is single, not per swapchain image, so
-`VulkanRenderer::handleCloudDepthSourceChange` rewrites the binding,
+once and a cloud in front of an unlit surface vanished in RT alone. The
+three sets of that layout (`kCloudFullMarchSet`, `kCloudHalfMarchSet`, `kCloudUpsampleSet` in
+`CloudDispatch.hpp`: the two marches differ only in binding 0's image) are single, not per
+swapchain image, so
+`VulkanRenderer::handleCloudDepthSourceChange` rewrites the binding in all three,
 after a `waitIdle`, only on the frame the source changes: a raster-path or
 render-mode switch, or the TLAS arriving with RT or PT selected.
 `recreateSwapChain` rewrites it unconditionally, since it recreates every
@@ -159,18 +165,56 @@ text-shape guards; `GoldenRender.EnablingCloudsChangesTheFrameAndAddsDetail`
 is the numerical oracle that covers both, so a regression in either meets a
 cheap CI-side text-shape guard and a rendered-pixel check.
 
+## Half resolution
+
+OxidANT's `CloudSettings::half_resolution`, ported (the inspector's Half resolution,
+`GUISceneSharedVars::cloud_half_resolution`; off by default, as OxidANT's). The march then
+covers a quarter of the pixels:
+
+- **The march** writes `cloudHalfTexture`, `cloudHalfExtent(width)` x `cloudHalfExtent(height)`
+  (rounded up, so an odd extent keeps its last column). `clouds_main` takes the half-size
+  path when its output is smaller than the scene depth: each texel marches through its own
+  centre to the **nearest** depth of the 2x2 pixels it covers (`half_texel_depth`), so a texel
+  half over geometry stops at the geometry and carries no cloud from behind it.
+- **The upsample** (`cloud_upsample_main`, the registry's `cloud_upsample` stage at
+  `RenderStageOrder::CloudUpsample`, 350, between the clouds and the sky; timed as
+  `GpuTimedPass::CloudUpsample`, export name `CloudUpsample`) gives each full-size pixel the
+  four nearest half texels, weighted bilinearly and by OxidANT's shared
+  `cloud_upsample_depth_weight`: 1 where the texel's depth along this pixel's ray matches the
+  pixel's own, near 0 across a depth edge. A pixel with no neighbour at its depth, a lone
+  sliver, takes the plain bilinear blend. The shader is OxidANT's `fs_upsample` as a compute
+  entry over the engine's view-space distances; a local copy of the weight fails
+  `BuildIntegrity.CppCloudsMarchThroughTheSharedModule`.
+
+Both targets exist at every setting, so the switch rewrites no descriptor and stalls nothing;
+the full-size target is what post composites either way. The `clouds` stage times the march
+alone at either size, `cloud_upsample` the fill. `Compare-RendererTimings.ps1` treats
+`CloudUpsample` as optional, since the golden harness leaves the switch off.
+
+`GoldenRender.HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch` renders the box behind
+the shadow rig's slab, forward and deferred, at full and at half resolution: the half frame must
+leave every slab pixel as without clouds, keep over 95 % of the cloud on the sky within three
+pixels of the slab, stay within 0.5 levels of the full march on average with under 0.5 % of the
+pixels more than 8 levels off, and match itself across a swapchain recreation; switching back
+must restore the full frame bit for bit. Measured on aarch64 llvmpipe (1200 x 768, both paths):
+0 slab pixels, the rim kept 1.0004 of its cloud, mean 0.013 levels, 10214 pixels differ and none
+by more than 8. A plain bilinear upsample (`depthWeight = w`) fails it: 988 slab pixels clouded,
+the rim kept 0.83. A march to the top-left pixel of its block instead of the block's nearest
+depth clouds 6 slab pixels and fails too. On the same host the march took 99-101 ms at full
+resolution against 25-26 ms at half plus 14-17 ms of upsample, 58 % less in all.
+
 ## Resource lifecycle
 
 - **`recreateFrameResources(commandPool, width, height)`** (called from
-  `VulkanRenderer` on swapchain resize) recreates only `cloudOutputTexture`
-  at the new extent and rewrites its descriptor; the noise volume is
-  content, not a frame resource, and stays untouched.
-- **`shaderHotReload(sharedLayout)`** destroys and recreates both compute
+  `VulkanRenderer` on swapchain resize, the `clouds` stage's `resize` hook) recreates
+  `cloudOutputTexture` and `cloudHalfTexture` at the new extent and rewrites both in all three
+  sets; the noise volume is content, not a frame resource, and stays untouched.
+- **`shaderHotReload(sharedLayout)`** destroys and recreates all three compute
   pipelines but deliberately does **not** call `dispatchNoiseGeneration`
   again: descriptor sets and both textures stay untouched, so a shader edit
   never regenerates the (expensive, one-shot) noise volume.
 - **`cleanUp()`** is idempotent (a `device` null-check guards re-entry) and
-  releases both descriptor sets, both pipeline+layout pairs and both
+  releases both descriptor groups, all three pipeline+layout pairs and all three
   textures.
 
 ## Queue ownership and barriers
@@ -200,6 +244,13 @@ with two explicit barriers around `clouds.recordComputeCommands`. Both are
    (`PostStage`'s own barrier on the swapchain image only covers
    `eColorAttachmentOutput` -> `eColorAttachmentOutput` and cannot order a
    compute-shader write).
+
+At half resolution the edges move with the writes. `recordCloudsStage` orders the
+half target instead: a compute -> compute barrier before the march against the previous
+upsample's read, and a compute storage-write -> compute sampled-read barrier after it, for this
+frame's upsample. `recordCloudUpsampleStage` then records the two barriers above around its own
+dispatch, since it now writes what post reads. `BuildIntegrity.PostKeepsItsSkyAndCloudBarriers`
+reads both stages' bodies for them.
 
 The helper names its stages by hand instead of using
 `VulkanImage::transitionImageLayout`'s `eGeneral` -> `eGeneral` overload,
@@ -286,7 +337,7 @@ both sides even though the host already clamped them before packing.
 | --- | --- | --- |
 | `kNoiseVolumeExtent` | 128 | `volumetric_clouds.slang`'s `NOISE_VOLUME_EXTENT` and the dispatch-grid divisor |
 | `kNoiseWorkgroupSize` | 8 | `noise_volume.slang`'s `[numthreads(8, 8, 8)]` |
-| `kCloudWorkgroupSize` | 16 | `clouds.slang`'s `[numthreads(16, 16, 1)]` |
+| `kCloudWorkgroupSize` | 16 | `clouds.slang`'s `[numthreads(16, 16, 1)]`, on both entries |
 | `kMinCloudMarchSteps` | 4 | `volumetric_clouds.slang`'s `num_march_steps` floor |
 | `kMaxCloudMarchSteps` | 128 | `volumetric_clouds.slang`'s `num_march_steps` clamp, upper bound |
 | `kMinCloudLightMarchSteps` | 1 | `volumetric_clouds.slang`'s `num_march_steps_to_light` clamp, lower bound |
@@ -335,7 +386,8 @@ the view axis each stay in their half; the other half keeps every pixel),
 the shadow rig's slab shows around it, never on it),
 `GoldenRender.CloudsStopAtTracedGeometry` (the same in RT and PT),
 `GoldenRender.CloudsCompositeOverTheSkyAsOverGeometry`,
-`GoldenRender.CloudsAreLitByTheSkyTheyDraw` (The ambient, above) and
+`GoldenRender.CloudsAreLitByTheSkyTheyDraw` (The ambient, above),
+`GoldenRender.HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch` (Half resolution, above) and
 `GoldenRender.CloudsInFrontOfGeometryCoverItInEveryMode`. The last checks the
 depth from the other side: a fog-filled box (coverage threshold 0) in front
 of the slab and of an unlit green card must change over 90 % of both in
