@@ -230,7 +230,7 @@ validation).
 `SceneUboMarshal.hpp`'s `fillSceneUboClouds` (the host packer) and
 `volumetric_clouds.slang`'s `cloud_unpack` (the shader-side consumer; `clouds_main`
 copies the four `SceneUBO` vectors into its `CloudParams`, and OxidANT's host packs the same
-layout) are two hand-written mirrors of the same nine-value layout; the two ambient rows are
+layout) are two hand-written mirrors of the same ten-value layout; the two ambient rows are
 `fillSceneUboCloudAmbient`'s, unpacked in `compute/clouds.slang`. The table maps
 each GUI control (the CLOUDS section of the inspector's Sky tab, `GUI.cpp`) -> shader field ->
 `SceneUBO` field/component; both sides must agree on it.
@@ -250,13 +250,23 @@ this table against that same test's data.
 | `Powder effect` | `cloud.powder_effect` | `cloudParameters.z` |
 | `Scale` | `cloud.radius` | `cloudMeshScale.xyz` |
 | `Offset` | `cloud.offset` | `cloudMeshOffset.xyz` |
+| `Wind` | `cloud.wind_offset` | `cloudLightMarch.yzw` |
 | (skybox) | `ambient.top` | `cloudAmbientTop.xyz` |
 | (skybox) | `ambient.bottom` | `cloudAmbientBottom.xyz` |
 <!-- cloud-ubo:end -->
 
 `cloudLightMarch.yzw` is the shared module's wind offset (`cloud.wind_offset`,
-subtracted from the box-local noise position); the C++ engine has no wind, so
-`fillSceneUboClouds` writes zeros there and its clouds stand still.
+subtracted from the box-local noise position, so the noise drifts and the box stays):
+the inspector's Wind (`GUISceneSharedVars::cloud_wind`, units per second, default
+4, 0, 1.5 as OxidANT's) times `RenderSettings::time_seconds`, wrapped in double to
+`kCloudNoisePeriod` (256, the coarse noise period, which every finer one divides;
+`BuildIntegrity.CloudWindWrapsAtTheNoisePeriod`) by `cloudWindOffset`, so hours of
+wind keep float precision. `App::run` sets the time from `glfwGetTime()` each frame;
+the tests leave it at 0, where the offset is exactly zero whatever the wind, so the
+goldens stay deterministic. `GoldenRender.CloudWindMovesTheNoiseAndRepeatsWithItsPeriod`
+renders time 0 against no wind, one time twice, and a time that carries every axis a
+whole number of periods; each pair is identical bit for bit, and a time between moves
+the cloud.
 
 The CLOUDS switch (and the outliner's eye on Clouds) is not in this table: it gates
 `recordComputeCommands`/`clouds_main`'s dispatch and `post.slang`'s

@@ -235,7 +235,9 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
       sceneSettings.cloud_num_march_steps_to_light,
       sceneSettings.cloud_pillowness,
       sceneSettings.cloud_cirrus_effect,
-      sceneSettings.cloud_powder_effect);
+      sceneSettings.cloud_powder_effect,
+      cloudWindOffset(glm::vec3(sceneSettings.cloud_wind[0], sceneSettings.cloud_wind[1], sceneSettings.cloud_wind[2]),
+        settings.time_seconds));
     fillSceneUboCloudAmbient(sceneUBO, sceneSettings.skybox_enabled, skyBox.getCloudAmbient());
 }
 

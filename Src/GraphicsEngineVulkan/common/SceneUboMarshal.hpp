@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <span>
 
@@ -87,6 +88,22 @@ constexpr auto clampCloudMarchSteps(int numMarchSteps) -> int
 constexpr auto clampCloudLightMarchSteps(int numMarchStepsToLight) -> int
 { return std::clamp(numMarchStepsToLight, kMinCloudLightMarchSteps, kMaxCloudLightMarchSteps); }
 
+// The noise volume repeats every 256 units (volumetric_clouds.slang's coarse period), so a wind offset wraps to it.
+constexpr double kCloudNoisePeriod = 256.0;
+
+// Wrapped in double, so hours of wind keep float precision; OxidANT's CloudSettings::wind_offset.
+inline auto cloudWindOffset(glm::vec3 wind, double timeSeconds) -> glm::vec3
+{
+    const auto wrap = [timeSeconds](float velocity) {
+        double travelled = std::fmod(static_cast<double>(velocity) * timeSeconds, kCloudNoisePeriod);
+        if (travelled < 0.0) { travelled += kCloudNoisePeriod; }
+        const auto offset = static_cast<float>(travelled);
+        // -0 (a negative velocity at time 0) and a float rounded up to the period both mean no shift, bit for bit.
+        return (offset == 0.0F || offset >= static_cast<float>(kCloudNoisePeriod)) ? 0.0F : offset;
+    };
+    return { wrap(wind.x), wrap(wind.y), wrap(wind.z) };
+}
+
 // Scalars: the global module fragment cannot name GUISceneSharedVars. See docs/source/clouds.md § UBO packing.
 inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
   glm::vec3 meshScale,
@@ -97,11 +114,11 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
   int numMarchStepsToLight,
   float pillowness,
   float cirrusEffect,
-  bool powderEffect)
+  bool powderEffect,
+  glm::vec3 windOffset)
 {
-    // yzw is the shared module's wind offset; no wind here, so the noise stands still.
-    ubo.cloudLightMarch =
-      glm::vec4(static_cast<float>(clampCloudLightMarchSteps(numMarchStepsToLight)), 0.0F, 0.0F, 0.0F);
+    ubo.cloudLightMarch = glm::vec4(
+      static_cast<float>(clampCloudLightMarchSteps(numMarchStepsToLight)), windOffset.x, windOffset.y, windOffset.z);
     ubo.cloudMeshScale = clampCloudMeshScale(meshScale, densityMultiplier);
     ubo.cloudMeshOffset = glm::vec4(meshOffset.x, meshOffset.y, meshOffset.z, coverageThreshold);
     ubo.cloudParameters = glm::vec4(

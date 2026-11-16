@@ -99,6 +99,8 @@ export struct GUISceneSharedVars
     bool clouds_enabled = false;
     float cloud_mesh_scale[3] = { 630.f, 3.15f, 630.f };
     float cloud_mesh_offset[3] = { -0.364f, 367.f, -18.351f };
+    // Units per second the noise drifts through the box: OxidANT's default, a fine noise tile every 15 s.
+    float cloud_wind[3] = { 4.f, 0.f, 1.5f };
 
     // Shadows
     bool shadows_enabled = true;

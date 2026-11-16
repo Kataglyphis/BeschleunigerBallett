@@ -76,6 +76,7 @@ auto Kataglyphis::App::run() -> int
         // Then update Scene/Renderer state with the NEW settings
         vulkan_renderer.updateStateDueToUserInput(settings, feedback);
         Kataglyphis::applyRendererFeedback(settings, feedback);
+        settings.time_seconds = glfwGetTime();
         vulkan_renderer.updateUniforms(scene.get(), camera.get(), settings);
 
         // Finally draw the frame with the updated state

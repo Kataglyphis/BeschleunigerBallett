@@ -112,10 +112,6 @@ committed to.
 - **[P3] C++ clouds at half resolution.** OxidANT marches at half resolution on request and
   upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
   `clouds_main` dispatch and an upsample pass importing it.
-- **[P3] Wind for the C++ clouds.** The shared module moves the noise by `cloudLightMarch.yzw`
-  (`cloud.wind_offset`, wind velocity times time wrapped to the noise period); `fillSceneUboClouds`
-  writes zeros. Needs a wind control, a time source the goldens can pin to 0, and a
-  `kCloudUboFieldPairs` row and `clouds.md` table row.
 
 ## C++ engine ideas
 

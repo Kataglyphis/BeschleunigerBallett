@@ -1269,6 +1269,9 @@ void GUI::renderSkyInspector()
           400.0F,
           "%.1f",
           ImGuiSliderFlags_AlwaysClamp);
+        studioPropertyLabel("Wind", "Units per second the noise drifts through the box (cloud.wind_offset)");
+        studioDragAxes(
+          "##cloud_wind", guiSceneSharedVars.cloud_wind, 0.1F, -50.0F, 50.0F, "%.1f", ImGuiSliderFlags_AlwaysClamp);
         endStudioProperties();
     }
     studioEndDisabled();

@@ -31,6 +31,7 @@
 
 #include "ObjectDescription.hpp"
 #include "RepoFiles.hpp"
+#include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/GlobalUBO.hpp"
 #include "renderer/PathTracingDispatch.hpp"
@@ -6685,7 +6686,7 @@ struct CloudUboFieldPair
     const char *scene_field;
     const char *component;
 };
-constexpr std::array<CloudUboFieldPair, 11> kCloudUboFieldPairs{ {
+constexpr std::array<CloudUboFieldPair, 12> kCloudUboFieldPairs{ {
   { "cloud.num_march_steps", "cloudParameters", "w" },
   { "cloud.num_march_steps_to_light", "cloudLightMarch", "x" },
   { "cloud.scale", "cloudMeshScale", "w" },
@@ -6695,6 +6696,7 @@ constexpr std::array<CloudUboFieldPair, 11> kCloudUboFieldPairs{ {
   { "cloud.powder_effect", "cloudParameters", "z" },
   { "cloud.radius", "cloudMeshScale", "xyz" },
   { "cloud.offset", "cloudMeshOffset", "xyz" },
+  { "cloud.wind_offset", "cloudLightMarch", "yzw" },
   { "ambient.top", "cloudAmbientTop", "xyz" },
   { "ambient.bottom", "cloudAmbientBottom", "xyz" },
 } };
@@ -6726,6 +6728,35 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
           << '.' << pair.component
           << " - the host packer (SceneUboMarshal.hpp's fillSceneUboClouds) and this shader's unpack "
              "must agree on which component every cloud slider lands in";
+    }
+}
+
+// cloudWindOffset wraps to kCloudNoisePeriod; a wrap the noise does not repeat at would make the clouds jump.
+TEST(BuildIntegrity, CloudWindWrapsAtTheNoisePeriod)
+{
+    const fs::path clouds_path = sharedCloudsPath();
+    const auto contents = readFileText(clouds_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
+    const std::string density_body =
+      extract_function_body(*contents, "float sample_density(ICloudNoise noise, float3 position, Clouds cloud)");
+    ASSERT_FALSE(density_body.empty()) << "could not locate sample_density's body in " << clouds_path.string();
+    EXPECT_NE(density_body.find("- cloud.wind_offset"), std::string::npos)
+      << "sample_density no longer moves the noise by the wind offset the host packs";
+
+    // Every frac(local / <period> ...) must tile the wrap: the period divides kCloudNoisePeriod.
+    static const std::regex kPeriod(R"(frac\(\s*local\s*/\s*([0-9.]+))");
+    std::vector<double> periods;
+    for (auto match = std::sregex_iterator(density_body.begin(), density_body.end(), kPeriod);
+      match != std::sregex_iterator();
+      ++match) {
+        periods.push_back(std::stod((*match)[1].str()));
+    }
+    ASSERT_FALSE(periods.empty()) << "found no frac(local / <period>) noise lookup in sample_density";
+    EXPECT_DOUBLE_EQ(*std::max_element(periods.begin(), periods.end()), Kataglyphis::kCloudNoisePeriod)
+      << "kCloudNoisePeriod is not the coarsest noise period sample_density reads";
+    for (const double period : periods) {
+        EXPECT_DOUBLE_EQ(std::fmod(Kataglyphis::kCloudNoisePeriod, period), 0.0)
+          << "the noise period " << period << " does not divide kCloudNoisePeriod";
     }
 }
 

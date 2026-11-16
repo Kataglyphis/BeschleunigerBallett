@@ -17,6 +17,8 @@ struct RenderSettings
 {
     GUISceneSharedVars scene;
     VulkanRendererInternals::FrontendShared::GUIRendererSharedVars renderer;
+    /// Seconds the app has run, which moves the clouds' wind; tests leave it at 0 to stay deterministic.
+    double time_seconds = 0.0;
 };
 
 /// Called after VulkanRenderer::updateStateDueToUserInput: the one-shot requests it acted on are spent, and a model

@@ -23,6 +23,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Wind for the C++ clouds: the sky inspector's Wind row (units per second, default 4, 0, 1.5 as
+  OxidANT's) drifts the noise through the box by velocity times the app's time, wrapped in double
+  to the 256-unit noise period, in `cloudLightMarch.yzw`. Tests leave the time at 0, where nothing
+  moves. `GoldenRender.CloudWindMovesTheNoiseAndRepeatsWithItsPeriod`.
 - `scripts/windows/Test-GpuTimingBudget.ps1` checks a GPU timing dump against a host's
   per-pass budgets in `Test/perf/baselines/gpu-timing-budgets.json`, in milliseconds and as a
   share of the frame. Local only: CI never gates on timings.

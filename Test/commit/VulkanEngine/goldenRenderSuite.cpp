@@ -5160,6 +5160,63 @@ TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
     EXPECT_GT(doom_cloud_luma, 0.5 * doom_sky_luma) << "the sky-lit cloud is much darker than the sky behind it";
 }
 
+// The wind moves the noise by velocity times time; time 0 and a whole number of periods must not move it at all.
+TEST(GoldenRender, CloudWindMovesTheNoiseAndRepeatsWithItsPeriod)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.clouds_enabled = true;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 4.0F, -40.0F), glm::vec3(40.0F, 4.0F, 5.0F), 1.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](glm::vec3 wind, double time) {
+        for (int axis = 0; axis < 3; ++axis) { scene_vars.cloud_wind[axis] = wind[axis]; }
+        harness.settings.time_seconds = time;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    // 512 s carries every axis a whole number of 256-unit periods: 1024, -2048 and 256 units.
+    const glm::vec3 wind(2.0F, -4.0F, 0.5F);
+    const std::vector<uint8_t> windless = capture(glm::vec3(0.0F), 0.0);
+    const std::vector<uint8_t> at_zero = capture(wind, 0.0);
+    const std::vector<uint8_t> at_three = capture(wind, 3.0);
+    const std::vector<uint8_t> at_three_again = capture(wind, 3.0);
+    const std::vector<uint8_t> whole_periods = capture(wind, 512.0);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(windless.empty());
+    dump_cloud_frame("wind-windless", windless, width, height);
+    dump_cloud_frame("wind-three", at_three, width, height);
+
+    const auto differing = [&](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
+        size_t count = 0;
+        for (size_t pixel = 0; pixel < a.size() / 4U; ++pixel) {
+            if (channel_delta(a, b, pixel) > 0) { ++count; }
+        }
+        return count;
+    };
+    const size_t zero_vs_windless = differing(at_zero, windless);
+    const size_t three_vs_windless = differing(at_three, windless);
+    const size_t three_vs_three = differing(at_three, at_three_again);
+    const size_t periods_vs_windless = differing(whole_periods, windless);
+    GTEST_LOG_(INFO) << "pixels differing: time 0 vs no wind " << zero_vs_windless << ", 3 s vs no wind "
+                     << three_vs_windless << ", 3 s twice " << three_vs_three << ", 512 s vs no wind "
+                     << periods_vs_windless << " of " << windless.size() / 4U;
+
+    EXPECT_EQ(zero_vs_windless, 0U) << "at time 0 the wind moved the noise; a golden pinned there would drift";
+    EXPECT_EQ(three_vs_three, 0U) << "the same time rendered a different cloud";
+    EXPECT_EQ(periods_vs_windless, 0U) << "a whole number of noise periods moved the cloud: the wrap is off";
+    EXPECT_GT(three_vs_windless, 1000U) << "3 s of wind (6, 244, 1.5 units) did not move the cloud";
+}
+
 // A box in front of the slab and an unlit card must cloud them in every mode; RT once put an unlit hit at the eye.
 TEST(GoldenRender, CloudsInFrontOfGeometryCoverItInEveryMode)
 {

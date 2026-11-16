@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <span>
@@ -19,10 +20,12 @@ using Kataglyphis::clampCloudLightMarchSteps;
 using Kataglyphis::clampCloudMarchSteps;
 using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
+using Kataglyphis::cloudWindOffset;
 using Kataglyphis::fillSceneUboCamera;
 using Kataglyphis::fillSceneUboCascades;
 using Kataglyphis::fillSceneUboClouds;
 using Kataglyphis::fillSceneUboDirectionalLight;
+using Kataglyphis::kCloudNoisePeriod;
 using Kataglyphis::kMaxCloudLightMarchSteps;
 using Kataglyphis::kMaxCloudMarchSteps;
 using Kataglyphis::kMinCloudDensityMultiplier;
@@ -283,13 +286,14 @@ TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
       /*numMarchStepsToLight=*/4,
       /*pillowness=*/0.88F,
       /*cirrusEffect=*/0.99F,
-      /*powderEffect=*/true);
+      /*powderEffect=*/true,
+      /*windOffset=*/glm::vec3(77.0F, 88.0F, 99.0F));
 
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.x, 4.0F);
-    // The shared module reads yzw as the wind offset; the C++ engine has no wind, so its noise stays put.
-    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.y, 0.0F);
-    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.z, 0.0F);
-    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.w, 0.0F);
+    // The shared module reads yzw as the wind offset.
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.y, 77.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.z, 88.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.w, 99.0F);
 
     EXPECT_FLOAT_EQ(ubo.cloudMeshScale.x, 11.0F);
     EXPECT_FLOAT_EQ(ubo.cloudMeshScale.y, 22.0F);
@@ -316,7 +320,8 @@ TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
       /*numMarchStepsToLight=*/1,
       /*pillowness=*/0.0F,
       /*cirrusEffect=*/0.0F,
-      /*powderEffect=*/false);
+      /*powderEffect=*/false,
+      /*windOffset=*/glm::vec3(0.0F));
 
     EXPECT_GE(degenerate.cloudMeshScale.x, kMinCloudMeshExtent)
       << "a zero mesh scale must still go through clampCloudMeshScale's floor";
@@ -353,7 +358,8 @@ TEST(SceneUboMarshalUnit, CloudMarchStepsNeverLeaveTheShaderClampsRange)
       /*numMarchStepsToLight=*/kMaxCloudLightMarchSteps + 1,
       /*pillowness=*/0.0F,
       /*cirrusEffect=*/0.0F,
-      /*powderEffect=*/false);
+      /*powderEffect=*/false,
+      /*windOffset=*/glm::vec3(0.0F));
     EXPECT_FLOAT_EQ(ubo.cloudParameters.w, static_cast<float>(kMinCloudMarchSteps))
       << "fillSceneUboClouds must clamp before packing, regardless of what the GUI vars hold";
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.x, static_cast<float>(kMaxCloudLightMarchSteps));
@@ -368,7 +374,8 @@ TEST(SceneUboMarshalUnit, CloudMarchStepsNeverLeaveTheShaderClampsRange)
       /*numMarchStepsToLight=*/16,
       /*pillowness=*/0.0F,
       /*cirrusEffect=*/0.0F,
-      /*powderEffect=*/false);
+      /*powderEffect=*/false,
+      /*windOffset=*/glm::vec3(0.0F));
     EXPECT_FLOAT_EQ(inRange.cloudParameters.w, 32.0F) << "an in-range count must round-trip unchanged";
     EXPECT_FLOAT_EQ(inRange.cloudLightMarch.x, 16.0F);
 }
@@ -421,3 +428,62 @@ TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
 }
 
 }// namespace
+
+namespace {
+
+// The UBO a frame packs at timeSeconds with the editor's default cloud settings and the given wind.
+SceneUBO cloudUboAt(glm::vec3 wind, double timeSeconds)
+{
+    SceneUBO ubo{};
+    fillSceneUboClouds(ubo,
+      glm::vec3(630.0F, 3.15F, 630.0F),
+      0.63F,
+      glm::vec3(-0.364F, 367.0F, -18.351F),
+      0.493F,
+      8,
+      3,
+      0.966F,
+      0.034F,
+      true,
+      cloudWindOffset(wind, timeSeconds));
+    return ubo;
+}
+
+bool sameBits(const SceneUBO &a, const SceneUBO &b) { return std::memcmp(&a, &b, sizeof(SceneUBO)) == 0; }
+
+}// namespace
+
+TEST(SceneUboMarshalUnit, CloudWindIsVelocityTimesTimeWrappedToTheNoisePeriod)
+{
+    EXPECT_EQ(cloudWindOffset(glm::vec3(4.0F, -2.0F, 0.5F), 10.0), glm::vec3(40.0F, 236.0F, 5.0F))
+      << "a negative drift wraps into [0, 256), as rem_euclid does in OxidANT";
+    EXPECT_EQ(cloudWindOffset(glm::vec3(4.0F, 0.0F, 1.5F), 0.0), glm::vec3(0.0F));
+    // A day in, double keeps the fraction a float product would lose.
+    constexpr double kDay = 86400.0;
+    EXPECT_EQ(cloudWindOffset(glm::vec3(4.0F), kDay + 3.25), cloudWindOffset(glm::vec3(4.0F), 3.25));
+    for (const double time : { 0.0, 1.0, 63.99, 1.0e6 + 0.37 }) {
+        const glm::vec3 offset = cloudWindOffset(glm::vec3(-7.3F, 3.1F, 1000.0F), time);
+        for (int axis = 0; axis < 3; ++axis) {
+            EXPECT_GE(offset[axis], 0.0F) << "t=" << time;
+            EXPECT_LT(offset[axis], static_cast<float>(kCloudNoisePeriod)) << "t=" << time;
+        }
+    }
+}
+
+TEST(SceneUboMarshalUnit, CloudWindAtTimeZeroPacksTheWindlessUboBitForBit)
+{
+    EXPECT_TRUE(sameBits(cloudUboAt(glm::vec3(4.0F, -2.0F, 1.5F), 0.0), cloudUboAt(glm::vec3(0.0F), 0.0)))
+      << "time 0 must not move the noise, or a golden pinned there depends on the wind setting";
+    EXPECT_TRUE(sameBits(cloudUboAt(glm::vec3(4.0F, -2.0F, 1.5F), 0.0), cloudUboAt(glm::vec3(0.0F), 123.0)));
+}
+
+TEST(SceneUboMarshalUnit, CloudWindRepeatsAtTheSameTimeAndAfterAWholePeriod)
+{
+    const glm::vec3 wind(2.0F, -4.0F, 0.5F);
+    EXPECT_TRUE(sameBits(cloudUboAt(wind, 3.0), cloudUboAt(wind, 3.0)));
+    EXPECT_FALSE(sameBits(cloudUboAt(wind, 3.0), cloudUboAt(wind, 0.0))) << "the wind does not move the noise";
+    // 512 s carries every axis a whole number of periods (1024, -2048, 256 units): the unshifted noise again.
+    EXPECT_TRUE(sameBits(cloudUboAt(wind, 512.0), cloudUboAt(wind, 0.0)));
+    // A 256-unit shift on one axis is no shift: 4 units/s for 65 s lands where 1 s did.
+    EXPECT_TRUE(sameBits(cloudUboAt(glm::vec3(4.0F, 0.0F, 0.0F), 65.0), cloudUboAt(glm::vec3(4.0F, 0.0F, 0.0F), 1.0)));
+}
