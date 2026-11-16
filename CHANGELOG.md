@@ -23,6 +23,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- `scripts/windows/Test-GpuTimingBudget.ps1` checks a GPU timing dump against a host's
+  per-pass budgets in `Test/perf/baselines/gpu-timing-budgets.json`, in milliseconds and as a
+  share of the frame. Local only: CI never gates on timings.
 - Three goldens that say where a shadow lands and what post does with a texel.
   `ShadowFootprintMatchesTheAnalyticCaster` predicts the shadow rig's footprint per pixel by ray
   casting (two light tilts, one camera per cascade, the model moved and turned) and asks for 97 %

@@ -545,13 +545,23 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   check (a warning on a GPU-less runner, never a pass); `Compare-PerfBaseline.ps1` is not in CI at
   all. The pixel comparison applies one structural verdict to each available renderer; preserve
   its three thresholds, renderer-specific messages, and failure exit code.
+- **GPU pass budgets** are per host and never gated in CI: `scripts/windows/Test-GpuTimingBudget.ps1
+  -HostProfile <name>` checks a `KATAGLYPHIS_GPU_TIMING_JSON` dump (`-TimingPath`, or it runs
+  `-SuitePath`'s `RendersNonBlankFrame`) against that host's entry in
+  `Test/perf/baselines/gpu-timing-budgets.json`: `max_ms` per pass and `max_share` of the summed
+  passes. The share names the pass that regressed when a loaded host slows every pass: a post
+  shader made 256 tonemaps long moved every llvmpipe pass past its `max_ms`, but only Post past
+  its share (0.45 against 0.20). Exit 1 over budget or a budgeted pass missing, 2 when the dump
+  measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16); a host adds its own
+  from five dumps, by the rule its entry records.
 - **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
   `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module
   goes upstream with it (2026-08-07). The seven left cover the module-resolution bootstrap
   (`Resolve-BuildModule`), the preset and shared-config guards (`CMakePresets.Integrity`,
   `SharedConfig.Drift`), the validation-layer runner (`Invoke-SyncValidation`) and the three
-  comparison tools (`Compare-PerfBaseline`, `Compare-RendererPixels`, `Compare-RendererTimings`).
+  comparison tools (`Compare-PerfBaseline`, `Compare-RendererPixels`, `Compare-RendererTimings`),
+  plus `Test-GpuTimingBudget`.
   `Compare-PerfBaseline.Tests.ps1` allocates its suite fixture with the hub's `New-TestDir`
   and releases it with `Remove-TestDir` in `AfterAll`; keep the cleanup suite-scoped.
   The same job runs the hub's `shared/windows/tests/Repo.GeneratedArtifacts.Tests.ps1` over the

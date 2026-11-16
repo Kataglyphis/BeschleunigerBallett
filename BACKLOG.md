@@ -153,9 +153,9 @@ committed to.
 - **[P3] Refresh the five placeholder perf baseline rows** (`BM_ObjLoaderParseCpu_Suzanne`,
   `BM_GltfLoaderParseCpu_CubeTextured`, `BM_UploadCpuHalf/*`, their `label` says so): they come
   from an aarch64 WSL host, not the RX 9070 XT host the file is named for.
-- **[P3] No budget on the GPU timings.** `KATAGLYPHIS_GPU_TIMING_JSON` and
-  `Compare-RendererTimings.ps1` make per-pass timings comparable, but nothing asserts a budget
-  for any `GpuTimedPass`.
+- **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
+  profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
+  `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
 
 ## Recurring validation runs
 
