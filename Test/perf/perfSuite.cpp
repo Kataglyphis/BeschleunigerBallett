@@ -7,6 +7,9 @@
 
 #include <array>
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <random>
 #include <span>
@@ -16,17 +19,18 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// Parsers compiled in directly: the engine loaders would time more than the parse and link ObjLoader's tinyobj too.
-#define TINYOBJLOADER_IMPLEMENTATION
+// The engine's tinyobj and cgltf builds (ObjLoader.cpp, cgltf_impl.cpp); a second copy here would clash.
 #include "tiny_obj_loader.h"
 
-#define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.frustum;
+import kataglyphis.vulkan.gltf_loader;
+import kataglyphis.vulkan.mesh_range;
+import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.vertex;
 
 namespace {
@@ -465,6 +469,85 @@ void BM_TransformAABB(benchmark::State &state)
     }
 }
 BENCHMARK(BM_TransformAABB)->Arg(64)->Arg(512);
+
+// Engine loaders: the raw parse above plus dedup, materials and ranges, i.e. what AsyncModelParse runs off-thread.
+
+void BM_ObjLoaderParseCpu_Suzanne(benchmark::State &state)
+{
+    const std::string path = find_model("suzanne.obj");
+    if (path.empty()) {
+        skipWithError(state, "model not found (run from the repo root)");
+        return;
+    }
+    for (auto _ : state) {
+        Kataglyphis::ObjLoader loader;
+        if (!loader.parseCpu(path)) {
+            skipWithError(state, "ObjLoader::parseCpu failed");
+            return;
+        }
+        benchmark::DoNotOptimize(loader.getVertices().data());
+    }
+}
+BENCHMARK(BM_ObjLoaderParseCpu_Suzanne)->Unit(benchmark::kMillisecond);
+
+void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
+{
+    const std::string path = find_model("GltfTest/cube_textured.gltf");
+    if (path.empty()) {
+        skipWithError(state, "gltf model not found (run from the repo root)");
+        return;
+    }
+    for (auto _ : state) {
+        Kataglyphis::GltfLoader loader;
+        if (!loader.parseCpu(path)) {
+            skipWithError(state, "GltfLoader::parseCpu failed");
+            return;
+        }
+        benchmark::DoNotOptimize(loader.getVertices().data());
+    }
+}
+BENCHMARK(BM_GltfLoaderParseCpu_CubeTextured)->Unit(benchmark::kMicrosecond);
+
+// Upload, CPU half: uploadParsed slices a range, then the staging copy memcpys vertices and indices into mapped memory.
+void BM_UploadCpuHalf(benchmark::State &state)
+{
+    const auto quadCount = static_cast<std::size_t>(state.range(0));
+    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
+
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+    std::vector<unsigned int> materialIndex(quadCount * 2, 0U);
+    vertices.reserve(quadCount * 4);
+    indices.reserve(quadCount * 6);
+    for (std::size_t q = 0; q < quadCount; ++q) {
+        const auto base = static_cast<unsigned int>(vertices.size());
+        const float ox = static_cast<float>(q) * 2.0F;
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
+        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
+        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
+        for (const unsigned int corner : { 0U, 1U, 2U, 0U, 2U, 3U }) { indices.push_back(base + corner); }
+    }
+
+    Kataglyphis::MeshRange range{};
+    range.vertexCount = vertices.size();
+    range.indexCount = indices.size();
+    range.triCount = materialIndex.size();
+
+    const std::size_t vertexBytes = sizeof(Vertex) * vertices.size();
+    const std::size_t indexBytes = sizeof(unsigned int) * indices.size();
+    std::vector<std::byte> staging(vertexBytes + indexBytes);
+
+    for (auto _ : state) {
+        const Kataglyphis::MeshSlice slice = Kataglyphis::sliceMeshRange(range, vertices, indices, materialIndex);
+        std::memcpy(staging.data(), slice.vertices.data(), vertexBytes);
+        std::memcpy(staging.data() + vertexBytes, slice.indices.data(), indexBytes);
+        benchmark::DoNotOptimize(staging.data());
+        benchmark::ClobberMemory();
+    }
+    state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(staging.size()));
+}
+BENCHMARK(BM_UploadCpuHalf)->Arg(64)->Arg(4096)->Arg(65536);
 
 }// namespace
 

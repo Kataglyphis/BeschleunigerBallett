@@ -23,6 +23,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Benchmarks for the engine's CPU half of a model load (`ObjLoader::parseCpu` on Suzanne,
+  `GltfLoader::parseCpu` on the textured cube) and of an upload (`sliceMeshRange` plus the
+  staging copy at 64, 4096 and 65536 quads). `BM_ObjParse_*` and `BM_GltfParse_*` now time the
+  engine's own tinyobj and cgltf builds.
+
 - glTF `alphaMode` `BLEND` composites in forward and deferred: BLEND meshes leave the opaque
   draws and are drawn last, farthest first by distance to their bounds' centre, alpha-blended
   with depth test on and depth writes off; deferred shades them forward after the lighting pass,

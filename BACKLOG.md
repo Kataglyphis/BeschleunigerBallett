@@ -152,9 +152,12 @@ committed to.
 - **[P3] Headless assertions for the shadow path** beyond the single darkened-pixel ratio, and for
   the post-processing chain. Both need careful oracle design (`docs/source/gpu-golden-testing.md`
   on why the tonemap is hard to isolate).
-- **[P3] Benchmarks still missing**: `record_commands` wall time per render mode at a fixed scene
-  and camera, and the upload path (`createBufferAndUploadVectorOnDevice`) for a few payload
-  sizes. Gate the pure-CPU ones in CI; GPU timings are machine-dependent.
+- **[P3] A `record_commands` benchmark** per render mode at a fixed scene and camera. It needs a
+  device, and `perfTestSuite` fails on a benchmark that cannot run, so it must skip without an
+  adapter in a way the lane does not count as an error. The pure-CPU ones are in `perfSuite.cpp`.
+- **[P3] Refresh the five placeholder perf baseline rows** (`BM_ObjLoaderParseCpu_Suzanne`,
+  `BM_GltfLoaderParseCpu_CubeTextured`, `BM_UploadCpuHalf/*`, their `label` says so): they come
+  from an aarch64 WSL host, not the RX 9070 XT host the file is named for.
 - **[P3] No budget on the GPU timings.** `KATAGLYPHIS_GPU_TIMING_JSON` and
   `Compare-RendererTimings.ps1` make per-pass timings comparable, but nothing asserts a budget
   for any `GpuTimedPass`.
