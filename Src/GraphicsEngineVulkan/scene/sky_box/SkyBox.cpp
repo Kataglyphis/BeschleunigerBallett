@@ -255,9 +255,8 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout, vk::Fo
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
       buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
 
-    auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(layoutRes.result, "Failed to create skybox pipeline layout!");
-    pipelineLayout = layoutRes.value;
+    pipelineLayout = vkCheck(
+      device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo), "Failed to create skybox pipeline layout!");
 
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =

@@ -94,7 +94,7 @@ class PipelineBuilder
     [[nodiscard]] GraphicsPipelineState buildState() const;
 
     // Creates the pipeline via createGraphicsPipelines(pipeline_cache, ...);
-    // aborts through ASSERT_VULKAN with error_message on failure.
+    // aborts through vkCheck with error_message on failure.
     // pipeline_cache may be null (no caching).
     [[nodiscard]] vk::Pipeline build(vk::Device device,
       vk::PipelineLayout pipeline_layout,

@@ -107,21 +107,17 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     // The outgoing swapchain lets the driver recycle its images instead of a fresh allocation on every resize.
     swap_chain_create_info.oldSwapchain = oldSwapchain;
 
-    // create swap chain
-    vk::ResultValue<vk::SwapchainKHR> swapchain_result =
-      device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info);
     // A resize racing the recreate can fail this; a stored null handle would be UB, so fail fast.
-    ASSERT_VULKAN(swapchain_result.result, "Failed to (re)create swapchain!");
-    swapchain = swapchain_result.value;
+    swapchain =
+      vkCheck(device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info), "Failed to (re)create swapchain!");
 
     // store for later reference
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
 
     // get swapchain images
-    vk::ResultValue<std::vector<vk::Image>> images_result = device->getLogicalDevice().getSwapchainImagesKHR(swapchain);
-    ASSERT_VULKAN(images_result.result, "Failed to get swapchain images!");
-    std::vector<vk::Image> images = images_result.value;
+    std::vector<vk::Image> images =
+      vkCheck(device->getLogicalDevice().getSwapchainImagesKHR(swapchain), "Failed to get swapchain images!");
 
     swap_chain_images.clear();
 

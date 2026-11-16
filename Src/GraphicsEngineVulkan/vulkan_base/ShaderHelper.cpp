@@ -100,16 +100,13 @@ auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &dev
     const vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
       buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
-    auto layoutResult = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(layoutResult.result, layoutErrorMessage);
     ComputePipelineHandles handles{};
-    handles.layout = layoutResult.value;
+    handles.layout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo), layoutErrorMessage);
 
     const vk::ComputePipelineCreateInfo pipelineInfo = buildComputePipelineCreateInfo(stageInfo, handles.layout);
 
-    auto pipelineResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
-    ASSERT_VULKAN(pipelineResult.result, pipelineErrorMessage);
-    handles.pipeline = pipelineResult.value;
+    handles.pipeline = vkCheck(
+      device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo), pipelineErrorMessage);
 
     device->getLogicalDevice().destroyShaderModule(shaderModule);
 

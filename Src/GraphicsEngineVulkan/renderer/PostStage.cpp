@@ -147,7 +147,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSamp
 
     vk::Result const result =
       device->getLogicalDevice().createSampler(&sampler_create_info, nullptr, &offscreenTextureSampler);
-    ASSERT_VULKAN(result, "Failed to create a texture sampler!");
+    vkCheck(result, "Failed to create a texture sampler!");
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
@@ -172,10 +172,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
       buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
-      device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create pipeline layout!");
-    pipeline_layout = pipeline_layout_result.value;
+    pipeline_layout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info),
+      "Failed to create pipeline layout!");
 
     PipelineBuilder pipeline_builder;
     graphics_pipeline = pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })

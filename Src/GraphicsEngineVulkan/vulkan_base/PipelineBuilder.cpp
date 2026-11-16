@@ -205,7 +205,6 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     const vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info =
       linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout);
 
-    auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
-    if (pipeline_result.result != vk::Result::eSuccess) { ASSERT_VULKAN(pipeline_result.result, error_message); }
-    return pipeline_result.value.front();
+    return vkCheck(device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info), error_message)
+      .front();
 }

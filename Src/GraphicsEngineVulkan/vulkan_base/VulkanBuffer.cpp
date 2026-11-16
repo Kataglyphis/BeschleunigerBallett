@@ -87,21 +87,21 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
     VmaAllocationInfo allocation_info{};
     if (buffer_usage_flags & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
         // SBT regions and AS scratch consume these addresses directly, so enforce the required alignment.
-        ASSERT_VULKAN(vmaCreateBufferWithAlignment(device->getVmaAllocator(),
-                        &c_buffer_info,
-                        &allocation_create_info,
-                        static_cast<VkDeviceSize>(device->getMinDeviceAddressAlignment()),
-                        &c_buffer,
-                        &allocation,
-                        &allocation_info),
+        vkCheck(vmaCreateBufferWithAlignment(device->getVmaAllocator(),
+                  &c_buffer_info,
+                  &allocation_create_info,
+                  static_cast<VkDeviceSize>(device->getMinDeviceAddressAlignment()),
+                  &c_buffer,
+                  &allocation,
+                  &allocation_info),
           "Failed to create device-address buffer via VMA!");
     } else {
-        ASSERT_VULKAN(vmaCreateBuffer(device->getVmaAllocator(),
-                        &c_buffer_info,
-                        &allocation_create_info,
-                        &c_buffer,
-                        &allocation,
-                        &allocation_info),
+        vkCheck(vmaCreateBuffer(device->getVmaAllocator(),
+                  &c_buffer_info,
+                  &allocation_create_info,
+                  &c_buffer,
+                  &allocation,
+                  &allocation_info),
           "Failed to create buffer via VMA!");
     }
 

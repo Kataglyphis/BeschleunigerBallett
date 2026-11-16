@@ -5071,7 +5071,7 @@ bool looks_like_query_call(const std::string &line)
 
 }// namespace
 
-// Exceptions are off, so each ".value" read needs an ASSERT_VULKAN in a window on both sides (else-branches sit below).
+// Exceptions are off, so each ".value" read needs a vkCheck in a window on both sides (else-branches sit below).
 TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 {
     // Prove the matcher fires first, so a neutered one cannot report zero violations forever.
@@ -5109,7 +5109,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
                 if (w <= i && (looks_like_creation_call(lines[w]) || looks_like_query_call(lines[w]))) {
                     triggered = true;
                 }
-                if (lines[w].find("ASSERT_VULKAN") != std::string::npos) { asserted = true; }
+                if (lines[w].find("vkCheck(") != std::string::npos) { asserted = true; }
                 // Queries may check ".result" explicitly, but never on the ".value" line itself.
                 if (w != i && lines[w].find(".result") != std::string::npos) { asserted = true; }
             }
@@ -5128,9 +5128,9 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " Vulkan creation/allocation/query result(s) read via .value with no ASSERT_VULKAN and no "
+      << " Vulkan creation/allocation/query result(s) read via .value with no vkCheck and no "
          "\".result\" check nearby (exceptions are disabled project-wide, so a failed call must either "
-         "abort via ASSERT_VULKAN or be handled explicitly via an `if (x.result != ...)` check rather "
+         "abort via vkCheck or be handled explicitly via an `if (x.result != ...)` check rather "
          "than continue with a silently default/empty value; or, for a deliberate exception, add a "
          "\"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" comment on the line and a justified entry "
          "to kCheckedResultAllowlist above):"
@@ -5328,7 +5328,7 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
 
     EXPECT_EQ(clouds_source.find("return nullptr;"), std::string::npos)
       << "Clouds.cpp must not return a null texture from createStorageTexture - a half-initialized clouds "
-         "subsystem has no defined rendering behaviour, so a failed command buffer must ASSERT_VULKAN instead";
+         "subsystem has no defined rendering behaviour, so a failed command buffer must vkFail instead";
 }
 
 // uploadRgba must consume the submit result, or a failed upload reports success with an unwritten image bound.
@@ -9362,19 +9362,25 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
       << joinViolations(get_features_violations);
 }
 
-// ASSERT_VULKAN is a do/while(false) statement, so every call site ends in ';'; the compiler is the primary check.
-TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
+// vkCheck replaced the ASSERT_VULKAN macro's check-then-read-.value idiom; a new site must not bring the macro back.
+TEST(BuildIntegrity, VulkanResultsGoThroughVkCheckNotTheRetiredMacro)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
+    const fs::path utilities = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "Utilities.hpp";
+    const auto utilities_text = readFileText(utilities);
+    ASSERT_TRUE(utilities_text.has_value()) << "missing " << utilities.string();
+    EXPECT_NE(utilities_text->find("auto vkCheck(vk::ResultValue<T> &&"), std::string::npos)
+      << "Utilities.hpp no longer defines the ResultValue-unwrapping vkCheck";
+
     static const std::array<fs::path, 2> kRoots = { repo_root / "Src" / "GraphicsEngineVulkan",
         repo_root / "Src" / "shared" };
-
-    const std::string_view kMacroInvocation = "ASSERT_VULKAN(";
-    const fs::path definition_file = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "Utilities.hpp";
+    // Split so this file does not match its own needle.
+    const std::string kRetiredMacro = std::string("ASSERT_") + "VULKAN";
 
     std::vector<std::string> violations;
+    std::size_t vk_check_sites = 0;
     std::error_code error;
     for (const fs::path &root : kRoots) {
         if (!sourceExists(root)) { continue; }
@@ -9382,61 +9388,27 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
             if (error) { break; }
             const fs::path &path = it->path();
             if (!it->is_regular_file(error)) { continue; }
-            if (fs::equivalent(path, definition_file, error)) { continue; }
             const auto extension = path.extension();
             if (extension != ".hpp" && extension != ".cpp" && extension != ".ixx") { continue; }
 
             const auto lines = readFileLines(path);
             if (!lines) { continue; }
-
-            // Track paren depth across lines: a paren-free argument line is not the call's closing line.
-            bool inside_call = false;
-            int paren_depth = 0;
-            std::size_t call_start_line = 0;
             std::size_t line_number = 0;
             for (const auto &line : *lines) {
                 ++line_number;
-                std::size_t search_pos = 0;
-                if (!inside_call) {
-                    const auto found = line.find(kMacroInvocation);
-                    if (found == std::string::npos) { continue; }
-                    inside_call = true;
-                    paren_depth = 0;
-                    call_start_line = line_number;
-                    search_pos = found;
-                }
-
-                std::size_t close_pos = std::string::npos;
-                for (std::size_t i = search_pos; i < line.size(); ++i) {
-                    if (line[i] == '(') {
-                        ++paren_depth;
-                    } else if (line[i] == ')') {
-                        --paren_depth;
-                        if (paren_depth == 0) {
-                            close_pos = i;
-                            break;
-                        }
-                    }
-                }
-
-                if (close_pos == std::string::npos) { continue; }
-
-                inside_call = false;
-                const bool ends_in_semicolon = close_pos + 1 < line.size() && line[close_pos + 1] == ';';
-                if (!ends_in_semicolon) {
-                    violations.push_back(fs::relative(path, repo_root).generic_string() + ":"
-                                         + std::to_string(call_start_line) + "-" + std::to_string(line_number) + ": "
-                                         + line);
-                }
+                if (line.find("vkCheck(") != std::string::npos) { ++vk_check_sites; }
+                if (line.find(kRetiredMacro) == std::string::npos) { continue; }
+                violations.push_back(
+                  fs::relative(path, repo_root).generic_string() + ":" + std::to_string(line_number) + ": " + line);
             }
         }
     }
 
-    EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " ASSERT_VULKAN call site(s) do not end in \");\" - the macro is a do/while(false) statement and requires "
-         "the trailing semicolon:"
-      << joinViolations(violations);
+    // The sweep left 38 vkCheck lines; far fewer means the walk or the needle broke, not that the code changed.
+    EXPECT_GE(vk_check_sites, 30U) << "found only " << vk_check_sites << " vkCheck( lines under Src/";
+    EXPECT_TRUE(violations.empty()) << violations.size() << " line(s) still name the retired " << kRetiredMacro
+                                    << " macro; unwrap with vkCheck(call, \"message\") from common/Utilities.hpp:"
+                                    << joinViolations(violations);
 }
 
 // glTF 2.0 3.9.2: a doubleSided back face reverses its whole tangent frame; culling is off for it, SV_IsFrontFace tells.

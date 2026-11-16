@@ -62,8 +62,7 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
       device->getLogicalDevice(), commandPool);
     if (!commandBuffer) {
         // Fatal rather than a null texture: the post pipeline's binding 1 is not optional.
-        ASSERT_VULKAN(
-          VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to begin a command buffer for a storage texture!");
+        vkFail("Clouds: failed to begin a command buffer for a storage texture!");
     }
     texture->getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
@@ -72,8 +71,7 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
     // clang-format on
     if (!transition_submitted) {
         // Fatal too: the descriptor written later declares eGeneral for an image still in eUndefined.
-        ASSERT_VULKAN(
-          VK_ERROR_INITIALIZATION_FAILED, "Clouds: failed to submit the layout transition for a storage texture!");
+        vkFail("Clouds: failed to submit the layout transition for a storage texture!");
     }
 
     return texture;

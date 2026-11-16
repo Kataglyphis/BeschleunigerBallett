@@ -1155,7 +1155,7 @@ Kataglyphis::VulkanRenderer::~VulkanRenderer()
 auto Kataglyphis::VulkanRenderer::create_surface() -> vk::SurfaceKHR
 {
     VkSurfaceKHR rawSurface = VK_NULL_HANDLE;
-    ASSERT_VULKAN(glfwCreateWindowSurface(instance->getVulkanInstance(), window->get_window(), nullptr, &rawSurface),
+    vkCheck(glfwCreateWindowSurface(instance->getVulkanInstance(), window->get_window(), nullptr, &rawSurface),
       "Failed to create a surface!");
     return vk::SurfaceKHR(rawSurface);
 }
@@ -1427,7 +1427,7 @@ void Kataglyphis::VulkanRenderer::create_command_buffers()
 
     vk::Result const result =
       device->getLogicalDevice().allocateCommandBuffers(&command_buffer_alloc_info, command_buffers.data());
-    ASSERT_VULKAN(result, "Failed to allocate command buffers!");
+    vkCheck(result, "Failed to allocate command buffers!");
 }
 
 void Kataglyphis::VulkanRenderer::createSynchronization()

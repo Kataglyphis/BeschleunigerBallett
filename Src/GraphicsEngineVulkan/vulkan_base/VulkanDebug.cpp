@@ -75,9 +75,8 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
       vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
     debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
 
-    vk::Result result;
-    std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);
-    ASSERT_VULKAN(result, "Failed to create debug messenger");
+    debugUtilsMessenger = vkCheck(
+      instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr), "Failed to create debug messenger");
 }
 
 void freeDebugCallback(vk::Instance instance)

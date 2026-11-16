@@ -309,9 +309,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
       buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    auto layout_result = device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    ASSERT_VULKAN(layout_result.result, "Failed to create pipeline layout!");
-    pipeline_layout = layout_result.value;
+    pipeline_layout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info),
+      "Failed to create pipeline layout!");
 
     PipelineBuilder pipeline_builder;
     graphics_pipeline =

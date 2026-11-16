@@ -199,9 +199,8 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     const GpuSelectionMode selection_mode = parseGpuSelectionMode(readGpuSelectionFromEnvironment());
 
     // Enumerate physical devices the vkInstance can access
-    auto physical_devices_result = instance->getVulkanInstance().enumeratePhysicalDevices();
-    ASSERT_VULKAN(physical_devices_result.result, "Failed to enumerate Vulkan physical devices!");
-    std::vector<vk::PhysicalDevice> device_list = physical_devices_result.value;
+    std::vector<vk::PhysicalDevice> device_list =
+      vkCheck(instance->getVulkanInstance().enumeratePhysicalDevices(), "Failed to enumerate Vulkan physical devices!");
 
     // if no devices available, then none support of Vulkan
     if (device_list.empty()) { spdlog::error("Can not find GPU's that support Vulkan Instance!"); }
@@ -511,7 +510,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     if (result != VK_SUCCESS) {
         spdlog::critical("Failed to create logical device. Vulkan Result: {}", static_cast<int>(result));
     }
-    ASSERT_VULKAN(result, "Failed to create a logical device!");
+    vkCheck(result, "Failed to create a logical device!");
     if (result != VK_SUCCESS || !logical_device) {
         spdlog::critical("Unable to continue without a valid Vulkan logical device.");
         std::abort();
@@ -545,9 +544,8 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
         }
 
         // A failed query must not read as "no presentation support", which misreports device selection.
-        auto presentation_support_result = selectedPhysicalDevice.getSurfaceSupportKHR(index, surface);
-        ASSERT_VULKAN(presentation_support_result.result, "Failed to query surface presentation support!");
-        vk::Bool32 presentation_support = presentation_support_result.value;
+        vk::Bool32 presentation_support = vkCheck(
+          selectedPhysicalDevice.getSurfaceSupportKHR(index, surface), "Failed to query surface presentation support!");
         if (queue_family.queueCount > 0 && presentation_support) {
             indices.presentation_family = static_cast<int>(index);
         }
@@ -567,9 +565,8 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     Kataglyphis::VulkanRendererInternals::SwapChainDetails swapchain_details{};
 
     // Fatal: default-constructed capabilities would silently build a zero-sized swapchain.
-    auto surface_capabilities_result = device.getSurfaceCapabilitiesKHR(surface);
-    ASSERT_VULKAN(surface_capabilities_result.result, "Failed to query surface capabilities!");
-    swapchain_details.surface_capabilities = surface_capabilities_result.value;
+    swapchain_details.surface_capabilities =
+      vkCheck(device.getSurfaceCapabilitiesKHR(surface), "Failed to query surface capabilities!");
 
     // get list of formats
     auto formats_result = device.getSurfaceFormatsKHR(surface);

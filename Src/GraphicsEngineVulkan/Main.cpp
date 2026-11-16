@@ -105,7 +105,7 @@ auto main(int argc, char **argv) -> int
     std::cout << "A value given by the Rust bridge function " << value << "\n";
     spdlog::default_logger_raw()->log(spdlog::level::info, std::string("Rust extern value: ") + std::to_string(value));
 
-    // No try/catch: exceptions are disabled project-wide and ASSERT_VULKAN aborts on fatal failures.
+    // No try/catch: exceptions are disabled project-wide and vkCheck aborts on fatal failures.
     const int result = Kataglyphis::App::run();
     spdlog::shutdown();
     return result;

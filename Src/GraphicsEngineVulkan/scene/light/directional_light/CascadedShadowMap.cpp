@@ -242,9 +242,8 @@ void CascadedShadowMap::buildGraphicsPipeline()
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
-    auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(layoutRes.result, "Failed to create shadow map pipeline layout!");
-    pipelineLayout = layoutRes.value;
+    pipelineLayout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo),
+      "Failed to create shadow map pipeline layout!");
 
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =

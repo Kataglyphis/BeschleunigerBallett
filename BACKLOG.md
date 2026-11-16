@@ -133,8 +133,6 @@ committed to.
 
 ## C++ engine ideas
 
-- **[P3] A `vkCheck()` helper** for the `auto r = device...createX(info); ASSERT_VULKAN(...);`
-  idiom (52 sites, about 20 files). A whole-codebase sweep, so it wants a deliberate moment.
 - **[P3] `GUI*` is a mutable cross-cutting dependency**: `VulkanRenderer` reads GUI state each
   frame. An app-owned settings struct passed by const reference would decouple them.
 - **[P3] A stage registry**, so adding a pass does not mean editing `VulkanRenderer`. (A

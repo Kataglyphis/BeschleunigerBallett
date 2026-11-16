@@ -1,20 +1,34 @@
 #pragma once
 
 #include <cstdlib>
+#include <string_view>
+#include <utility>
 
 #include "host_device_shared_vars.hpp"
 #include <spdlog/spdlog.h>
+#include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis {
-// Aborts on failure (exceptions are disabled); evaluates val exactly once, as a single statement.
-#define ASSERT_VULKAN(val, error_string)                                       \
-    do {                                                                       \
-        const vk::Result assert_vulkan_result_ = static_cast<vk::Result>(val); \
-        if (assert_vulkan_result_ != vk::Result::eSuccess) {                   \
-            spdlog::critical(error_string);                                    \
-            std::abort();                                                      \
-        }                                                                      \
-    } while (false)
+// Exceptions are disabled, so a failed creation/allocation call logs critical and aborts instead of throwing.
+[[noreturn]] inline void vkFail(std::string_view message)
+{
+    spdlog::critical(message);
+    std::abort();
+}
+
+inline void vkCheck(vk::Result result, std::string_view message)
+{
+    if (result != vk::Result::eSuccess) { vkFail(message); }
+}
+
+inline void vkCheck(VkResult result, std::string_view message) { vkCheck(static_cast<vk::Result>(result), message); }
+
+// Unwraps a vulkan.hpp ResultValue, so a call site cannot read .value without checking .result.
+template<typename T> [[nodiscard]] auto vkCheck(vk::ResultValue<T> &&resultValue, std::string_view message) -> T
+{
+    vkCheck(resultValue.result, message);
+    return std::move(resultValue.value);
+}
 
 // Debug always validates; a Release build when KATAGLYPHIS_VULKAN_VALIDATION is set, as the Windows lavapipe lane does.
 inline bool validationLayersEnabled()

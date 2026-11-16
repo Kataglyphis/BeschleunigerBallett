@@ -278,9 +278,8 @@ void Kataglyphis::Texture::createTextureSampler(const std::shared_ptr<VulkanDevi
       compareEnable,
       compareOp);
 
-    vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(samplerInfo);
-    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!");
-    textureSampler = sampler_result.value;
+    textureSampler =
+      vkCheck(device->getLogicalDevice().createSampler(samplerInfo), "Failed to create texture sampler!");
 }
 
 void Kataglyphis::Texture::releaseImageView() { vulkanImageView.cleanUp(); }

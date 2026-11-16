@@ -192,6 +192,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
+  a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
+  failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
 - OxidANT moves to `78303c2`. The C++ path tracer imports its shared `common/path_estimator.slang`
   (RNG, seed, Russian roulette, the bounce) instead of keeping copies, and a bounce weights by
   `brdf_sampled`, Epic's Smith remap for sampled light (`k = alpha / 2`): a white metal at

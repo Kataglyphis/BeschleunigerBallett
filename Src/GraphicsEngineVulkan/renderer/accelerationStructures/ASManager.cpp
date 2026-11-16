@@ -186,9 +186,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
     vk::QueryPoolCreateInfo query_pool_create_info{};
     query_pool_create_info.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
     query_pool_create_info.queryCount = count;
-    vk::ResultValue<vk::QueryPool> query_pool_result = logical.createQueryPool(query_pool_create_info);
-    ASSERT_VULKAN(query_pool_result.result, "Failed to create query pool for BLAS compaction!");
-    vk::QueryPool const query_pool = query_pool_result.value;
+    vk::QueryPool const query_pool =
+      vkCheck(logical.createQueryPool(query_pool_create_info), "Failed to create query pool for BLAS compaction!");
 
     std::vector<vk::AccelerationStructureKHR> handles;
     handles.reserve(count);
@@ -258,10 +257,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
         create_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
         create_info.size = compacted_sizes[i];
         create_info.buffer = compacted[i].vulkanBuffer.getBuffer();
-        vk::ResultValue<vk::AccelerationStructureKHR> compacted_as_result =
-          logical.createAccelerationStructureKHR(create_info);
-        ASSERT_VULKAN(compacted_as_result.result, "Failed to create compacted acceleration structure!");
-        compacted[i].vulkanAS = compacted_as_result.value;
+        compacted[i].vulkanAS = vkCheck(
+          logical.createAccelerationStructureKHR(create_info), "Failed to create compacted acceleration structure!");
 
         vk::CopyAccelerationStructureInfoKHR copy_info{};
         copy_info.src = blas[first + i].vulkanAS;
@@ -420,10 +417,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     acceleration_structure_create_info.deviceAddress = 0;
 
     vk::AccelerationStructureKHR &tlAS = tlas.vulkanAS;
-    vk::ResultValue<vk::AccelerationStructureKHR> tlas_result =
-      device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
-    ASSERT_VULKAN(tlas_result.result, "Failed to create top-level acceleration structure!");
-    tlAS = tlas_result.value;
+    tlAS = vkCheck(device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info),
+      "Failed to create top-level acceleration structure!");
 
     VulkanBuffer scratchBuffer;
 
@@ -514,10 +509,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(const std
 
     acceleration_structure_create_info.buffer = blasVulkanBuffer.getBuffer();
     vk::AccelerationStructureKHR &blas_as = build_as_structure.single_blas.vulkanAS;
-    vk::ResultValue<vk::AccelerationStructureKHR> blas_result =
-      device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
-    ASSERT_VULKAN(blas_result.result, "Failed to create bottom-level acceleration structure!");
-    blas_as = blas_result.value;
+    blas_as = vkCheck(device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info),
+      "Failed to create bottom-level acceleration structure!");
 
     build_as_structure.build_info.dstAccelerationStructure = blas_as;
     build_as_structure.build_info.scratchData.deviceAddress = scratch_device_or_host_address;

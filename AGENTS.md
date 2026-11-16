@@ -1017,8 +1017,10 @@ OFF, so none of them fetches Kompute's `fmt`.
 - **Exceptions are disabled project-wide** (`/EHs-`, `-fno-exceptions` in
   `cmake/ProjectOptions.cmake`; `VULKAN_HPP_NO_EXCEPTIONS` in
   `Src/GraphicsEngineVulkan/CMakeLists.txt`): vulkan.hpp calls return `ResultValue`; `throw`/`try`
-  will not compile. `ASSERT_VULKAN(val, "msg")` (`common/Utilities.hpp`) logs critical and aborts;
-  use it on creation/allocation calls only.
+  will not compile. `x = vkCheck(device.createX(info), "msg")` (`common/Utilities.hpp`) unwraps a
+  `ResultValue`, and `vkCheck(result, "msg")` takes a bare `vk::Result`/`VkResult`; both log critical
+  and abort on failure. Use them on creation/allocation calls only (`BuildIntegrity` rejects the
+  retired `ASSERT_VULKAN` macro).
 - Graphics pipelines are built via `kataglyphis.vulkan.pipeline_builder`
   (`vulkan_base/PipelineBuilder.ixx`); do not hand-roll the create-info chain. A pipeline names
   its pass's attachment formats (`setRenderingFormats`, `setViewMask`), not a render pass.

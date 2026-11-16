@@ -61,7 +61,7 @@ class DescriptorSetGroup
     // on an already-created instance replaces rather than leaks it. Logs and
     // returns false if called without bindings, with zero sets, or with a
     // duplicate binding number, before anything is created; every later
-    // failure goes through ASSERT_VULKAN, which logs critical and aborts, so
+    // failure goes through vkCheck, which logs critical and aborts, so
     // there is no partial-cleanup path.
     [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device,// DEVICE_SINK_OK: moved into member
       uint32_t set_count);

@@ -86,9 +86,8 @@ void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_de
 
     const VkImageCreateInfo &c_image_create_info = static_cast<const VkImageCreateInfo &>(image_create_info);
     VkImage c_image = VK_NULL_HANDLE;
-    ASSERT_VULKAN(
-      vmaCreateImage(
-        device->getVmaAllocator(), &c_image_create_info, &allocation_create_info, &c_image, &allocation, nullptr),
+    vkCheck(vmaCreateImage(
+              device->getVmaAllocator(), &c_image_create_info, &allocation_create_info, &c_image, &allocation, nullptr),
       "Failed to create image via VMA!");
 
     image = c_image;

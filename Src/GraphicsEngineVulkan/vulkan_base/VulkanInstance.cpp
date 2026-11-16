@@ -75,9 +75,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     create_info.ppEnabledExtensionNames = instance_extensions.data();
 
     // create instance
-    vk::ResultValue<vk::Instance> instance_result = vk::createInstance(create_info);
-    ASSERT_VULKAN(instance_result.result, "Failed to create vulkan instance!");
-    instance = instance_result.value;
+    instance = vkCheck(vk::createInstance(create_info), "Failed to create vulkan instance!");
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 

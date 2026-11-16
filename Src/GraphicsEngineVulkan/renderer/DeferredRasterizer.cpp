@@ -182,10 +182,8 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
       buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    vk::ResultValue<vk::PipelineLayout> geometry_pipeline_layout_result =
-      device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(geometry_pipeline_layout_result.result, "Failed to create deferred geometry pipeline layout!");
-    geometryPipelineLayout = geometry_pipeline_layout_result.value;
+    geometryPipelineLayout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo),
+      "Failed to create deferred geometry pipeline layout!");
 
     PipelineBuilder geometryPipelineBuilder;
     geometryPipeline =
@@ -206,10 +204,8 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo = buildPipelineLayoutCreateInfo(descriptorSetLayouts);
 
-    vk::ResultValue<vk::PipelineLayout> lighting_pipeline_layout_result =
-      device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo);
-    ASSERT_VULKAN(lighting_pipeline_layout_result.result, "Failed to create deferred lighting pipeline layout!");
-    lightingPipelineLayout = lighting_pipeline_layout_result.value;
+    lightingPipelineLayout = vkCheck(device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo),
+      "Failed to create deferred lighting pipeline layout!");
 
     PipelineBuilder lightingPipelineBuilder;
     lightingPipeline = lightingPipelineBuilder

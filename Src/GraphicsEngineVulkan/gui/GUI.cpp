@@ -1600,9 +1600,8 @@ void GUI::create_gui_context(Window *frontend_window,
     gui_pool_info.poolSizeCount = static_cast<uint32_t>(gui_pool_sizes.size());
     gui_pool_info.pPoolSizes = gui_pool_sizes.data();
 
-    auto pool_result = device->getLogicalDevice().createDescriptorPool(gui_pool_info);
-    ASSERT_VULKAN(pool_result.result, "Failed to create a gui descriptor pool!");
-    gui_descriptor_pool = pool_result.value;
+    gui_descriptor_pool = vkCheck(
+      device->getLogicalDevice().createDescriptorPool(gui_pool_info), "Failed to create a gui descriptor pool!");
 
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 

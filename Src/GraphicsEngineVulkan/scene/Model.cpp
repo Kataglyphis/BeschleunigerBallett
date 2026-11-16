@@ -83,9 +83,8 @@ void Model::addSampler(const Texture &newTexture, const GltfSamplerDesc &sampler
       resolveMaxAnisotropy(aniso, device->maxSamplerAnisotropy()),
       vk::BorderColor::eFloatOpaqueBlack);
 
-    vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
-    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!");
-    vk::Sampler newSampler = sampler_result.value;
+    vk::Sampler newSampler =
+      vkCheck(device->getLogicalDevice().createSampler(sampler_create_info), "Failed to create texture sampler!");
 
     ownedSamplerKeys.push_back(key);
     ownedSamplers.push_back(newSampler);

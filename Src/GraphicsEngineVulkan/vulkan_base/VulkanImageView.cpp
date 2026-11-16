@@ -53,9 +53,7 @@ void Kataglyphis::VulkanImageView::create(const std::shared_ptr<VulkanDevice> &i
       Kataglyphis::buildImageViewCreateInfo(image, format, aspect_flags, mip_levels, view_type, array_layers);
 
     // VULKAN_HPP_NO_EXCEPTIONS: an unchecked failure stores a null view and surfaces as UB later, so fail fast.
-    auto imageViewResult = device->getLogicalDevice().createImageView(view_create_info);
-    ASSERT_VULKAN(imageViewResult.result, "Failed to create image view!");
-    imageView = imageViewResult.value;
+    imageView = vkCheck(device->getLogicalDevice().createImageView(view_create_info), "Failed to create image view!");
 }
 
 void Kataglyphis::VulkanImageView::cleanUp()

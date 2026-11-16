@@ -86,9 +86,8 @@ bool Kataglyphis::DescriptorSetGroup::create(
     layout_create_info.bindingCount = static_cast<uint32_t>(bindings.size());
     layout_create_info.pBindings = bindings.data();
 
-    auto layout_result = device->getLogicalDevice().createDescriptorSetLayout(layout_create_info);
-    ASSERT_VULKAN(layout_result.result, "Failed to create a descriptor set layout!");
-    layout = layout_result.value;
+    layout = vkCheck(device->getLogicalDevice().createDescriptorSetLayout(layout_create_info),
+      "Failed to create a descriptor set layout!");
 
     // -- pool (sizes derived per descriptor type: binding count * set count)
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);
@@ -98,9 +97,8 @@ bool Kataglyphis::DescriptorSetGroup::create(
     pool_create_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
     pool_create_info.pPoolSizes = pool_sizes.data();
 
-    auto pool_result = device->getLogicalDevice().createDescriptorPool(pool_create_info);
-    ASSERT_VULKAN(pool_result.result, "Failed to create a descriptor pool!");
-    pool = pool_result.value;
+    pool =
+      vkCheck(device->getLogicalDevice().createDescriptorPool(pool_create_info), "Failed to create a descriptor pool!");
 
     // -- sets
     std::vector<vk::DescriptorSetLayout> set_layouts(set_count, layout);
@@ -110,9 +108,8 @@ bool Kataglyphis::DescriptorSetGroup::create(
     set_alloc_info.descriptorSetCount = set_count;
     set_alloc_info.pSetLayouts = set_layouts.data();
 
-    auto alloc_result = device->getLogicalDevice().allocateDescriptorSets(set_alloc_info);
-    ASSERT_VULKAN(alloc_result.result, "Failed to allocate descriptor sets!");
-    descriptor_sets = alloc_result.value;
+    descriptor_sets =
+      vkCheck(device->getLogicalDevice().allocateDescriptorSets(set_alloc_info), "Failed to allocate descriptor sets!");
 
     return true;
 }

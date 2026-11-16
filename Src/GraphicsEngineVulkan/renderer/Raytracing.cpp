@@ -181,10 +181,8 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
       buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
-      device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create raytracing pipeline layout!");
-    pipeline_layout = pipeline_layout_result.value;
+    pipeline_layout = vkCheck(device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info),
+      "Failed to create raytracing pipeline layout!");
 
     vk::PipelineLibraryCreateInfoKHR pipeline_library_create_info{};
     pipeline_library_create_info.libraryCount = 0;
@@ -206,7 +204,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
       nullptr,
       &graphicsPipeline,
       VULKAN_HPP_DEFAULT_DISPATCHER);
-    ASSERT_VULKAN(result2, "Failed to create raytracing pipeline!");
+    vkCheck(result2, "Failed to create raytracing pipeline!");
 
     device->getLogicalDevice().destroyShaderModule(raygen_shader_module);
     device->getLogicalDevice().destroyShaderModule(raymiss_shader_module);
@@ -234,7 +232,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     vk::Result result = device->getLogicalDevice().getRayTracingShaderGroupHandlesKHR(
       graphicsPipeline, 0, group_count, sbt_size, handles.data(), VULKAN_HPP_DEFAULT_DISPATCHER);
-    ASSERT_VULKAN(result, "Failed to get ray tracing shader group handles!");
+    vkCheck(result, "Failed to get ray tracing shader group handles!");
 
     const vk::BufferUsageFlags bufferUsageFlags =
       vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
