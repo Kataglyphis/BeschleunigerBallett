@@ -53,6 +53,7 @@ impl TimedPass {
             TimedPass::PathTrace => "PathTrace",
             TimedPass::TraceResolve => "TraceResolve",
             TimedPass::Fxaa => "Fxaa",
+            TimedPass::DrawCull => "DrawCull",
         }
     }
 }
@@ -142,7 +143,14 @@ impl TimedPass {
     foreach ($pass in @('GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')) {
       ($json.Rust -contains $pass) | Should Be $false
     }
-    ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap'
+    ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap,DrawCull'
+  }
+
+  It 'requires DrawCull, which every forward frame with draws records' {
+    $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
+    $result.ExitCode | Should Be 0
+    $json = $result.Output | ConvertFrom-Json
+    ($json.Rust -contains 'DrawCull') | Should Be $true
   }
 
   It 'exits non-zero when a source file parses to zero pass names' {
@@ -165,7 +173,8 @@ impl TimedPass {
     "Ssao": 0.4,
     "Histogram": 0.5,
     "ExposureReduce": 0.6,
-    "Tonemap": 0.7
+    "Tonemap": 0.7,
+    "DrawCull": 0.8
   }
 }
 '@ | Set-Content -Path (Join-Path $outDir 'gpu-timings-rust.json')
@@ -194,7 +203,8 @@ impl TimedPass {
     "Ssao": 0.4,
     "Histogram": 0.5,
     "ExposureReduce": 0.6,
-    "Tonemap": 0.7
+    "Tonemap": 0.7,
+    "DrawCull": 0.8
   }
 }
 '@ | Set-Content -Path (Join-Path $outDir 'gpu-timings-rust.json')

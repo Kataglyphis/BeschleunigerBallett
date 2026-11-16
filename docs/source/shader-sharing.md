@@ -228,6 +228,7 @@ tonemap shader.
 | `compute/noise_volume.slang` | spirv |
 | `deferred/deferred.slang` | spirv |
 | `depth_resolve/depth_resolve.slang` | wgsl |
+| `draw_cull/draw_cull.slang` | wgsl |
 | `forward/forward.slang` | wgsl |
 | `fxaa/fxaa.slang` | wgsl |
 | `gpu_cull/gpu_cull.slang` | wgsl |

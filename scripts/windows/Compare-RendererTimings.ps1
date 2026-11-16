@@ -66,7 +66,7 @@ function Get-ExpectedPassNames {
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $CppExpectedPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
 }
-# dump_gpu_timings renders the forward path with clouds off and no tracer; FXAA runs on deferred frames by default.
+# dump_gpu_timings renders the forward path with clouds off and no tracer (FXAA defaults on for deferred only); DrawCull runs every raster frame.
 $RustOptionalPasses = @('OcclusionCull', 'GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')
 if (-not $PSBoundParameters.ContainsKey('RustExpectedPasses')) {
     $rustAllPasses = Get-ExpectedPassNames -Engine Rust -Path $RustPassSourcePath

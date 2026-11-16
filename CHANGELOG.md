@@ -235,6 +235,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
   a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
   failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
+- OxidANT moves to `216b0a1`. Its Rust renderer draws every scene draw indirectly, from
+  arguments a GPU draw cull writes (frustum and occlusion per draw, casters per cascade; a new
+  `DrawCull` GPU timing pass, which `Compare-RendererTimings.ps1` requires of the Rust dump, as
+  every raster frame with draws records it), and streams material mips by screen-space need. The
+  WGSL-only `draw_cull/draw_cull.slang` joins the imported shader manifest; no crate is added, so
+  the packaged and the wasm demo's licence texts are unchanged. The C++ engine renders as before.
 - OxidANT moves to `026ef42`. Its Rust renderer records every frame through render graph v2
   (derived pass order, culling, pooled and aliased transient targets) and transcodes Basis
   ETC1S/UASTC KTX2 and glTF `KHR_texture_basisu` to BC7, ETC2 or ASTC; the docs site's wasm demo

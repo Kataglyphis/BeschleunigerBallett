@@ -92,9 +92,6 @@ No P0 item is open.
 
 ### P3: low
 
-- [b] `Rust` **Indirect draws** (M, blocked until GPU culling emits indirect draw arguments).
-  Current culling reads visibility back to the CPU and the render pass still calls
-  `draw_indexed`; GPU-generated arguments must replace that readback first.
 - [b] `Rust` **WebXR** (XL) — parked.
 
 ---
@@ -115,7 +112,10 @@ committed to.
 
 ## Rust renderer ideas (OxidANT)
 
-- **[P3] Texture streaming / bindless** for photogrammetry-scale scenes.
+- **[P3] Texture streaming past the mip tail, and bindless** for photogrammetry-scale scenes.
+  OxidANT streams material mips by screen-space need since 216b0a1; open there are eviction,
+  re-uploading only the new level by a GPU copy, and bindless material textures (OxidANT's
+  `BACKLOG.md`, "Texture streaming past the mip tail").
 - **[P3] Golden-image CI** with reference images per GPU vendor, to catch shader regressions the
   driver-independent structural assertions miss.
 
