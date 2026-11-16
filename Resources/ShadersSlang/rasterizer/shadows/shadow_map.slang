@@ -18,7 +18,7 @@ struct ShadowPushConstants
 struct ShadowVsOut
 {
     float4 svPosition : SV_Position;
-    float2 fragUV : TEXCOORD0;
+    float4 fragUV : TEXCOORD0;
     float fragAlpha : TEXCOORD1;
 };
 
@@ -27,11 +27,12 @@ ShadowVsOut shadow_vs_main(
     float3 pos : POSITION,
     [[vk::location(2)]] float4 color : COLOR,
     [[vk::location(3)]] float2 tex_coords : TEXCOORD0,
+    [[vk::location(5)]] float2 tex_coords1 : TEXCOORD1,
     uint viewId : SV_ViewID)
 {
     ShadowVsOut o;
     uint cascade = min(viewId, uint(MAX_CASCADES - 1));
-    o.fragUV = tex_coords;
+    o.fragUV = uv_sets(tex_coords, tex_coords1);
     o.fragAlpha = color.a;
     o.svPosition = mul(mul(lightSpaceMatrices[cascade], pc.model), float4(pos, 1.0));
     return o;
@@ -56,7 +57,7 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
-            float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
+            float alpha = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.fragUV, material)).a;
             if (alpha_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
         }
         else

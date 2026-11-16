@@ -50,10 +50,10 @@ void rchit_main(
     bool frontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;
     float3 facingNormal = frontFace ? worldNormal : -worldNormal;
 
-    // Texture coordinates.
-    float2 texCoords = v0.texture_coords * barycentrics.x
-                     + v1.texture_coords * barycentrics.y
-                     + v2.texture_coords * barycentrics.z;
+    // Both UV sets (base_color.slang's uv_sets).
+    float4 texCoords = uv_sets(v0.texture_coords, v0.texture_coords1) * barycentrics.x
+                     + uv_sets(v1.texture_coords, v1.texture_coords1) * barycentrics.y
+                     + uv_sets(v2.texture_coords, v2.texture_coords1) * barycentrics.z;
 
     float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
 
@@ -63,7 +63,7 @@ void rchit_main(
     {
         int textureId = resolve_texture_slot(obj, material);
         // Explicit LOD: closesthit has no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
-        albedo += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
+        albedo += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], base_color_uv(texCoords, material), 0.0).xyz);
     }
     else
     {

@@ -158,6 +158,43 @@ TEST(PipelineBuilderUnit, MatchesForwardRasterizerCallSite)
     EXPECT_EQ(state.rendering_create_info.depthAttachmentFormat, kDepth);
 }
 
+TEST(PipelineBuilderUnit, CoverageAccumulationKeepsAnOpaquePixelOpaque)
+{
+    const GraphicsPipelineState state = PipelineBuilder()
+                                          .setRenderingFormats({ kColor })
+                                          .setAlphaBlending(true)
+                                          .setCoverageAccumulation(true)
+                                          .buildState();
+    ASSERT_EQ(state.color_states.size(), 1U);
+    const vk::PipelineColorBlendAttachmentState &attachment = state.color_states[0];
+    EXPECT_EQ(attachment.srcColorBlendFactor, vk::BlendFactor::eSrcAlpha);
+    EXPECT_EQ(attachment.dstColorBlendFactor, vk::BlendFactor::eOneMinusSrcAlpha);
+    // alpha = src.a + dst.a * (1 - src.a): 1 over an opaque pixel, src.a over a cleared one.
+    EXPECT_EQ(attachment.srcAlphaBlendFactor, vk::BlendFactor::eOne);
+    EXPECT_EQ(attachment.dstAlphaBlendFactor, vk::BlendFactor::eOneMinusSrcAlpha);
+}
+
+TEST(PipelineBuilderUnit, MatchesTransparentSceneCallSite)
+{
+    // Rasterizer.cpp's buildTransparentScenePipeline: glTF BLEND tests the opaque depth but never writes it.
+    const GraphicsPipelineState state = PipelineBuilder()
+                                          .setAlphaBlending(true)
+                                          .setCoverageAccumulation(true)
+                                          .setDepthWrite(false)
+                                          .setDynamicCulling(true)
+                                          .setRenderingFormats({ kColor }, kDepth)
+                                          .buildState();
+
+    ASSERT_EQ(state.color_states.size(), 1U);
+    EXPECT_EQ(state.color_states[0].blendEnable, VK_TRUE);
+    EXPECT_EQ(state.color_states[0].dstAlphaBlendFactor, vk::BlendFactor::eOneMinusSrcAlpha);
+    EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_TRUE);
+    EXPECT_EQ(state.depth_stencil_create_info.depthWriteEnable, VK_FALSE);
+    EXPECT_EQ(state.depth_stencil_create_info.depthCompareOp, vk::CompareOp::eLess);
+    ASSERT_EQ(state.dynamic_states.size(), 4U);
+    EXPECT_EQ(state.rendering_create_info.depthAttachmentFormat, kDepth);
+}
+
 TEST(PipelineBuilderUnit, MatchesDeferredGeometryCallSite)
 {
     // DeferredRasterizer.cpp geometry pipeline: three G-buffer attachments and depth.

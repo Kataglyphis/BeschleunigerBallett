@@ -23,6 +23,20 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- glTF `alphaMode` `BLEND` composites in forward and deferred: BLEND meshes leave the opaque
+  draws and are drawn last, farthest first by distance to their bounds' centre, alpha-blended
+  with depth test on and depth writes off; deferred shades them forward after the lighting pass,
+  as the Rust renderer does. Ray and path tracing still render BLEND opaque. Over the sky, post
+  composites a BLEND surface at its coverage.
+  `GoldenRender.BlendCardsCompositeInDepthOrderFromBothSides` checks two half-transparent cards
+  over an opaque one from both sides, in both raster modes.
+- glTF `TEXCOORD_1`: the vertex layout carries a second UV set (attribute location 5), the glTF
+  loader reads it (TEXCOORD_0 is copied where a primitive has none, and always for OBJ), and each
+  texture slot samples the set its `texCoord` names, `KHR_texture_transform`'s `texCoord`
+  override included, in forward, deferred, ray and path tracing and the shadow pass. Generated
+  tangents follow the normal texture's set.
+  `GoldenRender.EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode` checks an emissive texture
+  on each set in all four modes.
 - `GoldenRender.TracedSecondModelResolvesItsOwnMeshAndTextures` proves the ray and path tracers'
   per-model object index and texture offset: a second cube must show its own checker after a
   two-mesh first model whose texture is grey.

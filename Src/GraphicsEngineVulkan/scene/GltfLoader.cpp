@@ -85,7 +85,8 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     return model;
 }
 
-TexCoordSetInfo describeTexCoordSet(int texcoord) { return { static_cast<unsigned int>(texcoord), texcoord == 0 }; }
+TexCoordSetInfo describeTexCoordSet(int texcoord)
+{ return { static_cast<unsigned int>(texcoord), texcoord == 0 || texcoord == 1 }; }
 
 namespace {
 
@@ -95,19 +96,23 @@ namespace {
     /// Neutral untextured Lambertian stand-in for primitives with no material.
     ObjMaterial neutralMaterial() { return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = kFallbackShininess }; }
 
-    /// Warns when a texture uses a UV set other than TEXCOORD_0, the only one the vertex layout binds.
-    void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+    /// The UV set a slot samples: KHR_texture_transform's texCoord overrides the view's; TEXCOORD_2+ warns, uses 0.
+    unsigned int slotTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
     {
-        if (view.texture == nullptr) { return; }
-        const TexCoordSetInfo texCoordInfo = describeTexCoordSet(view.texcoord);
+        if (view.texture == nullptr) { return 0U; }
+        const int texcoord =
+          (view.has_transform != 0 && view.transform.has_texcoord != 0) ? view.transform.texcoord : view.texcoord;
+        const TexCoordSetInfo texCoordInfo = describeTexCoordSet(texcoord);
         if (!texCoordInfo.supported) {
             spdlog::warn(
-              "GltfLoader: material '{}' {} texture uses TEXCOORD_{}, but only TEXCOORD_0 is supported; "
+              "GltfLoader: material '{}' {} texture uses TEXCOORD_{}, but only TEXCOORD_0/1 are supported; "
               "sampling with UV0",
               materialName,
               slotLabel,
               texCoordInfo.set);
+            return 0U;
         }
+        return texCoordInfo.set;
     }
 
     /// Top two rows of a KHR_texture_transform T*R*S matrix; the third is always [0,0,1].
@@ -118,7 +123,7 @@ namespace {
     };
 
     /// Identity rows when the slot has no texture or no transform.
-    UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+    UvTransformRows readUvTransform(const cgltf_texture_view &view)
     {
         if (view.texture == nullptr || view.has_transform == 0) { return {}; }
 
@@ -133,17 +138,6 @@ namespace {
         UvTransformRows rows;
         rows.row0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
         rows.row1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
-
-        // The transform's own UV-set override is not applied, so warn instead of dropping it silently.
-        if (transform.has_texcoord != 0 && transform.texcoord != 0) {
-            spdlog::warn(
-              "GltfLoader: material '{}' KHR_texture_transform overrides the {} UV set to "
-              "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
-              materialName,
-              slotLabel,
-              static_cast<unsigned int>(transform.texcoord));
-        }
-
         return rows;
     }
 
@@ -194,15 +188,18 @@ namespace {
           material.emissive_factor[1] * emissiveStrength,
           material.emissive_factor[2] * emissiveStrength);
 
-        // BLEND renders opaque (-1) like OPAQUE: the engine has no sorted transparent pass.
+        // BLEND keeps no cutoff (-1) like OPAQUE; the raster passes composite it instead (alphaBlend).
         const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
-        // KHR_texture_transform is per slot, so each slot reads its own rows.
+        // KHR_texture_transform and texCoord are per slot, so each slot reads its own; slot i is uv1SlotMask bit i.
         const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
         std::array<UvTransformRows, 4> uvTransforms{};
+        int uv1SlotMask = 0;
         for (std::size_t i = 0; i < textureSlots.size(); ++i) {
-            warnUnsupportedTexCoordSet(materialName, *textureSlots[i].view, textureSlots[i].label);
-            uvTransforms[i] = readUvTransform(materialName, *textureSlots[i].view, textureSlots[i].label);
+            if (slotTexCoordSet(materialName, *textureSlots[i].view, textureSlots[i].label) == 1U) {
+                uv1SlotMask |= 1 << i;
+            }
+            uvTransforms[i] = readUvTransform(*textureSlots[i].view);
         }
         const UvTransformRows &baseColorUvTransform = uvTransforms[0];
         const UvTransformRows &metallicRoughnessUvTransform = uvTransforms[1];
@@ -229,6 +226,8 @@ namespace {
             .emissive_uv_transform_row0 = emissiveUvTransform.row0,
             .emissive_uv_transform_row1 = emissiveUvTransform.row1,
             .unlit = (material.unlit != 0) ? 1 : 0,// KHR_materials_unlit
+            .uv1SlotMask = uv1SlotMask,
+            .alphaBlend = (material.alpha_mode == cgltf_alpha_mode_blend) ? 1 : 0,
         };
     }
 
@@ -410,6 +409,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> uvs;
+    std::vector<glm::vec2> uvs1;
     std::vector<glm::vec4> colors;
     std::vector<glm::vec4> tangents;
 
@@ -424,6 +424,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
             break;
         case cgltf_attribute_type_texcoord:
             if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
+            if (attribute->index == 1) { readAttribute<2>(attribute->data, uvs1); }
             break;
         case cgltf_attribute_type_color:
             // COLOR_0 multiplies the base colour, alpha included; absent means white.
@@ -446,13 +447,15 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         const glm::vec3 worldNormal =
           i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
         const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
+        // Without TEXCOORD_1 a slot naming set 1 samples UV0, as the Rust loader does.
+        const glm::vec2 uv1 = i < uvs1.size() ? uvs1[i] : uv;
         const glm::vec4 vcolor = i < colors.size() ? colors[i] : glm::vec4(1.0F);
         // A tangent lies in the surface, so it takes `world`, not normalMatrix; handedness flips with mirroring.
         const glm::vec4 vtangent = i < tangents.size()
                                      ? glm::vec4(glm::normalize(glm::mat3(world) * glm::vec3(tangents[i])),
                                          mirrored ? -tangents[i].w : tangents[i].w)
                                      : glm::vec4(0.0F);
-        vertices.emplace_back(worldPos, worldNormal, vcolor, uv, vtangent);
+        vertices.emplace_back(worldPos, worldNormal, vcolor, uv, vtangent, uv1);
     }
 
     // A non-indexed primitive uses the implicit sequence 0..N-1.
@@ -514,12 +517,16 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // The glTF spec requires flat normals when NORMAL is absent; this must follow the winding reversal.
     if (normals.empty()) { vertex::computeFlatNormals(vertices, indices, primIndexStart); }
 
-    // Generated only when TANGENT is absent, after the final normals exist.
-    if (tangents.empty()) { vertex::computeTangents(vertices, indices, primIndexStart); }
-
     const unsigned int primitiveMaterial = primitive->material != nullptr
                                              ? static_cast<unsigned int>(primitive->material - data->materials)
                                              : fallbackMaterial;
+
+    // Generated only when TANGENT is absent, after the final normals exist, from the normal texture's UV set.
+    if (tangents.empty()) {
+        const bool normalOnUv1 = (materials[primitiveMaterial].uv1SlotMask & (1 << UV1_SLOT_NORMAL)) != 0;
+        vertex::computeTangents(vertices, indices, primIndexStart, normalOnUv1 ? 1U : 0U);
+    }
+
     // One id per emitted triangle: the raw index count over-counts strips and fans.
     const std::size_t triStart = materialIndex.size();
     const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
@@ -527,13 +534,16 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
 
     // This primitive's slice of the flat arrays, built as its own mesh.
     const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
+    const bool alphaBlended =
+      primitive->material != nullptr && primitive->material->alpha_mode == cgltf_alpha_mode_blend;
     meshRanges.push_back(MeshRange{ static_cast<std::size_t>(base),
       positions.size(),
       primIndexStart,
       indices.size() - primIndexStart,
       triStart,
       emittedTriangles,
-      doubleSided });
+      doubleSided,
+      alphaBlended });
 }
 
 void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial)

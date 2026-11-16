@@ -46,9 +46,9 @@ void fillMissingFlatNormals(std::span<Vertex> vertices, std::span<const unsigned
     }
 }
 
-auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescription, 5>
+auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescription, VERTEX_ATTRIBUTE_COUNT>
 {
-    std::array<vk::VertexInputAttributeDescription, 5> attribute_describtions{};
+    std::array<vk::VertexInputAttributeDescription, VERTEX_ATTRIBUTE_COUNT> attribute_describtions{};
 
     attribute_describtions[0] =
       vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
@@ -65,12 +65,19 @@ auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescrip
     attribute_describtions[4] =
       vk::VertexInputAttributeDescription(4, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, tangent));
 
+    attribute_describtions[5] =
+      vk::VertexInputAttributeDescription(5, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texture_coords1));
+
     return attribute_describtions;
 }
 
 // Lengyel tangents with glTF handedness in .w; not MikkTSpace, so a mirrored UV seam gets one averaged frame.
-void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
+void computeTangents(std::span<Vertex> vertices,
+  std::span<const unsigned int> indices,
+  std::size_t firstIndex,
+  unsigned int uvSet)
 {
+    const auto uvOf = [uvSet](const Vertex &v) { return uvSet == 1U ? v.texture_coords1 : v.texture_coords; };
     if (firstIndex + 2 >= indices.size()) { return; }
 
     // Size accumulators to the referenced range: called per primitive over the growing array, full size is quadratic.
@@ -96,8 +103,8 @@ void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> i
 
         const glm::vec3 e1 = v1.position - v0.position;
         const glm::vec3 e2 = v2.position - v0.position;
-        const glm::vec2 d1 = v1.texture_coords - v0.texture_coords;
-        const glm::vec2 d2 = v2.texture_coords - v0.texture_coords;
+        const glm::vec2 d1 = uvOf(v1) - uvOf(v0);
+        const glm::vec2 d2 = uvOf(v2) - uvOf(v0);
 
         const float det = (d1.x * d2.y) - (d2.x * d1.y);
         // Zero-area UV triangle: skip it, or its NaN/Inf would survive normalization.

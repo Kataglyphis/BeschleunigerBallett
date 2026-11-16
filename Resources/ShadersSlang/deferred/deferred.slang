@@ -29,9 +29,10 @@ RasterVsOut geometry_vs_main(
     float3 normal : NORMAL,
     float4 color : COLOR,
     float2 tex_coords : TEXCOORD0,
-    float4 tangent : TANGENT)
+    float4 tangent : TANGENT,
+    float2 tex_coords1 : TEXCOORD1)
 {
-    return raster_geometry_vs(globalUBO, pc_raster, positions, normal, color, tex_coords, tangent);
+    return raster_geometry_vs(globalUBO, pc_raster, positions, normal, color, tex_coords, tangent, tex_coords1);
 }
 
 [shader("fragment")]
@@ -51,7 +52,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        texColor = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
+        texColor = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.texCoords, material));
         if (alpha_masked_out(material, texColor.a * In.fragmentColor.a * alphaTexSample)) discard;
         texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }

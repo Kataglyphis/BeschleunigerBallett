@@ -215,6 +215,13 @@ void CascadedShadowMap::buildGraphicsPipeline()
     uvAttr.format = vk::Format::eR32G32Sfloat;
     uvAttr.offset = offsetof(Vertex, texture_coords);
 
+    // TEXCOORD_1 for a base colour on UV set 1; location 5 matches the Vertex texture_coords1 slot.
+    vk::VertexInputAttributeDescription uv1Attr{};
+    uv1Attr.location = 5;
+    uv1Attr.binding = 0;
+    uv1Attr.format = vk::Format::eR32G32Sfloat;
+    uv1Attr.offset = offsetof(Vertex, texture_coords1);
+
     // COLOR_0 alpha too, or a masked shadow silhouette disagrees with the lit one; location 2 is the Vertex color slot.
     vk::VertexInputAttributeDescription colorAttr{};
     colorAttr.location = 2;
@@ -242,7 +249,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
-        .setVertexInput({ bindingDesc }, { posAttr, uvAttr, colorAttr })
+        .setVertexInput({ bindingDesc }, { posAttr, uvAttr, uv1Attr, colorAttr })
         // No culling: the cascade orthos lack the camera's Y flip, so back-face culling dropped the faces that cast.
         .setCullMode(vk::CullModeFlagBits::eNone)
         // Pancake casters in front of the near plane rather than clip them; a wider depth range would scale the bias.
@@ -340,7 +347,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
       commandBuffer,
       scene,
       [](const glm::mat4 & /*modelMatrix*/) {},
-      [&](const AABB &casterBounds) {
+      [&](const AABB &casterBounds, const Mesh * /*mesh*/) {
           if (!cullingEnabled) { return false; }
           for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
               if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) { return false; }

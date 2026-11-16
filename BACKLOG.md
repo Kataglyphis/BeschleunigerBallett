@@ -114,15 +114,6 @@ No P0 item is open.
   before `vulkan_renderer` (`App.cpp`), so `~Scene()` runs its `cleanUp()` after
   `VulkanRenderer::cleanUp()` has destroyed the VMA allocator and the logical device. Benign
   only because the leaf `cleanUp()`s are idempotent.
-- [b] `C++` **glTF loader gaps** (M/L, blocked until a real asset needs them):
-  - *BLEND and sorting* (L): a sorted transparent pass through `PipelineBuilder`'s existing
-    src-alpha blend state, back-to-front ordering and a second draw list. Until then a
-    transparent glTF renders opaque. Defer until a real transparent asset needs it.
-  - *texcoord index* (M/L): the engine `Vertex` carries a single `texture_coords`, so a second
-    UV set means a `TEXCOORD_1` attribute in the vertex layout, every mesh vertex buffer,
-    every shader that reads UVs and both loaders. Defer until a real dual-UV asset needs it.
-  - Adding a field to `ObjMaterial` crosses the C++/Slang module boundary: cold-build after
-    it (delete the build tree, use `-FreshContainer`).
 - [b] `Rust` **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder and a test asset**).
   KTX2 BCn passthrough is done; supercompressed files are rejected with a clear error
   (`ktx2_loader.rs`). The viable transcoder is the `basis-universal` crate, a C++ binding,

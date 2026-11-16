@@ -41,6 +41,12 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setAlphaBlending(boo
     return *this;
 }
 
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setCoverageAccumulation(bool enable)
+{
+    coverage_accumulation = enable;
+    return *this;
+}
+
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setRenderingFormats(
   std::vector<vk::Format> in_color_formats,
   vk::Format in_depth_format)
@@ -140,7 +146,8 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
         color_state.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
         color_state.colorBlendOp = vk::BlendOp::eAdd;
         color_state.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-        color_state.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+        color_state.dstAlphaBlendFactor =
+          coverage_accumulation ? vk::BlendFactor::eOneMinusSrcAlpha : vk::BlendFactor::eZero;
         color_state.alphaBlendOp = vk::BlendOp::eAdd;
     } else {
         color_state.blendEnable = VK_FALSE;

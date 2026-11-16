@@ -76,13 +76,20 @@ multi-mesh model through a per-mesh **`MeshRange`**, a slice of the flat arrays:
 
 ```
 struct MeshRange {
-    vertexBase, vertexCount, indexStart, indexCount, triStart, triCount, doubleSided
+    vertexBase, vertexCount, indexStart, indexCount, triStart, triCount, doubleSided, alphaBlended
 };
 ```
 
 `doubleSided` carries glTF `material.doubleSided` per range, so `uploadParsed`
 hands it to `add_new_mesh` and the raster pass can disable back-face culling
-for that mesh alone; it is always `false` for OBJ, which has no such concept.
+for that mesh alone. `alphaBlended` carries `alphaMode` `BLEND` the same way
+(`Mesh::isAlphaBlended`): the opaque forward and deferred draws skip the mesh,
+and `collectBlendDraws` (`renderer/MeshDrawRecorder.cpp`) draws it after them,
+farthest first by the squared distance from the eye to its world-bounds centre,
+through `buildTransparentScenePipeline` (src-alpha blending that accumulates
+coverage, depth test on, depth writes off). Deferred shades it forward after
+the lighting pass, against the geometry pass's depth. Both are always `false`
+for OBJ, which has neither concept; an OBJ `d` below 1 stays opaque.
 
 The type lives in its own module, `kataglyphis.vulkan.mesh_range`
 (`scene/MeshRange.ixx`), `export import`ed by both loaders. It exports
@@ -143,23 +150,25 @@ field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 | `diffuse` | `pbrMetallicRoughness.baseColorFactor.rgb`; `(0.8, 0.8, 0.8)` if the material has no `pbrMetallicRoughness` block | `Kd` | `rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang` (untextured fallback / `base_color()` blend) |
 | `emission` | `emissiveFactor`, scaled by `KHR_materials_emissive_strength` when present (`1.0` otherwise) | `Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `shininess` | — (pinned to `1.0`, the OBJ-only fallback `material_roughness()` falls back to; `roughness_factor` is not read here) | `Ns` | `material_rules.slang`'s `material_roughness()`, OBJ materials only |
-| `dissolve` | `baseColorFactor.a` | `d` | `material_rules.slang`'s `alpha_masked_out()` |
+| `dissolve` | `baseColorFactor.a` | `d` | `material_rules.slang`'s `alpha_masked_out()` and, for BLEND, `blend_coverage()` |
 | `textureID` | dedup'd slot into `textureImages` (`imageSlot` map, keyed on `(const cgltf_image *, const cgltf_sampler *, bool srgb)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on `(resolved texture path, bool srgb)`) | all five entry points, via `texture_offset + material.textureID` (see below) |
 | `sampler` (not an `ObjMaterial` field — tracked separately, index-parallel with `textureImages`, via `GltfLoader::getTextureSamplerDescs()`) | `textures[].sampler`'s wrap modes and mag/min/mipmap filters, mapped to `GltfSamplerDesc` (`vulkan_base/SamplerBuilder.ixx`) | — (OBJ has no sampler concept; every OBJ texture keeps the repeat/linear/linear default) | `Model::addSampler`, when building the texture's `vk::Sampler` |
 | `srgb` (not an `ObjMaterial` field — tracked separately, index-parallel with `textures`/`textureImages`, via `ObjLoader::getTextureSrgbFlags()`/`GltfLoader::getTextureSrgbFlags()`) | `true` for base-colour/emissive views, `false` for the normal and metallic-roughness views | `true` for `map_Kd`/`map_Ke`, `false` for `norm`/`map_Bump`/`map_d` | `Texture::createFromMemory`/`createFromFile`, selecting `eR8G8B8A8Srgb` vs. `eR8G8B8A8Unorm` |
 | `alphaCutoff` | `material.alpha_cutoff` when `alphaMode == MASK`, else `-1` | — | `material_rules.slang`'s `alpha_masked_out()`, `shadow_map.slang` |
-| `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture (the extension is per-slot — see the normal/metallic-roughness/emissive row pairs below for the other three); identity rows if the extension is absent on this slot | — | `base_color.slang`'s `transform_uv()` |
+| `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture (the extension is per-slot — see the normal/metallic-roughness/emissive row pairs below for the other three); identity rows if the extension is absent on this slot | — | `base_color.slang`'s `base_color_uv()` |
 | `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]` | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`), `path_tracing.slang` (`f0` and `brdf_direct`, for NEE and the sampled lobes) |
 | `roughness` | `pbrMetallicRoughness.roughnessFactor`, clamped `[0,1]`; `-1` sentinel ("unauthored") when the material has no `pbrMetallicRoughness` block | — | `material_rules.slang`'s `material_roughness()` |
 | `emissiveTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID` — an emissive view naming the same `(image, sampler)` pair as the base-colour view lands on the same slot); `-1` if the material has no `emissiveTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=true)`); `-1` if the material has no `map_Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `normalTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID`/`emissiveTextureID`); `-1` if the material has no `normalTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=false)`); `norm` preferred over `map_Bump`/`map_bump`/`bump` when both are present; `-1` if the material has neither directive | all four shading paths, via `common/normal_map.slang`'s `apply_normal_map()`, using `Vertex::tangent` for the TBN basis |
 | `normalScale` | `normalTexture.scale`, guarded on the texture pointer (cgltf zero-initialises the field when there is no `normalTexture`); `1.0` if the material has no `normalTexture` | the winning normal-directive's own `-bm` option (`norm`'s if present, else `map_Bump`/`map_bump`/`bump`'s); `1.0` if neither directive is present | `common/normal_map.slang`'s `apply_normal_map()` |
 | `metallicRoughnessTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID`/`emissiveTextureID`/`normalTextureID`), uploaded linear; `-1` if the material has no `pbrMetallicRoughness` block or no `metallicRoughnessTexture` | — | `material_rules.slang`'s `material_metallic_roughness()` in all four shading paths; `path_tracing.slang` uses the metallic (`.x`) half only, having no roughness term |
-| `normal_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on the `normalTexture`; identity rows if the extension is absent on this slot | — | the normal sample in all four shading paths, via `base_color.slang`'s `transform_uv(uv, row0, row1)` |
-| `metallic_roughness_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on `pbrMetallicRoughness.metallicRoughnessTexture`; identity rows if the extension is absent on this slot | — | the metallic-roughness sample in all four shading paths, via `base_color.slang`'s `transform_uv(uv, row0, row1)` |
-| `emissive_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on `emissiveTexture`; identity rows if the extension is absent on this slot | — | the emissive sample in all four shading paths, via `base_color.slang`'s `transform_uv(uv, row0, row1)` |
+| `normal_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on the `normalTexture`; identity rows if the extension is absent on this slot | — | the normal sample in all four shading paths, via `base_color.slang`'s `normal_uv()` |
+| `metallic_roughness_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on `pbrMetallicRoughness.metallicRoughnessTexture`; identity rows if the extension is absent on this slot | — | the metallic-roughness sample in all four shading paths, via `base_color.slang`'s `metallic_roughness_uv()` |
+| `emissive_uv_transform_row0` / `_row1` | `KHR_texture_transform`'s T\*R\*S rows on `emissiveTexture`; identity rows if the extension is absent on this slot | — | the emissive sample in all four shading paths, via `base_color.slang`'s `emissive_uv()` |
 | `unlit` | `1` if the material declares `KHR_materials_unlit`, else `0` | — (`.mtl` has no unlit concept) | all four shading paths return the base colour unshaded when set: `rasterizer.slang`/`raytrace.rchit.slang` return early, `deferred.slang` carries the flag through `outAlbedo.a`, `path_tracing.slang` terminates the path at the hit |
 | `alphaTextureID` | — (glTF carries opacity in `baseColorTexture.a`, not a separate texture slot) | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=false)`); `-1` if the material has no `map_d` | `rasterizer.slang`, `deferred.slang`, `shadow_map.slang`, `common/alpha_test.slang`, sampled `.r` at the base-colour UV and folded into the alpha `material_rules.slang`'s `alpha_masked_out()` tests |
+| `uv1SlotMask` | bit per slot (0 base colour, 1 metallic-roughness, 2 normal, 3 emissive) whose `texCoord` is 1; `KHR_texture_transform`'s `texCoord` overrides the textureInfo's; TEXCOORD_2+ warns and stays on 0 | — (`0`: `ObjLoader` copies UV0 into `texture_coords1`, so either set samples the same) | every texture sample, via `base_color.slang`'s `slot_uv()`; `map_d` follows the base-colour bit |
+| `alphaBlend` | `1` when `alphaMode == BLEND`, else `0` | — | `material_rules.slang`'s `blend_coverage()`, the forward shader's output alpha; the tracers ignore it and render BLEND opaque |
 
 ## Textures, samplers and the 128-slot budget
 
@@ -210,6 +219,12 @@ budget:
   `clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1)`,
   so a model that pushes the total past budget samples a wrong (but in-bounds)
   slot instead of reading out of the descriptor array.
+
+Both loaders fill `Vertex::texture_coords1`, the second UV set (vertex
+attribute location 5): `GltfLoader::processPrimitive` reads `TEXCOORD_1` and
+copies TEXCOORD_0 where a primitive has none, as the Rust loader does;
+`ObjLoader` always copies. When a glTF primitive has no `TANGENT`,
+`computeTangents` builds the frame from the UV set its normal texture samples.
 
 Both loaders also emit per-vertex colours (glTF `COLOR_0` in
 `GltfLoader::processPrimitive`'s attribute switch; OBJ `attrib.colors` in

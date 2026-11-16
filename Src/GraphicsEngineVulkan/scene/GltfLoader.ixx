@@ -32,9 +32,9 @@ export import kataglyphis.vulkan.sampler_builder;
 export namespace Kataglyphis {
 
 /// Which UV set a glTF texture view's `texCoord` index names, and whether
-/// this engine can sample it. `Vertex` carries exactly one UV slot (bound to
-/// TEXCOORD_0), so set 0 is the only supported value - anything else names a
-/// channel the geometry does not carry.
+/// this engine can sample it. `Vertex` carries TEXCOORD_0 and TEXCOORD_1, so
+/// sets 0 and 1 are supported - anything higher names a channel the geometry
+/// does not carry and samples UV0.
 struct TexCoordSetInfo
 {
     unsigned int set;
@@ -44,7 +44,7 @@ struct TexCoordSetInfo
 /// Resolves a glTF texture view's `texCoord` index to the UV set it names and
 /// whether `GltfLoader` can sample it. Exported so parse tests can assert the
 /// decision without a device; also the single definition `fromGltfMaterial`
-/// warns from when a material asks for an unsupported set.
+/// builds ObjMaterial::uv1SlotMask from and warns from on an unsupported set.
 TexCoordSetInfo describeTexCoordSet(int texcoord);
 
 /// Loads `.gltf`/`.glb` geometry into the SAME CPU-side arrays `ObjLoader`

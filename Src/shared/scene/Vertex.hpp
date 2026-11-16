@@ -14,6 +14,8 @@ struct Vertex
     glm::vec2 texture_coords;
     // xyz = tangent, w = handedness: bitangent = cross(normal, tangent) * w (glTF). Last, so earlier offsets hold.
     glm::vec4 tangent;
+    // glTF TEXCOORD_1, for slots whose texCoord is 1; a copy of texture_coords for OBJ and for a glTF without it.
+    glm::vec2 texture_coords1;
 
     Vertex() = default;
 
@@ -22,7 +24,18 @@ struct Vertex
       glm::vec4 color,
       glm::vec2 texture_coords,
       glm::vec4 tangent = glm::vec4(0.0F))
-      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent)
+      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent),
+        texture_coords1(texture_coords)
+    {}
+
+    Vertex(glm::vec3 pos,
+      glm::vec3 normal,
+      glm::vec4 color,
+      glm::vec2 texture_coords,
+      glm::vec4 tangent,
+      glm::vec2 texture_coords1)
+      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent),
+        texture_coords1(texture_coords1)
     {}
 
     glm::vec3 get_position() const { return position; }
@@ -30,7 +43,7 @@ struct Vertex
     bool operator==(const Vertex &other) const
     {
         return position == other.position && normal == other.normal && texture_coords == other.texture_coords
-               && color == other.color && tangent == other.tangent;
+               && color == other.color && tangent == other.tangent && texture_coords1 == other.texture_coords1;
     }
 };
 
@@ -52,6 +65,7 @@ template<> struct hash<Vertex>
         seed = combine(seed, hash<glm::vec4>()(vertex.color));
         // Same reasoning as color: tangent participates in operator==.
         seed = combine(seed, hash<glm::vec4>()(vertex.tangent));
+        seed = combine(seed, hash<glm::vec2>()(vertex.texture_coords1));
         return seed;
     }
 };

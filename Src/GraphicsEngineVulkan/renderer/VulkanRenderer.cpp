@@ -1028,12 +1028,14 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
     if (guiRendererSharedVars.rasterizationMode
         == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
-        rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
+        rasterizer.recordCommands(
+          commandBuffer, image_index, scene, rasterizer_descriptor_sets, glm::vec3(sceneUBO.cam_pos), camera_frustum);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
         const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index],
             gbufferDescriptors.sets()[image_index] };
-        deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
+        deferredRasterizer.recordCommands(
+          commandBuffer, image_index, scene, deferred_sets, glm::vec3(sceneUBO.cam_pos), camera_frustum);
     }
 
     // Publish only the path that recorded: the inactive one still holds pre-switch numbers.

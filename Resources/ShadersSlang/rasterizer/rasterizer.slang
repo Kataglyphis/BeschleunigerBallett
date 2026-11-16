@@ -22,9 +22,10 @@ RasterVsOut vs_main(
     float3 normal : NORMAL,
     float4 color : COLOR,
     float2 tex_coords : TEXCOORD0,
-    float4 tangent : TANGENT)
+    float4 tangent : TANGENT,
+    float2 tex_coords1 : TEXCOORD1)
 {
-    return raster_geometry_vs(globalUBO, pc_raster, positions, normal, color, tex_coords, tangent);
+    return raster_geometry_vs(globalUBO, pc_raster, positions, normal, color, tex_coords, tangent, tex_coords1);
 }
 
 [shader("fragment")]
@@ -46,23 +47,27 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     }
 
     float3 albedo;
+    float sampledAlpha = In.fragmentColor.a * alphaTexSample;
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
-        if (alpha_masked_out(material, baseSample.a * In.fragmentColor.a * alphaTexSample)) discard;
+        float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.texCoords, material));
+        sampledAlpha *= baseSample.a;
         albedo = base_color(material, baseSample.xyz);
     }
     else
     {
-        if (alpha_masked_out(material, In.fragmentColor.a * alphaTexSample)) discard;
         albedo = material.diffuse;
     }
+    if (alpha_masked_out(material, sampledAlpha)) discard;
 
     albedo *= In.fragmentColor.rgb;
 
+    // The transparent pass blends BLEND materials by this; every other material covers its pixel.
+    float coverage = blend_coverage(material, sampledAlpha);
+
     // KHR_materials_unlit: skip lighting, shadowing and emissive alike.
-    if (material.unlit != 0) return float4(hdr_safe(albedo), 1.0);
+    if (material.unlit != 0) return float4(hdr_safe(albedo), coverage);
 
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
     float metallic = metallicRoughness.x;
@@ -80,5 +85,5 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);
 
-    return float4(hdr_safe(color), 1.0);
+    return float4(hdr_safe(color), coverage);
 }

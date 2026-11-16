@@ -5,3 +5,7 @@ module;
 export module kataglyphis.vulkan.obj_material;
 
 export using ::ObjMaterial;
+export using ::UV1_SLOT_BASE_COLOR;
+export using ::UV1_SLOT_METALLIC_ROUGHNESS;
+export using ::UV1_SLOT_NORMAL;
+export using ::UV1_SLOT_EMISSIVE;

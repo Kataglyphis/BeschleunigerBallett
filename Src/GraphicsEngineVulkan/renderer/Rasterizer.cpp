@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <glm/glm.hpp>
 #include <span>
 #include <sstream>
 #include <vector>
@@ -48,9 +49,40 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::init(const std::shared_pt
     createGraphicsPipeline(descriptorSetLayouts);
 }
 
+auto Kataglyphis::VulkanRendererInternals::buildTransparentScenePipeline(const std::shared_ptr<VulkanDevice> &device,
+  vk::PipelineLayout layout,
+  vk::Format color_format,
+  vk::Format depth_format) -> vk::Pipeline
+{
+    // Relative path: the engine runs from the repo root.
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
+    ShaderStagePair stages{
+        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv"
+    };
+
+    vk::VertexInputBindingDescription binding_description;
+    binding_description.binding = 0;
+    binding_description.stride = sizeof(Vertex);
+    binding_description.inputRate = vk::VertexInputRate::eVertex;
+    const auto attribute_descriptions = vertex::getVertexInputAttributeDesc();
+
+    PipelineBuilder pipeline_builder;
+    return pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
+      .setVertexInput({ binding_description }, { attribute_descriptions.begin(), attribute_descriptions.end() })
+      .setAlphaBlending(true)
+      // Over an opaque pixel the result stays opaque, so post never blends the sky through it.
+      .setCoverageAccumulation(true)
+      // Tested against the opaque depth, never written: a nearer translucent layer must not hide a farther one.
+      .setDepthWrite(false)
+      .setDynamicCulling(true)
+      .setRenderingFormats({ color_format }, depth_format)
+      .build(device->getLogicalDevice(), layout, device->getPipelineCache());
+}
+
 void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
+    destroyTransparentPipeline();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
     createGraphicsPipeline(descriptor_set_layouts);
 }
@@ -65,6 +97,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
   uint32_t image_index,
   Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
+  const glm::vec3 &eye,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
     // Every draw reads set 0, as Clouds::recordComputeCommands' dispatch does.
@@ -132,6 +165,18 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     meshesDrawn = draw_stats.drawn;
     meshesConsidered = draw_stats.considered;
 
+    // glTF BLEND last, farthest first, over the opaque colour and against its depth.
+    const std::vector<BlendDraw> blend_draws = collectBlendDraws(scene, cameraFrustum, eye);
+    if (!blend_draws.empty()) {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, transparent_pipeline);
+        meshesDrawn += recordBlendDraws(commandBuffer,
+          pipeline_layout,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+          scene,
+          blend_draws,
+          pushConstant);
+    }
+
     commandBuffer.endRendering();
 
     // Both leave for sampling: post reads the colour, the clouds' compute pass the depth.
@@ -162,9 +207,18 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 
     releaseFrameTextures();
 
+    destroyTransparentPipeline();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
 
     device.reset();
+}
+
+void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyTransparentPipeline()
+{
+    if (transparent_pipeline) {
+        device->getLogicalDevice().destroyPipeline(transparent_pipeline);
+        transparent_pipeline = nullptr;
+    }
 }
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
@@ -249,7 +303,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     binding_description.stride = sizeof(Vertex);
     binding_description.inputRate = vk::VertexInputRate::eVertex;
 
-    std::array<vk::VertexInputAttributeDescription, 5> attribute_describtions = vertex::getVertexInputAttributeDesc();
+    const auto attribute_describtions = vertex::getVertexInputAttributeDesc();
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
@@ -268,4 +322,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         .setDynamicCulling(true)
         .setRenderingFormats({ OFFSCREEN_FORMAT }, depth_format)
         .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
+
+    transparent_pipeline = buildTransparentScenePipeline(device, pipeline_layout, OFFSCREEN_FORMAT, depth_format);
 }

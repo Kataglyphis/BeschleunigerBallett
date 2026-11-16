@@ -52,7 +52,19 @@ struct ObjMaterial
 
     // OBJ map_d opacity slot; -1 = none, always for glTF, which keeps opacity in baseColorTexture.a.
     int alphaTextureID{ -1 };
+
+    // Slots sampling TEXCOORD_1, one bit each: 0 base colour (and map_d), 1 metallic-roughness, 2 normal, 3 emissive.
+    int uv1SlotMask{ 0 };
+
+    // glTF BLEND: drawn after the opaque meshes, sorted and alpha-composited; the tracers keep it opaque. 0 = not.
+    int alphaBlend{ 0 };
 };
+
+// Bit positions of ObjMaterial::uv1SlotMask, mirrored by material_textures.slang.
+inline constexpr int UV1_SLOT_BASE_COLOR = 0;
+inline constexpr int UV1_SLOT_METALLIC_ROUGHNESS = 1;
+inline constexpr int UV1_SLOT_NORMAL = 2;
+inline constexpr int UV1_SLOT_EMISSIVE = 3;
 
 // A constructor or base class would silently break designated initializers and the offsetof layout gates.
 static_assert(std::is_aggregate_v<ObjMaterial>,

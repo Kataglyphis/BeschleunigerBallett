@@ -27,6 +27,8 @@ struct MeshRange
     // this mesh only. false for single-sided / absent material (and always
     // false for OBJ, which has no double-sided concept).
     bool doubleSided = false;
+    // glTF alphaMode BLEND for this range's material, forwarded like doubleSided; always false for OBJ.
+    bool alphaBlended = false;
 };
 
 /// The extracted sub-arrays for one range: the range's vertices, its indices

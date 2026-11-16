@@ -31,7 +31,8 @@ class Model
       std::vector<unsigned int> &indices,
       std::vector<unsigned int> &materialIndex,
       std::vector<ObjMaterial> &materials,
-      bool double_sided = false);
+      bool double_sided = false,
+      bool alpha_blended = false);
 
     uint32_t getTextureCount() const { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }

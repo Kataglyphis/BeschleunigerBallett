@@ -1055,13 +1055,16 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "emissive_uv_transform_row0", offsetof(ObjMaterial, emissive_uv_transform_row0) },
             { "emissive_uv_transform_row1", offsetof(ObjMaterial, emissive_uv_transform_row1) },
             { "unlit", offsetof(ObjMaterial, unlit) },
-            { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) } } },
+            { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) },
+            { "uv1SlotMask", offsetof(ObjMaterial, uv1SlotMask) },
+            { "alphaBlend", offsetof(ObjMaterial, alphaBlend) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
             { "color", offsetof(Vertex, color) },
             { "texture_coords", offsetof(Vertex, texture_coords) },
-            { "tangent", offsetof(Vertex, tangent) } } },
+            { "tangent", offsetof(Vertex, tangent) },
+            { "texture_coords1", offsetof(Vertex, texture_coords1) } } },
         { "PushConstantRasterizer_std430",
           { { "model", offsetof(PushConstantRasterizer, model) },
             { "invModelRows", offsetof(PushConstantRasterizer, invModelRows) },
@@ -2621,8 +2624,9 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
     };
     static const std::string kTextures = "textures[";
     static const std::string kSamplers = "textureSamplers[";
-    static const std::array<const char *, 4> kTransformCalls = {
+    static const std::array<const char *, 5> kTransformCalls = {
         "transform_uv(",
+        "base_color_uv(",
         "normal_uv(",
         "metallic_roughness_uv(",
         "emissive_uv(",
@@ -9929,6 +9933,9 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
         { "material_roughness", { "roughness", "shininess" } },
         { "base_color", { "diffuse" } },
         { "transform_uv", { "uv_transform_row0", "uv_transform_row1" } },
+        { "base_color_uv", { "uv_transform_row0", "uv_transform_row1", "uv1SlotMask" } },
+        { "slot_uv", { "uv1SlotMask" } },
+        { "blend_coverage", { "alphaBlend", "dissolve" } },
         { "material_metallic_roughness", { "metallic" } },
         { "sample_metallic_roughness_lod0",
           { "metallic_roughness_uv_transform_row0", "metallic_roughness_uv_transform_row1" } },

@@ -16,6 +16,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.rasterizer;
+import kataglyphis.vulkan.mesh_draw_recorder;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class DeferredRasterizer
@@ -40,6 +41,7 @@ class DeferredRasterizer
 
     void setPushConstant(PushConstantRasterizer push_constant);
 
+    /// `eye` orders the glTF BLEND meshes, shaded forward over the lit result, back to front.
     /// `cameraFrustum` culls meshes whose world-space bounds fall entirely
     /// outside the view. Pass std::nullopt to draw everything - and note that
     /// the SHADOW pass must do exactly that: geometry behind or beside the
@@ -49,6 +51,7 @@ class DeferredRasterizer
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
+      const glm::vec3 &eye,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
     /// Meshes drawn / considered by the most recent recordCommands call.
@@ -107,9 +110,20 @@ class DeferredRasterizer
     vk::Pipeline lightingPipeline{};
     vk::PipelineLayout lightingPipelineLayout{};
 
+    // glTF BLEND meshes after the lighting pass; shares geometryPipelineLayout.
+    vk::Pipeline transparentPipeline{};
+
     void createTextures();
     void releaseFrameTextures();
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
+    void destroyTransparentPipeline();
+    unsigned int recordTransparentPass(vk::CommandBuffer &commandBuffer,
+      uint32_t image_index,
+      Kataglyphis::Scene *scene,
+      std::span<const vk::DescriptorSet> descriptorSets,
+      const std::vector<BlendDraw> &blend_draws,
+      const vk::Extent2D &extent,
+      vk::ImageAspectFlags depth_aspect);
     void createPushConstantRange();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

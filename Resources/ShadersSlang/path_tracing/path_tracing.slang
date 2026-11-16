@@ -245,9 +245,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3 faceNormal = dot(triangleNormal, triangleNormal) > 1e-30 ? normalize(triangleNormal) : hitWorldNormal;
             faceNormal = dot(faceNormal, rayDirection) <= 0.0 ? faceNormal : -faceNormal;
 
-            float2 texCoords = v0.texture_coords * barycentrics.x
-                             + v1.texture_coords * barycentrics.y
-                             + v2.texture_coords * barycentrics.z;
+            float4 texCoords = uv_sets(v0.texture_coords, v0.texture_coords1) * barycentrics.x
+                             + uv_sets(v1.texture_coords, v1.texture_coords1) * barycentrics.y
+                             + uv_sets(v2.texture_coords, v2.texture_coords1) * barycentrics.z;
 
             ObjMaterial material = fetch_material(obj, primitiveID);
 
@@ -275,7 +275,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     int textureId = resolve_texture_slot(obj, material);
                     // Explicit LOD: compute has no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
-                    albedo = base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
+                    albedo = base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], base_color_uv(texCoords, material), 0.0).xyz);
                 }
                 else
                 {

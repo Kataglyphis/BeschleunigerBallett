@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <glm/glm.hpp>
 #include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -48,6 +49,7 @@ void DeferredRasterizer::init(const std::shared_ptr<VulkanDevice> &in_device,
 
 void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
+    destroyTransparentPipeline();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), geometryPipeline, geometryPipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), lightingPipeline, lightingPipelineLayout);
     createPipelines(descriptor_set_layouts);
@@ -112,6 +114,7 @@ void DeferredRasterizer::cleanUp()
     if (!device) { return; }
 
     auto logicalDevice = device->getLogicalDevice();
+    destroyTransparentPipeline();
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, geometryPipeline, geometryPipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, lightingPipeline, lightingPipelineLayout);
 
@@ -121,6 +124,14 @@ void DeferredRasterizer::cleanUp()
 }
 
 DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
+
+void DeferredRasterizer::destroyTransparentPipeline()
+{
+    if (transparentPipeline) {
+        device->getLogicalDevice().destroyPipeline(transparentPipeline);
+        transparentPipeline = nullptr;
+    }
+}
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextures()
 {
@@ -165,7 +176,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     bindingDescription.stride = sizeof(Vertex);
     bindingDescription.inputRate = vk::VertexInputRate::eVertex;
 
-    std::array<vk::VertexInputAttributeDescription, 5> attributeDescriptions = vertex::getVertexInputAttributeDesc();
+    const auto attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
@@ -184,6 +195,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
         .setDynamicCulling(true)
         .setRenderingFormats({ GBUFFER_NORMAL_FORMAT, GBUFFER_ALBEDO_FORMAT, GBUFFER_MATERIAL_FORMAT }, depth_format)
         .build(device->getLogicalDevice(), geometryPipelineLayout, device->getPipelineCache());
+
+    // BLEND has no G-buffer encoding: it is shaded forward over the lit result, as the Rust renderer does.
+    transparentPipeline = buildTransparentScenePipeline(device, geometryPipelineLayout, FINAL_FORMAT, depth_format);
 
     // Lighting Pipeline (Slang-emitted SPIR-V)
     ShaderStagePair lightStages{
@@ -210,10 +224,79 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
                          .build(device->getLogicalDevice(), lightingPipelineLayout, device->getPipelineCache());
 }
 
+unsigned int DeferredRasterizer::recordTransparentPass(vk::CommandBuffer &commandBuffer,
+  uint32_t image_index,
+  Kataglyphis::Scene *scene,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  const std::vector<BlendDraw> &blend_draws,
+  const vk::Extent2D &extent,
+  vk::ImageAspectFlags depth_aspect)
+{
+    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
+    const vk::Image depth_image = depthBufferImage->getImage();
+
+    // The lit colour is blended onto; the depth the lighting pass sampled goes back to an attachment for the test.
+    const std::array<vk::ImageMemoryBarrier2, 2> to_blend = {
+        buildImageMemoryBarrier(offscreen_image,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentWrite,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+          vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite),
+        buildImageMemoryBarrier(depth_image,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::ImageLayout::eDepthStencilAttachmentOptimal,
+          vk::PipelineStageFlagBits2::eFragmentShader,
+          vk::AccessFlagBits2::eNone,
+          vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+          vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+          depth_aspect),
+    };
+    recordImageBarriers(commandBuffer, to_blend);
+
+    const vk::RenderingAttachmentInfo colour_attachment =
+      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::AttachmentLoadOp::eLoad,
+        vk::AttachmentStoreOp::eStore,
+        vk::ClearValue{});
+    // Kept: the clouds stop their march at it.
+    const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(depthBufferImage->getImageView(),
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eLoad,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{});
+    commandBuffer.beginRendering(buildRenderingInfo(
+      extent, std::span<const vk::RenderingAttachmentInfo>(&colour_attachment, 1), &depth_attachment));
+
+    setFullExtentViewportAndScissor(commandBuffer, extent);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, transparentPipeline);
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
+    const unsigned int drawn = recordBlendDraws(
+      commandBuffer, geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, scene, blend_draws, pushConstant);
+
+    commandBuffer.endRendering();
+
+    // Sampleable again for the clouds' compute read, as the geometry pass left it.
+    recordImageBarrier(commandBuffer,
+      buildImageMemoryBarrier(depth_image,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderSampledRead,
+        depth_aspect));
+    return drawn;
+}
+
 void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
   Kataglyphis::Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
+  const glm::vec3 &eye,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
     // Both passes bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
@@ -348,6 +431,12 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     commandBuffer.draw(3, 1, 0, 0);// Fullscreen triangle
 
     commandBuffer.endRendering();
+
+    const std::vector<BlendDraw> blend_draws = collectBlendDraws(scene, cameraFrustum, eye);
+    if (!blend_draws.empty()) {
+        meshesDrawn += recordTransparentPass(
+          commandBuffer, image_index, scene, descriptorSets, blend_draws, swap_chain_extent, depth_aspect);
+    }
 
     // Post samples the lit result.
     recordImageBarrier(commandBuffer,

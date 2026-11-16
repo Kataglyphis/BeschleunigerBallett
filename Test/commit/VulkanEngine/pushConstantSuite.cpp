@@ -133,7 +133,9 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, emissive_uv_transform_row1), 148U);
     EXPECT_EQ(offsetof(ObjMaterial, unlit), 160U);
     EXPECT_EQ(offsetof(ObjMaterial, alphaTextureID), 164U);
-    EXPECT_EQ(sizeof(ObjMaterial), 168U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv1SlotMask), 168U);
+    EXPECT_EQ(offsetof(ObjMaterial, alphaBlend), 172U);
+    EXPECT_EQ(sizeof(ObjMaterial), 176U);
 }
 
 // ObjMaterial is an aggregate, so only the member initializers carry its documented sentinels.

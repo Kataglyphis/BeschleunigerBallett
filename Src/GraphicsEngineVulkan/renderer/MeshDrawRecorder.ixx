@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <optional>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
@@ -34,7 +35,7 @@ struct MeshDrawStats
 ///   rasterization uses it to seed the push constant's model/invModelRows;
 ///   the shadow pass has nothing model-level to precompute and passes a
 ///   no-op.
-/// - `shouldCull(worldBounds)` runs once per mesh (after `onModel`, before
+/// - `shouldCull(worldBounds, mesh)` runs once per mesh (after `onModel`, before
 ///   any draw-related side effect) and returning true skips the mesh.
 ///   Forward rasterization tests one camera frustum; the shadow pass unions
 ///   `isVisibleAsShadowCaster` over every cascade.
@@ -79,7 +80,7 @@ MeshDrawStats walkSceneMeshes(vk::CommandBuffer commandBuffer,
             static const AABB unknownBounds{ glm::vec3(1.0F), glm::vec3(-1.0F) };
             const AABB &meshBounds = mesh != nullptr ? mesh->getBounds() : unknownBounds;
 
-            if (shouldCull(transformAABB(model_matrix, meshBounds))) { continue; }
+            if (shouldCull(transformAABB(model_matrix, meshBounds), static_cast<const Mesh *>(mesh))) { continue; }
 
             onMesh(model_matrix, object_index, mesh);
 
@@ -107,12 +108,40 @@ MeshDrawStats walkSceneMeshes(vk::CommandBuffer commandBuffer,
 /// geometryPipelineLayout - and must NOT be collapsed to one value.
 /// `pushConstant` is taken by reference so the caller's already-seeded fields
 /// (set via setPushConstant) survive; .model / .invModelRows / .objectIndex
-/// are (re)written per mesh exactly as the inline loops did.
+/// are (re)written per mesh exactly as the inline loops did. glTF BLEND meshes
+/// are skipped: recordBlendDraws composites them afterwards.
 MeshDrawStats recordSceneMeshDraws(vk::CommandBuffer commandBuffer,
   vk::PipelineLayout pipelineLayout,
   vk::ShaderStageFlags pushConstantStages,
   Kataglyphis::Scene *scene,
   const std::optional<FrustumPlanes> &cameraFrustum,
+  PushConstantRasterizer &pushConstant);
+
+/// One glTF BLEND mesh the camera sees, keyed for the back-to-front sort.
+struct BlendDraw
+{
+    uint32_t modelIndex;
+    uint32_t meshIndex;
+    // The flat object-description index, as walkSceneMeshes counts it.
+    uint32_t objectIndex;
+    // Squared distance from the eye to the centre of the mesh's world bounds, as the Rust renderer sorts.
+    float distanceSquared;
+};
+
+/// Farthest first; equal distances keep the scene order, so a frame never flickers between two orders.
+void sortBackToFront(std::vector<BlendDraw> &draws);
+
+/// The scene's BLEND meshes the camera frustum keeps, sorted back to front from `eye`.
+std::vector<BlendDraw>
+  collectBlendDraws(Kataglyphis::Scene *scene, const std::optional<FrustumPlanes> &cameraFrustum, const glm::vec3 &eye);
+
+/// Draws `draws` in order with recordSceneMeshDraws' push constants and dynamic culling; returns the draw count.
+/// The caller binds the transparent pipeline: blending on, depth test on, depth writes off.
+unsigned int recordBlendDraws(vk::CommandBuffer commandBuffer,
+  vk::PipelineLayout pipelineLayout,
+  vk::ShaderStageFlags pushConstantStages,
+  Kataglyphis::Scene *scene,
+  const std::vector<BlendDraw> &draws,
   PushConstantRasterizer &pushConstant);
 
 }// namespace Kataglyphis::VulkanRendererInternals

@@ -24,3 +24,9 @@ bool alpha_masked_out(ObjMaterial material, float sampledAlpha)
 {
     return material.alphaCutoff >= 0.0 && (sampledAlpha * material.dissolve) < material.alphaCutoff;
 }
+
+// glTF BLEND's alpha, baseColorFactor.a * texture.a * COLOR_0.a; 1 for OPAQUE and MASK, which cover their pixel.
+float blend_coverage(ObjMaterial material, float sampledAlpha)
+{
+    return material.alphaBlend != 0 ? saturate(sampledAlpha * material.dissolve) : 1.0;
+}

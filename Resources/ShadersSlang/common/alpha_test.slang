@@ -26,14 +26,14 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
     float sampledAlpha = vertexAlpha;
     if (material.textureID >= 0 || material.alphaTextureID >= 0)
     {
-        float2 texCoords = vertices->v[ind.x].texture_coords * barycentrics.x
-                          + vertices->v[ind.y].texture_coords * barycentrics.y
-                          + vertices->v[ind.z].texture_coords * barycentrics.z;
+        float4 texCoords = uv_sets(vertices->v[ind.x].texture_coords, vertices->v[ind.x].texture_coords1) * barycentrics.x
+                         + uv_sets(vertices->v[ind.y].texture_coords, vertices->v[ind.y].texture_coords1) * barycentrics.y
+                         + uv_sets(vertices->v[ind.z].texture_coords, vertices->v[ind.z].texture_coords1) * barycentrics.z;
         // Explicit LOD: ray queries have no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
-            sampledAlpha *= textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).a;
+            sampledAlpha *= textures[textureId].SampleLevel(textureSamplers[textureId], base_color_uv(texCoords, material), 0.0).a;
         }
         if (material.alphaTextureID >= 0)
         {

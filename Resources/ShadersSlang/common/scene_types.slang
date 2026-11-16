@@ -31,6 +31,8 @@ struct Vertex
     float2 texture_coords;
     // xyz = tangent direction, w = handedness (+-1); see Vertex.hpp.
     float4 tangent;
+    // TEXCOORD_1; a copy of texture_coords when the asset has none.
+    float2 texture_coords1;
 };
 
 // Material (matches Src/shared/scene/ObjMaterial.hpp, scalar layout).
@@ -58,6 +60,8 @@ struct ObjMaterial
     float3 emissive_uv_transform_row1;
     int unlit;
     int alphaTextureID;
+    int uv1SlotMask;
+    int alphaBlend;
 };
 
 // Matches ObjectDescription.hpp; the uint64_t fields are buffer device addresses.

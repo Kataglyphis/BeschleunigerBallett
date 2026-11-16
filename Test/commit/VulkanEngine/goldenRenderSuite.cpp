@@ -2772,6 +2772,309 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
       << "the card is not finely tiled - KHR_texture_transform scale is not reaching the sampled UV";
 }
 
+// Mean linear radiance of each channel of an RGBA float capture over a square around (cx, cy).
+static glm::dvec4
+  mean_hdr_rgba_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    glm::dvec4 sum(0.0);
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+            sum += glm::dvec4(rgba[base], rgba[base + 1U], rgba[base + 2U], rgba[base + 3U]);
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : sum;
+}
+
+// The emissive card's quad as one glTF node per entry, each with its own material and so its own mesh.
+static void make_card_scene(nlohmann::json &gltf,
+  const std::vector<nlohmann::json> &materials,
+  const std::vector<std::pair<size_t, nlohmann::json>> &nodes)
+{
+    const nlohmann::json primitive = gltf["meshes"][0]["primitives"][0];
+    gltf["materials"] = materials;
+    gltf["meshes"] = nlohmann::json::array();
+    for (size_t m = 0; m < materials.size(); ++m) {
+        nlohmann::json mesh_primitive = primitive;
+        mesh_primitive["material"] = m;
+        gltf["meshes"].push_back({ { "primitives", nlohmann::json::array({ mesh_primitive }) } });
+    }
+    gltf["nodes"] = nlohmann::json::array();
+    gltf["scenes"][0]["nodes"] = nlohmann::json::array();
+    for (const auto &[mesh, transform] : nodes) {
+        nlohmann::json node = transform;
+        node["mesh"] = mesh;
+        gltf["scenes"][0]["nodes"].push_back(gltf["nodes"].size());
+        gltf["nodes"].push_back(node);
+    }
+}
+
+// Pixel column of world-space x on a camera looking along -Z (or +Z, mirrored) from `distance`, at the golden fov.
+static uint32_t card_column(float world_x, float distance, uint32_t width, uint32_t height)
+{
+    const float half_width =
+      distance * std::tan(glm::radians(45.0F) * 0.5F) * static_cast<float>(width) / static_cast<float>(height);
+    return static_cast<uint32_t>((0.5F + 0.5F * world_x / half_width) * static_cast<float>(width));
+}
+
+// Two half-transparent cards over an opaque one, seen from both sides, so each order is right once and wrong once.
+TEST(GoldenRender, BlendCardsCompositeInDepthOrderFromBothSides)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto unlit = [](std::array<double, 4> rgba, bool blend) {
+        nlohmann::json material;
+        material["pbrMetallicRoughness"] = { { "baseColorFactor", rgba } };
+        material["doubleSided"] = true;
+        material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+        if (blend) { material["alphaMode"] = "BLEND"; }
+        return material;
+    };
+    // Red and green overlap at x in [-0.25, 0.25] before grey backdrops; at y = 8 a red pair stands against the sky.
+    const auto scene = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_blend_cards.gltf", [&](auto &gltf) {
+        make_card_scene(gltf,
+          { unlit({ 0.5, 0.5, 0.5, 1.0 }, false),
+            unlit({ 1.0, 0.0, 0.0, 0.5 }, true),
+            unlit({ 0.0, 1.0, 0.0, 0.5 }, true),
+            unlit({ 1.0, 0.0, 0.0, 1.0 }, false) },
+          { { 0, { { "translation", { 0.0, 0.0, -3.0 } }, { "scale", { 8.0, 8.0, 1.0 } } } },
+            { 0, { { "translation", { 0.0, 0.0, 3.0 } }, { "scale", { 8.0, 8.0, 1.0 } } } },
+            { 1, { { "translation", { -0.25, 0.0, 0.0 } } } },
+            { 2, { { "translation", { 0.25, 0.0, 0.5 } } } },
+            { 1, { { "translation", { -0.6, 8.0, 0.0 } } } },
+            { 3, { { "translation", { 0.6, 8.0, 0.0 } } } } });
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+    });
+    ASSERT_TRUE(scene.has_value()) << "could not write the blend cards";
+
+    ScopedModelOverride cards(scene->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.shadows_enabled = false;
+    // The disabled sky is one flat colour, so the card over it has one expected value.
+    scene_vars.skybox_enabled = false;
+    harness.render_frames(WARMUP_FRAMES);
+
+    struct View
+    {
+        const char *name;
+        float z;
+        float yaw;
+        // The colour channel of the nearer card; the other card's is 1 - near.
+        int near_channel;
+    };
+    // Looking +Z mirrors x, so the farther card is on the left from both sides and the overlap stays centred.
+    constexpr std::array<View, 2> VIEWS = { { { "front", 1.8F, -90.0F, 1 }, { "back", -1.3F, 90.0F, 0 } } };
+    constexpr std::array<RasterizationMode, 2> MODES = { RasterizationMode::Forward, RasterizationMode::Deferred };
+
+    for (const RasterizationMode mode : MODES) {
+        renderer_vars.rasterizationMode = mode;
+        const char *mode_name = mode == RasterizationMode::Forward ? "forward" : "deferred";
+        for (const View &view : VIEWS) {
+            harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, view.z));
+            harness.camera->set_orientation(view.yaw, 0.0F);
+            harness.render_frames(SETTLE_FRAMES);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost());
+            ASSERT_FALSE(radiance.empty());
+
+            // Near card 1.3 away, far card 1.8: only the far one covers x -0.55 at 1.8, only the near one 0.47 at 1.3.
+            const uint32_t y = height / 2U;
+            const uint32_t far_x = card_column(-0.55F, 1.8F, width, height);
+            const uint32_t near_x = card_column(0.47F, 1.3F, width, height);
+            const glm::dvec4 overlap = mean_hdr_rgba_in_square(radiance, width, width / 2U, y, 12U);
+            const glm::dvec4 far_only = mean_hdr_rgba_in_square(radiance, width, far_x, y, 12U);
+            const glm::dvec4 near_only = mean_hdr_rgba_in_square(radiance, width, near_x, y, 12U);
+            const int near_channel = view.near_channel;
+            const int far_channel = 1 - view.near_channel;
+            GTEST_LOG_(INFO) << mode_name << " " << view.name << ": overlap (" << overlap.r << ", " << overlap.g << ", "
+                             << overlap.b << ", " << overlap.a << "), far only (" << far_only.r << ", " << far_only.g
+                             << ", " << far_only.b << "), near only (" << near_only.r << ", " << near_only.g << ", "
+                             << near_only.b << ")";
+
+            // Linear over: one card over the 0.5 grey gives 0.75 / 0.25; near over far over grey 0.625 / 0.375.
+            constexpr double TOLERANCE = 0.03;
+            EXPECT_NEAR(far_only[far_channel], 0.75, TOLERANCE)
+              << mode_name << " " << view.name << ": the far card alone does not blend over the grey";
+            EXPECT_NEAR(far_only.b, 0.25, TOLERANCE)
+              << mode_name << " " << view.name << ": the grey does not show through the far card";
+            EXPECT_NEAR(near_only[near_channel], 0.75, TOLERANCE)
+              << mode_name << " " << view.name << ": the near card alone does not blend over the grey";
+            EXPECT_NEAR(overlap[near_channel], 0.625, TOLERANCE)
+              << mode_name << " " << view.name << ": the nearer card does not lie on top - the BLEND sort is off";
+            EXPECT_NEAR(overlap[far_channel], 0.375, TOLERANCE)
+              << mode_name << " " << view.name << ": the farther card does not show through the nearer one";
+            EXPECT_NEAR(overlap.b, 0.125, TOLERANCE)
+              << mode_name << " " << view.name << ": the grey does not show through both cards";
+            EXPECT_GT(overlap.a, 0.99) << mode_name << " " << view.name
+                                       << ": blending over an opaque pixel lowered its coverage, so post would "
+                                          "composite the sky through it";
+        }
+
+        // Over the sky, post composites the tonemapped card at its coverage: half the opaque card's encoded red.
+        harness.camera->set_camera_position(glm::vec3(0.0F, 8.0F, 1.8F));
+        harness.camera->set_orientation(-90.0F, 0.0F);
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(frame.empty());
+        const auto encoded_at = [&](float world_x, size_t channel) {
+            const uint32_t x = card_column(world_x, 1.8F, width, height);
+            double sum = 0.0;
+            for (uint32_t y = height / 2U - 8U; y < height / 2U + 8U; ++y) {
+                for (uint32_t dx = x - 8U; dx < x + 8U; ++dx) {
+                    sum += frame[(static_cast<size_t>(y) * width + dx) * 4U + channel];
+                }
+            }
+            return sum / 256.0;
+        };
+        const double blend_red = encoded_at(-0.6F, 0U);
+        const double blend_blue = encoded_at(-0.6F, 2U);
+        const double opaque_red = encoded_at(0.6F, 0U);
+        GTEST_LOG_(INFO) << mode_name << " over the sky: BLEND card (" << blend_red << ", -, " << blend_blue
+                         << "), opaque card red " << opaque_red;
+        ASSERT_GT(opaque_red, 150.0) << mode_name << ": the opaque red card is not in view - check the placement";
+        EXPECT_NEAR(blend_red, 0.5 * opaque_red, 3.0)
+          << mode_name << ": a half-transparent card over the sky is not composited at half its tonemapped colour";
+        // skybox.slang's disabled sky stores blue 188 (is_disabled_sky).
+        EXPECT_NEAR(blend_blue, 0.5 * 188.0, 3.0) << mode_name << ": the sky does not show through the card";
+    }
+}
+
+// A 2x1 emissive texture, white then black, nearest-filtered, so each half of a card shows which UV set it sampled.
+constexpr const char *WHITE_BLACK_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGP4//8/AwMDAA74Av7Ji4P1AAAAAElFTkSuQmCC";
+// The emissive card's four TEXCOORD_0 values with u mirrored, as float32 VEC2: (1,1) (0,1) (0,0) (1,0).
+constexpr const char *MIRRORED_U_TEXCOORDS =
+  "data:application/octet-stream;base64,AACAPwAAgD8AAAAAAACAPwAAAAAAAAAAAACAPwAAAAA=";
+
+// TEXCOORD_1 mirrors u, so an emissive texture on set 1 lights the other half of the card in every mode.
+TEST(GoldenRender, EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto emissive = [](nlohmann::json texture_info) {
+        nlohmann::json material;
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.0, 0.0, 0.0, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 1.0 }
+        };
+        material["emissiveFactor"] = { 1.0, 1.0, 1.0 };
+        material["emissiveTexture"] = texture_info;
+        material["doubleSided"] = true;
+        return material;
+    };
+    nlohmann::json on_set1;
+    on_set1["index"] = 0;
+    on_set1["texCoord"] = 1;
+    nlohmann::json override_to_set1;
+    override_to_set1["index"] = 0;
+    override_to_set1["extensions"]["KHR_texture_transform"] = { { "texCoord", 1 } };
+    // Left: the TEXCOORD_0 control; centre: texCoord 1; right: texCoord 0 that KHR_texture_transform moves to 1.
+    constexpr std::array<float, 3> CARD_X = { -1.2F, 0.0F, 1.2F };
+    const auto scene = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_uv1_emissive.gltf", [&](auto &gltf) {
+        make_card_scene(gltf,
+          { emissive({ { "index", 0 } }), emissive(on_set1), emissive(override_to_set1) },
+          { { 0, { { "translation", { CARD_X[0], 0.0F, 0.0F } } } },
+            { 1, { { "translation", { CARD_X[1], 0.0F, 0.0F } } } },
+            { 2, { { "translation", { CARD_X[2], 0.0F, 0.0F } } } } });
+        nlohmann::json buffer;
+        buffer["uri"] = MIRRORED_U_TEXCOORDS;
+        buffer["byteLength"] = 32;
+        gltf["buffers"].push_back(buffer);
+        nlohmann::json view;
+        view["buffer"] = gltf["buffers"].size() - 1U;
+        view["byteOffset"] = 0;
+        view["byteLength"] = 32;
+        view["target"] = 34962;
+        gltf["bufferViews"].push_back(view);
+        nlohmann::json accessor;
+        accessor["bufferView"] = gltf["bufferViews"].size() - 1U;
+        accessor["componentType"] = 5126;
+        accessor["count"] = 4;
+        accessor["type"] = "VEC2";
+        gltf["accessors"].push_back(accessor);
+        for (auto &mesh : gltf["meshes"]) {
+            mesh["primitives"][0]["attributes"]["TEXCOORD_1"] = gltf["accessors"].size() - 1U;
+        }
+        gltf["images"] = nlohmann::json::array({ { { "uri", WHITE_BLACK_PNG } } });
+        gltf["samplers"] = nlohmann::json::array(
+          { { { "magFilter", 9728 }, { "minFilter", 9728 }, { "wrapS", 33071 }, { "wrapT", 33071 } } });
+        gltf["textures"] = nlohmann::json::array({ { { "source", 0 }, { "sampler", 0 } } });
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_texture_transform" });
+    });
+    ASSERT_TRUE(scene.has_value()) << "could not write the TEXCOORD_1 cards";
+
+    ScopedModelOverride cards(scene->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.shadows_enabled = false;
+    // Emission only: a lit black card would add a highlight to either half.
+    scene_vars.directional_light_radiance = 0.0F;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    constexpr float DISTANCE = 3.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, DISTANCE));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool path_tracing;
+    };
+    std::vector<Mode> modes = { { "forward", RasterizationMode::Forward, false, false },
+        { "deferred", RasterizationMode::Deferred, false, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back({ "ray traced", RasterizationMode::Forward, true, false });
+        modes.push_back({ "path traced", RasterizationMode::Forward, false, true });
+    } else {
+        GTEST_LOG_(INFO) << "Hardware raytracing unsupported; checking the raster modes only.";
+    }
+
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.path_tracing;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        ASSERT_FALSE(radiance.empty());
+
+        // u < 0.5 is the white texel: the -x half on TEXCOORD_0, the +x half on the mirrored TEXCOORD_1.
+        std::array<double, 3> white_minus_black{};
+        for (size_t card = 0; card < CARD_X.size(); ++card) {
+            const uint32_t minus_x = card_column(CARD_X[card] - 0.25F, DISTANCE, width, height);
+            const uint32_t plus_x = card_column(CARD_X[card] + 0.25F, DISTANCE, width, height);
+            const double minus_half = mean_hdr_in_square(radiance, width, minus_x, height / 2U, 16U);
+            const double plus_half = mean_hdr_in_square(radiance, width, plus_x, height / 2U, 16U);
+            white_minus_black[card] = card == 0 ? minus_half - plus_half : plus_half - minus_half;
+            GTEST_LOG_(INFO) << mode.name << " card " << card << ": -x half " << minus_half << ", +x half "
+                             << plus_half;
+        }
+        EXPECT_GT(white_minus_black[0], 0.5)
+          << mode.name << ": the TEXCOORD_0 control does not glow on its -x half - check the placement";
+        EXPECT_GT(white_minus_black[1], 0.5)
+          << mode.name << ": an emissive texture on texCoord 1 samples TEXCOORD_0 - the second UV set is ignored";
+        EXPECT_GT(white_minus_black[2], 0.5) << mode.name
+                                             << ": KHR_texture_transform's texCoord 1 does not move the emissive "
+                                                "slot onto the second UV set";
+    }
+}
+
 // RT/PT see only the acceleration structure, so addModel must rebuild it or the model is invisible to them.
 TEST(GoldenRender, AddedModelAppearsInPathTracing)
 {

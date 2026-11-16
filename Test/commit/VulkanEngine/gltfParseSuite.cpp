@@ -2,12 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <glm/geometric.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <optional>
 #include <set>
 #include <string>
 #include <vulkan/vulkan.hpp>
@@ -2001,16 +2003,178 @@ TEST(GltfParseUnit, OnlyTheDefaultSceneIsLoaded)
     }
 }
 
-TEST(GltfParseUnit, NonZeroBaseColourTexCoordSetIsReported)
+TEST(GltfParseUnit, TexCoordSetsAboveOneAreReported)
 {
-    // Vertex carries only UV set 0, so any other set must be reported unsupported.
+    // Vertex carries UV sets 0 and 1, so only a higher set is unsupported.
     const Kataglyphis::TexCoordSetInfo set0 = Kataglyphis::describeTexCoordSet(0);
     EXPECT_EQ(set0.set, 0U);
-    EXPECT_TRUE(set0.supported) << "TEXCOORD_0 is the one UV set Vertex carries";
+    EXPECT_TRUE(set0.supported) << "TEXCOORD_0 lands in Vertex::texture_coords";
 
     const Kataglyphis::TexCoordSetInfo set1 = Kataglyphis::describeTexCoordSet(1);
     EXPECT_EQ(set1.set, 1U);
-    EXPECT_FALSE(set1.supported) << "TEXCOORD_1 has no Vertex slot to land in";
+    EXPECT_TRUE(set1.supported) << "TEXCOORD_1 lands in Vertex::texture_coords1";
+
+    const Kataglyphis::TexCoordSetInfo set2 = Kataglyphis::describeTexCoordSet(2);
+    EXPECT_EQ(set2.set, 2U);
+    EXPECT_FALSE(set2.supported) << "TEXCOORD_2 has no Vertex slot to land in";
+}
+
+namespace {
+
+// Three vertices whose TEXCOORD_1 is TEXCOORD_0 turned a quarter; textures and alphaMode are the caller's.
+std::string dual_uv_triangle(const std::string &material, bool with_uv1 = true)
+{
+    const std::string attributes =
+      with_uv1 ? R"("POSITION": 0, "TEXCOORD_0": 1, "TEXCOORD_1": 2)" : R"("POSITION": 0, "TEXCOORD_0": 1)";
+    return R"({
+      "asset": { "version": "2.0" },
+      "extensionsUsed": [ "KHR_texture_transform" ],
+      "materials": [ )"
+           + material + R"( ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ { "attributes": { )"
+           + attributes + R"( }, "material": 0 } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [
+        { "componentType": 5126, "count": 3, "type": "VEC3", "min": [0,0,0], "max": [1,1,0], "bufferView": 0 },
+        { "componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 1 },
+        { "componentType": 5126, "count": 3, "type": "VEC2", "bufferView": 2 }
+      ],
+      "bufferViews": [
+        { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+        { "buffer": 0, "byteOffset": 36, "byteLength": 24 },
+        { "buffer": 0, "byteOffset": 60, "byteLength": 24 }
+      ],
+      "buffers": [ { "byteLength": 84,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAAAAAAAAAAIA/AAAAAAAAgD8AAAAAAAAAAAAAgD8AAIA/" } ]
+    })";
+}
+
+std::optional<Kataglyphis::GltfLoader> parse_document(const std::string &doc, const char *file_name)
+{
+    const auto tmp = std::filesystem::temp_directory_path() / file_name;
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    const bool parsed = loader.parseCpu(tmp.string());
+    std::filesystem::remove(tmp);
+    if (!parsed) { return std::nullopt; }
+    return loader;
+}
+
+}// namespace
+
+TEST(GltfParseUnit, TexCoord1IsReadIntoTheSecondUvSet)
+{
+    const auto loader =
+      parse_document(dual_uv_triangle(R"({ "emissiveTexture": { "index": 0, "texCoord": 1 } })"), "kat_dual_uv.gltf");
+    ASSERT_TRUE(loader.has_value());
+    const std::vector<Vertex> &vertices = loader->getVertices();
+    ASSERT_EQ(vertices.size(), 3U);
+    const std::array<glm::vec2, 3> uv0 = { glm::vec2(0.0F, 0.0F), glm::vec2(1.0F, 0.0F), glm::vec2(0.0F, 1.0F) };
+    const std::array<glm::vec2, 3> uv1 = { glm::vec2(0.0F, 1.0F), glm::vec2(0.0F, 0.0F), glm::vec2(1.0F, 1.0F) };
+    for (size_t i = 0; i < 3U; ++i) {
+        EXPECT_EQ(vertices[i].texture_coords, uv0[i]) << "TEXCOORD_0 of vertex " << i;
+        EXPECT_EQ(vertices[i].texture_coords1, uv1[i]) << "TEXCOORD_1 of vertex " << i;
+    }
+}
+
+TEST(GltfParseUnit, AMissingTexCoord1CopiesTheFirstUvSet)
+{
+    // Like the Rust loader: a slot naming set 1 on a primitive without it samples UV0, not (0, 0).
+    const auto loader = parse_document(
+      dual_uv_triangle(R"({ "emissiveTexture": { "index": 0, "texCoord": 1 } })", false), "kat_no_uv1.gltf");
+    ASSERT_TRUE(loader.has_value());
+    for (const Vertex &v : loader->getVertices()) { EXPECT_EQ(v.texture_coords1, v.texture_coords); }
+}
+
+TEST(GltfParseUnit, EachSlotRecordsTheUvSetItsTexCoordNames)
+{
+    const auto loader = parse_document(dual_uv_triangle(R"({
+        "pbrMetallicRoughness": {
+          "baseColorTexture": { "index": 0, "texCoord": 0 },
+          "metallicRoughnessTexture": { "index": 0, "texCoord": 1 }
+        },
+        "normalTexture": { "index": 0, "texCoord": 2 },
+        "emissiveTexture": { "index": 0, "texCoord": 1 }
+      })"),
+      "kat_uv_set_mask.gltf");
+    ASSERT_TRUE(loader.has_value());
+    ASSERT_FALSE(loader->getMaterials().empty());
+    const int mask = loader->getMaterials()[0].uv1SlotMask;
+    EXPECT_EQ(mask & (1 << UV1_SLOT_BASE_COLOR), 0) << "base colour names TEXCOORD_0";
+    EXPECT_NE(mask & (1 << UV1_SLOT_METALLIC_ROUGHNESS), 0) << "metallic-roughness names TEXCOORD_1";
+    EXPECT_EQ(mask & (1 << UV1_SLOT_NORMAL), 0) << "TEXCOORD_2 is unsupported and falls back to UV0";
+    EXPECT_NE(mask & (1 << UV1_SLOT_EMISSIVE), 0) << "emissive names TEXCOORD_1";
+}
+
+TEST(GltfParseUnit, TextureTransformTexCoordOverridesTheSlotsUvSet)
+{
+    // KHR_texture_transform's texCoord replaces the textureInfo's, in both directions.
+    const auto loader = parse_document(dual_uv_triangle(R"({
+        "pbrMetallicRoughness": {
+          "baseColorTexture": { "index": 0, "texCoord": 0,
+            "extensions": { "KHR_texture_transform": { "texCoord": 1 } } }
+        },
+        "emissiveTexture": { "index": 0, "texCoord": 1,
+          "extensions": { "KHR_texture_transform": { "texCoord": 0 } } }
+      })"),
+      "kat_uv_set_override.gltf");
+    ASSERT_TRUE(loader.has_value());
+    ASSERT_FALSE(loader->getMaterials().empty());
+    const int mask = loader->getMaterials()[0].uv1SlotMask;
+    EXPECT_NE(mask & (1 << UV1_SLOT_BASE_COLOR), 0) << "the transform moves base colour onto TEXCOORD_1";
+    EXPECT_EQ(mask & (1 << UV1_SLOT_EMISSIVE), 0) << "the transform moves emissive back onto TEXCOORD_0";
+}
+
+TEST(GltfParseUnit, GeneratedTangentsFollowTheNormalTexturesUvSet)
+{
+    // TEXCOORD_1 is TEXCOORD_0 turned a quarter, so a frame built from the wrong set points 90 degrees off.
+    const auto on_uv0 =
+      parse_document(dual_uv_triangle(R"({ "normalTexture": { "index": 0, "texCoord": 0 } })"), "kat_tangent_uv0.gltf");
+    const auto on_uv1 =
+      parse_document(dual_uv_triangle(R"({ "normalTexture": { "index": 0, "texCoord": 1 } })"), "kat_tangent_uv1.gltf");
+    ASSERT_TRUE(on_uv0.has_value() && on_uv1.has_value());
+
+    std::vector<Vertex> expected_uv0 = on_uv0->getVertices();
+    std::vector<Vertex> expected_uv1 = on_uv1->getVertices();
+    const std::vector<unsigned int> &indices = on_uv0->getIndices();
+    vertex::computeTangents(expected_uv0, indices, 0, 0U);
+    vertex::computeTangents(expected_uv1, indices, 0, 1U);
+    ASSERT_EQ(expected_uv1.size(), 3U);
+    EXPECT_GT(glm::length(glm::vec3(expected_uv0[0].tangent) - glm::vec3(expected_uv1[0].tangent)), 0.1F)
+      << "the fixture's two UV sets must give different frames, or this test proves nothing";
+    for (size_t i = 0; i < 3U; ++i) {
+        EXPECT_EQ(on_uv0->getVertices()[i].tangent, expected_uv0[i].tangent) << "vertex " << i << ", UV0 normal map";
+        EXPECT_EQ(on_uv1->getVertices()[i].tangent, expected_uv1[i].tangent) << "vertex " << i << ", UV1 normal map";
+    }
+}
+
+TEST(GltfParseUnit, BlendMaterialsAreMarkedForTheTransparentPass)
+{
+    const auto blend = parse_document(
+      dual_uv_triangle(R"({ "alphaMode": "BLEND", "pbrMetallicRoughness": { "baseColorFactor": [1, 0, 0, 0.5] } })"),
+      "kat_blend.gltf");
+    const auto opaque = parse_document(dual_uv_triangle(R"({ "alphaMode": "OPAQUE" })"), "kat_opaque.gltf");
+    ASSERT_TRUE(blend.has_value() && opaque.has_value());
+
+    ASSERT_FALSE(blend->getMaterials().empty());
+    EXPECT_EQ(blend->getMaterials()[0].alphaBlend, 1);
+    EXPECT_FLOAT_EQ(blend->getMaterials()[0].dissolve, 0.5F) << "the blend factor rides in dissolve";
+    EXPECT_LT(blend->getMaterials()[0].alphaCutoff, 0.0F) << "BLEND never alpha-tests";
+    ASSERT_EQ(blend->getMeshRanges().size(), 1U);
+    EXPECT_TRUE(blend->getMeshRanges()[0].alphaBlended) << "the mesh must leave the opaque passes";
+
+    ASSERT_FALSE(opaque->getMaterials().empty());
+    EXPECT_EQ(opaque->getMaterials()[0].alphaBlend, 0);
+    ASSERT_EQ(opaque->getMeshRanges().size(), 1U);
+    EXPECT_FALSE(opaque->getMeshRanges()[0].alphaBlended);
 }
 
 TEST(GltfParseUnit, ANodeNoSceneReferencesIsNotLoaded)

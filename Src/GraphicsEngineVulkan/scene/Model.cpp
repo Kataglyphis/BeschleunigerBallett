@@ -46,11 +46,13 @@ void Model::add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
   std::vector<unsigned int> &indices,
   std::vector<unsigned int> &materialIndex,
   std::vector<ObjMaterial> &materials,
-  bool double_sided)
+  bool double_sided,
+  bool alpha_blended)
 {
     // One mesh per glTF primitive or OBJ group.
     meshes.emplace_back(vulkan_device, command_pool, vertices, indices, materialIndex, materials);
     meshes.back().setDoubleSided(double_sided);
+    meshes.back().setAlphaBlended(alpha_blended);
 }
 
 void Model::set_model(glm::mat4 new_model) { this->model = new_model; }

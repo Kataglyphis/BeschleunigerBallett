@@ -53,6 +53,12 @@ class Mesh
     void setDoubleSided(bool value) { double_sided = value; };
     bool isDoubleSided() const { return double_sided; };
 
+    /// glTF `alphaMode` BLEND: the raster passes skip this mesh and composite it
+    /// afterwards, sorted back to front; the tracers keep it opaque. Set by the
+    /// loader like setDoubleSided, from the primitive's one material.
+    void setAlphaBlended(bool value) { alpha_blended = value; };
+    bool isAlphaBlended() const { return alpha_blended; };
+
     /// Whether any material this mesh references is a glTF MASK material
     /// (ObjMaterial::alphaCutoff >= 0). Derived once in the constructor from
     /// the material vector the constructor already receives - unlike
@@ -81,6 +87,9 @@ class Mesh
 
     // glTF material.doubleSided; see setDoubleSided.
     bool double_sided{ false };
+
+    // glTF alphaMode BLEND; see setAlphaBlended.
+    bool alpha_blended{ false };
 
     // See hasMaskedMaterial().
     bool has_masked_material{ false };

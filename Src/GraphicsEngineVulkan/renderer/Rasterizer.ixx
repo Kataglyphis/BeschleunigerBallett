@@ -18,6 +18,14 @@ import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
 
 export namespace Kataglyphis::VulkanRendererInternals {
+
+/// The glTF BLEND pipeline both raster modes draw their sorted transparent meshes with: rasterizer.slang's
+/// forward shading, src-alpha blending that accumulates coverage, depth test on and depth writes off.
+[[nodiscard]] vk::Pipeline buildTransparentScenePipeline(const std::shared_ptr<VulkanDevice> &device,
+  vk::PipelineLayout layout,
+  vk::Format color_format,
+  vk::Format depth_format);
+
 class Rasterizer
 {
   public:
@@ -43,10 +51,12 @@ class Rasterizer
     /// the SHADOW pass must do exactly that: geometry behind or beside the
     /// camera still casts into view, so culling casters by the camera frustum
     /// deletes shadows rather than saving work.
+    /// `eye` orders the glTF BLEND meshes, drawn after the opaque ones, back to front.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
+      const glm::vec3 &eye,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
     /// Meshes drawn / considered by the most recent recordCommands call.
@@ -87,11 +97,14 @@ class Rasterizer
     PushConstantRasterizer pushConstant{ glm::mat4(1.f), {}, 0 };
 
     vk::Pipeline graphics_pipeline{};
+    // glTF BLEND meshes, after the opaque ones; shares pipeline_layout.
+    vk::Pipeline transparent_pipeline{};
     vk::PipelineLayout pipeline_layout{};
 
     void createTextures(vk::CommandPool &commandPool);
     void releaseFrameTextures();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
+    void destroyTransparentPipeline();
     void createPushConstantRange();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

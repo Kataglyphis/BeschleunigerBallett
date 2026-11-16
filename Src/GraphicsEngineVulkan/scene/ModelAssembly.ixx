@@ -84,7 +84,7 @@ void ensureAtLeastOneTexture(Model &model, const std::shared_ptr<VulkanDevice> &
 
 /// The empty-ranges single-mesh case plus the per-range sliceMeshRange ->
 /// add_new_mesh loop, common to both loaders. Always forwards
-/// range.doubleSided - MeshRange.ixx documents it as always false for OBJ, so
+/// range.doubleSided and range.alphaBlended - MeshRange.ixx documents both as always false for OBJ, so
 /// that loader forwarding it is behaviour-identical to the default it used to
 /// rely on.
 ///
@@ -105,8 +105,14 @@ void addMeshesForRanges(Model &model,
     }
     for (const MeshRange &range : ranges) {
         MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
-        model.add_new_mesh(
-          device, pool, slice.vertices, slice.indices, slice.materialIndex, materials, range.doubleSided);
+        model.add_new_mesh(device,
+          pool,
+          slice.vertices,
+          slice.indices,
+          slice.materialIndex,
+          materials,
+          range.doubleSided,
+          range.alphaBlended);
     }
 }
 

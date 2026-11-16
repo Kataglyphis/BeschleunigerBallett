@@ -70,6 +70,11 @@ float4 fs_main(VsOut In) : SV_Target
         color = cloud.rgb + (color + sky * (1.0 - alpha)) * (1.0 - cloud.a);
         alpha = 1.0;
     }
+    else if (alpha > 0.0 && alpha < 1.0)
+    {
+        // A BLEND surface over the sky leaves premultiplied colour; this pass's blend multiplies by alpha itself.
+        color /= alpha;
+    }
 
     // ACES filmic tonemap (shared with Rust WebGPU renderer via aces.slang).
     float3 tonemapped = aces_tonemap(color);
