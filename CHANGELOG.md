@@ -23,6 +23,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Three goldens that say where a shadow lands and what post does with a texel.
+  `ShadowFootprintMatchesTheAnalyticCaster` predicts the shadow rig's footprint per pixel by ray
+  casting (two light tilts, one camera per cascade, the model moved and turned) and asks for 97 %
+  agreement away from the edges; `WidestPcfLeavesLitGroundLit` keeps lit ground lit at the widest
+  PCF radius; `PostEncodesEachHdrTexelThroughAcesAndSrgb` checks every opaque texel of one frame
+  against ACES and sRGB of the HDR texel post read.
 - Benchmarks for the engine's CPU half of a model load (`ObjLoader::parseCpu` on Suzanne,
   `GltfLoader::parseCpu` on the textured cube) and of an upload (`sliceMeshRange` plus the
   staging copy at 64, 4096 and 65536 quads). `BM_ObjParse_*` and `BM_GltfParse_*` now time the

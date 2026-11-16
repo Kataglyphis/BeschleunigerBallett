@@ -266,7 +266,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=67 runnable=65 integration=12 total=77 excluded=3 -->
+<!-- golden-counts: defined=70 runnable=68 integration=12 total=80 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -328,7 +328,47 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
 
 Effects with no runtime toggle (the tonemap is always on) are hard to isolate this way:
 "compressed vs clipped" is ambiguous without a control, so a robust oracle must key on a property
-the effect uniquely produces (e.g. retained variation), not just "brighter" or "darker".
+the effect uniquely produces (e.g. retained variation), not just "brighter" or "darker". Post has
+an exact one: arm both captures for the same frame and every opaque texel's display value is
+`post_display_level` (`GoldenMetrics.hpp`) of the HDR texel post read (below).
+
+## Shadow and post oracles
+
+`ShadowsDarkenSomePixels` and `ShadowsMoveWhenTheLightRotates` say a shadow exists and moves.
+Three goldens (2026-11-16) say where it is and what post does with a texel:
+
+- **`ShadowFootprintMatchesTheAnalyticCaster`** casts a ray per pixel through the renderer's own
+  camera matrices onto the rig's ground, and from the hit towards the light against the slab's
+  box (`predict_ground_shadow`). A pixel counts as shadowed when intensity 1 darkens it by more
+  than 4 levels against intensity 0; `compare_shadow_masks` compares only pixels 6 px or more
+  from a predicted edge or a non-ground pixel. Five cases: the default light, a light tilted
+  towards the camera (the shadow lands on the slab's other side and its centroid must move as the
+  geometry says), the camera at z 10 and 44 (the predicted shadow lies 81 % in cascade 0 and
+  100 % in cascade 2, by `computeCascadeData`'s splits), and the model moved and turned 90
+  degrees through the editor's transform. Each case asks for agreement above 0.97 and a centroid
+  within 8 px. Measured on aarch64 llvmpipe: 1.0 and 0 px in every case.
+- **`WidestPcfLeavesLitGroundLit`**: at `MAX_PCF_RADIUS`, predicted-lit ground 16 px or more from
+  any shadow or non-ground pixel must not darken by 3+ levels; below 1 % passes, 0 of 375144
+  measured.
+- **`PostEncodesEachHdrTexelThroughAcesAndSrgb`**: at a tenth of the default sun and at the
+  default, more than 99.9 % of the opaque texels must sit within 2 levels of ACES then sRGB of
+  their HDR value (100 %, worst 0 measured), texels near 0.18 must average level 141, and the two
+  frames must hold at least 1000 green texels below 0.05 and above 1.0 and 100 near 0.18, so the
+  toe, middle and shoulder are all checked. Sky texels (alpha 0) are blended over the sky pass
+  and left out. The C++ post has no exposure or bloom stage to test; those are the Rust
+  renderer's.
+
+The controls, one-line edits each run on the three and reverted (`ShadowsDarkenSomePixels`, run
+beside them, failed only the first):
+
+| Edit | Footprint | PCF | Post |
+| --- | --- | --- | --- |
+| Every fragment reads cascade 0 | fails: far camera 0 of 12280 shadowed px, centroids off by 16-611 px | passes | passes |
+| Every tap compares at the centre depth (the kernel before the receiver plane) | fails: agreement 0.51-0.97 | fails: 100 % darkened | passes |
+| The shadow pass ignores the model matrix | fails: moved model agreement 0.48, 254 px off | passes | passes |
+| The cascades fit a light mirrored in z | fails: agreement 0.66-0.99, shift 1374 against 7435 | fails: 14.3 % | passes |
+| Post skips the sRGB encode | passes | passes | fails: 2.1 % match, 0.18 at 67 |
+| Post clamps instead of ACES | passes | passes | fails: 2.1-2.6 % match, 0.18 at 117 |
 
 ## The PCF radius bound, measured
 

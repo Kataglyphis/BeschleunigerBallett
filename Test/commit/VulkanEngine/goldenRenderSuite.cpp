@@ -6,6 +6,7 @@
 #include "GoldenMetrics.hpp"
 #include "ScopedEnvVar.hpp"
 #include "common/GuiModelTransform.hpp"
+#include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -30,9 +31,12 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <numeric>
 #include <optional>
+#include <span>
 #include <spdlog/sinks/callback_sink.h>
 #include <spdlog/spdlog.h>
 #include <sstream>
@@ -45,6 +49,7 @@
 #include <stb_image_write.h>
 
 import kataglyphis.vulkan.camera;
+import kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
@@ -59,6 +64,14 @@ using Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVar
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::Test::GoldenMetrics::Crop;
 using Kataglyphis::Test::GoldenMetrics::card_crop;
+using Kataglyphis::Test::GoldenMetrics::compare_shadow_masks;
+using Kataglyphis::Test::GoldenMetrics::GroundPixel;
+using Kataglyphis::Test::GoldenMetrics::GroundRect;
+using Kataglyphis::Test::GoldenMetrics::GroundShadowPrediction;
+using Kataglyphis::Test::GoldenMetrics::post_display_level;
+using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
+using Kataglyphis::Test::GoldenMetrics::ShadowAgreement;
+using Kataglyphis::Test::GoldenMetrics::WorldBox;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
 using Kataglyphis::Test::GoldenMetrics::luminance_of;
 using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
@@ -1092,6 +1105,356 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
       << "Only " << (moved_fraction * 100.0)
       << "% of the shadowed-pixel union differs between the two light directions; the shadow does not appear to "
          "move.";
+}
+
+// What one shadow-rig placement is expected to show; the cascade is the one its shadow sits in, -1 for any.
+struct ShadowRigCase
+{
+    const char *name;
+    glm::vec3 camera_position;
+    glm::vec3 light_travel;
+    glm::vec3 model_position;
+    float model_yaw_degrees;
+    int expected_cascade;
+};
+
+// Models/ShadowTest/shadow_rig.obj at the identity transform.
+constexpr GroundRect SHADOW_RIG_GROUND{ 0.0F, -30.0F, 30.0F, -30.0F, 30.0F };
+constexpr WorldBox SHADOW_RIG_SLAB{ glm::vec3(-22.0F, 8.0F, -10.0F), glm::vec3(22.0F, 10.0F, 2.0F) };
+
+// Bounds of the box's corners under `transform`, exact for the quarter-turn yaws the cases use.
+WorldBox transformed_box(const WorldBox &box, const glm::mat4 &transform)
+{
+    glm::vec3 lo(std::numeric_limits<float>::max());
+    glm::vec3 hi(std::numeric_limits<float>::lowest());
+    for (int corner = 0; corner < 8; ++corner) {
+        const glm::vec3 local((corner & 1) != 0 ? box.hi.x : box.lo.x,
+          (corner & 2) != 0 ? box.hi.y : box.lo.y,
+          (corner & 4) != 0 ? box.hi.z : box.lo.z);
+        const glm::vec3 world(transform * glm::vec4(local, 1.0F));
+        lo = glm::min(lo, world);
+        hi = glm::max(hi, world);
+    }
+    return WorldBox{ lo, hi };
+}
+
+// The renderer's own camera matrices (VulkanRenderer::updateUniforms), so a predicted pixel is the rendered one.
+glm::mat4 harness_inverse_view_projection(EngineHarness &harness, uint32_t width, uint32_t height)
+{
+    const auto &viewport = harness.settings.renderer.scene_viewport;
+    const Kataglyphis::ViewportFraction rect =
+      Kataglyphis::sanitizeViewportFraction(viewport.x0, viewport.y0, viewport.x1, viewport.y1);
+    Camera &camera = *harness.camera;
+    const glm::mat4 projection = Kataglyphis::makeViewportRemap(rect)
+                                 * Kataglyphis::makeVulkanProjection(camera.get_fov(),
+                                   Kataglyphis::viewportAspectRatio(width, height, rect),
+                                   camera.get_near_plane(),
+                                   camera.get_far_plane());
+    return glm::inverse(projection * camera.calculate_viewmatrix());
+}
+
+// Pixels the shadow darkens by more than 4 levels, minus any that move between two identical unshadowed frames.
+std::vector<bool> measured_shadow_mask(EngineHarness &harness, uint32_t &width, uint32_t &height)
+{
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> unshadowed = harness.capture_frame(width, height);
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> noise_reference = harness.capture_frame(width, height);
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> shadowed = harness.capture_frame(width, height);
+    const size_t pixel_count = static_cast<size_t>(width) * height;
+    std::vector<bool> mask(pixel_count, false);
+    if (unshadowed.size() != pixel_count * 4U || shadowed.size() != unshadowed.size()
+        || noise_reference.size() != unshadowed.size()) {
+        return mask;
+    }
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        if (std::abs(luminance_of(unshadowed, pixel) - luminance_of(noise_reference, pixel)) > 4.0) { continue; }
+        mask[pixel] = luminance_of(unshadowed, pixel) - luminance_of(shadowed, pixel) > 4.0;
+    }
+    return mask;
+}
+
+// The ShadowsDarkenSomePixels ratio says a shadow exists; this says it is the caster's, where geometry puts it.
+TEST(GoldenRender, ShadowFootprintMatchesTheAnalyticCaster)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &scene_vars = harness.settings.scene;
+    harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    const glm::vec3 default_light(scene_vars.directional_light_direction[0],
+      scene_vars.directional_light_direction[1],
+      scene_vars.directional_light_direction[2]);
+    // Opposite light tilts put the shadow on opposite sides of the slab; the camera moves pick each cascade.
+    const std::array<ShadowRigCase, 5> cases{ {
+      { "default light", glm::vec3(0.0F, 6.0F, 26.0F), default_light, glm::vec3(0.0F), 0.0F, 1 },
+      { "light toward the camera",
+        glm::vec3(0.0F, 6.0F, 26.0F),
+        glm::vec3(0.55F, -1.0F, 0.6F),
+        glm::vec3(0.0F),
+        0.0F,
+        1 },
+      { "near camera", glm::vec3(0.0F, 6.0F, 10.0F), default_light, glm::vec3(0.0F), 0.0F, 0 },
+      { "far camera", glm::vec3(0.0F, 6.0F, 44.0F), default_light, glm::vec3(0.0F), 0.0F, 2 },
+      { "model moved and turned",
+        glm::vec3(0.0F, 6.0F, 26.0F),
+        default_light,
+        glm::vec3(4.0F, 0.0F, -3.0F),
+        90.0F,
+        -1 },
+    } };
+
+    std::vector<ShadowAgreement> results;
+    for (const ShadowRigCase &rig_case : cases) {
+        SCOPED_TRACE(rig_case.name);
+        harness.camera->set_camera_position(rig_case.camera_position);
+        for (int axis = 0; axis < 3; ++axis) {
+            scene_vars.directional_light_direction[axis] = rig_case.light_travel[axis];
+            scene_vars.model_position[axis] = rig_case.model_position[axis];
+            scene_vars.model_rotation[axis] = axis == 1 ? rig_case.model_yaw_degrees : 0.0F;
+        }
+        scene_vars.selected_model_index = 0;
+        scene_vars.model_transform_changed = true;
+        harness.render_frame();
+        scene_vars.model_transform_changed = false;
+
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<bool> measured = measured_shadow_mask(harness, width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+        ASSERT_EQ(measured.size(), static_cast<size_t>(width) * height);
+
+        const glm::mat4 model = Kataglyphis::makeGuiModelTransform(
+          std::span<const float, 3>(scene_vars.model_position), std::span<const float, 3>(scene_vars.model_rotation));
+        const WorldBox slab = transformed_box(SHADOW_RIG_SLAB, model);
+        const WorldBox ground_box =
+          transformed_box(WorldBox{ glm::vec3(SHADOW_RIG_GROUND.x0, 0.0F, SHADOW_RIG_GROUND.z0),
+                            glm::vec3(SHADOW_RIG_GROUND.x1, 0.0F, SHADOW_RIG_GROUND.z1) },
+            model);
+        const GroundRect ground{ ground_box.lo.y, ground_box.lo.x, ground_box.hi.x, ground_box.lo.z, ground_box.hi.z };
+        const GroundShadowPrediction prediction = predict_ground_shadow(
+          harness_inverse_view_projection(harness, width, height), width, height, ground, slab, rig_case.light_travel);
+
+        // The case is only about its cascade if its predicted shadow sits there (CascadedShadowMap's splits).
+        const std::vector<Kataglyphis::CascadeData> cascades =
+          Kataglyphis::computeCascadeData(static_cast<uint32_t>(scene_vars.num_shadow_cascades),
+            Kataglyphis::CascadeFitParams{ .cameraView = harness.camera->calculate_viewmatrix(),
+              .cameraFov = harness.camera->get_fov(),
+              .aspect = static_cast<float>(width) / static_cast<float>(height),
+              .nearPlane = harness.camera->get_near_plane(),
+              .farPlane = harness.camera->get_far_plane(),
+              .lightDir = glm::normalize(rig_case.light_travel),
+              .shadowDistance = scene_vars.shadow_distance,
+              .splitLambda = scene_vars.cascade_split_lambda });
+        std::vector<size_t> per_cascade(cascades.size() + 1U, 0U);
+        for (size_t pixel = 0; pixel < prediction.pixels.size(); ++pixel) {
+            if (prediction.pixels[pixel] != GroundPixel::Shadowed) { continue; }
+            const float distance = glm::dot(
+              prediction.world[pixel] - harness.camera->get_camera_position(), harness.camera->get_camera_direction());
+            size_t index = 0;
+            while (index < cascades.size() && distance >= cascades[index].splitDepth) { ++index; }
+            ++per_cascade[index];
+        }
+
+        // PCF and the map's texels blur a few pixels either side of the analytic edge.
+        constexpr uint32_t EDGE_BAND_PX = 6U;
+        const ShadowAgreement agreement =
+          compare_shadow_masks(prediction.pixels, measured, width, height, EDGE_BAND_PX);
+        results.push_back(agreement);
+
+        std::ostringstream cascade_log;
+        for (size_t i = 0; i < per_cascade.size(); ++i) { cascade_log << " c" << i << "=" << per_cascade[i]; }
+        GTEST_LOG_(INFO) << rig_case.name << ": compared " << agreement.compared << " px, agreement "
+                         << agreement.agreement() << ", shadowed predicted " << agreement.predicted_shadowed
+                         << " measured " << agreement.measured_shadowed << ", centroid predicted ("
+                         << agreement.predicted_centroid.x << ", " << agreement.predicted_centroid.y << ") measured ("
+                         << agreement.measured_centroid.x << ", " << agreement.measured_centroid.y
+                         << "); predicted shadow per cascade:" << cascade_log.str();
+
+        const size_t predicted_total = std::accumulate(per_cascade.begin(), per_cascade.end(), static_cast<size_t>(0));
+        ASSERT_GT(predicted_total, 0U) << "The prediction puts no shadow in view; the case measures nothing.";
+        if (rig_case.expected_cascade >= 0) {
+            EXPECT_GT(static_cast<double>(per_cascade[static_cast<size_t>(rig_case.expected_cascade)]),
+              0.6 * static_cast<double>(predicted_total))
+              << "The case's shadow is not mostly in cascade " << rig_case.expected_cascade << "; move its camera.";
+        }
+        ASSERT_GT(agreement.predicted_shadowed, 2000U) << "Too little predicted shadow away from its edges.";
+        EXPECT_GT(agreement.agreement(), 0.97) << "The rendered shadow is not where the caster and the light put it.";
+        EXPECT_LT(glm::distance(agreement.predicted_centroid, agreement.measured_centroid), 8.0)
+          << "The rendered shadow's centroid is off the predicted one.";
+    }
+
+    // Opposite tilts must move the shadow the way the geometry does, not merely somewhere.
+    const glm::dvec2 predicted_shift = results[1].predicted_centroid - results[0].predicted_centroid;
+    const glm::dvec2 measured_shift = results[1].measured_centroid - results[0].measured_centroid;
+    EXPECT_GT(glm::length(predicted_shift), 20.0) << "The two tilts barely move the predicted shadow.";
+    EXPECT_GT(glm::dot(predicted_shift, measured_shift), 0.9 * glm::dot(predicted_shift, predicted_shift))
+      << "The shadow moved (" << measured_shift.x << ", " << measured_shift.y << ") px, the geometry says ("
+      << predicted_shift.x << ", " << predicted_shift.y << ").";
+}
+
+// The receiver-plane kernel's point: a lit receiver far from any shadow stays lit at the widest PCF radius.
+TEST(GoldenRender, WidestPcfLeavesLitGroundLit)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &scene_vars = harness.settings.scene;
+    harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    scene_vars.pcf_radius = MAX_PCF_RADIUS;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> unshadowed = harness.capture_frame(width, height);
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> shadowed = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+    ASSERT_EQ(unshadowed.size(), static_cast<size_t>(width) * height * 4U);
+    ASSERT_EQ(shadowed.size(), unshadowed.size());
+
+    const glm::vec3 light(scene_vars.directional_light_direction[0],
+      scene_vars.directional_light_direction[1],
+      scene_vars.directional_light_direction[2]);
+    const GroundShadowPrediction prediction =
+      predict_ground_shadow(harness_inverse_view_projection(harness, width, height),
+        width,
+        height,
+        SHADOW_RIG_GROUND,
+        SHADOW_RIG_SLAB,
+        light);
+
+    // Lit ground 16 px or more from any predicted shadow or non-ground pixel, past the widest penumbra.
+    constexpr uint32_t FAR_PX = 16U;
+    std::vector<bool> darkened(unshadowed.size() / 4U, false);
+    for (size_t pixel = 0; pixel < darkened.size(); ++pixel) {
+        darkened[pixel] = luminance_of(unshadowed, pixel) - luminance_of(shadowed, pixel) >= 3.0;
+    }
+    std::vector<GroundPixel> lit_only = prediction.pixels;
+    for (GroundPixel &kind : lit_only) {
+        if (kind == GroundPixel::Shadowed) { kind = GroundPixel::NotGround; }
+    }
+    const ShadowAgreement far_lit = compare_shadow_masks(lit_only, darkened, width, height, FAR_PX);
+    const double darkened_fraction =
+      far_lit.compared > 0U ? static_cast<double>(far_lit.measured_shadowed) / static_cast<double>(far_lit.compared)
+                            : 1.0;
+    GTEST_LOG_(INFO) << "PCF radius " << MAX_PCF_RADIUS << ": " << far_lit.measured_shadowed << " of "
+                     << far_lit.compared << " far-lit ground pixels darkened by 3+ levels ("
+                     << darkened_fraction * 100.0 << " %)";
+
+    ASSERT_GT(far_lit.compared, 20000U) << "Too little lit ground in view; the test measures nothing.";
+    // Measured 0 % with the receiver plane; the kernel before it darkened 62 % here (gpu-golden-testing.md).
+    EXPECT_LT(darkened_fraction, 0.01) << "PCF darkens lit ground far from any shadow: shadow acne from the kernel.";
+}
+
+// Post's whole chain against its formula, texel by texel of one frame: the HDR capture is exactly what post read.
+TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &scene_vars = harness.settings.scene;
+    harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // A dim and the default exposure of one view: the dim one fills the toe and the middle, the default the shoulder.
+    const std::array<float, 2> radiances{ 0.1F * scene_vars.directional_light_radiance,
+        scene_vars.directional_light_radiance };
+    size_t dark = 0;
+    size_t mid_grey = 0;
+    size_t shoulder = 0;
+    double mid_grey_level_sum = 0.0;
+    for (const float radiance : radiances) {
+        SCOPED_TRACE("directional radiance " + std::to_string(radiance));
+        scene_vars.directional_light_radiance = radiance;
+        harness.render_frames(SETTLE_FRAMES);
+
+        harness.renderer->requestFrameCapture();
+        harness.renderer->requestHdrCapture();
+        harness.render_frame();
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t hdr_width = 0;
+        uint32_t hdr_height = 0;
+        const std::vector<uint8_t> display = harness.renderer->takeCapturedFrame(width, height);
+        const std::vector<uint8_t> raw_hdr = harness.renderer->takeCapturedHdrFrame(hdr_width, hdr_height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+        ASSERT_EQ(width, hdr_width);
+        ASSERT_EQ(height, hdr_height);
+        ASSERT_EQ(display.size(), static_cast<size_t>(width) * height * 4U);
+        ASSERT_EQ(raw_hdr.size(), display.size() * 2U);
+
+        // Opaque texels only: post blends a sky texel (alpha 0) over the sky pass, outside the formula.
+        size_t opaque = 0;
+        size_t matching = 0;
+        int worst_delta = 0;
+        for (size_t pixel = 0; pixel < display.size() / 4U; ++pixel) {
+            const auto half_at = [&](size_t channel) {
+                const size_t at = (pixel * 4U + channel) * 2U;
+                return static_cast<double>(
+                  glm::unpackHalf1x16(static_cast<uint16_t>(raw_hdr[at] | (raw_hdr[at + 1U] << 8U))));
+            };
+            if (half_at(3U) < 0.999) { continue; }
+            ++opaque;
+            int pixel_delta = 0;
+            for (size_t channel = 0; channel < 3U; ++channel) {
+                const double linear = half_at(channel);
+                const double expected = post_display_level(linear);
+                pixel_delta = std::max(pixel_delta,
+                  static_cast<int>(
+                    std::lround(std::abs(expected - static_cast<double>(display[pixel * 4U + channel])))));
+                if (channel != 1U) { continue; }
+                if (linear < 0.05) { ++dark; }
+                if (linear > 1.0) { ++shoulder; }
+                // Narrow enough that the band's own spread (about one level each side) cannot move the mean.
+                if (std::abs(linear - 0.18) < 0.004) {
+                    ++mid_grey;
+                    mid_grey_level_sum += static_cast<double>(display[pixel * 4U + channel]);
+                }
+            }
+            worst_delta = std::max(worst_delta, pixel_delta);
+            // One level for the 8-bit rounding, one for the GPU's pow and division.
+            if (pixel_delta <= 2) { ++matching; }
+        }
+        const double match_fraction = opaque > 0U ? static_cast<double>(matching) / static_cast<double>(opaque) : 0.0;
+        GTEST_LOG_(INFO) << opaque << " opaque texels, " << match_fraction * 100.0 << " % within 2 levels (worst "
+                         << worst_delta << ")";
+        ASSERT_GT(opaque, 100000U) << "Too few opaque texels; the frame shows mostly sky.";
+        EXPECT_GT(match_fraction, 0.999) << "Post's output is not ACES then sRGB of what it read.";
+    }
+
+    // Both frames together must exercise the toe, the middle and the shoulder, or a match proves one segment only.
+    const double mid_grey_level = mid_grey > 0U ? mid_grey_level_sum / static_cast<double>(mid_grey) : 0.0;
+    GTEST_LOG_(INFO) << "green texels: below 0.05 " << dark << ", near 0.18 " << mid_grey << " (mean level "
+                     << mid_grey_level << ", formula " << post_display_level(0.18) << "), above 1.0 " << shoulder;
+    EXPECT_GT(dark, 1000U) << "No dark texels: the toe goes unchecked.";
+    EXPECT_GT(mid_grey, 100U) << "No texels near 0.18: the middle goes unchecked.";
+    EXPECT_GT(shoulder, 1000U) << "No texels above 1.0: the shoulder goes unchecked.";
+    EXPECT_NEAR(mid_grey_level, post_display_level(0.18), 2.0)
+      << "Linear 0.18 should display at level 141: 46 is no tonemap and no encode, 68 no encode, 118 no tonemap.";
 }
 
 // Forward and deferred never match exactly, but a broken path diverges far beyond this.

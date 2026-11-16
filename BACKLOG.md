@@ -147,9 +147,6 @@ committed to.
 
 ## Testing and performance
 
-- **[P3] Headless assertions for the shadow path** beyond the single darkened-pixel ratio, and for
-  the post-processing chain. Both need careful oracle design (`docs/source/gpu-golden-testing.md`
-  on why the tonemap is hard to isolate).
 - **[P3] A `record_commands` benchmark** per render mode at a fixed scene and camera. It needs a
   device, and `perfTestSuite` fails on a benchmark that cannot run, so it must skip without an
   adapter in a way the lane does not count as an error. The pure-CPU ones are in `perfSuite.cpp`.

@@ -4,12 +4,23 @@
 
 #include "GoldenMetrics.hpp"
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <cstdint>
 #include <vector>
 
 namespace {
 
+using Kataglyphis::Test::GoldenMetrics::compare_shadow_masks;
 using Kataglyphis::Test::GoldenMetrics::Crop;
+using Kataglyphis::Test::GoldenMetrics::GroundPixel;
+using Kataglyphis::Test::GoldenMetrics::GroundRect;
+using Kataglyphis::Test::GoldenMetrics::GroundShadowPrediction;
+using Kataglyphis::Test::GoldenMetrics::post_display_level;
+using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
+using Kataglyphis::Test::GoldenMetrics::ShadowAgreement;
+using Kataglyphis::Test::GoldenMetrics::WorldBox;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
 using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
 using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
@@ -66,6 +77,47 @@ std::vector<uint8_t> silhouette_frame(uint8_t sky, uint8_t edge, uint8_t object)
 
 SkySilhouette golden_sky_silhouette(const std::vector<uint8_t> &frame)
 { return sky_silhouette(frame, WIDTH, full_frame_crop()); }
+
+// A 64x64 top-down orthographic view of a 20x20 ground, +x to the right, one world unit per 3.2 pixels.
+constexpr uint32_t TOP_DOWN_SIZE = 64U;
+constexpr GroundRect TOP_DOWN_GROUND{ 0.0F, -10.0F, 10.0F, -10.0F, 10.0F };
+constexpr WorldBox TOP_DOWN_CASTER{ glm::vec3(-2.0F, 4.0F, -2.0F), glm::vec3(2.0F, 5.0F, 2.0F) };
+
+GroundShadowPrediction top_down_prediction(glm::vec3 light_travel)
+{
+    const glm::mat4 view = glm::lookAt(glm::vec3(0.0F, 50.0F, 0.0F), glm::vec3(0.0F), glm::vec3(0.0F, 0.0F, -1.0F));
+    const glm::mat4 projection = glm::ortho(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 100.0F);
+    return predict_ground_shadow(
+      glm::inverse(projection * view), TOP_DOWN_SIZE, TOP_DOWN_SIZE, TOP_DOWN_GROUND, TOP_DOWN_CASTER, light_travel);
+}
+
+// The middle row's pixel over world x.
+GroundPixel top_down_pixel_at(const GroundShadowPrediction &prediction, float world_x)
+{
+    const auto column = static_cast<uint32_t>((world_x + 10.0F) / 20.0F * static_cast<float>(TOP_DOWN_SIZE));
+    return prediction.pixels[static_cast<size_t>(TOP_DOWN_SIZE / 2U) * TOP_DOWN_SIZE + column];
+}
+
+// Left half lit, right half shadowed, in a frame of WIDTH x HEIGHT.
+std::vector<GroundPixel> half_shadowed_prediction()
+{
+    std::vector<GroundPixel> pixels(static_cast<size_t>(WIDTH) * HEIGHT, GroundPixel::Lit);
+    for (uint32_t y = 0; y < HEIGHT; ++y) {
+        for (uint32_t x = WIDTH / 2U; x < WIDTH; ++x) {
+            pixels[static_cast<size_t>(y) * WIDTH + x] = GroundPixel::Shadowed;
+        }
+    }
+    return pixels;
+}
+
+std::vector<bool> shadowed_from_column(uint32_t first_column)
+{
+    std::vector<bool> mask(static_cast<size_t>(WIDTH) * HEIGHT, false);
+    for (uint32_t y = 0; y < HEIGHT; ++y) {
+        for (uint32_t x = first_column; x < WIDTH; ++x) { mask[static_cast<size_t>(y) * WIDTH + x] = true; }
+    }
+    return mask;
+}
 
 }// namespace
 
@@ -161,4 +213,68 @@ TEST(GoldenMetrics, SkySilhouetteOfAnAllSkyFrameIsEmpty)
     const SkySilhouette silhouette = golden_sky_silhouette(flat_frame(SKY_LEVEL));
     EXPECT_EQ(silhouette.columns, 0U);
     EXPECT_EQ(silhouette.blended, 0U);
+}
+
+TEST(GoldenMetrics, PredictedShadowFallsWhereTheLightTravels)
+{
+    const GroundShadowPrediction prediction = top_down_prediction(glm::vec3(1.0F, -1.0F, 0.0F));
+    EXPECT_EQ(top_down_pixel_at(prediction, 5.0F), GroundPixel::Shadowed);
+    EXPECT_EQ(top_down_pixel_at(prediction, -5.0F), GroundPixel::Lit);
+    // The caster itself hides the ground beneath it from a camera above.
+    EXPECT_EQ(top_down_pixel_at(prediction, 0.0F), GroundPixel::NotGround);
+}
+
+TEST(GoldenMetrics, PredictedShadowFlipsSideWithTheLight)
+{
+    const GroundShadowPrediction prediction = top_down_prediction(glm::vec3(-1.0F, -1.0F, 0.0F));
+    EXPECT_EQ(top_down_pixel_at(prediction, 5.0F), GroundPixel::Lit);
+    EXPECT_EQ(top_down_pixel_at(prediction, -5.0F), GroundPixel::Shadowed);
+}
+
+TEST(GoldenMetrics, PredictedShadowEndsAtTheCastersShadowEdge)
+{
+    // Heights 4..5 under a 45 degree light: the shadow spans x from 2 to 7.
+    const GroundShadowPrediction prediction = top_down_prediction(glm::vec3(1.0F, -1.0F, 0.0F));
+    EXPECT_EQ(top_down_pixel_at(prediction, 6.5F), GroundPixel::Shadowed);
+    EXPECT_EQ(top_down_pixel_at(prediction, 7.6F), GroundPixel::Lit);
+}
+
+TEST(GoldenMetrics, ShadowMasksAgreeWhenTheMeasurementMatches)
+{
+    const ShadowAgreement agreement =
+      compare_shadow_masks(half_shadowed_prediction(), shadowed_from_column(WIDTH / 2U), WIDTH, HEIGHT, 1U);
+    EXPECT_GT(agreement.compared, 0U);
+    EXPECT_DOUBLE_EQ(agreement.agreement(), 1.0);
+    EXPECT_EQ(agreement.predicted_shadowed, agreement.measured_shadowed);
+    EXPECT_DOUBLE_EQ(agreement.predicted_centroid.x, agreement.measured_centroid.x);
+}
+
+TEST(GoldenMetrics, ShadowMasksIgnoreAnEdgeOffByLessThanTheBand)
+{
+    const ShadowAgreement agreement =
+      compare_shadow_masks(half_shadowed_prediction(), shadowed_from_column(WIDTH / 2U + 1U), WIDTH, HEIGHT, 1U);
+    EXPECT_DOUBLE_EQ(agreement.agreement(), 1.0);
+}
+
+TEST(GoldenMetrics, ShadowMasksDisagreeWhenTheShadowIsOnTheOtherSide)
+{
+    std::vector<bool> mirrored = shadowed_from_column(WIDTH / 2U);
+    mirrored.flip();
+    const ShadowAgreement agreement = compare_shadow_masks(half_shadowed_prediction(), mirrored, WIDTH, HEIGHT, 1U);
+    EXPECT_DOUBLE_EQ(agreement.agreement(), 0.0);
+    EXPECT_LT(agreement.measured_centroid.x, agreement.predicted_centroid.x);
+}
+
+TEST(GoldenMetrics, PostDisplayLevelMapsMidGreyAndClipsOnlyAtTheTop)
+{
+    EXPECT_DOUBLE_EQ(post_display_level(0.0), 0.0);
+    EXPECT_NEAR(post_display_level(0.18), 141.1, 0.5);
+    EXPECT_NEAR(post_display_level(1.0e4), 255.0, 1e-6);
+    double previous = -1.0;
+    for (int step = 0; step <= 200; ++step) {
+        const double level = post_display_level(0.05 * static_cast<double>(step));
+        EXPECT_GE(level, previous) << "at linear " << 0.05 * step;
+        previous = level;
+    }
+    EXPECT_LT(post_display_level(4.0), 255.0) << "ACES compresses a highlight before clipping it.";
 }
