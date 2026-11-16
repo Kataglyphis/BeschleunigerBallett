@@ -168,6 +168,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   Every barrier is a `vkCmdPipelineBarrier2` with explicit stage and access masks. The deferred
   lighting pass texel-fetches the G-buffer as sampled images instead of reading input
   attachments.
+- The frame submit is `vkQueueSubmit2`, waiting on the acquired swapchain image at the stage
+  the sky pass's first barrier starts from. Synchronization validation on the Linux and Windows
+  GPU lanes also checks load operations after another pass's store and shader descriptor
+  accesses, two hazard classes it skipped by default.
 - Adding a model builds only that model's bottom-level acceleration structure and rebuilds the
   TLAS; the models already in the scene keep theirs. A reload still rebuilds, since it replaces
   the model.

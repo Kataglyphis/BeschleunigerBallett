@@ -260,7 +260,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=64 runnable=62 integration=4 total=66 excluded=3 -->
+<!-- golden-counts: defined=65 runnable=63 integration=4 total=67 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -388,6 +388,21 @@ WRITE-AFTER-WRITE classes, both fixed the same day:
 
 `GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards` pins both: it turns sync
 validation on for its own harness, so it holds on any lane with validation layers.
+
+**`validate_sync` alone misses two classes**, both off by default in the 1.4.363 layer
+(measured 2026-11-16, with the barriers removed: 0 hazards by default):
+
+- `syncval_load_op_after_store_op_validation`: a load op reading what another rendering
+  instance stored. Post's `eLoad` of the swapchain image after the sky pass is one; without
+  its barrier the setting reports `READ_AFTER_WRITE` at `vkCmdBeginRendering`.
+- `syncval_shader_accesses_heuristic`: shader reads and writes through descriptors. Post's
+  read of the clouds' compute output is one; without its barrier the setting reports
+  `READ_AFTER_WRITE` at post's `vkCmdDraw`.
+
+`run-ctest.sh --virtual-display` and `Invoke-LavapipeTests.ps1` turn both on, and
+`GoldenRender.CloudCompositeAndSkyLoadAreFreeOfSyncHazards` sets them for its own
+harness. Raise `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT` when hunting: every hazard of one
+kind shares a message id, so ten load-op reports silence the shader-read ones behind them.
 
 **Windows x64 validates too since 2026-10-06**, though its GPU suites run in Release.
 `Build-Windows.ps1 -StageTests` copies the image's `VkLayer_khronos_validation` for the target

@@ -216,14 +216,32 @@ class FrameCapture
             return;
         }
 
-        Kataglyphis::recordImageBarrier(commandBuffer,
-          Kataglyphis::buildImageMemoryBarrier(image,
-            source.layout,
-            vk::ImageLayout::eTransferSrcOptimal,
-            source.lastStages,
-            source.lastAccess,
-            vk::PipelineStageFlagBits2::eCopy,
-            vk::AccessFlagBits2::eTransferRead));
+        const vk::ImageMemoryBarrier2 to_transfer_source = Kataglyphis::buildImageMemoryBarrier(image,
+          source.layout,
+          vk::ImageLayout::eTransferSrcOptimal,
+          source.lastStages,
+          source.lastAccess,
+          vk::PipelineStageFlagBits2::eCopy,
+          vk::AccessFlagBits2::eTransferRead);
+
+        // A re-armed capture copies into the buffer an earlier, still-running frame may be writing (WAW).
+        vk::BufferMemoryBarrier2 previous_copy{};
+        previous_copy.srcStageMask = vk::PipelineStageFlagBits2::eCopy;
+        previous_copy.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        previous_copy.dstStageMask = vk::PipelineStageFlagBits2::eCopy;
+        previous_copy.dstAccessMask = vk::AccessFlagBits2::eTransferWrite;
+        previous_copy.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+        previous_copy.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+        previous_copy.buffer = buffer.getBuffer();
+        previous_copy.offset = 0;
+        previous_copy.size = required_size;
+
+        vk::DependencyInfo before_copy{};
+        before_copy.bufferMemoryBarrierCount = 1;
+        before_copy.pBufferMemoryBarriers = &previous_copy;
+        before_copy.imageMemoryBarrierCount = 1;
+        before_copy.pImageMemoryBarriers = &to_transfer_source;
+        commandBuffer.pipelineBarrier2(before_copy);
 
         vk::BufferImageCopy region{};
         region.bufferOffset = 0;

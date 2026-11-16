@@ -12,6 +12,7 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/FrameSubmitHelper.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderingHelper.hpp"
@@ -321,7 +322,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
       buildImageMemoryBarrier(target,
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        kSwapchainAcquireWaitStage,
         vk::AccessFlagBits2::eNone,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite));

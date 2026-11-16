@@ -2833,25 +2833,35 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
       << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
 }
 
-// The layer reads it at instance creation, so one harness gets sync validation whatever the lane's settings say.
+// The layer reads them at instance creation, so one harness gets sync validation whatever the lane's settings say.
 class ScopedSyncValidation
 {
   public:
-    ScopedSyncValidation() { set("1"); }
+    ScopedSyncValidation() { setAll("1"); }
     ScopedSyncValidation(const ScopedSyncValidation &) = delete;
     ScopedSyncValidation &operator=(const ScopedSyncValidation &) = delete;
-    ~ScopedSyncValidation() { set(""); }
+    ~ScopedSyncValidation() { setAll(""); }
 
   private:
-    static void set(const char *value)
+    // Both extras default off and hide a whole class: a load op after another pass's store, and a shader's reads.
+    static constexpr std::array<const char *, 3> kSettings = { "VK_KHRONOS_VALIDATION_VALIDATE_SYNC",
+        "VK_KHRONOS_VALIDATION_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION",
+        "VK_KHRONOS_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC" };
+
+    static void setAll(const char *value)
+    {
+        for (const char *name : kSettings) { set(name, value); }
+    }
+
+    static void set(const char *name, const char *value)
     {
 #ifdef _WIN32
-        std::ignore = _putenv_s("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", value);
+        std::ignore = _putenv_s(name, value);
 #else
         if (*value == '\0') {
-            std::ignore = unsetenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC");
+            std::ignore = unsetenv(name);
         } else {
-            std::ignore = setenv("VK_KHRONOS_VALIDATION_VALIDATE_SYNC", value, 1);
+            std::ignore = setenv(name, value, 1);
         }
 #endif
     }
@@ -2877,6 +2887,25 @@ TEST(GoldenRender, DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards)
     EXPECT_EQ(validation_errors.errorCount(), 0)
       << "synchronization validation logged an error - SYNC-HAZARD-WRITE-AFTER-WRITE if a deferred G-buffer store "
          "or a BLAS build's scratch write lost its barrier (DeferredRasterizer.cpp, ASManager.cpp)";
+}
+
+// Default sync validation misses both edges into post: the sky pass's stored image and the clouds' compute output.
+TEST(GoldenRender, CloudCompositeAndSkyLoadAreFreeOfSyncHazards)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedSyncValidation sync_validation;
+    EngineHarness harness;
+    harness.useForwardRaster();
+    harness.gui->getGuiSceneSharedVars().clouds_enabled = true;
+    // From the first frame: the layer reports one message id ten times, then goes quiet, so warmup would spend them.
+    ScopedValidationErrorCounter validation_errors;
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost compositing the clouds.";
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "synchronization validation logged an error - SYNC-HAZARD-READ-AFTER-WRITE if post lost its barrier after "
+         "the sky pass (PostStage.cpp) or after the clouds' dispatch (VulkanRenderer.cpp)";
 }
 
 namespace {

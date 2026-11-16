@@ -6851,6 +6851,100 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
       << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }
 
+// Default sync validation sees neither edge: it skips load-after-store across rendering instances and shader reads.
+TEST(BuildIntegrity, PostKeepsItsSkyAndCloudBarriers)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto post = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/PostStage.cpp");
+    ASSERT_TRUE(post.has_value()) << "could not open PostStage.cpp";
+    const std::size_t record = post->find("PostStage::recordCommands(");
+    ASSERT_NE(record, std::string::npos) << "PostStage::recordCommands not found";
+    const std::size_t begin_rendering = post->find("beginRendering(", record);
+    ASSERT_NE(begin_rendering, std::string::npos) << "PostStage::recordCommands begins no rendering";
+    const std::string before_load = post->substr(record, begin_rendering - record);
+    EXPECT_NE(before_load.find("buildImageMemoryBarrier("), std::string::npos)
+      << "PostStage loads the swapchain image the sky pass stored with no barrier in between (RAW across rendering "
+         "instances, which no implicit ordering covers)";
+    EXPECT_NE(before_load.find("vk::AccessFlagBits2::eColorAttachmentWrite"), std::string::npos)
+      << "the post pass's pre-load barrier must make the sky's colour-attachment write available";
+    EXPECT_NE(before_load.find("vk::AccessFlagBits2::eColorAttachmentRead"), std::string::npos)
+      << "the post pass's pre-load barrier must make the sky's write visible to the load op's colour-attachment read";
+
+    const auto renderer = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp");
+    ASSERT_TRUE(renderer.has_value()) << "could not open VulkanRenderer.cpp";
+    const std::size_t dispatch = renderer->find("clouds.recordComputeCommands(");
+    ASSERT_NE(dispatch, std::string::npos) << "the clouds' compute dispatch was not found";
+    const std::size_t clouds_end = renderer->find("write_pass_timestamp(GpuTimedPass::Clouds, false)", dispatch);
+    ASSERT_NE(clouds_end, std::string::npos) << "the clouds block's closing timestamp was not found";
+    const std::string after_dispatch = renderer->substr(dispatch, clouds_end - dispatch);
+    EXPECT_NE(after_dispatch.find("getCloudOutputTexture()"), std::string::npos)
+      << "nothing orders the clouds' compute write before post's fragment read of the cloud output";
+    EXPECT_NE(after_dispatch.find("vk::AccessFlagBits2::eShaderStorageWrite"), std::string::npos)
+      << "the clouds-to-post barrier must make the compute shader's storage write available";
+    EXPECT_NE(after_dispatch.find("vk::PipelineStageFlagBits2::eFragmentShader"), std::string::npos)
+      << "the clouds-to-post barrier must name post's fragment shader as its consumer";
+}
+
+// The acquire wait and the sky's first barrier share one constant, and the signal covers the present transition.
+TEST(BuildIntegrity, FrameSubmitWaitsWhereTheSwapchainImageIsFirstUsed)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto renderer = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp");
+    ASSERT_TRUE(renderer.has_value()) << "could not open VulkanRenderer.cpp";
+    EXPECT_NE(renderer->find("getGraphicsQueue().submit2("), std::string::npos)
+      << "the frame submit must be vkQueueSubmit2, so its semaphore stages are synchronization2 stages";
+    EXPECT_EQ(renderer->find("pWaitDstStageMask"), std::string::npos)
+      << "a legacy VkSubmitInfo wait stage is back in VulkanRenderer.cpp";
+    EXPECT_NE(
+      renderer->find("frameSync.imageAvailableSemaphore(), Kataglyphis::kSwapchainAcquireWaitStage"), std::string::npos)
+      << "the acquire semaphore must be waited at kSwapchainAcquireWaitStage";
+    EXPECT_NE(renderer->find("Kataglyphis::kRenderFinishedSignalStage"), std::string::npos)
+      << "the render-finished semaphore must be signalled at kRenderFinishedSignalStage";
+
+    const auto sky = readFileText(repo_root / "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp");
+    ASSERT_TRUE(sky.has_value()) << "could not open SkyBox.cpp";
+    const std::size_t record = sky->find("SkyBox::recordCommands(");
+    ASSERT_NE(record, std::string::npos) << "SkyBox::recordCommands not found";
+    const std::size_t begin_rendering = sky->find("beginRendering(", record);
+    ASSERT_NE(begin_rendering, std::string::npos) << "SkyBox::recordCommands begins no rendering";
+    EXPECT_NE(sky->substr(record, begin_rendering - record).find("kSwapchainAcquireWaitStage"), std::string::npos)
+      << "the sky's UNDEFINED transition of the swapchain image must take its source stage from the acquire wait, "
+         "or the transition can run before the presentation engine releases the image";
+}
+
+// Edges no frame validates: the TLAS's instance read and a re-armed capture writing a buffer a running frame writes.
+TEST(BuildIntegrity, OneShotCopiesNameTheAccessesTheSpecRequires)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto as_manager =
+      readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp");
+    ASSERT_TRUE(as_manager.has_value()) << "could not open ASManager.cpp";
+    const std::size_t create_tlas = as_manager->find("ASManager::createTLAS(");
+    ASSERT_NE(create_tlas, std::string::npos) << "ASManager::createTLAS not found";
+    const std::size_t transfer_src = as_manager->find("vk::AccessFlagBits2::eTransferWrite;", create_tlas);
+    ASSERT_NE(transfer_src, std::string::npos) << "the instance upload's barrier was not found in createTLAS";
+    const std::size_t dst_access = as_manager->find("barrier.dstAccessMask = ", transfer_src);
+    ASSERT_NE(dst_access, std::string::npos) << "the instance upload's barrier has no destination access";
+    const std::size_t dst_access_end = as_manager->find(';', dst_access);
+    EXPECT_NE(as_manager->substr(dst_access, dst_access_end - dst_access).find("eShaderRead"), std::string::npos)
+      << "a TLAS build reads its instance buffer as VK_ACCESS_2_SHADER_READ_BIT, so the upload's barrier must name it";
+
+    const auto capture = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx");
+    ASSERT_TRUE(capture.has_value()) << "could not open FrameCapture.ixx";
+    const std::size_t record_copy = capture->find("void recordCopy(");
+    ASSERT_NE(record_copy, std::string::npos) << "FrameCapture::recordCopy not found";
+    const std::size_t copy = capture->find("copyImageToBuffer(", record_copy);
+    ASSERT_NE(copy, std::string::npos) << "FrameCapture::recordCopy records no copy";
+    EXPECT_NE(capture->substr(record_copy, copy - record_copy).find("pBufferMemoryBarriers"), std::string::npos)
+      << "the capture copy must order itself after an earlier frame's copy into the same staging buffer (WAW)";
+}
+
 // A barrier into eShaderReadOnlyOptimal must name the stage that samples the image, or the real hazard goes unguarded.
 TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 {

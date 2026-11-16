@@ -157,6 +157,9 @@ if ($validating) {
   $layerKey = if ($elevated) { 'HKLM:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' } else { 'HKCU:\SOFTWARE\Khronos\Vulkan\ExplicitLayers' }
   $env:KATAGLYPHIS_VULKAN_VALIDATION = '1'
   $env:VK_KHRONOS_VALIDATION_VALIDATE_SYNC = '1'
+  # Both default off and hide a class each: a load op after another pass's store, a shader's descriptor accesses.
+  $env:VK_KHRONOS_VALIDATION_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION = '1'
+  $env:VK_KHRONOS_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC = '1'
 }
 Write-Host "validation layer: $(if ($validating) { "$layerJson (registered under $layerKey), sync validation on" } else { 'none staged; the suites run unvalidated' })"
 

@@ -1,4 +1,5 @@
 module;
+#include "common/FrameSubmitHelper.hpp"
 #include "common/GuiModelTransform.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
@@ -615,18 +616,19 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    vk::SubmitInfo submit_info{};
-    submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &frameSync.imageAvailableSemaphore();
+    const vk::SemaphoreSubmitInfo wait_info = Kataglyphis::buildSemaphoreSubmitInfo(
+      frameSync.imageAvailableSemaphore(), Kataglyphis::kSwapchainAcquireWaitStage);
+    const vk::SemaphoreSubmitInfo signal_info = Kataglyphis::buildSemaphoreSubmitInfo(
+      frameSync.renderFinishedSemaphore(image_index), Kataglyphis::kRenderFinishedSignalStage);
+    const vk::CommandBufferSubmitInfo command_buffer_info{ command_buffers[image_index] };
 
-    vk::PipelineStageFlags const wait_stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
-
-    submit_info.pWaitDstStageMask = &wait_stages;
-
-    submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffers[image_index];
-    submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &frameSync.renderFinishedSemaphore(image_index);
+    vk::SubmitInfo2 submit_info{};
+    submit_info.waitSemaphoreInfoCount = 1;
+    submit_info.pWaitSemaphoreInfos = &wait_info;
+    submit_info.commandBufferInfoCount = 1;
+    submit_info.pCommandBufferInfos = &command_buffer_info;
+    submit_info.signalSemaphoreInfoCount = 1;
+    submit_info.pSignalSemaphoreInfos = &signal_info;
 
     result = device->getLogicalDevice().resetFences(1, &frameSync.inFlightFence());
     if (result != vk::Result::eSuccess) {
@@ -634,7 +636,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    result = device->getGraphicsQueue().submit(1, &submit_info, frameSync.inFlightFence());
+    result = device->getGraphicsQueue().submit2(1, &submit_info, frameSync.inFlightFence());
     if (result != vk::Result::eSuccess) {
         spdlog::error(
           fmt::format("Queue submit context: frame={}, imageIndex={}, renderMode={}, supportsRRT={}, cmdBufferIndex={}",

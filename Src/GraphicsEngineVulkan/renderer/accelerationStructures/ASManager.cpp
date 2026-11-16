@@ -369,11 +369,12 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
       VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
         reinterpret_cast<VkBufferDeviceAddressInfo *>(&geometry_instance_buffer_device_address_info));
 
+    // The build reads its instance buffer as a shader read (vkCmdBuildAccelerationStructuresKHR's input-buffer rule).
     vk::MemoryBarrier2 barrier;
     barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
     barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
     barrier.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
+    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
     vk::DependencyInfo dependency_info{};
     dependency_info.memoryBarrierCount = 1;
     dependency_info.pMemoryBarriers = &barrier;
