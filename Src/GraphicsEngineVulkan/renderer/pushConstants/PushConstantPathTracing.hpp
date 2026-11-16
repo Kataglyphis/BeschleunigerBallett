@@ -18,6 +18,8 @@ struct PushConstantPathTracing
     float furnace_roughness;
     // Nonzero when the clouds read this frame's traced depth; otherwise its extra primary ray is skipped.
     uint trace_cloud_depth;
+    // Nonzero while the skybox is on: a bounce that misses samples its cube map, else the disabled sky's navy.
+    uint skybox_enabled;
 };
 
 }// namespace Kataglyphis::VulkanRendererInternals

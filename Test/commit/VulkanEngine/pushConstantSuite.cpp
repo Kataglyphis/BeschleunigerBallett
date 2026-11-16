@@ -89,7 +89,8 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
     EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_metallic), 36U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_roughness), 40U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, trace_cloud_depth), 44U);
-    EXPECT_GE(sizeof(PushConstantPathTracing), 48U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, skybox_enabled), 48U);
+    EXPECT_GE(sizeof(PushConstantPathTracing), 52U);
     EXPECT_LE(sizeof(PushConstantPathTracing), 128U);
 }
 

@@ -2965,20 +2965,32 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
     const uint32_t scan_x0 = (width * 68U) / 100U;
     const uint32_t scan_y1 = (height * 62U) / 100U;
 
+    // The card's checker cells survive a 3x3 erosion; the noise in the slab's interreflection-lit shadow does not.
+    std::vector<bool> changed_mask(static_cast<size_t>(width) * height, false);
+    for (uint32_t y = 0; y < scan_y1; ++y) {
+        for (uint32_t x = scan_x0; x < width; ++x) {
+            changed_mask[static_cast<size_t>(y) * width + x] = changed_at(x, y);
+        }
+    }
+    const std::vector<bool> solid = eroded(changed_mask, width, height);
     uint32_t minx = width;
     uint32_t miny = height;
     uint32_t maxx = 0;
     uint32_t maxy = 0;
-    size_t changed_total = 0;
     for (uint32_t y = 0; y < scan_y1; ++y) {
         for (uint32_t x = scan_x0; x < width; ++x) {
-            if (changed_at(x, y)) {
-                ++changed_total;
+            if (solid[static_cast<size_t>(y) * width + x]) {
                 minx = std::min(minx, x);
                 maxx = std::max(maxx, x);
                 miny = std::min(miny, y);
                 maxy = std::max(maxy, y);
             }
+        }
+    }
+    size_t changed_total = 0;
+    for (uint32_t y = miny; y <= maxy && minx <= maxx; ++y) {
+        for (uint32_t x = minx; x <= maxx; ++x) {
+            if (changed_mask[static_cast<size_t>(y) * width + x]) { ++changed_total; }
         }
     }
 
@@ -3581,13 +3593,15 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     }
 
     const Crop box = panel_free_card_box(width, height);
-    const double detail_before = detail_fraction(before, width, height, box);
-    const double detail = detail_fraction(frame, width, height, box);
+    // Under the dim cube map the slab's shadow is lit by interreflection alone; its noise steps stay under 48 levels.
+    constexpr double CHECKER_STEP = 48.0;
+    const double detail_before = detail_fraction(before, width, height, box, CHECKER_STEP);
+    const double detail = detail_fraction(frame, width, height, box, CHECKER_STEP);
     GTEST_LOG_(INFO) << "added-model PT card-box detail fraction: before the add " << detail_before << ", after "
                      << detail;
 
-    // Before the add stands in for a missing AS rebuild. RTX 2080, 2026-10-01: 0.037 before, 0.328 after.
-    constexpr double DETAIL_THRESHOLD = 0.15;
+    // Before the add stands in for a missing AS rebuild. Steps of 6 levels: RTX 2080 0.037 before, 0.328 after (2026-10-01).
+    constexpr double DETAIL_THRESHOLD = 0.1;
     EXPECT_LT(detail_before, DETAIL_THRESHOLD) << "the card box already has detail without the card - check framing";
     EXPECT_GT(detail, DETAIL_THRESHOLD)
       << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
@@ -4314,6 +4328,90 @@ TEST(GoldenRender, PathTracedMetalCardReflectsTheSkyAndTheSun)
     EXPECT_GT(highlight_mean, plain_mean + 30.0) << "the highlight is not brighter than the reflected sky";
 }
 
+// A bounce that misses sees the sky the raster draws, scaled as OxidANT's bounce_sky: the cube map, or the navy.
+TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
+{
+    SKIP_WITHOUT_GPU();
+
+    // F0 1 and the 0.045 roughness floor: the card returns the sky behind the camera, mirrored left to right.
+    const auto mirror = write_gltf_variant(METALLIC_CARD_MODEL, "kataglyphis_mirror_card.gltf", [](auto &gltf) {
+        gltf["materials"][0]["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 1.0, 1.0, 1.0, 1.0 } }, { "metallicFactor", 1.0 }, { "roughnessFactor", 0.0 }
+        };
+    });
+    ASSERT_TRUE(mirror.has_value()) << "could not write the mirror card";
+
+    ScopedModelOverride card(mirror->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.directional_light_radiance = 0.0F;
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 2.0F));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+
+    constexpr uint32_t HALF = 24U;
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto mean_rgb = [&](const auto &pixels, const auto &to_linear) {
+        glm::dvec3 sum(0.0);
+        for (uint32_t y = height / 2U - HALF; y < height / 2U + HALF; ++y) {
+            for (uint32_t x = width / 2U - HALF; x < width / 2U + HALF; ++x) {
+                const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+                for (int c = 0; c < 3; ++c) { sum[c] += to_linear(pixels[base + static_cast<size_t>(c)]); }
+            }
+        }
+        return sum / static_cast<double>(4U * HALF * HALF);
+    };
+    const auto radiance = [](float value) { return static_cast<double>(value); };
+    const auto traced_mirror = [&](bool skybox) {
+        scene_vars.skybox_enabled = skybox;
+        harness.render_frames(path_traced_history(8, 4));
+        const std::vector<float> hdr = harness.capture_hdr_frame(width, height);
+        EXPECT_FALSE(hdr.empty());
+        return hdr.empty() ? glm::dvec3(-1.0) : mean_rgb(hdr, radiance);
+    };
+    const glm::dvec3 navy = traced_mirror(false);
+    const glm::dvec3 doom = traced_mirror(true);
+
+    // The sky the raster draws where the mirror points: the sky pass stores the cube map's sRGB, untonemapped.
+    harness.useForwardRaster();
+    harness.camera->set_orientation(90.0F, 0.0F);
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> drawn = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(drawn.empty());
+    const glm::dvec3 sky = mean_rgb(drawn, [](uint8_t byte) {
+        const double encoded = static_cast<double>(byte) / 255.0;
+        return encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
+    });
+
+    // OxidANT's defaults, ambient strength 0.35 times environment intensity 1; a white metal at mu 1 returns all of it.
+    constexpr double SKY_LIGHT = 0.35;
+    GTEST_LOG_(INFO) << "mirror card, skybox off: (" << navy.r << ", " << navy.g << ", " << navy.b << "); skybox on: ("
+                     << doom.r << ", " << doom.g << ", " << doom.b << "); the drawn sky behind the camera times "
+                     << SKY_LIGHT << ": (" << SKY_LIGHT * sky.r << ", " << SKY_LIGHT * sky.g << ", "
+                     << SKY_LIGHT * sky.b << ")";
+
+    // The disabled sky is linear (0, 0, 0.5); the old gradient was white to light blue in every channel.
+    EXPECT_LT(navy.r, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
+    EXPECT_LT(navy.g, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
+    EXPECT_NEAR(navy.b, SKY_LIGHT * 0.5, 0.01) << "the navy a bounce sees is not scaled by the sky light";
+    for (int c = 0; c < 3; ++c) {
+        EXPECT_NEAR(doom[c], SKY_LIGHT * sky[c], 0.05 * SKY_LIGHT * sky[c] + 0.001)
+          << "the mirror does not reflect the cube map the raster draws, channel " << c;
+    }
+}
+
 // An unlit glTF material that omits metallicFactor (1 by the spec) once went black in PT: metallic darkened it first.
 TEST(GoldenRender, PathTracedUnlitCardKeepsItsAlbedo)
 {
@@ -4535,7 +4633,8 @@ TEST(GoldenRender, TracedHitsTakeTheirSideFromTheTriangleWinding)
     const double after_mean = mean_hdr_in_square(after, width, width / 2U, height / 2U, 24U);
     GTEST_LOG_(INFO) << "path-traced leaning-normal card: " << before_mean << " alone, " << after_mean
                      << " with an emitter behind it";
-    ASSERT_GT(before_mean, 0.02) << "the path-traced card does not see the sky - check the placement";
+    // The bounce sky is the drawn cube map times 0.35, about 0.015 here; a card that missed it would read 0.
+    ASSERT_GT(before_mean, 0.005) << "the path-traced card does not see the sky - check the placement";
     EXPECT_NEAR(after_mean, before_mean, 0.05 * before_mean)
       << "bounces leave through the triangle toward an emitter behind it: the path bound is the vertex normal";
 

@@ -24,6 +24,8 @@ const int MAX_PCF_RADIUS = 5;
 #define ACCUMULATION_IMAGE_BINDING 2
 // Primary-hit NDC depth of a ray- or path-traced frame, which the clouds read in place of a raster depth buffer.
 #define TRACED_DEPTH_IMAGE_BINDING 3
+// The skybox's cube map, which a path-traced bounce that misses samples as the sky it draws.
+#define SKYBOX_CUBEMAP_BINDING 4
 // ---- RAYTRACING BINDING ---- END
 
 // ----- GBUFFER TEXTURE SET ----- START (sampled by the deferred lighting pass)

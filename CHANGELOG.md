@@ -226,6 +226,13 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- A path-traced bounce that misses sees the sky the raster draws, as the Rust renderer's does:
+  the skybox's cube map (or the navy with the skybox off) times 0.35, the Rust default ambient
+  strength times environment intensity, which the C++ engine has no setting for. It was a fixed
+  white-to-blue gradient at half intensity, which camera rays keep. Toggling the skybox restarts
+  the running mean. `GoldenRender.PathTracedMirrorReflectsTheSkyboxItDraws` checks a mirror card
+  against both skies; under the dimmer DOOM2016 sky, `AddedModelAppearsInPathTracing` and
+  `PathTracedMaskCardShowsItsCutout` read past the noise in the shadow rig's slab shadow.
 - `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` runs in CI again, weekly: `linux-x64.yml`'s
   `gui-sweep` job (Sundays, or a dispatch with `gui-sweep`) builds the debug tree and runs only it on
   llvmpipe with sync validation, under a 90-minute ctest timeout; every push still excludes it.

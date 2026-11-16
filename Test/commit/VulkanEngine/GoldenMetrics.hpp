@@ -73,8 +73,8 @@ inline double
     return total > 0U ? static_cast<double>(swung) / static_cast<double>(total) : 0.0;
 }
 
-// Texture-detail proxy: fraction of `crop` whose right neighbour, also in `crop`, differs by more than 6 luma levels.
-inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
+// Texture-detail proxy: fraction of `crop` whose right neighbour, also in `crop`, differs by more than `step` luma levels.
+inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop, double step = 6.0)
 {
     if (crop.x1 == 0U || crop.x1 <= crop.x0 + 1U) { return 0.0; }
     size_t detailed = 0;
@@ -82,7 +82,7 @@ inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint
     for (uint32_t y = crop.y0; y < crop.y1; ++y) {
         for (uint32_t x = crop.x0; x < crop.x1 - 1U; ++x) {
             const size_t base = static_cast<size_t>(y) * w + x;
-            if (std::abs(luminance_of(rgba, base) - luminance_of(rgba, base + 1U)) > 6.0) { ++detailed; }
+            if (std::abs(luminance_of(rgba, base) - luminance_of(rgba, base + 1U)) > step) { ++detailed; }
             ++total;
         }
     }

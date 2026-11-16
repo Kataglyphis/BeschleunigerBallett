@@ -128,8 +128,8 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 
 | Test | History, full → light | Full | Light, five RNG streams | Threshold | Light, property broken |
 | --- | --- | --- | --- | --- | --- |
-| `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
-| `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
+| `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355; 0.350 since 2026-11-16 (aarch64 llvmpipe) | 0.354-0.356; 0.352 (one stream) | 0.15-0.49 | alpha test ignored: 0.631; 0.628 since 2026-11-16, fails |
+| `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after; at steps of 48 levels since 2026-11-16, 0.0010 before, 0.201 after | 0.051-0.055 before, 0.417-0.421 after; 0.0016 before, 0.200 after (one stream) | 0.15; 0.1 since 2026-11-16 | AS not rebuilt: 0.071 after; 0.0019 since 2026-11-16, fails |
 | `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of `E(mu)`, rig (roughness 0.8) 0.9823, 1.0 within ±0.1 (2026-11-16, aarch64 llvmpipe, one stream) | card within 0.001, rig 0.9823, 0.9995 (one stream) | card 0.01, rig 0.977-0.988, 0.98 | albedo 0.99: rig 0.9715, fails; albedo 1.01: rig 0.9933, fails |
 | `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
@@ -152,6 +152,15 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   (0.9 for the 8-bit furnace), and the primary ray goes through the pixel centre. The full
   variant fails all four the same way. The 8-bit furnace's band was wide: albedo 0.95 passed
   both variants (mean 230.1).
+- **A bounce sees the drawn sky since 2026-11-16** (the Miss bullet of `docs/source/path-tracing.md`):
+  DOOM2016 times 0.35 is about a seventeenth of the old gradient, so the slab's shadow on the
+  shadow rig is lit by interreflection alone, and its noise survives a 24- or 60-frame history.
+  On the old metrics it read as card: the added model's empty box had 0.21 (full) and 0.28
+  (light) of its steps over 6 levels, and the mask card's bounding box stretched along the
+  shadow to 0.085 (light). The added model now counts steps over 48 levels (the checker's are
+  far larger, the noise's 0.002 at most), the mask card takes its box from the changed pixels
+  that survive a 3x3 erosion and counts every changed pixel inside it. The furnace and
+  anti-aliasing goldens did not move (0.9823 and 312 of 312 in both variants).
 - **The furnace rig moved to roughness 0.8 on 2026-11-16**, when a bounce took the sampled
   Smith remap (`docs/source/path-tracing.md`): at 0.5 the BRDF's own `E(mu)` passes 1 at grazing
   angles and the rig's mean rose to 1.019. At 0.8 `E(mu)` stays in 0.981-0.997, so the mean is
@@ -270,7 +279,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=75 runnable=73 integration=12 total=85 excluded=3 -->
+<!-- golden-counts: defined=76 runnable=74 integration=12 total=86 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.

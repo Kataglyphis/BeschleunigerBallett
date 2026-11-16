@@ -69,3 +69,13 @@ TEST(PathTracingHistoryUnit, ProjectionChangeInvalidatesTheHistory)
 
     EXPECT_TRUE(a != b);
 }
+
+// A bounce that misses sees the cube map or the navy, so the toggle changes what the mean converges to.
+TEST(PathTracingHistoryUnit, ASkyboxToggleInvalidatesTheHistory)
+{
+    const PathTracingHistoryKey a = make_key();
+    PathTracingHistoryKey b = make_key();
+    b.skyboxEnabled = !a.skyboxEnabled;
+
+    EXPECT_TRUE(a != b);
+}

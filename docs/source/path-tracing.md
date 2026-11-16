@@ -82,7 +82,11 @@ estimators is biased).
   the side from the vertex normal), an emitter behind the card must add
   nothing to the path-traced card (0.347 either way; 9.71 with the old side
   and bound), and the path-traced card must shade like a flat twin (0.347
-  both; 0.110 with the old side alone, 0.237 with the old bound alone).
+  both; 0.110 with the old side alone, 0.237 with the old bound alone). Those
+  numbers are the old gradient sky's; under the drawn cube map since
+  2026-11-16 the card reads 0.0150 alone, beside the emitter and as the flat
+  twin, and its sanity bound fell from 0.02 to 0.005 (the controls were not
+  re-measured).
 - **The BRDF is raster's**: OxidANT's `brdf.slang`, Lambert times
   `(1 - F)(1 - metallic)` plus the GGX lobe `D G F / (4 n.v n.l)`, with
   `f0 = lerp(0.04, albedo, metallic)`. NEE evaluates `brdf_direct`, raster's
@@ -121,17 +125,29 @@ estimators is biased).
   below the triangle ends the path, which keeps a tilted normal map or vertex
   normal from leaking light through the surface. The sampled
   direction is renormalized before it becomes the next segment's
-  `rayDirection`: `TMin`, `TMax` and the miss gradient below are all measured
-  in units of that vector's length. From the fourth segment on, **Russian
+  `rayDirection`: `TMin` and `TMax` are measured in units of that vector's
+  length. From the fourth segment on, **Russian
   roulette** terminates low-throughput paths and reweights survivors
   (unbiased).
-- **Miss**: a soft RTIOW gradient sky at half intensity ends the path.
+- **Miss**: ends the path. A camera ray keeps the soft RTIOW gradient at
+  half intensity, as OxidANT's path tracer keeps its procedural sky. A bounce
+  sees the sky the raster draws (owner decision 2026-11-16), as OxidANT's
+  `bounce_sky` (`shaders/tracer/trace_shading.slang`) lights it: the
+  skybox's cube map at LOD 0 while the skybox is on
+  (`skybox_radiance_lod0` in `common/skybox_radiance.slang`, the sky pass's
+  decode), the disabled sky's navy otherwise, times 0.35. Rust scales by
+  its ambient strength times its environment intensity; the C++ engine has
+  neither setting, so the constant is their defaults (0.35 and 1). The cube
+  map is `SKYBOX_CUBEMAP_BINDING` in the ray-tracing set, compute only; it is
+  uploaded once and stays `eShaderReadOnlyOptimal`, so no barrier guards it.
+  The push constants' `skybox_enabled` carries the switch, and toggling it
+  restarts the running mean (`PathTracingHistoryKey::skyboxEnabled`).
 
 Self-intersection is guarded by a 1e-4 offset along the face normal **and**
 ray-query `t_min = 0.001` (matches the RT path).
 
 `KATAGLYPHIS_PT_FURNACE=<radiance>` gives every hit one white surface (albedo
-1) and replaces the gradient sky with a uniform `<radiance>` environment; the
+1) and replaces both skies with a uniform `<radiance>` environment; the
 shader gates on `pc_ray.clearColor.w > 0.5`. `KATAGLYPHIS_PT_FURNACE_METALLIC`
 (default 0) and `KATAGLYPHIS_PT_FURNACE_ROUGHNESS` (default 0.5, clamped to
 `material_roughness`'s 0.045 floor) pick that surface, through the push
@@ -270,10 +286,16 @@ dramatically.
   fix, 41.6 vs 248 when `raytrace.rchit.slang` seeds its payload with the
   unlit albedo (`e852ac99`).
 
-Six more goldens cover the kernel without the `PathTracing` prefix the
+Seven more goldens cover the kernel without the `PathTracing` prefix the
 marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at
-roughness 0.3 mirrors the sky at 219 luma and, tilted halfway to the sun, a
-white highlight; without the lobe 0 and 71),
+roughness 0.3 mirrors the sky at 200 luma, 219 under the old gradient, and,
+tilted halfway to the sun, a white highlight; without the lobe 0 and 71),
+`PathTracedMirrorReflectsTheSkyboxItDraws` (a white metal card at the
+roughness floor, sun off: with the skybox off it returns 0.35 times the navy,
+measured (0, 0, 0.1749); with it on, 0.35 times the sky the raster draws
+behind the camera, sRGB-decoded from the swapchain, within 5 % plus 0.001
+per channel, measured (0.0234, 0.0209, 0.0240) against (0.0232, 0.0206,
+0.0236) on aarch64 llvmpipe; the old gradient on bounces fails both),
 `PathTracedUnlitCardKeepsItsAlbedo` (an unlit card's HDR value matches
 forward's to 0.01; metallic first gave 0),
 `HdrTargetStaysBelowTheHalfFloatMaximum`,

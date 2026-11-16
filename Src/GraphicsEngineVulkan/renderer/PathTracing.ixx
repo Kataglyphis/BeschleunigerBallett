@@ -36,7 +36,8 @@ class PathTracing
       uint32_t frame_index,
       uint32_t samples_per_pixel,
       uint32_t max_bounces,
-      bool trace_cloud_depth);
+      bool trace_cloud_depth,
+      bool skybox_enabled);
 
     void cleanUp();
 

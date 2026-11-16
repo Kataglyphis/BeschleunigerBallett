@@ -303,6 +303,7 @@ const std::vector<std::string> kSharedConstantNames = { "MAX_TEXTURE_COUNT",
     "OUT_IMAGE_BINDING",
     "ACCUMULATION_IMAGE_BINDING",
     "TRACED_DEPTH_IMAGE_BINDING",
+    "SKYBOX_CUBEMAP_BINDING",
     "GBUFFER_NORMAL_BINDING",
     "GBUFFER_ALBEDO_BINDING",
     "GBUFFER_MATERIAL_BINDING",
@@ -1080,7 +1081,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "max_bounces", offsetof(PushConstantPathTracing, max_bounces) },
             { "furnace_metallic", offsetof(PushConstantPathTracing, furnace_metallic) },
             { "furnace_roughness", offsetof(PushConstantPathTracing, furnace_roughness) },
-            { "trace_cloud_depth", offsetof(PushConstantPathTracing, trace_cloud_depth) } } },
+            { "trace_cloud_depth", offsetof(PushConstantPathTracing, trace_cloud_depth) },
+            { "skybox_enabled", offsetof(PushConstantPathTracing, skybox_enabled) } } },
         { "PushConstantPost_std430",
           { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
             { "skybox_enabled", offsetof(PushConstantPost, skybox_enabled) } } },
@@ -1594,6 +1596,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
     EXPECT_EQ(shader.at("TRACED_DEPTH_IMAGE_BINDING"), TRACED_DEPTH_IMAGE_BINDING);
+    EXPECT_EQ(shader.at("SKYBOX_CUBEMAP_BINDING"), SKYBOX_CUBEMAP_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_NORMAL_BINDING"), GBUFFER_NORMAL_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_ALBEDO_BINDING"), GBUFFER_ALBEDO_BINDING);
     EXPECT_EQ(shader.at("GBUFFER_MATERIAL_BINDING"), GBUFFER_MATERIAL_BINDING);
@@ -3397,6 +3400,7 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     { "path_tracing/path_tracing.slang", "image" },
     { "path_tracing/path_tracing.slang", "accumulationImage" },
     { "path_tracing/path_tracing.slang", "tracedDepth" },
+    { "path_tracing/path_tracing.slang", "skyboxCubemap" },
     { "post/post.slang", "globalUBO" },
 };
 
@@ -9955,7 +9959,7 @@ TEST(BuildIntegrity, TheTwoRasterGeometryPassesShareOneVertexStage)
     }
 }
 
-// TMin, TMax and the sky gradient assume a unit bounce direction (see docs/source/path-tracing.md's Bounce bullet).
+// TMin and TMax assume a unit bounce direction (see docs/source/path-tracing.md's Bounce bullet).
 TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
 {
     const fs::path repo_root = repoRoot();

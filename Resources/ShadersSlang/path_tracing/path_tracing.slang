@@ -7,6 +7,7 @@ import material_fetch;
 import material_textures;
 import normal_map;
 import path_estimator;
+import skybox_radiance;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
@@ -23,7 +24,12 @@ struct PushConstantPathTracing
     float furnace_roughness;
     // Nonzero when the clouds read this frame's traced depth.
     uint trace_cloud_depth;
+    // Nonzero while the skybox is on: a bounce that misses sees its cube map, else the disabled sky's navy.
+    uint skybox_enabled;
 };
+
+// OxidANT's bounce_sky scale at its defaults, ambient strength 0.35 times environment intensity 1; C++ has neither setting.
+static const float BOUNCE_SKY_SCALE = 0.35;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
@@ -33,6 +39,7 @@ struct PushConstantPathTracing
 [vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;
 [vk::binding(ACCUMULATION_IMAGE_BINDING, 1)] RWTexture2D<float4> accumulationImage;
 [vk::binding(TRACED_DEPTH_IMAGE_BINDING, 1)] RWTexture2D<float> tracedDepth;
+[vk::binding(SKYBOX_CUBEMAP_BINDING, 1)] SamplerCube skyboxCubemap;
 
 [[vk::push_constant]] PushConstantPathTracing pc_ray;
 
@@ -135,16 +142,21 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
             {
-                // Sky kept well below the directional light so the NEE term dominates the look.
                 float3 skyRadiance;
                 if (furnace)
                 {
                     skyRadiance = pc_ray.clearColor.rgb;
                 }
-                else
+                else if (bounce == 0)
                 {
+                    // A camera ray keeps the soft gradient at half intensity, as OxidANT's keeps its procedural sky.
                     float skyT = 0.5 * (rayDirection.y + 1.0);
                     skyRadiance = 0.5 * lerp(float3(1.0), float3(0.5, 0.7, 1.0), skyT);
+                }
+                else
+                {
+                    // A bounce sees the sky the raster draws, as OxidANT's bounce_sky lights it.
+                    skyRadiance = BOUNCE_SKY_SCALE * skybox_radiance_lod0(skyboxCubemap, rayDirection, pc_ray.skybox_enabled != 0u);
                 }
                 radiance += throughput * skyRadiance;
                 break;
@@ -302,7 +314,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 break;
             }
             throughput *= next.weight;
-            // sample_bounce normalizes it, which TMin, TMax and skyT assume.
+            // sample_bounce normalizes it, which TMin and TMax assume.
             rayDirection = next.direction;
         }
 

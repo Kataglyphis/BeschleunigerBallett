@@ -78,7 +78,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   uint32_t frame_index,
   uint32_t samples_per_pixel,
   uint32_t max_bounces,
-  bool trace_cloud_depth)
+  bool trace_cloud_depth,
+  bool skybox_enabled)
 {
     // The output is overwritten (UNDEFINED) after raster and post; the history after the previous frame's dispatch.
     const std::array<vk::ImageMemoryBarrier2, 2> before_dispatch = {
@@ -117,6 +118,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     push_constant.samples_per_pixel = std::max(samples_per_pixel, 1U);
     push_constant.max_bounces = std::max(max_bounces, 1U);
     push_constant.trace_cloud_depth = trace_cloud_depth ? 1U : 0U;
+    push_constant.skybox_enabled = skybox_enabled ? 1U : 0U;
 
     commandBuffer.pushConstants(
       pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);

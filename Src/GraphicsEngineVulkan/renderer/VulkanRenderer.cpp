@@ -923,6 +923,14 @@ void Kataglyphis::VulkanRenderer::writeRaytracingDescriptorsForImage(uint32_t im
       image_index, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
     raytracingDescriptors.writeImage(
       image_index, TRACED_DEPTH_IMAGE_BINDING, tracedDepth.getImageView(), vk::ImageLayout::eGeneral);
+    // Uploaded once and left read-only, as the sky pass and post sample it; a TLAS exists only after skyBox.init().
+    if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
+        raytracingDescriptors.writeImage(image_index,
+          SKYBOX_CUBEMAP_BINDING,
+          cube_map->getImageView(),
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          cube_map->getSampler());
+    }
 }
 
 auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Texture &
@@ -1223,6 +1231,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
             .lightColorAndRadiance = sceneUBO.dirLight.color,
             .samplesPerPixel = rendererSettings.pathTracingSamplesPerPixel,
             .maxBounces = rendererSettings.pathTracingMaxBounces,
+            .skyboxEnabled = frameSettings.scene.skybox_enabled,
         };
         if (current_history != pathTracingLastHistory) {
             pathTracingAccumulatedFrames = 0;
@@ -1238,7 +1247,8 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
           pathTracingAccumulatedFrames,
           static_cast<uint32_t>(std::max(rendererSettings.pathTracingSamplesPerPixel, 1)),
           static_cast<uint32_t>(std::max(rendererSettings.pathTracingMaxBounces, 1)),
-          clouds_enabled);
+          clouds_enabled,
+          frameSettings.scene.skybox_enabled);
         ++pathTracingAccumulatedFrames;
     }
 }
@@ -1334,7 +1344,9 @@ void Kataglyphis::VulkanRenderer::createRaytracingDescriptorResources()
     raytracingDescriptors.addBinding(TLAS_BINDING, vk::DescriptorType::eAccelerationStructureKHR, 1, raytracing_stages)
       .addBinding(OUT_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages)
       .addBinding(ACCUMULATION_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages)
-      .addBinding(TRACED_DEPTH_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages);
+      .addBinding(TRACED_DEPTH_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages)
+      .addBinding(
+        SKYBOX_CUBEMAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute);
 
     if (!raytracingDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create raytracing descriptor resources!");

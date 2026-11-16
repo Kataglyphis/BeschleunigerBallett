@@ -143,9 +143,14 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   and also imports it directly for its own base-colour sample.
 - `common/skybox_radiance.slang` — the skybox's linear radiance per view
   direction (`skybox_view_direction`, `skybox_radiance`, the disabled-sky
-  navy). Spirv only: `skybox.slang` draws it, and `post.slang` puts the same
+  navy). Spirv only: `skybox.slang` draws it, `post.slang` puts the same
   sky under the clouds in HDR ([`clouds.md`](clouds.md) § Compositing
-  contract), so the two cannot disagree on a direction or the navy.
+  contract), and `path_tracing.slang` lights a bounce that misses with it
+  through `skybox_radiance_lod0` (compute has no derivatives), so none of
+  them can disagree on a direction or the navy. OxidANT's twin of that
+  bounce, `bounce_sky` in `tracer/trace_shading.slang`, reads its own
+  bindings and sky, so the C++ kernel matches its rule, not its code
+  ([`path-tracing.md`](path-tracing.md)).
 - `common/cascaded_shadow.slang` — PCF cascaded shadow-map sampling
   (`calc_cascaded_shadow`). Spirv only: the raster and deferred lighting paths
   (`rasterizer.slang`, `deferred.slang`).
