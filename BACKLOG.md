@@ -150,8 +150,6 @@ committed to.
   it either; consistent with the tar-transport mtimes, unverified since.
 - **[P3] `-FreshContainer` strands the build cache** on the wcifs fallback path: the next build
   takes 367 s instead of 44 s.
-- **[P3] Module dependency scanning** (`clang-scan-deps`) runs over all 53 `.ixx` files each
-  configure; measure before assuming it is free.
 - **[P3] Host `cmake` is 3.29 and cannot read `CMakePresets.json`** (`version: 10`), and host
   `ctest` cannot read the build trees; run the gtest executables directly.
 - **[P3] No host LLVM** (since 2026-09-25); `docs/source/code-quality.md`'s clang-tidy commands need one.
@@ -179,6 +177,11 @@ So the next sweep stops here instead of re-deriving them.
   throw-on-permission-denied finding.
 - `Camera::set_near_plane`/`set_far_plane` have no GUI control on purpose: their defaults
   differ between debug and release, and `far_plane` feeds the cascade fit.
+- Module dependency scanning (`clang-scan-deps`) is not a configure cost (measured 2026-11-16 on
+  `linux-debug-clang` in the arm64 image). It is one ninja edge per C++ source, all 187 TUs and not
+  only the 57 `.ixx`, rerun only when its source changes: a reconfigure took 1.5 s (16 s the first
+  time after a build) and left 0 scan edges to run. All 187 scans cost 4.97 s at `-j4`, 19.8 s of
+  CPU against 1837 s for the compiles (about 1 %), and the build after them recompiled nothing.
 - The `windows-clang-release-wix` package preset needs no lane of its own: `Build-Windows.ps1`'s
   `--target package` on the same `x64-ClangCL-Windows-Release` tree runs the same CPack generators
   (NSIS, ZIP and WIX, the hub's `CPackCommon` with `WIX_DEFAULT ON`), and the Windows x64 lane's
