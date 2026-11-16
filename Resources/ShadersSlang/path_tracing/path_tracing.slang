@@ -6,6 +6,7 @@ import hdr_safe;
 import material_fetch;
 import material_textures;
 import normal_map;
+import path_estimator;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
@@ -34,63 +35,6 @@ struct PushConstantPathTracing
 [vk::binding(TRACED_DEPTH_IMAGE_BINDING, 1)] RWTexture2D<float> tracedDepth;
 
 [[vk::push_constant]] PushConstantPathTracing pc_ray;
-
-// PCG RNG: condensed pcg_output_rxs_mxs_32_32.
-float stepAndOutputRNGFloat(inout uint rngState)
-{
-    rngState = rngState * 747796405u + 1u;
-    uint word = ((rngState >> ((rngState >> 28u) + 4u)) ^ rngState) * 277803737u;
-    word = (word >> 22u) ^ word;
-    return float(word) / 4294967295.0;
-}
-
-// Unit t and b completing n to a right-handed frame, without a branch on n (Duff et al. 2017).
-void orthonormal_basis(float3 n, out float3 t, out float3 b)
-{
-    float s = n.z >= 0.0 ? 1.0 : -1.0;
-    float a = -1.0 / (s + n.z);
-    float c = n.x * n.y * a;
-    t = float3(1.0 + s * n.x * n.x * a, s * c, -s * n.x);
-    b = float3(c, s + n.y * n.y * a, -n.y);
-}
-
-// A GGX microfacet normal visible from v (Heitz 2018), in the frame where n is +z; alpha is distribution_ggx's.
-float3 sample_ggx_visible_normal(float3 v, float alpha, float2 u)
-{
-    float3 vh = normalize(float3(alpha * v.x, alpha * v.y, v.z));
-    float lengthSquared = vh.x * vh.x + vh.y * vh.y;
-    float3 t1 = lengthSquared > 0.0 ? float3(-vh.y, vh.x, 0.0) / sqrt(lengthSquared) : float3(1.0, 0.0, 0.0);
-    float3 t2 = cross(vh, t1);
-    float r = sqrt(u.x);
-    float phi = 2.0 * PI * u.y;
-    float p1 = r * cos(phi);
-    float p2 = r * sin(phi);
-    float s = 0.5 * (1.0 + vh.z);
-    p2 = (1.0 - s) * sqrt(max(1.0 - p1 * p1, 0.0)) + s * p2;
-    float3 nh = p1 * t1 + p2 * t2 + sqrt(max(1.0 - p1 * p1 - p2 * p2, 0.0)) * vh;
-    return normalize(float3(alpha * nh.x, alpha * nh.y, max(nh.z, 1e-6)));
-}
-
-// Density of the direction sample_ggx_visible_normal reflects to: D(h) G1(v) / (4 n.v), exact GGX and Smith G1.
-float ggx_visible_normal_pdf(float nDotV, float nDotH, float alpha)
-{
-    float a2 = alpha * alpha;
-    float d = nDotH * nDotH * (a2 - 1.0) + 1.0;
-    // Unfloored, unlike distribution_ggx: the density must be the one the sampler draws.
-    float ndf = a2 / (PI * d * d);
-    float g1 = 2.0 * nDotV / (nDotV + sqrt(a2 + (1.0 - a2) * nDotV * nDotV));
-    return ndf * g1 / (4.0 * nDotV);
-}
-
-// Chance to sample the GGX lobe: its Fresnel share at n.v; the floor keeps a white dielectric's highlight sampled.
-float specular_lobe_probability(float3 albedo, float metallic, float3 f0, float nDotV)
-{
-    const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
-    float3 fresnel = fresnel_schlick(nDotV, f0);
-    float specular = dot(fresnel, LUMA);
-    float diffuse = dot((float3(1.0) - fresnel) * (1.0 - metallic) * albedo, LUMA);
-    return clamp(specular / max(specular + diffuse, 1e-6), 0.1, 1.0);
-}
 
 // NDC depth of the first surface through the pixel centre, for the clouds; 1 on a miss, like a cleared depth buffer.
 float primary_hit_depth(uint2 pixel, uint2 resolution, float3 origin)
@@ -136,7 +80,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         return;
 
     // RNG state: frame index folded in so every frame draws different samples.
-    uint rngState = (resolution.x * tid.y + tid.x) + pc_ray.frame_index * 2654435769u;
+    uint rngState = path_rng_seed(resolution.x * tid.y + tid.x, pc_ray.frame_index);
 
     float4 cameraOrigin = mul(globalUBO.inv_view, float4(0, 0, 0, 1));
 
@@ -149,7 +93,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     for (int sampleIdx = 0; sampleIdx < numSamples; sampleIdx++)
     {
         // Jitter within the pixel so accumulation anti-aliases edges instead of only denoising.
-        float2 pixelCenter = float2(tid.xy) + float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState));
+        float2 pixelCenter = float2(tid.xy) + float2(rng_next(rngState), rng_next(rngState));
         float2 uv = pixelCenter / float2(resolution);
         float2 cs = uv * 2.0 - 1.0;
 
@@ -163,14 +107,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         for (int bounce = 0; bounce < maxBounces; bounce++)
         {
             // Russian roulette from the fourth segment; the 1/survival reweight keeps the estimator unbiased.
-            if (bounce >= 3)
+            if (!russian_roulette_survives(uint(bounce), throughput, rngState))
             {
-                float survival = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);
-                if (stepAndOutputRNGFloat(rngState) > survival)
-                {
-                    break;
-                }
-                throughput /= survival;
+                break;
             }
 
             RayQuery<0> rayQuery;
@@ -306,6 +245,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 : resolved_metallic_roughness_lod0(obj, material, texCoords);
             float metallic = metallicRoughness.x;
             float roughness = metallicRoughness.y;
+            // NEE's brdf_direct takes it; sample_bounce derives the same one.
             float3 f0 = lerp(float3(0.04), albedo, metallic);
 
             float3 V = -rayDirection;
@@ -314,7 +254,6 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             {
                 shadingNormal = faceNormal;
             }
-            float nDotV = max(dot(shadingNormal, V), 1e-4);
 
             // Offset along the normal against self-intersection.
             rayOrigin = hitWorldPosition + 0.0001 * faceNormal;
@@ -355,47 +294,16 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 }
             }
 
-            // One-sample MIS over both lobes: draw from one, weight by the density of their mixture.
-            float specularChance = specular_lobe_probability(albedo, metallic, f0, nDotV);
-            float alpha = roughness * roughness;
-            float3 frameTangent;
-            float3 frameBitangent;
-            orthonormal_basis(shadingNormal, frameTangent, frameBitangent);
-            float3 newDirection;
-            if (stepAndOutputRNGFloat(rngState) < specularChance)
-            {
-                float3 viewLocal = float3(dot(V, frameTangent), dot(V, frameBitangent), dot(V, shadingNormal));
-                float2 u = float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState));
-                float3 h = mul(sample_ggx_visible_normal(viewLocal, alpha, u), float3x3(frameTangent, frameBitangent, shadingNormal));
-                newDirection = reflect(-V, h);
-            }
-            else
-            {
-                // Cosine-weighted: a random unit-sphere point around the normal tip (RTIOW 8.5).
-                float theta = 6.2831853 * stepAndOutputRNGFloat(rngState);
-                float u = 2.0 * stepAndOutputRNGFloat(rngState) - 1.0;
-                float r = sqrt(max(1.0 - u * u, 0.0));
-                newDirection = shadingNormal + float3(r * cos(theta), r * sin(theta), u);
-
-                // RTIOW 9.4: a vector landing on -normal degenerates to zero length.
-                if (dot(newDirection, newDirection) < 1e-8)
-                {
-                    newDirection = shadingNormal;
-                }
-            }
-            // TMin, TMax and skyT assume a unit rayDirection.
-            rayDirection = normalize(newDirection);
-
-            // Below either surface ends the path: past the triangle, a tilted map or vertex normal would leak light through it.
-            float nDotL = dot(shadingNormal, rayDirection);
-            if (nDotL <= 0.0 || dot(faceNormal, rayDirection) <= 0.0)
+            // One-sample MIS over both lobes, weighted by brdf_sampled's f * n.l over the mixture's density.
+            Bounce next = sample_bounce(shadingNormal, faceNormal, V, albedo, metallic, roughness, rngState);
+            // A direction below either surface ends the path: past the triangle, a tilted normal would leak light.
+            if (all(next.weight == float3(0.0)))
             {
                 break;
             }
-            float nDotH = max(dot(shadingNormal, normalize(V + rayDirection)), 0.0);
-            float pdf = specularChance * ggx_visible_normal_pdf(nDotV, nDotH, alpha) + (1.0 - specularChance) * nDotL / PI;
-            // brdf_direct under a unit light is f * n.l: the BRDF NEE and raster use, so no lobe is lit twice.
-            throughput *= brdf_direct(shadingNormal, V, rayDirection, albedo, metallic, roughness, f0, float3(1.0)) / max(pdf, 1e-6);
+            throughput *= next.weight;
+            // sample_bounce normalizes it, which TMin, TMax and skyT assume.
+            rayDirection = next.direction;
         }
 
         // One NaN or Inf sample would poison the running mean until the next reset.

@@ -10,6 +10,7 @@ Created in the repository on request. Verification history:
 - **2026-11-14**: the Renovate run moved imgui, stb, Vulkan Memory Allocator, nlohmann/json, google/benchmark, spdlog, google/fuzztest (off its `release_2026-06-29` line to `main`), tomlplusplus, OxidANT and ANTfrastructure; every row below names its new pin. The licence files of imgui, VMA, nlohmann/json, google/benchmark, spdlog (with the bundled {fmt}), google/fuzztest (with the Lucent `rune.*` notice), tomlplusplus and OxidANT are unchanged from the pin each row named before (`git diff` empty). stb's `LICENSE` preamble changed in `aae9fee` from a free choice between two licences to "in the public domain; most of them also MIT"; `stb_image.h` v2.32 and `stb_image_write.h` v1.18, the two headers this repository includes, still carry the MIT-or-public-domain block. ANTfrastructure's SPDX headers were counted again, and egui, egui-wgpu and egui-winit moved to 0.37.0, each `license` field read for that exact version.
 - **2026-11-15 (later)**: OxidANT moved to `eb97c364`, its renderer parity work merged with its `develop`. `LICENSE` is unchanged across the range (`git diff` empty); `Cargo.lock` adds `epaint_default_fonts` 0.37.0 for OxidANT's `gui` crate (which neither the bridge nor the renderer uses) and `sha2` to the renderer's dev-dependencies. The renderer takes `image` 0.25.10 as a normal dependency (it was a dev-dependency); the C++ bridge (`kataglyphis_cxx_bridge`, `cxx` only) does not depend on the renderer, so the packaged crate texts are unchanged. The renderer embeds Dear ImGui's Roboto Medium and Cousine (byte-identical to `third_party/IMGUI/misc/fonts`, SHA-256 checked), and the docs site's demo carries the Colosseum: both in *The docs site's WebGPU demo* below.
 - **2026-11-15**: OxidANT moved on to `f8b8c587` and ANTfrastructure to `2c81ef49`, pulled before the commit. Both `LICENSE` files and OxidANT's `Cargo.lock` are unchanged across the moved ranges (`git diff` empty); at `2c81ef49` all 589 SPDX headers of the hub's own files say MIT.
+- **2026-11-16**: OxidANT moved to `78303c2`. `LICENSE` and `Cargo.lock` are unchanged across the range (`git diff` empty). The renderer's editor now also embeds two symbol subsets of egui's emoji fonts (`epaint_default_fonts` 0.37.0): Noto Emoji (OFL-1.1) and emoji-icon-font (MIT); OxidANT's fonts `NOTICE` records each source, hash and `pyftsubset` command and carries the MIT text, and its cargo-license policy re-pins that `NOTICE`. Both in *The docs site's WebGPU demo* below.
 
 ## What every package ships
 
@@ -167,13 +168,14 @@ Notes on single entries:
 
 ## The docs site's WebGPU demo (not in any package)
 
-`scripts/linux/docs-build-web.sh` publishes the Rust renderer as wasm on the docs site, with two
+`scripts/linux/docs-build-web.sh` publishes the Rust renderer as wasm on the docs site, with
 third-party works beside it that no package carries:
 
 | Work | Licence | Where its texts go |
 |---|---|---|
 | Colosseum (`Colosseum-web.glb`, AssetANT release `Colosseum-web-v1`): Colosseum by Sulo456 (https://github.com/Sulo456), converted to glTF by AssetANT | CC BY 4.0 (AssetANT's `assets/Colosseum-web/asset.json`) | the archive's `ATTRIBUTION.txt` and `LICENSES/` (`CC-BY-4.0.txt`, `NOTICE.txt` listing the conversion's changes), copied to `webgpu-demo/Colosseum-web/` |
 | Roboto Medium, Cousine Regular (embedded in the wasm by `crates/webgpu_renderer/src/ui/fonts.rs`) | Apache-2.0 and OFL-1.1, per each font's name table | OxidANT's `crates/webgpu_renderer/assets/fonts/{NOTICE,Apache-2.0.txt,OFL-1.1.txt}`, copied to `webgpu-demo/fonts/`; the same texts as `licenses/fonts/` |
+| Noto Emoji and emoji-icon-font symbol subsets (`NotoEmoji-Subset.ttf`, `EmojiIcon-Subset.ttf`, embedded by the same `fonts.rs`), cut from egui's `epaint_default_fonts` 0.37.0 | OFL-1.1 (Noto Emoji, a Modified Version keeping its name) and MIT (emoji-icon-font) | the same `NOTICE`, which carries the MIT text, and `OFL-1.1.txt`, copied to `webgpu-demo/fonts/` |
 
 `licenses/third-party-licenses.txt` lists what the packages install, so neither has a row there.
 The `Colosseum-gltf` scene, which `KATAGLYPHIS_FETCH_ALL_ASSETS` fetches for the model picker, is

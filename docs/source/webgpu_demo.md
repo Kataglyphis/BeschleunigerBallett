@@ -35,8 +35,10 @@ Open the demo full-page ↗
   where the picker loads it from; without the archive the demo publishes without it, with a
   warning. Colosseum by [Sulo456](https://github.com/Sulo456), CC BY 4.0, converted to glTF by
   AssetANT; its `ATTRIBUTION.txt` and `LICENSES/` sit in `webgpu-demo/Colosseum-web/`.
-- **Fonts**: the editor embeds Dear ImGui's Roboto Medium (Apache-2.0) and Cousine (OFL-1.1); their
-  notice and texts sit in `webgpu-demo/fonts/`.
+- **Fonts**: the editor embeds Dear ImGui's Roboto Medium (Apache-2.0) and Cousine (OFL-1.1), and
+  two symbol subsets of egui's emoji fonts for its debug windows: Noto Emoji (OFL-1.1) and
+  emoji-icon-font (MIT). Their notice, which carries the MIT text, and the other texts sit in
+  `webgpu-demo/fonts/`.
 - **Crates**: the wasm is the renderer's crate graph for `wasm32-unknown-unknown`. The hub's
   `stage-cargo-licenses.py` stages each crate's original texts, reviewed by OxidANT's
   `packaging/cargo-license-policy.json`, into `webgpu-demo/licenses/cargo/` with a `manifest.json`;

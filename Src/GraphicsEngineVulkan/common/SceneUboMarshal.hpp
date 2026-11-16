@@ -67,7 +67,7 @@ inline auto makeViewportRemap(ViewportFraction rect) -> glm::mat4
 constexpr auto clampPcfRadius(int guiValue) -> uint32_t
 { return static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS)); }
 
-// The cloud box's half extents are mesh scale * density * 10; a zero one collapses the box to nothing.
+// The cloud box's half extents are mesh scale * 10; a zero one collapses the box, a zero density empties it.
 constexpr float kMinCloudMeshExtent = 1e-3F;
 constexpr float kMinCloudDensityMultiplier = 1e-3F;
 
@@ -98,6 +98,7 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
   float cirrusEffect,
   bool powderEffect)
 {
+    // yzw is the shared module's wind offset; no wind here, so the noise stands still.
     ubo.cloudLightMarch =
       glm::vec4(static_cast<float>(clampCloudLightMarchSteps(numMarchStepsToLight)), 0.0F, 0.0F, 0.0F);
     ubo.cloudMeshScale = clampCloudMeshScale(meshScale, densityMultiplier);

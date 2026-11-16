@@ -260,14 +260,14 @@ TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
     EXPECT_GE(degenerate.w, kMinCloudDensityMultiplier);
 
     // The box's half extents, which the slab test scales by 1/rd, must stay positive even from an all-zero input.
-    EXPECT_GT(degenerate.x * degenerate.w * 10.0F, 0.0F);
-    EXPECT_GT(degenerate.y * degenerate.w * 10.0F, 0.0F);
-    EXPECT_GT(degenerate.z * degenerate.w * 10.0F, 0.0F);
+    EXPECT_GT(degenerate.x * 10.0F, 0.0F);
+    EXPECT_GT(degenerate.y * 10.0F, 0.0F);
+    EXPECT_GT(degenerate.z * 10.0F, 0.0F);
 
-    const glm::vec4 normal = clampCloudMeshScale(glm::vec3(1000.0F, 5.0F, 1000.0F), 0.63F);
-    EXPECT_FLOAT_EQ(normal.x, 1000.0F);
-    EXPECT_FLOAT_EQ(normal.y, 5.0F);
-    EXPECT_FLOAT_EQ(normal.z, 1000.0F);
+    const glm::vec4 normal = clampCloudMeshScale(glm::vec3(630.0F, 3.15F, 630.0F), 0.63F);
+    EXPECT_FLOAT_EQ(normal.x, 630.0F);
+    EXPECT_FLOAT_EQ(normal.y, 3.15F);
+    EXPECT_FLOAT_EQ(normal.z, 630.0F);
     EXPECT_FLOAT_EQ(normal.w, 0.63F);
 }
 
@@ -286,6 +286,7 @@ TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
       /*powderEffect=*/true);
 
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.x, 4.0F);
+    // The shared module reads yzw as the wind offset; the C++ engine has no wind, so its noise stays put.
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.y, 0.0F);
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.z, 0.0F);
     EXPECT_FLOAT_EQ(ubo.cloudLightMarch.w, 0.0F);

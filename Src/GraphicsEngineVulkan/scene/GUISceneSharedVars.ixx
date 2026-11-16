@@ -97,7 +97,7 @@ export struct GUISceneSharedVars
     float cloud_cirrus_effect = 0.034f;
     bool cloud_powder_effect = true;
     bool clouds_enabled = false;
-    float cloud_mesh_scale[3] = { 1000.f, 5.f, 1000.f };
+    float cloud_mesh_scale[3] = { 630.f, 3.15f, 630.f };
     float cloud_mesh_offset[3] = { -0.364f, 367.f, -18.351f };
 
     // Shadows

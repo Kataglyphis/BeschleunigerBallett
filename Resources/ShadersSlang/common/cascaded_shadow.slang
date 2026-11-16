@@ -1,9 +1,24 @@
 import scene_types;
+import shadow_pcf;
 
 // Imports scene_types, not rt_types, to keep ray tracing capabilities out of rasterization shaders.
 
 // Comparison sampler: each SampleCmpLevelZero is a bilinear 2x2 PCF tap, blending visibility rather than depth.
 [vk::binding(SHADOW_MAP_BINDING, 0)] Sampler2DArrayShadow directionalShadowMaps;
+
+// One cascade's layer of the map.
+struct CombinedTaps : IShadowTaps
+{
+    float layer;
+
+    // Out-of-map taps count as lit: the sampler clamps to edge, and its hard-coded black border reads as shadow.
+    float lit(float2 uv, float reference)
+    {
+        return (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0)
+          ? directionalShadowMaps.SampleCmpLevelZero(float3(uv, layer), reference)
+          : 1.0;
+    }
+};
 
 // Fraction of direct light blocked: 0 = fully lit, 1 = fully shadowed.
 float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<SceneUBO> sceneUBO)
@@ -37,19 +52,8 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
     uint shadowWidth, shadowHeight, shadowLayers;
     directionalShadowMaps.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float2 texelSize = 1.0 / float2(float(shadowWidth), float(shadowHeight));
-    float visible = 0.0;
-    float taps = 0.0;
-    // Out-of-map taps count as lit: the sampler clamps to edge, and its hard-coded black border reads as shadow.
-    for (int x = -radius; x <= radius; x++)
-    {
-        for (int y = -radius; y <= radius; y++)
-        {
-            float2 uv = shadowUV + float2(x, y) * texelSize;
-            visible += (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0)
-              ? directionalShadowMaps.SampleCmpLevelZero(float3(uv, float(cascadeIndex)), currentDepth - bias)
-              : 1.0;
-            taps += 1.0;
-        }
-    }
-    return 1.0 - visible / max(taps, 1.0);
+    // Each tap compares at the receiver plane's depth beneath it; shadowUV.y follows NDC y, so the sign is +1.
+    float2 slope = receiver_plane_depth_slope(sceneUBO.cascadeLightSpaceMatrices[cascadeIndex], N, 1.0);
+    CombinedTaps taps = { float(cascadeIndex) };
+    return 1.0 - pcf_visibility(taps, shadowUV, texelSize, currentDepth - bias, slope, radius);
 }

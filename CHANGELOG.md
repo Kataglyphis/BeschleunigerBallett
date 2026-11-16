@@ -192,6 +192,22 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- OxidANT moves to `78303c2`. The C++ path tracer imports its shared `common/path_estimator.slang`
+  (RNG, seed, Russian roulette, the bounce) instead of keeping copies, and a bounce weights by
+  `brdf_sampled`, Epic's Smith remap for sampled light (`k = alpha / 2`): a white metal at
+  roughness 0.3 returns 0.901 of a uniform sky at 60 degrees instead of 0.668. The furnace
+  oracle follows the remap; the rig furnace runs at roughness 0.8, where the BRDF's directional
+  albedo stays below 1, with bounds 0.977-0.988.
+- PCF compares each tap at the receiver plane's depth beneath it (OxidANT's
+  `common/shadow_pcf.slang`), so a receiver sloped against the light no longer shadows itself
+  at larger radii: the shadow rig's darkened pixels at the default radius 2 drop from 21.1 % to
+  7.8 % of the frame, with the shadow kept.
+- The clouds take OxidANT's estimator: a sky ambient (the analytic sky for the C++ engine),
+  three sun scattering octaves, exact in-scattering per step, up to four times the slider's
+  steps on a long path, and a noise volume whose every channel tiles, sampled from its middle at
+  the box centre. Scale alone sizes the box now; Density only thins the cloud. The default
+  Scale becomes 630 x 3.15 x 630, the same box at the default Density.
+- `Compare-RendererTimings.ps1` treats the Rust renderer's FXAA pass as optional.
 - The C++ renderer requires Vulkan 1.3's dynamic rendering and synchronization2, and a device
   without either is skipped with the reason logged. Every pass (shadow cascades, forward,
   deferred geometry and lighting, sky, post with the editor) begins with `vkCmdBeginRendering`

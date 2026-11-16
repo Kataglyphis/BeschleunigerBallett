@@ -339,13 +339,13 @@ std::optional<GltfVariant>
   write_gltf_variant(const char *fixture, const char *file_name, const std::function<void(nlohmann::json &)> &edit)
 { return GltfVariant::create(sceneConfig::resolveModelPath(fixture), file_name, edit); }
 
-// Half extents are Scale x Density x 10 in volumetric_clouds.slang, so a test names the box it wants and the density.
+// Half extents are Scale x 10 in volumetric_clouds.slang, so a test names the box it wants and the density.
 void place_cloud_box(GUISceneSharedVars &vars, glm::vec3 centre, glm::vec3 half_extents, float density)
 {
     vars.cloud_density_multiplier = density;
     for (int axis = 0; axis < 3; ++axis) {
         vars.cloud_mesh_offset[axis] = centre[axis];
-        vars.cloud_mesh_scale[axis] = half_extents[axis] / (density * 10.0F);
+        vars.cloud_mesh_scale[axis] = half_extents[axis] / 10.0F;
     }
 }
 
@@ -398,14 +398,14 @@ void dump_cloud_frame(const std::string &name, const std::vector<uint8_t> &rgba,
       static_cast<int>(w) * 4);
 }
 
-// brdf.slang's brdf_direct for a white albedo integrated over the hemisphere, uniform in angle for the narrow lobes.
+// brdf.slang's brdf_sampled (a bounce's BRDF) for a white albedo over the hemisphere, uniform in angle for narrow lobes.
 double white_directional_albedo(double mu, double roughness, double metallic)
 {
     constexpr double PI = 3.14159265358979323846;
     constexpr int STEPS = 320;
     const double alpha = roughness * roughness;
     const double a2 = alpha * alpha;
-    const double k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
+    const double k = alpha / 2.0;
     const double f0 = 0.04 + 0.96 * metallic;
     const auto smith = [k](double cosine) { return cosine / std::max(cosine * (1.0 - k) + k, 1e-6); };
     const glm::dvec3 v(std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, mu);
@@ -706,7 +706,7 @@ TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
     }
     ASSERT_GE(samples.size(), 2U);
 
-    // Big kernels darken lit receivers too (one reference depth per tap), so penumbra and lit area are measured apart.
+    // A kernel without a receiver-plane bias darkens lit receivers too, so penumbra and lit area are measured apart.
     const size_t pixel_count = static_cast<size_t>(width) * height;
     const std::vector<uint8_t> &unshadowed = samples.front().off;
     const std::vector<uint8_t> &hard = samples.front().on;
@@ -3659,9 +3659,9 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
         }
     }
 
-    // In the rig every path bounces many times, so a per-bounce gain or loss compounds; E(mu) <= 1 at 0.5 caps it at 1.
+    // Many bounces compound a per-bounce error; at 0.8 E(mu) stays in 0.981-0.997, capping the mean below 1.
     furnace_roughness.reset();
-    furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.5");
+    furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.8");
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
@@ -3681,10 +3681,10 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(radiance.empty());
 
-    // Measured 0.993, 1st to 99th percentile 0.946-1.032; a path that loses 1 % a bounce stays well above 0.98.
+    // Measured 0.9823 in both variants; albedo 0.99 gives 0.9715 and 1.01 gives 0.9933, each past its bound.
     constexpr double FURNACE_PIXEL_BAND = 0.1;
-    constexpr double FURNACE_RIG_MEAN_MIN = 0.98;
-    constexpr double FURNACE_RIG_MEAN_MAX = 1.002;
+    constexpr double FURNACE_RIG_MEAN_MIN = 0.977;
+    constexpr double FURNACE_RIG_MEAN_MAX = 0.988;
     const uint32_t x0 = (width * 18U) / 25U;
     const uint32_t x1 = (width * 49U) / 50U;
     const uint32_t y0 = height / 20U;
@@ -4279,9 +4279,11 @@ TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
     scene_vars.clouds_enabled = false;
 
     // Test-only: the default slab sits far above the camera's eye line, and default wisps are too faint to measure.
-    scene_vars.cloud_mesh_offset[1] = 6.0F;
+    place_cloud_box(scene_vars,
+      glm::vec3(scene_vars.cloud_mesh_offset[0], 6.0F, scene_vars.cloud_mesh_offset[2]),
+      glm::vec3(20000.0F, 100.0F, 20000.0F),
+      2.0F);
     scene_vars.cloud_coverage_threshold = 0.60F;
-    scene_vars.cloud_density_multiplier = 2.0F;
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";

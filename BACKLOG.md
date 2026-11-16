@@ -80,17 +80,6 @@ No P0 item is open.
 
 ### P2: medium
 
-- [ ] `Rust` **Bin punctual lights conservatively, then stop an empty tile from iterating every light**
-  (M, a correctness bug before a cost). `third_party/OxidANT/shaders/forward/forward_lighting.slang`'s
-  `punctual_lighting` falls back to all lights when a tile's
-  binned count is 0, so empty screen costs up to 256 iterations per fragment. The fallback is
-  load-bearing: `tile_rect_for_light`'s 7-point AABB under-covers a sphere's true screen
-  silhouette by up to `D / sqrt(D² - r²)`, even with every point in front of the camera.
-  Near-plane straddling is handled, and since OxidANT `bfa19de3` a tile past
-  `MAX_LIGHTS_PER_TILE` lists none, so it shades every light too. A non-empty tile still shades
-  only its binned lights, so a light the AABB under-covers is cut off there: a visible error.
-  Next: a projection-aware sphere screen bound (Mara & McGuire 2013), then a completeness test
-  with unconstrained random ranges that fails today, only then remove the fallback.
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
   geometry index, so a hit on any mesh but a model's first read past mesh 0's index buffer.
@@ -126,32 +115,21 @@ committed to.
 
 ## Shared shader ideas (OxidANT `shaders/`, both renderers)
 
-- **[P2] A receiver-plane depth bias for the PCF taps.** `cascaded_shadow.slang` compares every
-  tap against the centre texel's depth with one bias, and OxidANT's
-  `forward/forward_lighting.slang` (`shadow_visibility`) copies that kernel and its bias since the
-  2026-11-15 pin, so on a receiver sloped against the light the outer taps shadow it in both
-  renderers. On the shadow rig, lit surfaces far from any shadow darken from radius 2 (the
-  default: 15 % of them by 3+ levels), growing with the radius
-  (docs/source/gpu-golden-testing.md § The PCF radius bound, measured). Offsetting each tap's
-  reference depth by the receiver's depth slope removes it. Change both kernels together; the
-  shadow goldens will move, and `DISABLED_PcfRadiusSweepMeasuresTheShadowRig` shows the effect.
-- **[P3] The path tracer's GGX uses the direct-light Smith remap.** `brdf.slang`'s
-  `geometry_smith` takes Epic's `k = (r + 1)^2 / 8`, meant for analytic lights; for sampled light
-  Epic uses `k = alpha / 2`. Both path tracers evaluate the shared BRDF for their bounces too, so
-  a smooth metal over-masks at grazing angles: a white metal at roughness 0.3 returns 0.668 of a
-  uniform sky at 60 degrees (`PathTracingPassesTheWhiteMetalFurnaceTest`). A shared change in
-  OxidANT, for both renderers; the furnace bounds move with it.
-- **[P3] One path estimator for both path tracers.** OxidANT's `tracer/path_estimator.slang` is
-  a port of `path_tracing.slang`'s RNG, orthonormal basis, visible-normal GGX sampling, its pdf
-  and the lobe probability; the C++ kernel keeps its own copies. Moving the estimator into
-  `common/` and importing it from `path_tracing.slang` makes a fix land in both, with a
-  dual-target guard like `tests/brdf_test.slang`.
-- **[P3] Decouple `cloud.radius` from `cloud.scale`** (`volumetric_clouds.slang`'s `cloud_unpack`:
-  `radius = cloudMeshScale * scale * 10`). It resizes the rendered volume, so the cloud goldens
-  of both renderers move.
-- **[P3] Clouds at half resolution**: a quality trade-off, still open.
-- **[P3] Animate the cloud volume** (needs a time uniform and a deterministic override for the
-  goldens).
+- **[P3] Light the C++ clouds with the sky it draws.** `compute/clouds.slang` calls
+  `march_clouds`' seven-argument overload, whose ambient is OxidANT's analytic sky
+  (`cloud_ambient_analytic_sky`), not the DOOM2016 cube map. Pass a `CloudAmbient` of the cube
+  map's hemisphere means (the navy clear colour with the skybox off) through the eight-argument
+  overload, as the Rust host does; the cloud goldens move.
+- **[P3] Drop `tracer/traced.slang`'s dead `import sky_model` in OxidANT.** Unused since OxidANT
+  `18e178a`; `BuildIntegrity.EveryImportedSlangModuleIsUsed` exempts it through
+  `kSharedDeadImportsAtThePin`, and that row must go with the pin that drops the import.
+- **[P3] C++ clouds at half resolution.** OxidANT marches at half resolution on request and
+  upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
+  `clouds_main` dispatch and an upsample pass importing it.
+- **[P3] Wind for the C++ clouds.** The shared module moves the noise by `cloudLightMarch.yzw`
+  (`cloud.wind_offset`, wind velocity times time wrapped to the noise period); `fillSceneUboClouds`
+  writes zeros. Needs a wind control, a time source the goldens can pin to 0, and a
+  `kCloudUboFieldPairs` row and `clouds.md` table row.
 
 ## C++ engine ideas
 
@@ -165,14 +143,8 @@ committed to.
 
 ## Rust renderer ideas (OxidANT)
 
-- **[P2] `obj_to_gltf` drops `map_d`.** glTF has no opacity-texture slot, so matching the C++
-  MASK cut-out means compositing `map_d`'s red channel into `map_Kd`'s alpha and writing a
-  new image. The renderer depends on `image` (PNG) since the 2026-11-15 pin, so the codec is
-  there; the editor's library opens the OBJ scenes through this converter.
 - **[P2] Render-graph v2**: automatic barrier placement and transient-resource aliasing; the
   deferred, cloud and traced passes have grown the pass count.
-- **[P3] `qem.rs::into_primitive` drops morph targets without the comment** its sibling
-  `lod.rs::simplify_primitive` carries. Harmless (morphed primitives are excluded from LOD).
 - **[P3] Texture streaming / bindless** for photogrammetry-scale scenes.
 - **[P3] Golden-image CI** with reference images per GPU vendor, to catch shader regressions the
   driver-independent structural assertions miss.

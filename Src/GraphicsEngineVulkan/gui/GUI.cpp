@@ -1235,7 +1235,7 @@ void GUI::renderSkyInspector()
           &guiSceneSharedVars.cloud_num_march_steps_to_light,
           Kataglyphis::kMinCloudLightMarchSteps,
           Kataglyphis::kMaxCloudLightMarchSteps);
-        studioPropertyLabel("Density", "Multiplies every noise sample and the box's extent (cloud.scale)");
+        studioPropertyLabel("Density", "Multiplies every noise sample; the box keeps its size (cloud.scale)");
         studioSlider("##density",
           &guiSceneSharedVars.cloud_density_multiplier,
           Kataglyphis::kMinCloudDensityMultiplier,
@@ -1250,7 +1250,7 @@ void GUI::renderSkyInspector()
         studioPropertyLabel("Powder effect", "cloud.powder_effect");
         studioToggle("##powder_effect", &guiSceneSharedVars.cloud_powder_effect);
         // Logarithmic drags step in the normalized range, so 2.5 crosses 0.001..1000 in about 400 px.
-        studioPropertyLabel("Scale", "Extent of the cloud box (cloud.radius)");
+        studioPropertyLabel("Scale", "Half extent of the cloud box in tens of units (cloud.radius)");
         studioDragAxes("##cloud_scale",
           guiSceneSharedVars.cloud_mesh_scale,
           2.5F,

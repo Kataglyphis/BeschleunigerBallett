@@ -75,8 +75,11 @@ from the precomputed `inv_projection`/`inv_view` (no per-pixel `inverse()`:
 Slang has none for SPIR-V) and intersects the cloud box with iquilezles' slab
 test (`box_intersect`; a ray direction with an exactly zero component takes
 1e-30 there, so a sun straight overhead never meets `inf - inf`). The box is **axis-aligned**: centred on Offset
-(`cloud.offset`), with half extents `cloud.radius` = Scale x Density x 10, so
-Density sizes the box as well as scaling every noise sample. No matrix is
+(`cloud.offset`), with half extents `cloud.radius` = Scale x 10; Density only
+scales every noise sample, so it thins the cloud without moving the box's
+edges. Until the OxidANT pin of 2026-11-16 Density sized the box too
+(Scale x Density x 10); the default Scale went from 1000 x 5 x 1000 to
+630 x 3.15 x 630, the same box at the default Density 0.63. No matrix is
 involved. Until 2026-11 the shader built a box matrix with `float4x4(1.0)`,
 which Slang fills with 1.0 in all sixteen elements rather than making an
 identity, wrote the translation into the row `mul(m, v)` drops, and applied
@@ -90,30 +93,42 @@ its clouds along.
 The march runs from the box entry to the nearer of the box exit and the
 **scene depth** at that pixel (`cloud_scene_distance`: the binding-2 depth back
 through `inv_projection` to a distance from the eye, which is the view-space origin), so geometry in front of
-the box hides it and geometry inside it cuts the march short. It takes
-`num_march_steps` steps of **constant length** (`marchLength /
-num_march_steps`), not a fraction of the distance already travelled, which
-once made the quality slider a de-facto density slider.
+the box hides it and geometry inside it cuts the march short. Its steps have
+**constant length** (`marchLength / steps`), not a fraction of the distance
+already travelled, which once made the quality slider a de-facto density
+slider. The slider's `num_march_steps` span the box's thinnest extent; a longer
+path takes proportionally more, up to four times the slider (at most 128,
+`cloud_march_steps`), so a grazing view of a flat slab is not grainy.
 `BuildIntegrity.CloudRayMarchesUseAConstantStepLength` guards the distinction
 in both the primary and the light march. Each step:
 
 - Samples density from the noise volume (`sample_density`: two periods of
-  box-local space, 256 and 64 units, both wrapped with `frac` into the
-  volume's `[0, 1)` domain and blended) and accumulates Beer-Lambert transmittance
-  (`transmittance *= exp(-density * dt)`, the *only* assignment to
-  `transmittance` inside the loop, so it is monotonically non-increasing by
-  construction).
-- Marches a **second**, shorter ray toward the light (`light_march`,
-  `num_march_steps_to_light` steps) from the sample point to get
-  `lightTransmittance`, the self-shadowing term.
-- Weights the in-scattered contribution by the Henyey-Greenstein phase
-  function (`phase_HG`), whose denominator must SUBTRACT `2*g*cosTheta` so a
-  positive `g` peaks forward (toward the sun, `cosTheta = +1`), not away
-  from it.
-- Optionally attenuates (never raises) that contribution by a "powder
-  effect" term modelling self-shadowing of dense droplets. It multiplies into
-  `lightEnergy`, and must never appear on the right-hand side of a
-  `transmittance` assignment.
+  box-local space, 256 and 64 units, each offset by `+0.5` so the box centre
+  reads the volume's middle, wrapped with `frac` into the volume's `[0, 1)`
+  domain and blended). Every channel of the volume tiles (`wrap_cell` wraps the
+  Worley and value-noise lattices per octave), so no seam crosses a box. It
+  accumulates Beer-Lambert transmittance (`transmittance *= exp(-density * dt)`,
+  the *only* assignment to `transmittance` inside the loop, so it is
+  monotonically non-increasing by construction).
+- Integrates the optical depth toward the light (`light_optical_depth`,
+  `num_march_steps_to_light` steps from the sample point to the box edge), the
+  self-shadowing term.
+- Scatters the sun through three Henyey-Greenstein octaves
+  (`cloud_sun_scattering`, Wrenninge et al.: each halves energy, optical depth
+  and `g`), whose `phase_HG` denominator must SUBTRACT `2*g*cosTheta` so a
+  positive `g` peaks forward (toward the sun, `cosTheta = +1`), not away from
+  it; plus an ambient term, the sky's mean radiance over the upper and lower
+  hemisphere blended by the sample's height in the box (`CloudAmbient`). The
+  C++ engine calls the seven-argument `march_clouds`, which lights it with
+  OxidANT's analytic sky (`cloud_ambient_analytic_sky`), not the DOOM2016 cube
+  map it draws.
+- Integrates that in-scattering exactly over the step for albedo 1
+  (`transmittance * (1 - exp(-density * dt)) * source`), so a long step cannot
+  overshoot.
+- Optionally attenuates (never raises) the sun's share by a "powder effect"
+  term modelling self-shadowing of dense droplets, over the slider's step
+  length, so the adaptive step count does not change it. It must never appear
+  on the right-hand side of a `transmittance` assignment.
 
 `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`
 pins the phase-function sign and the powder/transmittance separation as
@@ -212,6 +227,10 @@ this table against that same test's data.
 | `Scale` | `cloud.radius` | `cloudMeshScale.xyz` |
 | `Offset` | `cloud.offset` | `cloudMeshOffset.xyz` |
 <!-- cloud-ubo:end -->
+
+`cloudLightMarch.yzw` is the shared module's wind offset (`cloud.wind_offset`,
+subtracted from the box-local noise position); the C++ engine has no wind, so
+`fillSceneUboClouds` writes zeros there and its clouds stand still.
 
 The CLOUDS switch (and the outliner's eye on Clouds) is not in this table: it gates
 `recordComputeCommands`/`clouds_main`'s dispatch and `post.slang`'s

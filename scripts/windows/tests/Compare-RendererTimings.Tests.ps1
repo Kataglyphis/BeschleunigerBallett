@@ -52,6 +52,7 @@ impl TimedPass {
             TimedPass::RayTrace => "RayTrace",
             TimedPass::PathTrace => "PathTrace",
             TimedPass::TraceResolve => "TraceResolve",
+            TimedPass::Fxaa => "Fxaa",
         }
     }
 }
@@ -134,11 +135,11 @@ impl TimedPass {
     ($json.Rust -contains 'OcclusionCull') | Should Be $false
   }
 
-  It 'excludes the deferred, cloud and tracer passes a forward timing run never records' {
+  It 'excludes the deferred, cloud, tracer and FXAA passes a forward timing run never records' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    foreach ($pass in @('GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve')) {
+    foreach ($pass in @('GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')) {
       ($json.Rust -contains $pass) | Should Be $false
     }
     ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap'
@@ -152,7 +153,7 @@ impl TimedPass {
   It 'passes -ValidationOnly when JSON is missing an optional pass but has every required one' {
     $outDir = Join-Path $script:tmpDir 'validation-ok'
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    # Every required Rust pass present, every optional one (OcclusionCull, deferred, clouds, tracer) absent.
+    # Every required Rust pass present, every optional one (OcclusionCull, deferred, clouds, tracer, FXAA) absent.
     @'
 {
   "frames_measured": 96,

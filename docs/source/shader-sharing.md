@@ -65,8 +65,8 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   renderer keeps its own entry points over the same imported math.
 - **Target-local modules** sit beside their entry points, not under `common/`:
   `forward/forward_lighting.slang` (the WebGPU forward and G-buffer lighting)
-  and `tracer/bvh_traverse.slang`, `tracer/trace_shading.slang`,
-  `tracer/path_estimator.slang` (the WebGPU compute ray and path tracer). Slang
+  and `tracer/bvh_traverse.slang`, `tracer/trace_shading.slang` (the WebGPU
+  compute ray and path tracer). Slang
   finds them in the importer's own directory; they compile to WGSL only, and
   the reachable-function gate follows those imports as it does `common/`.
 
@@ -78,7 +78,27 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   61966-2-1 sRGB encode.
 - `common/brdf.slang` — the Epic Games / Unreal 4 microfacet PBR model
   (`distribution_ggx`, `geometry_smith`, `fresnel_schlick`, `brdf_direct`),
-  used by both renderers' forward/RT shading.
+  used by both renderers' forward/RT shading and next-event estimation, and
+  `brdf_sampled`, the same BRDF with Epic's Smith remap for sampled light
+  (`k = alpha / 2` instead of the analytic `(r + 1)^2 / 8`), which both path
+  tracers' bounces weight by.
+- `common/path_estimator.slang` — both path tracers' estimator: the PCG RNG
+  and per-pixel seed (`rng_next`, `path_rng_seed`), Russian roulette
+  (`russian_roulette_survives`) and `sample_bounce`, the one-sample MIS over
+  the GGX visible-normal and cosine lobes. The C++ `path_tracing.slang`
+  imports it; OxidANT's `tracer/traced.slang` too, and
+  `tests/path_estimator_test.slang` emits every function to both targets.
+- `common/shadow_pcf.slang` — the PCF kernel over a cascaded shadow map with a
+  receiver-plane depth bias (`receiver_plane_depth_slope`, `pcf_visibility`):
+  each tap compares at the depth of the receiver's plane beneath it, the slope
+  taken from the shading normal and the affine light matrix, so no derivatives
+  are needed. Taps go through the `IShadowTaps` interface, whose
+  implementations bounds-check in the sampling statement:
+  `cascaded_shadow.slang`'s `CombinedTaps` (the C++ forward and deferred
+  paths) and OxidANT's `forward/forward_lighting.slang`. Both.
+- `common/punctual_light.slang` — `KHR_lights_punctual` as OxidANT's raster
+  passes and its tracer shade it. WGSL only: the C++ engine has a single
+  directional light.
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, exercised
   on both targets by `tests/noise_test.slang`; no production shader imports it yet.
 - `common/fullscreen.slang` — the fullscreen-triangle vertex trick
@@ -166,9 +186,12 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   candidate loop (which has no any-hit stage of its own). Spirv only.
 - `common/volumetric_clouds.slang` — the volumetric clouds: the noise
   volume's texel (`noise_volume_texel`), `cloud_unpack` of the SceneUBO's four
-  cloud `vec4`s, the axis-aligned box test, density, Henyey-Greenstein phase,
-  light march and `march_clouds`, which stops at the scene depth
-  (`cloud_scene_distance`). The noise comes in through the `ICloudNoise`
+  cloud `vec4`s, the axis-aligned box test, density, the light's optical
+  depth (`light_optical_depth`), the sun's multiple-scattering octaves, the
+  sky ambient (`CloudAmbient`) and `march_clouds`, which stops at the scene
+  depth (`cloud_scene_distance`) and steps a long path more often. The C++
+  engine calls its seven-argument overload, lit by the analytic sky
+  (`cloud_ambient_analytic_sky`). The noise comes in through the `ICloudNoise`
   interface, which Slang specializes per caller: the C++ `compute/clouds.slang`
   passes its combined `Sampler3D`, OxidANT's `clouds/cloud_march.slang` a
   texture plus a sampler. Both. [`clouds.md`](clouds.md) owns the behaviour.
@@ -177,8 +200,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   approximation (`hemisphere_irradiance`), shared by `sky/sky.slang` (the
   Rust/WebGPU background), `forward/forward_lighting.slang` (the analytic IBL
   fallback, whose reflections and irradiance must agree with the background)
-  and the WebGPU tracer's miss shading (`tracer/traced.slang`,
-  `tracer/trace_shading.slang`).
+  the WebGPU tracer's miss shading (`tracer/trace_shading.slang`) and the
+  clouds' analytic sky ambient (`volumetric_clouds.slang`), which makes it
+  `both`: the C++ clouds read its gradient constants.
   There is deliberately no combined `sky_radiance`: each caller takes its
   light direction/intensity from a different uniform block, so each keeps a
   thin local wrapper over `sky_gradient` + `sun_disk`. `tests/sky_constants.rs`
@@ -188,7 +212,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 
 **Entry-point shader targets:** every Slang entry-point source below compiles
 to exactly one target, so none is shared between the two renderers at the
-entry-point level. Only the five `both` math modules and the CI guards below
+entry-point level. Only the `both` math modules and the CI guards below
 cross targets. `tonemap/tonemap.slang` (WGSL) and `post/post.slang` (SPIR-V)
 look like one pass but are separate sources: the C++ side's `post/post.slang`
 also composites clouds via push constants, so it never merged with the Rust
@@ -205,6 +229,7 @@ tonemap shader.
 | `deferred/deferred.slang` | spirv |
 | `depth_resolve/depth_resolve.slang` | wgsl |
 | `forward/forward.slang` | wgsl |
+| `fxaa/fxaa.slang` | wgsl |
 | `gpu_cull/gpu_cull.slang` | wgsl |
 | `ibl/ibl.slang` | wgsl |
 | `occlusion_bbox/occlusion_bbox.slang` | wgsl |
@@ -230,13 +255,16 @@ tonemap shader.
 **CI guards:** `tests/brdf_test.slang` and `tests/noise_test.slang` each
 `import` a shared math module and dual-emit to SPIR-V + WGSL, so a change that
 breaks either target's compile fails the manifest run in
-`Build-SlangShaders.ps1` before it reaches either renderer. The table above
-excludes them (see its gating test). Only `brdf` and `noise` are guarded for
-dual emit; a spirv-only module has nothing to guard until it gains a real wgsl
+`Build-SlangShaders.ps1` before it reaches either renderer; `brdf_test` calls
+every public `brdf.slang` function, `geometry_smith` included, which no
+renderer calls any more. OxidANT's `tests/path_estimator_test.slang` does the
+same for `path_estimator`. The table above excludes them (see its gating
+test). A spirv-only module has nothing to guard until it gains a real wgsl
 consumer, which the table below makes checkable. OxidANT's
-`tests/volumetric_clouds_test.slang` is the reverse guard: SPIR-V only, it
-imports `volumetric_clouds` with a `Sampler3D` the way the C++ engine does, so
-OxidANT's own CI proves the module still emits for this engine.
+`tests/volumetric_clouds_test.slang` and `tests/shadow_pcf_test.slang` are the
+reverse guards: SPIR-V only, they import `volumetric_clouds` with a
+`Sampler3D` and `shadow_pcf` with a `Sampler2DArrayShadow` the way the C++
+engine does, so OxidANT's own CI proves both still emit for this engine.
 
 The local cloud-volume shader is `compute/noise_volume.slang` so Slang's
 `import noise;` resolves OxidANT's `common/noise.slang`. A local file named
@@ -267,10 +295,13 @@ imports.
 | `common/material_textures.slang` | spirv |
 | `common/noise.slang` | both |
 | `common/normal_map.slang` | spirv |
+| `common/path_estimator.slang` | both |
+| `common/punctual_light.slang` | wgsl |
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
-| `common/sky_model.slang` | wgsl |
+| `common/shadow_pcf.slang` | both |
+| `common/sky_model.slang` | both |
 | `common/skybox_radiance.slang` | spirv |
 | `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->

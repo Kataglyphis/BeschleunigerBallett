@@ -126,7 +126,7 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | --- | --- | --- | --- | --- | --- |
 | `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355 | 0.354-0.356 | 0.15-0.49 | alpha test ignored: 0.631, fails |
 | `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after | 0.051-0.055 before, 0.417-0.421 after | 0.15 | AS not rebuilt: 0.071 after, fails |
-| `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of `E(mu)`, rig 0.993, 1.0 within ±0.1 (2026-11-15, aarch64 llvmpipe, one stream) | card within 0.001, rig 0.993, 0.998 | card 0.01, rig 0.98-1.002, 0.98 | albedo 0.95: card 0.944-0.957, rig 0.940, 0.856, fails |
+| `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of `E(mu)`, rig (roughness 0.8) 0.9823, 1.0 within ±0.1 (2026-11-16, aarch64 llvmpipe, one stream) | card within 0.001, rig 0.9823, 0.9995 (one stream) | card 0.01, rig 0.977-0.988, 0.98 | albedo 0.99: rig 0.9715, fails; albedo 1.01: rig 0.9933, fails |
 | `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
@@ -148,6 +148,12 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   (0.9 for the 8-bit furnace), and the primary ray goes through the pixel centre. The full
   variant fails all four the same way. The 8-bit furnace's band was wide: albedo 0.95 passed
   both variants (mean 230.1).
+- **The furnace rig moved to roughness 0.8 on 2026-11-16**, when a bounce took the sampled
+  Smith remap (`docs/source/path-tracing.md`): at 0.5 the BRDF's own `E(mu)` passes 1 at grazing
+  angles and the rig's mean rose to 1.019. At 0.8 `E(mu)` stays in 0.981-0.997, so the mean is
+  capped below 1 again; its bounds sit halfway between the measured 0.9823 and a furnace albedo
+  of 0.99 (0.9715) or 1.01 (0.9933), so a 1 % gain or loss per bounce fails either way. Measured
+  on one stream only; the four extra streams are not re-run.
 - **The anti-aliasing golden reads one edge: the slab's top against the sky** (owner decision
   2026-10-12), at y 56 of the 1200x768 frame. `sky_silhouette` (`GoldenMetrics.hpp`) walks each
   column of the panel-free crop down from the sky to its first step of more than 20 levels, so
@@ -297,7 +303,7 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   energy bound measured on the tonemapped frame is weak or vacuous there:
   `PathTracingPassesTheWhiteMetalFurnaceTest` compares radiance to `E(mu)` within 0.03,
   `PathTracingPassesTheWhiteFurnaceTest` a dielectric's within 0.01 and the rig's mean to
-  0.98-1.002, `PathTracingFloorsAZeroRoughnessTexel` two cards within 3 %,
+  0.977-0.988, `PathTracingFloorsAZeroRoughnessTexel` two cards within 3 %,
   `PathTracingHonorsTheUntexturedMetallicFactor` a metal to its dielectric twin, and
   `HdrTargetStaysBelowTheHalfFloatMaximum` every texel to the fp16-safe 65000. That last one is
   the only way to see the overflow on lavapipe, which rounds radiance past 65504 to 65504 rather
@@ -344,32 +350,35 @@ while the harness still showed it). The rest of the frame splits in two:
 - **near**: within 16 px of the radius-0 shadow, where penumbra softening shows;
 - **far-lit**: everything else, lit at radius 0, which PCF should leave alone.
 
-Measured in `:latest` on llvmpipe, Debug build, 1200x768; two runs agreed within half a
-percentage point:
+Measured 2026-11-16 in `:latest` on aarch64 llvmpipe, Debug build, 1200x768 with the editor
+hidden; two runs agreed exactly on the pixel columns. Each cell: the receiver-plane kernel
+(OxidANT's `common/shadow_pcf.slang`, since the 2026-11-16 pin), then in brackets the kernel
+before it, which compared every tap against the centre texel's depth:
 
 | Radius | Taps | Near: pixels a +1 step moves >= 3 levels | Near: mean step change (levels) | Far-lit: mean darkening (levels) | Far-lit: darkened >= 3 levels | Main pass (ms) |
 | --- | --- | --- | --- | --- | --- | --- |
-| 0 | 1 | - | - | 0.00 | 0 % | 4.1 |
-| 1 | 9 | 26.9 % | 2.16 | 0.02 | 0 % | 4.7 |
-| 2 | 25 | 34.3 % | 2.41 | 0.90 | 15.4 % | 5.6 |
-| 3 | 49 | 29.8 % | 1.56 | 1.81 | 39.2 % | 8.1 |
-| 4 | 81 | 22.3 % | 1.07 | 2.44 | 39.3 % | 11.1 |
-| 5 | 121 | 5.3 % | 0.81 | 2.89 | 39.4 % | 15.6 |
-| 6 | 169 | 1.9 % | 0.65 | 3.25 | 39.4 % | 21.0 |
-| 8 | 289 | 1.7 % | 0.38 | 3.76 | 39.5 % | 33.7 |
-| 12 | 625 | 1.3 % | 0.38 | 4.34 | 39.6 % | 72.9 |
-| 16 | 1089 | 1.4 % | 0.20 | 4.66 | 39.6 % | 121.4 |
-| 20 | 1681 | 1.3 % | 0.20 | 4.86 | 39.6 % | 181.4 |
+| 0 | 1 | - | - | 0.00 (0.00) | 0 % (0 %) | 7.8-8.3 |
+| 1 | 9 | 0.5 % (39.8 %) | 0.08 (3.15) | 0.00 (0.05) | 0 % (0 %) | 14.9-16.4 |
+| 2 | 25 | 0.4 % (50.0 %) | 0.07 (3.45) | 0.00 (1.46) | 0 % (27.2 %) | 23.7-25.9 |
+| 3 | 49 | 0.8 % (44.0 %) | 0.41 (2.27) | 0.00 (2.92) | 0 % (62.4 %) | 36.3-39.0 |
+| 4 | 81 | 1.0 % (31.8 %) | 0.65 (1.83) | 0.00 (3.93) | 0 % (62.4 %) | 55.5-57.9 |
+| 5 | 121 | 1.1 % (9.5 %) | 0.45 (1.41) | 0.00 (4.65) | 0 % (62.4 %) | 80.9-90.6 |
 
-The threshold: a step is visible when it moves at least 2 % of the near pixels by 3 or more
-luminance levels (of 255, about 1.2 %). Radius 5 is the last step over it. Every step after it
-stays at 1.3 to 1.9 % with a mean change of 0.2 to 0.65 levels, while the Main pass grows from
-15.6 ms to 181 ms. Any threshold between 2 % and 5 % gives the same bound.
+The Main pass costs the same with either kernel (the slope is computed once per pixel); the
+old kernel's times on this host are within the same ranges.
 
-Large radii add mostly an artifact, not softness. Every tap compares against the centre texel's
-depth with one constant bias, so on a receiver sloped against the light the outer taps shadow it.
-Lit surfaces far from any shadow darken from radius 2 on, and the darkening keeps growing with the
-radius. A receiver-plane depth bias would fix it (BACKLOG.md, C++ engine ideas).
+**Why 5.** The bound was set on 2026-10-06 with the old kernel, measured to radius 20 on a
+32-core x64 host: a step counted as visible when it moved at least 2 % of the near pixels by 3
+or more luminance levels (of 255, about 1.2 %), and radius 5 was the last step over it, while
+the Main pass grew from 15.6 ms at 5 to 181 ms at 20. Most of what that criterion saw was the
+artifact: on a receiver sloped against the light the outer taps read its own nearer depth as an
+occluder, so lit surfaces far from any shadow darkened from radius 2 on (27 % of them by 3+
+levels at the default 2 on this host, 62 % from 3). With each tap compared at the receiver
+plane's depth beneath it, no lit pixel darkens at any radius, and no step moves more than
+1.1 % of the near pixels: on the rig, where the 2048-texel map is finer than the screen, the
+penumbra a larger radius adds is a few pixels wide. The criterion no longer separates the
+radii, so the bound now rests on cost alone (the Main pass grows about 11x from radius 0 to 5
+here); it stays 5, which OxidANT's `forward_lighting.slang` mirrors.
 
 ## Synchronization validation
 

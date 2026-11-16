@@ -4114,8 +4114,9 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
         }
     }
 
-    EXPECT_EQ(occurrences_checked, 2)
-      << "expected exactly 2 SampleCmpLevelZero call site(s), found " << occurrences_checked
+    // cascaded_shadow.slang's taps, OxidANT's forward_lighting.slang and its shadow_pcf_test.slang.
+    EXPECT_EQ(occurrences_checked, 3)
+      << "expected exactly 3 SampleCmpLevelZero call site(s), found " << occurrences_checked
       << " - update this count if a new PCF kernel was intentionally added, and confirm it also "
          "bounds-checks its tap coordinate";
 
@@ -4527,6 +4528,12 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
 
 }// namespace
 
+// The scan follows names, so a callee of an overload the WGSL entry never calls reads as reachable: {source, callee}.
+const std::vector<std::pair<std::string, std::string>> kWgslCalleesOfAnUncalledOverload{
+    // Only march_clouds' seven-argument overload, the C++ engine's, calls it; cloud_march.slang passes its own ambient.
+    { "clouds/cloud_march.slang", "cloud_ambient_analytic_sky" },
+};
+
 // The CI backstop mtimes cannot be: each reachable function must appear in the WGSL, helpers as `fn <name>_<digits>(`.
 TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 {
@@ -4542,6 +4549,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
                                      << slang_root.string() << " - the definition scan itself is broken";
 
     std::vector<std::string> violations;
+    std::vector<bool> overload_exemption_used(kWgslCalleesOfAnUncalledOverload.size(), false);
     int checked_destinations = 0;
     int forward_reachable_count = 0;
     // A module beside its importer (forward/, tracer/) must reach the scan too, not only common/.
@@ -4571,6 +4579,14 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
         }
 
         for (const auto &name : reachable_names) {
+            const auto exemption = std::find(kWgslCalleesOfAnUncalledOverload.begin(),
+              kWgslCalleesOfAnUncalledOverload.end(),
+              std::pair<std::string, std::string>{ mapping.slang_source, name });
+            if (exemption != kWgslCalleesOfAnUncalledOverload.end()) {
+                overload_exemption_used[static_cast<std::size_t>(
+                  exemption - kWgslCalleesOfAnUncalledOverload.begin())] = true;
+                continue;
+            }
             const std::regex pattern("fn " + name + "(_[0-9]+)?\\(");
             if (!std::regex_search(dest_text, pattern)) {
                 violations.push_back(mapping.slang_source + " -> " + fs::relative(dest, repo_root).string()
@@ -4598,6 +4614,12 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
       << " Slang function(s) reachable from a wgslMap source's own entry point(s) are missing from the "
          "checked-in WGSL that source generates: "
       << joinViolations(violations);
+    for (std::size_t idx = 0; idx < kWgslCalleesOfAnUncalledOverload.size(); ++idx) {
+        EXPECT_TRUE(overload_exemption_used[idx])
+          << kWgslCalleesOfAnUncalledOverload[idx].first << " no longer reaches "
+          << kWgslCalleesOfAnUncalledOverload[idx].second
+          << " by name - delete its kWgslCalleesOfAnUncalledOverload row";
+    }
 }
 
 namespace {
@@ -4681,6 +4703,12 @@ std::optional<std::string> resolve_slang_module(const std::map<std::string, std:
 
 }// namespace
 
+// Dead imports in OxidANT files this repo cannot edit at its pin, {file, module}; delete a row once the pin drops it.
+const std::vector<std::pair<std::string, std::string>> kSharedDeadImportsAtThePin{
+    // OxidANT 18e178a stopped calling sky_gradient here; trace_shading.slang imports sky_model for itself.
+    { "tracer/traced.slang", "sky_model" },
+};
+
 // An import whose functions and structs the importer never names is stale, and so is any comment justifying it.
 TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 {
@@ -4721,6 +4749,7 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 
     int imports_checked = 0;
     std::vector<std::string> violations;
+    std::vector<bool> shared_dead_import_seen(kSharedDeadImportsAtThePin.size(), false);
 
     for (const auto &relative_path : all_relative_paths) {
         const auto lines = readFileLines(slang_root / relative_path);
@@ -4761,6 +4790,13 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
                               && std::any_of(exported->second.begin(),
                                 exported->second.end(),
                                 [&identifiers](const std::string &name) { return identifiers.contains(name); });
+            const auto pinned = std::find(kSharedDeadImportsAtThePin.begin(),
+              kSharedDeadImportsAtThePin.end(),
+              std::pair<std::string, std::string>{ relative_path, module_name });
+            if (!used && pinned != kSharedDeadImportsAtThePin.end()) {
+                shared_dead_import_seen[static_cast<std::size_t>(pinned - kSharedDeadImportsAtThePin.begin())] = true;
+                continue;
+            }
             if (!used) {
                 violations.push_back(relative_path + ": import " + module_name + " (" + *resolved
                                       + ") is unused - none of its exported function, struct or constant names "
@@ -4777,6 +4813,11 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
       << " Slang import(s) pull in a module whose exported functions/structs are never referenced by the "
          "importing file - delete the dead import (and any comment justifying it):"
       << joinViolations(violations);
+    for (std::size_t idx = 0; idx < kSharedDeadImportsAtThePin.size(); ++idx) {
+        EXPECT_TRUE(shared_dead_import_seen[idx])
+          << kSharedDeadImportsAtThePin[idx].first << "'s import " << kSharedDeadImportsAtThePin[idx].second
+          << " is used again or gone - delete its kSharedDeadImportsAtThePin row";
+    }
 }
 
 // The inverse of the manifest-driven checks: every source with an entry point needs an enabled manifest row.
@@ -6218,7 +6259,7 @@ TEST(BuildIntegrity, CppCloudsMarchThroughTheSharedModule)
     EXPECT_NE(contents->find("cloud_unpack("), std::string::npos)
       << clouds_path.string() << " must unpack the SceneUBO through volumetric_clouds.slang's cloud_unpack";
     for (const char *local :
-      { "float sample_density(", "float phase_HG(", "bool box_intersect(", "float light_march(" }) {
+      { "float sample_density(", "float phase_HG(", "bool box_intersect(", "float light_optical_depth(" }) {
         EXPECT_EQ(contents->find(local), std::string::npos)
           << clouds_path.string() << " defines its own " << local << "...), a copy of the shared cloud math";
     }
@@ -6531,7 +6572,7 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
     static const std::regex kLightMarchOriginIsSamplePos(R"(box_intersect\(samplePos,)");
     EXPECT_TRUE(std::regex_search(contents, kLightMarchOriginIsSamplePos))
       << clouds_path.string()
-      << "'s light_march must intersect the box from the point being "
+      << "'s light_optical_depth must intersect the box from the point being "
          "shadowed (samplePos), not the camera";
 
     EXPECT_EQ(contents.find("totalDensity /= "), std::string::npos)
@@ -6564,7 +6605,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
       << " contains the sign-flipped phase denominator (1.0 + g*g + 2.0*g*cosTheta), which "
          "peaks away from the sun instead of toward it";
 
-    // Powder belongs on lightEnergy, never in a transmittance assignment.
+    // Powder belongs on the sun's in-scattering, never in a transmittance assignment.
     const auto lines = readFileLines(clouds_path);
     ASSERT_TRUE(lines.has_value()) << "missing " << clouds_path.string();
     static const std::regex kPlainTransmittanceAssign(R"(transmittance\s*=[^=*])");
@@ -6574,7 +6615,7 @@ TEST(BuildIntegrity, CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittanc
         EXPECT_EQ(line.find("powder"), std::string::npos)
           << clouds_path.string() << ":" << (i + 1)
           << " assigns transmittance from an expression mentioning powder - the powder term "
-             "must attenuate lightEnergy, not raise transmittance ("
+             "must attenuate the sun's in-scattering, not raise transmittance ("
           << line << ")";
     }
 
@@ -6644,7 +6685,7 @@ TEST(BuildIntegrity, CloudBoxIsAnAxisAlignedBoxAroundItsOffset)
     EXPECT_NE(box_body.find("ro - cloud.offset"), std::string::npos)
       << "box_intersect must centre the box on cloud.offset, or the Offset control no longer moves the volume";
     EXPECT_NE(box_body.find("cloud.radius"), std::string::npos)
-      << "box_intersect must take its half extents from cloud.radius, the Scale x Density extent";
+      << "box_intersect must take its half extents from cloud.radius, the Scale x 10 extent";
     EXPECT_EQ(clouds_text->find("inv_model_to_world"), std::string::npos)
       << clouds_path.string() << " builds a box matrix again; an axis-aligned box needs none";
 
@@ -9788,22 +9829,28 @@ TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
+    static const char *kFailureMessage =
+      "the bounce direction must be renormalized after the hemisphere sample - the unnormalized "
+      "sum (normal + a unit vector) has length in [0, 2], which corrupts ray.TMin's "
+      "self-intersection epsilon, ray.TMax's visibility distance, and the miss branch's sky "
+      "gradient, all of which are measured in units of rayDirection's length";
+
+    // The shared estimator draws the bounce for both path tracers.
+    const fs::path estimator_path = sharedSlangRoot() / "common" / "path_estimator.slang";
+    const auto estimator = readFileText(estimator_path);
+    ASSERT_TRUE(estimator.has_value()) << "missing " << estimator_path.string();
+    EXPECT_NE(estimator->find("o.direction = normalize(direction);"), std::string::npos)
+      << estimator_path.string() << " no longer normalizes the bounce direction. " << kFailureMessage;
+
     const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto contentsOpt = readFileText(path_tracing_path);
     ASSERT_TRUE(contentsOpt.has_value()) << "missing " << path_tracing_path.string();
     const std::string &contents = *contentsOpt;
-
-    static const char *kFailureMessage =
-      "rayDirection must be renormalized after the hemisphere bounce sample - the unnormalized "
-      "sum (hitWorldNormal + a unit vector) has length in [0, 2], which corrupts ray.TMin's "
-      "self-intersection epsilon, ray.TMax's visibility distance, and the miss branch's sky "
-      "gradient, all of which are measured in units of rayDirection's length";
-
-    EXPECT_NE(contents.find("rayDirection = normalize(newDirection);"), std::string::npos)
-      << path_tracing_path.string() << " no longer normalizes the bounce direction. " << kFailureMessage;
-
+    EXPECT_NE(contents.find("rayDirection = next.direction;"), std::string::npos)
+      << path_tracing_path.string() << " no longer takes the shared sample_bounce()'s direction. " << kFailureMessage;
     EXPECT_EQ(contents.find("rayDirection = newDirection;"), std::string::npos)
-      << path_tracing_path.string() << " assigns the bounce direction without normalizing it. " << kFailureMessage;
+      << path_tracing_path.string() << " assigns a bounce direction of its own without normalizing it. "
+      << kFailureMessage;
 }
 
 // The cloud depth is a whole extra primary ray per pixel, so the path tracer traces it only when the clouds read it.
