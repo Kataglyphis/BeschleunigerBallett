@@ -96,8 +96,8 @@ myst_enable_extensions = [
     "deflist",
 ]
 
-# Only the html builder auto-excludes html_static_path; linkcheck and latex would read stray .md files there.
-exclude_patterns = ["_static/**"]
+# Only the html builder auto-excludes html_static_path; the demo's staged crate texts include .md files that are not pages.
+exclude_patterns = ["_static/**", "_webgpu_demo/**"]
 
 # Linkcheck gates internal links only; external URLs flake (rate limits, outages).
 linkcheck_ignore = [r"^https?://"]
