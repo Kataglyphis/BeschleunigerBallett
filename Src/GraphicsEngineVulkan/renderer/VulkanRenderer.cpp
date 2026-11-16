@@ -236,6 +236,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
       sceneSettings.cloud_pillowness,
       sceneSettings.cloud_cirrus_effect,
       sceneSettings.cloud_powder_effect);
+    fillSceneUboCloudAmbient(sceneUBO, sceneSettings.skybox_enabled, skyBox.getCloudAmbient());
 }
 
 auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool

@@ -38,5 +38,8 @@ struct SceneUBO
     vec4 cloudMeshScale;
     vec4 cloudMeshOffset;
     vec4 cloudParameters;
+    // The sky's hemisphere means the clouds scatter; both .w are filler.
+    vec4 cloudAmbientTop;
+    vec4 cloudAmbientBottom;
 };
 }// namespace Kataglyphis::VulkanRendererInternals

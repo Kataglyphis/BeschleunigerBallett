@@ -12,6 +12,7 @@
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/SceneUBO.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
+#include "scene/sky_box/CloudAmbient.hpp"
 
 namespace Kataglyphis {
 
@@ -105,6 +106,15 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
     ubo.cloudMeshOffset = glm::vec4(meshOffset.x, meshOffset.y, meshOffset.z, coverageThreshold);
     ubo.cloudParameters = glm::vec4(
       pillowness, cirrusEffect, powderEffect ? 1.0F : 0.0F, static_cast<float>(clampCloudMarchSteps(numMarchSteps)));
+}
+
+// The drawn sky's ambient: the cube map's, or the navy when the skybox is off. Both .w are filler.
+inline void
+  fillSceneUboCloudAmbient(VulkanRendererInternals::SceneUBO &ubo, bool skyboxEnabled, const CloudAmbient &cubemap)
+{
+    const CloudAmbient ambient = skyboxEnabled ? cubemap : cloudAmbientOfDisabledSky();
+    ubo.cloudAmbientTop = glm::vec4(ambient.top, 0.0F);
+    ubo.cloudAmbientBottom = glm::vec4(ambient.bottom, 0.0F);
 }
 
 // Both .w are filler: shaders read only .xyz.

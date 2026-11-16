@@ -111,9 +111,9 @@ that fixed them is in `.git-blame-ignore-revs`.
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 228 -->
+<!-- format-drift-denominator: 229 -->
 
-**0 of 228** own sources under `Src/` and `Test/` differ from `.clang-format`
+**0 of 229** own sources under `Src/` and `Test/` differ from `.clang-format`
 (0 of 226 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
 2026-11-16), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM

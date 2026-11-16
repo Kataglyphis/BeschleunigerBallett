@@ -109,11 +109,6 @@ committed to.
 
 ## Shared shader ideas (OxidANT `shaders/`, both renderers)
 
-- **[P3] Light the C++ clouds with the sky it draws.** `compute/clouds.slang` calls
-  `march_clouds`' seven-argument overload, whose ambient is OxidANT's analytic sky
-  (`cloud_ambient_analytic_sky`), not the DOOM2016 cube map. Pass a `CloudAmbient` of the cube
-  map's hemisphere means (the navy clear colour with the skybox off) through the eight-argument
-  overload, as the Rust host does; the cloud goldens move.
 - **[P3] C++ clouds at half resolution.** OxidANT marches at half resolution on request and
   upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
   `clouds_main` dispatch and an upsample pass importing it.

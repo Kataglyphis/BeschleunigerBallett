@@ -122,4 +122,6 @@ struct SceneUBO
     float4 cloudMeshScale;
     float4 cloudMeshOffset;
     float4 cloudParameters;
+    float4 cloudAmbientTop;
+    float4 cloudAmbientBottom;
 };

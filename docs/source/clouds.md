@@ -119,9 +119,7 @@ in both the primary and the light march. Each step:
   positive `g` peaks forward (toward the sun, `cosTheta = +1`), not away from
   it; plus an ambient term, the sky's mean radiance over the upper and lower
   hemisphere blended by the sample's height in the box (`CloudAmbient`). The
-  C++ engine calls the seven-argument `march_clouds`, which lights it with
-  OxidANT's analytic sky (`cloud_ambient_analytic_sky`), not the DOOM2016 cube
-  map it draws.
+  C++ engine lights it with the sky it draws (see The ambient, below).
 - Integrates that in-scattering exactly over the step for albedo 1
   (`transmittance * (1 - exp(-density * dt)) * source`), so a long step cannot
   overshoot.
@@ -129,6 +127,31 @@ in both the primary and the light march. Each step:
   term modelling self-shadowing of dense droplets, over the slider's step
   length, so the adaptive step count does not change it. It must never appear
   on the right-hand side of a `transmittance` assignment.
+
+### The ambient
+
+`clouds_main` passes the eight-argument `march_clouds` a `CloudAmbient` from the
+`SceneUBO` (`cloudAmbientTop`/`cloudAmbientBottom`), which `fillSceneUboCloudAmbient`
+fills every frame from the skybox switch:
+
+- **Skybox on**: the DOOM2016 cube map's mean radiance over the upper and the lower
+  hemisphere, as the sky pass draws it: each texel sRGB-decoded, then through
+  `aces_tonemap_inverse` (the sky pass is untonemapped, so that is the radiance its
+  pixel stands for). `SkyBox::loadCubeMap` computes it once per load
+  (`cloudAmbientOfCubemap` in `scene/sky_box/CloudAmbient.hpp`), from at most 64 texels per
+  face edge; `+Y` counts toward the top, `-Y` toward the bottom, and a side face's
+  rows above its middle toward the top (the middle row toward both). The black fallback
+  cube map gives zero. OxidANT's `CloudAmbient::of_cubemap` is the same average.
+- **Skybox off**: the untonemapped navy, `aces_tonemap_inverse(0, 0, 0.5)` in both
+  halves (`cloudAmbientOfDisabledSky`).
+
+Until 2026-11-16 the engine called the seven-argument overload, whose ambient is
+OxidANT's analytic sky (`cloud_ambient_analytic_sky`), a bright blue-grey under
+either sky. `GoldenRender.CloudsAreLitByTheSkyTheyDraw` lights a dense box by its
+ambient alone (sun radiance 0): over the navy it must vanish (the cloud scatters
+exactly the radiance it hides), and under DOOM2016 every opaque pixel must lie between
+the displayed hemisphere means, which the test computes from the PNGs with the same
+function.
 
 `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`
 pins the phase-function sign and the powder/transmittance separation as
@@ -207,7 +230,8 @@ validation).
 `SceneUboMarshal.hpp`'s `fillSceneUboClouds` (the host packer) and
 `volumetric_clouds.slang`'s `cloud_unpack` (the shader-side consumer; `clouds_main`
 copies the four `SceneUBO` vectors into its `CloudParams`, and OxidANT's host packs the same
-layout) are two hand-written mirrors of the same nine-value layout. The table maps
+layout) are two hand-written mirrors of the same nine-value layout; the two ambient rows are
+`fillSceneUboCloudAmbient`'s, unpacked in `compute/clouds.slang`. The table maps
 each GUI control (the CLOUDS section of the inspector's Sky tab, `GUI.cpp`) -> shader field ->
 `SceneUBO` field/component; both sides must agree on it.
 `BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack` pins the shader half,
@@ -226,6 +250,8 @@ this table against that same test's data.
 | `Powder effect` | `cloud.powder_effect` | `cloudParameters.z` |
 | `Scale` | `cloud.radius` | `cloudMeshScale.xyz` |
 | `Offset` | `cloud.offset` | `cloudMeshOffset.xyz` |
+| (skybox) | `ambient.top` | `cloudAmbientTop.xyz` |
+| (skybox) | `ambient.bottom` | `cloudAmbientBottom.xyz` |
 <!-- cloud-ubo:end -->
 
 `cloudLightMarch.yzw` is the shared module's wind offset (`cloud.wind_offset`,
@@ -298,7 +324,8 @@ the view axis each stay in their half; the other half keeps every pixel),
 `GoldenRender.CloudsStopAtTheSceneDepth` (forward and deferred: a box behind
 the shadow rig's slab shows around it, never on it),
 `GoldenRender.CloudsStopAtTracedGeometry` (the same in RT and PT),
-`GoldenRender.CloudsCompositeOverTheSkyAsOverGeometry` and
+`GoldenRender.CloudsCompositeOverTheSkyAsOverGeometry`,
+`GoldenRender.CloudsAreLitByTheSkyTheyDraw` (The ambient, above) and
 `GoldenRender.CloudsInFrontOfGeometryCoverItInEveryMode`. The last checks the
 depth from the other side: a fog-filled box (coverage threshold 0) in front
 of the slab and of an unlit green card must change over 90 % of both in

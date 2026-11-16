@@ -818,7 +818,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 79 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 80 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -837,15 +837,15 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
   - `raster`: every GPU test in no other shard (61 today, two of them disabled), 90 min per test;
-  - `clouds`: the seven cloud goldens, 150 min per test;
+  - `clouds`: the eight cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
     `PathTracedMetalCardReflectsTheSkyAndTheSun`, `AddedModelAppearsInPathTracing`,
     `ReloadedModelIsVisibleInPathTracing`) and for `RaytracingFrameSkipsTheRasterPass`, the
     costliest ray-traced one.
 
-  The five cloud goldens and the four path-traced ones added 2026-11-15 are unmeasured under
-  QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
+  The five cloud goldens and the four path-traced ones added 2026-11-15, and
+  `CloudsAreLitByTheSkyTheyDraw` (2026-11-16, 5 s natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
   tests timed below to 59 runnable ones, also untimed under QEMU, and eight of them path-trace

@@ -51,9 +51,14 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     float depth = sceneDepth.Load(int3(texelCoord, 0));
     float sceneDistance = cloud_scene_distance(globalUBO.inv_projection, ndc, depth, float3(0.0));
 
+    // The sky this engine draws, which the host averaged per hemisphere, not OxidANT's analytic one.
+    CloudAmbient ambient;
+    ambient.top = scene.cloudAmbientTop.xyz;
+    ambient.bottom = scene.cloudAmbientBottom.xyz;
+
     CombinedNoise noise;
     // dirLight.direction is where the light travels, so the vector toward it is the negation.
     float3 toLight = normalize(-scene.dirLight.direction.xyz);
     outputImage[tid.xy] = march_clouds(noise, scene.cam_pos.xyz, rayDirection, sceneDistance, cloud_unpack(params),
-                                       toLight, scene.dirLight.color.xyz * scene.dirLight.color.w);
+                                       toLight, scene.dirLight.color.xyz * scene.dirLight.color.w, ambient);
 }

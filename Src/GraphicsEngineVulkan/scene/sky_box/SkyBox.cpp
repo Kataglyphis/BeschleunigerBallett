@@ -18,6 +18,7 @@ module;
 #include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
+#include "scene/sky_box/CloudAmbient.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
 
 module kataglyphis.vulkan.sky_box;
@@ -98,6 +99,9 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before post gamma-encodes.
     const bool uploaded =
       uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
+    if (uploaded) {
+        cloudAmbient = cloudAmbientOfCubemap(faces, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    }
 
     for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
 
@@ -119,6 +123,7 @@ void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
         kFallbackCubemapFacePixel,
         kFallbackCubemapFacePixel,
         kFallbackCubemapFacePixel };
+    cloudAmbient = cloudAmbientOfCubemap(faces, 1, 1);
     if (!uploadCubeMapFaces(commandPool, 1, 1, faces)) {
         spdlog::error("SkyBox: fallback cubemap upload failed; leaving the cubemap descriptor unwritten.");
         return;

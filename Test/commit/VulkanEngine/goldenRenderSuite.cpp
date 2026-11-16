@@ -8,6 +8,7 @@
 #include "common/GuiModelTransform.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "scene/sky_box/CloudAmbient.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/packing.hpp>
@@ -46,6 +47,7 @@
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image.h>
 #include <stb_image_write.h>
 
 import kataglyphis.vulkan.camera;
@@ -5020,6 +5022,142 @@ TEST(GoldenRender, CloudsCompositeOverTheSkyAsOverGeometry)
     EXPECT_LT(static_cast<double>(mismatched), 0.01 * static_cast<double>(region))
       << "the same cloud shows a different red over the sky than over a black card: the sky composite is not the "
          "linear HDR premultiplied-over that geometry gets";
+}
+
+// The display byte post writes for an HDR radiance: ACES, then sRGB, as aces.slang and post.slang encode it.
+int displayed_byte(float radiance)
+{
+    const float x = std::max(radiance, 0.0F);
+    const float tonemapped = std::clamp((x * (2.51F * x + 0.03F)) / (x * (2.43F * x + 0.59F) + 0.14F), 0.0F, 1.0F);
+    const float encoded =
+      tonemapped <= 0.0031308F ? tonemapped * 12.92F : 1.055F * std::pow(tonemapped, 1.0F / 2.4F) - 0.055F;
+    return static_cast<int>(std::lround(encoded * 255.0F));
+}
+
+// The DOOM2016 faces as SkyBox loads them, averaged by the same function; nullopt without the textures.
+std::optional<Kataglyphis::CloudAmbient> doom_skybox_ambient()
+{
+    const std::array<const char *, 6> names{
+        "DOOM16RT.png", "DOOM16LF.png", "DOOM16UP.png", "DOOM16DN.png", "DOOM16FT.png", "DOOM16BK.png"
+    };
+    std::array<unsigned char *, 6> pixels{};
+    int width = 0;
+    int height = 0;
+    bool loaded = true;
+    for (size_t face = 0; face < names.size(); ++face) {
+        const std::string path = std::string("Resources/Textures/Skybox/DOOM2016/") + names[face];
+        int channels = 0;
+        pixels[face] = stbi_load(path.c_str(), &width, &height, &channels, 4);
+        loaded = loaded && pixels[face] != nullptr;
+    }
+    std::optional<Kataglyphis::CloudAmbient> ambient;
+    if (loaded) {
+        const std::array<const unsigned char *, 6> faces{
+            pixels[0], pixels[1], pixels[2], pixels[3], pixels[4], pixels[5]
+        };
+        ambient =
+          Kataglyphis::cloudAmbientOfCubemap(faces, static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    }
+    for (unsigned char *face : pixels) { stbi_image_free(face); }
+    return ambient;
+}
+
+// Sun off, a cloud shows its sky's ambient: it vanishes into the navy and takes DOOM2016's means, not the analytic sky.
+TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    // After the harness: faces freed into ASan's quarantine before it made LSan lose the window system's allocations.
+    const auto doom = doom_skybox_ambient();
+    ASSERT_TRUE(doom.has_value()) << "could not load the DOOM2016 faces - not running from the repo root?";
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.cloud_coverage_threshold = 0.0F;
+    scene_vars.cloud_powder_effect = false;
+    // The composite test's band of sky under the slab, dense enough that a few units through it are opaque.
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 4.0F, -40.0F), glm::vec3(40.0F, 4.0F, 5.0F), 4.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](bool skybox, bool clouds, float sun) {
+        scene_vars.skybox_enabled = skybox;
+        scene_vars.clouds_enabled = clouds;
+        scene_vars.directional_light_radiance = sun;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    // The sunlit cloud over the navy locates the box; every other capture is lit by the sky alone.
+    const std::vector<uint8_t> navy_off = capture(false, false, 0.0F);
+    const std::vector<uint8_t> navy_sunlit = capture(false, true, 10.0F);
+    const std::vector<uint8_t> navy_on = capture(false, true, 0.0F);
+    const std::vector<uint8_t> doom_off = capture(true, false, 0.0F);
+    const std::vector<uint8_t> doom_on = capture(true, true, 0.0F);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    for (const auto &[name, frame] : { std::pair{ "ambient-navy-off", &navy_off },
+           std::pair{ "ambient-navy-sunlit", &navy_sunlit },
+           std::pair{ "ambient-navy-on", &navy_on },
+           std::pair{ "ambient-doom-off", &doom_off },
+           std::pair{ "ambient-doom-on", &doom_on } }) {
+        dump_cloud_frame(name, *frame, width, height);
+        ASSERT_EQ(frame->size(), navy_off.size()) << name;
+    }
+    ASSERT_FALSE(navy_off.empty());
+
+    // Sky pixels the sunlit cloud covers, eroded twice so the box's thin, half-transparent rim drops out.
+    std::vector<bool> cloud_mask(navy_off.size() / 4U);
+    for (size_t pixel = 0; pixel < cloud_mask.size(); ++pixel) {
+        cloud_mask[pixel] = is_disabled_sky(navy_off, pixel) && channel_delta(navy_off, navy_sunlit, pixel) > 5;
+    }
+    cloud_mask = eroded(eroded(cloud_mask, width, height), width, height);
+    const size_t cloud_pixels = static_cast<size_t>(std::count(cloud_mask.begin(), cloud_mask.end(), true));
+    ASSERT_GT(cloud_pixels, 5000U) << "the box covers too little sky - check the framing";
+
+    // Under the navy the ambient is the sky's own radiance, so the cloud scatters exactly what it hides.
+    size_t navy_mismatched = 0;
+    // Under DOOM2016 each opaque pixel lies between the two hemisphere means, by its entry height.
+    std::array<int, 3> lowest{};
+    std::array<int, 3> highest{};
+    for (int c = 0; c < 3; ++c) {
+        lowest[static_cast<size_t>(c)] = std::min(displayed_byte(doom->top[c]), displayed_byte(doom->bottom[c]));
+        highest[static_cast<size_t>(c)] = std::max(displayed_byte(doom->top[c]), displayed_byte(doom->bottom[c]));
+    }
+    size_t doom_outside = 0;
+    double doom_cloud_luma = 0.0;
+    double doom_sky_luma = 0.0;
+    for (size_t pixel = 0; pixel < cloud_mask.size(); ++pixel) {
+        if (!cloud_mask[pixel]) { continue; }
+        if (channel_delta(navy_off, navy_on, pixel) > 3) { ++navy_mismatched; }
+        const size_t base = pixel * 4U;
+        bool outside = false;
+        for (size_t c = 0; c < 3U; ++c) {
+            const int value = doom_on[base + c];
+            outside = outside || value < lowest[c] - 3 || value > highest[c] + 3;
+        }
+        if (outside) { ++doom_outside; }
+        doom_cloud_luma += luminance_of(doom_on, pixel);
+        doom_sky_luma += luminance_of(doom_off, pixel);
+    }
+    const auto count = static_cast<double>(cloud_pixels);
+    doom_cloud_luma /= count;
+    doom_sky_luma /= count;
+    GTEST_LOG_(INFO) << "sky-lit cloud over " << cloud_pixels << " px: navy " << navy_mismatched
+                     << " px off by more than 3 levels; DOOM2016 top (" << displayed_byte(doom->top.x) << ", "
+                     << displayed_byte(doom->top.y) << ", " << displayed_byte(doom->top.z) << "), bottom ("
+                     << displayed_byte(doom->bottom.x) << ", " << displayed_byte(doom->bottom.y) << ", "
+                     << displayed_byte(doom->bottom.z) << "), " << doom_outside << " px outside them; mean luma cloud "
+                     << doom_cloud_luma << ", sky behind " << doom_sky_luma;
+
+    EXPECT_LT(static_cast<double>(navy_mismatched), 0.01 * count)
+      << "with the skybox off a sky-lit cloud must vanish into the navy it is lit by; it is lit by another sky";
+    EXPECT_LT(static_cast<double>(doom_outside), 0.05 * count)
+      << "with the skybox on the cloud's colour is not the DOOM2016 hemisphere means the host computed";
+    EXPECT_GT(doom_cloud_luma, 0.5 * doom_sky_luma) << "the sky-lit cloud is much darker than the sky behind it";
 }
 
 // A box in front of the slab and an unlit card must cloud them in every mode; RT once put an unlit hit at the eye.

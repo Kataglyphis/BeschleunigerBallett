@@ -6,6 +6,8 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "scene/sky_box/CloudAmbient.hpp"
+
 export module kataglyphis.vulkan.sky_box;
 
 import kataglyphis.vulkan.device;
@@ -44,6 +46,9 @@ class SkyBox
     // Null until init(); the post pass samples the same cubemap to put the sky under the clouds.
     Kataglyphis::Texture *getCubeMapTexture() const { return cubeMapTexture.get(); }
 
+    // The loaded faces' hemisphere means, computed once per load; zero for the black fallback.
+    const CloudAmbient &getCloudAmbient() const { return cloudAmbient; }
+
     ~SkyBox();
 
   private:
@@ -51,6 +56,7 @@ class SkyBox
 
     std::unique_ptr<Kataglyphis::Mesh> skyMesh;
     std::unique_ptr<Kataglyphis::Texture> cubeMapTexture;
+    CloudAmbient cloudAmbient{};
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};

@@ -40,6 +40,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
+#include "scene/sky_box/CloudAmbient.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 #include "shared/scene/Vertex.hpp"
 
@@ -4530,7 +4531,7 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
 
 // The scan follows names, so a callee of an overload the WGSL entry never calls reads as reachable: {source, callee}.
 const std::vector<std::pair<std::string, std::string>> kWgslCalleesOfAnUncalledOverload{
-    // Only march_clouds' seven-argument overload, the C++ engine's, calls it; cloud_march.slang passes its own ambient.
+    // Only march_clouds' seven-argument overload calls it, and neither renderer calls that overload any more.
     { "clouds/cloud_march.slang", "cloud_ambient_analytic_sky" },
 };
 
@@ -6680,20 +6681,22 @@ TEST(BuildIntegrity, CloudBoxIsAnAxisAlignedBoxAroundItsOffset)
 // The host-to-shader cloud UBO pairs, shared by the unpack test and the doc-table test so their truths cannot diverge.
 struct CloudUboFieldPair
 {
-    const char *cloud_field;
+    const char *shader_field;
     const char *scene_field;
     const char *component;
 };
-constexpr std::array<CloudUboFieldPair, 9> kCloudUboFieldPairs{ {
-  { "num_march_steps", "cloudParameters", "w" },
-  { "num_march_steps_to_light", "cloudLightMarch", "x" },
-  { "scale", "cloudMeshScale", "w" },
-  { "threshold", "cloudMeshOffset", "w" },
-  { "pillowness", "cloudParameters", "x" },
-  { "cirrus_effect", "cloudParameters", "y" },
-  { "powder_effect", "cloudParameters", "z" },
-  { "radius", "cloudMeshScale", "xyz" },
-  { "offset", "cloudMeshOffset", "xyz" },
+constexpr std::array<CloudUboFieldPair, 11> kCloudUboFieldPairs{ {
+  { "cloud.num_march_steps", "cloudParameters", "w" },
+  { "cloud.num_march_steps_to_light", "cloudLightMarch", "x" },
+  { "cloud.scale", "cloudMeshScale", "w" },
+  { "cloud.threshold", "cloudMeshOffset", "w" },
+  { "cloud.pillowness", "cloudParameters", "x" },
+  { "cloud.cirrus_effect", "cloudParameters", "y" },
+  { "cloud.powder_effect", "cloudParameters", "z" },
+  { "cloud.radius", "cloudMeshScale", "xyz" },
+  { "cloud.offset", "cloudMeshOffset", "xyz" },
+  { "ambient.top", "cloudAmbientTop", "xyz" },
+  { "ambient.bottom", "cloudAmbientBottom", "xyz" },
 } };
 
 // Offsets are pinned elsewhere, but a component swap is not; each host component must land in its shader field.
@@ -6702,26 +6705,52 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = sharedCloudsPath();
-    const auto contents = readFileText(clouds_path);
-    ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
+    const fs::path shared_path = sharedCloudsPath();
+    const auto shared_contents = readFileText(shared_path);
+    ASSERT_TRUE(shared_contents.has_value()) << "missing " << shared_path.string();
+    // The ambient is the C++ engine's own input, unpacked in its entry rather than the shared cloud_unpack.
+    const fs::path entry_path = slangRoot() / "compute" / "clouds.slang";
+    const auto entry_contents = readFileText(entry_path);
+    ASSERT_TRUE(entry_contents.has_value()) << "missing " << entry_path.string();
 
     for (const auto &pair : kCloudUboFieldPairs) {
-        const std::string pattern = std::string("cloud\\.") + pair.cloud_field + R"(\s*=[^;]*scene\.)"
+        const std::string field = pair.shader_field;
+        const bool in_entry = field.starts_with("ambient.");
+        const fs::path &clouds_path = in_entry ? entry_path : shared_path;
+        const std::string &contents = in_entry ? *entry_contents : *shared_contents;
+        const std::string pattern = std::regex_replace(field, std::regex(R"(\.)"), R"(\.)") + R"(\s*=[^;]*scene\.)"
                                     + pair.scene_field + "\\." + pair.component + "\\b";
         const std::regex field_regex(pattern);
-        EXPECT_TRUE(std::regex_search(*contents, field_regex))
-          << clouds_path.string() << " no longer assigns cloud." << pair.cloud_field << " from scene."
-          << pair.scene_field << '.' << pair.component
+        EXPECT_TRUE(std::regex_search(contents, field_regex))
+          << clouds_path.string() << " no longer assigns " << pair.shader_field << " from scene." << pair.scene_field
+          << '.' << pair.component
           << " - the host packer (SceneUboMarshal.hpp's fillSceneUboClouds) and this shader's unpack "
              "must agree on which component every cloud slider lands in";
+    }
+}
+
+// CloudAmbient.hpp's navy feeds the cloud ambient with the sky off; it must be the navy the sky pass draws.
+TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
+{
+    const fs::path radiance_path = slangRoot() / "common" / "skybox_radiance.slang";
+    const auto contents = readFileText(radiance_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << radiance_path.string();
+    std::smatch match;
+    ASSERT_TRUE(std::regex_search(*contents,
+      match,
+      std::regex(R"(SKYBOX_DISABLED_RADIANCE\s*=\s*float3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\))")))
+      << radiance_path.string() << " no longer defines SKYBOX_DISABLED_RADIANCE as a float3 literal";
+    for (int channel = 0; channel < 3; ++channel) {
+        EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), Kataglyphis::kSkyboxDisabledRadiance[channel])
+          << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from "
+          << radiance_path.string();
     }
 }
 
 // Owning counterpart of CloudUboFieldPair, whose const char* fields may only point at literals.
 struct ParsedCloudUboRow
 {
-    std::string cloud_field;
+    std::string shader_field;
     std::string scene_field;
     std::string component;
 };
@@ -6732,7 +6761,7 @@ std::optional<std::vector<ParsedCloudUboRow>> parse_cloud_ubo_doc_table(const fs
     const auto lines = readFileLines(doc_path);
     if (!lines) { return std::nullopt; }
 
-    static const std::regex kRowPattern(R"(\|[^|]*\|\s*`cloud\.([A-Za-z_]+)`\s*\|\s*`([A-Za-z]+)\.([A-Za-z]+)`\s*\|)");
+    static const std::regex kRowPattern(R"(\|[^|]*\|\s*`([a-z]+\.[A-Za-z_]+)`\s*\|\s*`([A-Za-z]+)\.([A-Za-z]+)`\s*\|)");
 
     std::vector<ParsedCloudUboRow> rows;
     bool in_block = false;
@@ -6811,14 +6840,14 @@ TEST(BuildIntegrity, CloudsDocTablesMatchTheirSources)
     for (std::size_t i = 0; i < kCloudUboFieldPairs.size(); ++i) {
         const auto &expected = kCloudUboFieldPairs[i];
         const auto &actual = (*ubo_rows)[i];
-        EXPECT_EQ(actual.cloud_field, expected.cloud_field)
-          << doc_path.string() << "'s cloud-ubo table row " << i << " has shader field \"" << actual.cloud_field
-          << "\", expected \"" << expected.cloud_field << '"';
+        EXPECT_EQ(actual.shader_field, expected.shader_field)
+          << doc_path.string() << "'s cloud-ubo table row " << i << " has shader field \"" << actual.shader_field
+          << "\", expected \"" << expected.shader_field << '"';
         EXPECT_EQ(actual.scene_field, expected.scene_field)
-          << doc_path.string() << "'s cloud-ubo table row " << i << " (cloud." << expected.cloud_field
+          << doc_path.string() << "'s cloud-ubo table row " << i << " (" << expected.shader_field
           << ") has SceneUBO field \"" << actual.scene_field << "\", expected \"" << expected.scene_field << '"';
         EXPECT_EQ(actual.component, expected.component)
-          << doc_path.string() << "'s cloud-ubo table row " << i << " (cloud." << expected.cloud_field
+          << doc_path.string() << "'s cloud-ubo table row " << i << " (" << expected.shader_field
           << ") has SceneUBO component \"" << actual.component << "\", expected \"" << expected.component << '"';
     }
 

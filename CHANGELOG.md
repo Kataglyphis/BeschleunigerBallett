@@ -83,6 +83,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- The C++ clouds are lit by the sky the engine draws: the DOOM2016 cube map's mean radiance over
+  each hemisphere (sRGB-decoded and untonemapped, as the sky pass shows it, computed once per
+  load from at most 64 texels per face edge), or the untonemapped navy with the skybox off,
+  through the `SceneUBO`'s new `cloudAmbientTop`/`cloudAmbientBottom`. They were lit by OxidANT's
+  analytic sky, a bright blue-grey under either. `GoldenRender.CloudsAreLitByTheSkyTheyDraw`.
 - Shutting down after a lost device no longer releases the scene's and the editor's GPU
   resources on a destroyed VMA allocator: `App::run` skipped their cleanup on a lost device, the
   renderer then destroyed the allocator and the device under them, and a Debug build aborted in
