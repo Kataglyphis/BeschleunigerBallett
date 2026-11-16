@@ -72,10 +72,10 @@ class GpuTimingSubsystem
 
     // Creates (destroying any existing pool first) a query pool sized for
     // imageCount swapchain images, publishing support/reset state to
-    // guiRendererSharedVars. On any creation failure, timestamps are marked
+    // timings. On any creation failure, timestamps are marked
     // unsupported and the function returns early, exactly as the renderer did
     // inline.
-    void create(VulkanDevice &device, uint32_t imageCount, FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+    void create(VulkanDevice &device, uint32_t imageCount, FrontendShared::GpuTimings &timings)
     {
         destroy();
 
@@ -83,8 +83,8 @@ class GpuTimingSubsystem
         gpu_timestamp_period = device.getTimestampPeriod();
         gpu_timings_supported = (valid_bits != 0U) && (gpu_timestamp_period > 0.0F);
 
-        guiRendererSharedVars.gpuTimings.supported = gpu_timings_supported;
-        for (float &pass_ms : guiRendererSharedVars.gpuTimings.pass_ms) { pass_ms = -1.0F; }
+        timings.supported = gpu_timings_supported;
+        for (float &pass_ms : timings.pass_ms) { pass_ms = -1.0F; }
         for (auto &average : gpu_pass_averages) { average.reset(); }
 
         if (!gpu_timings_supported) {
@@ -105,7 +105,7 @@ class GpuTimingSubsystem
             spdlog::warn("Failed to create the GPU timing query pool (result {}); per-pass GPU timings disabled.",
               static_cast<int>(pool_result.result));
             gpu_timings_supported = false;
-            guiRendererSharedVars.gpuTimings.supported = false;
+            timings.supported = false;
             return;
         }
         gpu_timing_query_pool = pool_result.value;
@@ -125,12 +125,10 @@ class GpuTimingSubsystem
     }
 
     // Reads back the previous results of imageIndex's slice (never waits) and
-    // publishes smoothed per-pass milliseconds to the GUI shared vars.
-    void readTimings(VulkanDevice &device,
-      uint32_t imageIndex,
-      FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+    // publishes smoothed per-pass milliseconds to timings.
+    void readTimings(VulkanDevice &device, uint32_t imageIndex, FrontendShared::GpuTimings &timings)
     {
-        guiRendererSharedVars.gpuTimings.supported = gpu_timings_supported;
+        timings.supported = gpu_timings_supported;
 
         if (!gpu_timings_supported || !gpu_timing_query_pool) { return; }
         // Freshly created pools hold queries in an undefined state; only read a
@@ -160,7 +158,7 @@ class GpuTimingSubsystem
                 // Pass not recorded in that frame (e.g. clouds/shadows disabled):
                 // show it as inactive and drop stale history so a re-enabled pass
                 // starts a fresh average.
-                guiRendererSharedVars.gpuTimings.pass_ms[static_cast<size_t>(pass)] = -1.0F;
+                timings.pass_ms[static_cast<size_t>(pass)] = -1.0F;
                 gpu_pass_averages[static_cast<size_t>(pass)].reset();
                 continue;
             }
@@ -179,7 +177,7 @@ class GpuTimingSubsystem
             const uint64_t delta_ticks = (end_value - start_value) & gpu_timestamp_mask;
             const double pass_ms_raw = static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period)
                                        / NANOSECONDS_PER_MILLISECOND;
-            guiRendererSharedVars.gpuTimings.pass_ms[static_cast<size_t>(pass)] =
+            timings.pass_ms[static_cast<size_t>(pass)] =
               gpu_pass_averages[static_cast<size_t>(pass)].add(static_cast<float>(pass_ms_raw));
 
             // The JSON export accumulates the RAW sample, not the smoothed value

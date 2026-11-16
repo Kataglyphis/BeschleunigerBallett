@@ -1,5 +1,6 @@
 // The editor's main flows driven by mouse and key events, and checked by the state they change.
 
+#include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
 #include "ImGuiInputDriver.hpp"
 #include "ScopedEnvVar.hpp"
@@ -13,7 +14,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
-import kataglyphis.vulkan.gui_renderer_shared_vars;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.scene_config;
@@ -40,6 +41,8 @@ constexpr const char *RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 // One engine with the editor showing, driven like App::run minus camera input and torn down in the usual order.
 struct EditorEngine
 {
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
     std::unique_ptr<Kataglyphis::Frontend::Window> window;
     std::unique_ptr<Kataglyphis::Scene> scene;
     std::unique_ptr<Kataglyphis::Frontend::GUI> gui;
@@ -48,20 +51,21 @@ struct EditorEngine
 
     EditorEngine()
       : window(std::make_unique<Kataglyphis::Frontend::Window>(1200, 768)),
-        scene(std::make_unique<Kataglyphis::Scene>()), gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())),
+        scene(std::make_unique<Kataglyphis::Scene>()),
+        gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)),
         camera(std::make_unique<Camera>())
-    { renderer = std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get()); }
+    {
+        renderer =
+          std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
+        Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
+    }
     EditorEngine(const EditorEngine &) = delete;
     EditorEngine &operator=(const EditorEngine &) = delete;
 
     void frame()
     {
         glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
+        Kataglyphis::TestSupport::renderEditorFrame(*gui, *renderer, scene.get(), camera.get(), settings, feedback);
     }
 
     void waitForModel()
@@ -190,7 +194,7 @@ TEST(Integration, OutlinerRendererRowOpensTheTabWhoseSwitchTogglesCulling)
     auto &engine = session.engine;
     auto &input = session.input;
     ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
-    auto &renderer_vars = engine.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = engine.settings.renderer;
     ASSERT_TRUE(renderer_vars.frustum_culling_enabled) << "culling must be on at startup";
 
     const std::optional<ImVec2> renderer_row = point_at_outliner_row(input, "Renderer");
@@ -226,7 +230,7 @@ TEST(Integration, ViewMenuClosesTheInspectorAndAnOutlinerRowReopensIt)
     auto &engine = session.engine;
     auto &input = session.input;
     ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
-    const auto &viewport = engine.gui->getGuiRendererSharedVars().scene_viewport;
+    const auto &viewport = engine.settings.renderer.scene_viewport;
     ASSERT_LT(viewport.x1, 1.0F) << "the inspector dock must cover the image's right edge at startup";
 
     ImGuiWindow *menu_bar = ImGui::FindWindowByName("##MainMenuBar");
@@ -270,7 +274,7 @@ TEST(Integration, OutlinerEyeTogglesTheSkybox)
     auto &engine = session.engine;
     auto &input = session.input;
     ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
-    auto &scene_vars = engine.gui->getGuiSceneSharedVars();
+    auto &scene_vars = engine.settings.scene;
     ASSERT_TRUE(scene_vars.skybox_enabled) << "the skybox must show at startup";
 
     const ImGuiWindow *dock = scene_dock();
@@ -299,7 +303,7 @@ TEST(Integration, F1HidesAndRestoresTheEditor)
     auto &engine = session.engine;
     auto &input = session.input;
     ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
-    const auto &viewport = engine.gui->getGuiRendererSharedVars().scene_viewport;
+    const auto &viewport = engine.settings.renderer.scene_viewport;
     ASSERT_FALSE(shows_the_whole_image(viewport)) << "the editor's bars must inset the scene at startup";
 
     input.pressKey(GLFW_KEY_F1);

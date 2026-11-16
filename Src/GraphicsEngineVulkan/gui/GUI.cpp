@@ -467,7 +467,10 @@ auto culledPercent(unsigned int drawn, unsigned int total) -> double
 { return (total > 0U) ? 100.0 * static_cast<double>(total - drawn) / static_cast<double>(total) : 0.0; }
 }// namespace
 
-GUI::GUI(Window *window) : window(window), studio(std::make_unique<StudioState>()) {}
+GUI::GUI(Window *window, RenderSettings &settings, const RendererFeedback &feedback)
+  : window(window), guiSceneSharedVars(settings.scene), guiRendererSharedVars(settings.renderer),
+    rendererFeedback(feedback), studio(std::make_unique<StudioState>())
+{}
 
 void GUI::initializeVulkanContext(const std::shared_ptr<VulkanDevice> &vulkan_device,
   const vk::Instance &instance,
@@ -491,7 +494,7 @@ void GUI::setRenderMode(int mode)
     guiRendererSharedVars.pathTracing = (mode == 2);
 }
 
-bool GUI::tracingAvailable() const { return renderUserSelectionForRRT && guiRendererSharedVars.tracingReady; }
+bool GUI::tracingAvailable() const { return renderUserSelectionForRRT && rendererFeedback.tracingReady; }
 
 int GUI::displayedRenderMode() const
 {
@@ -515,7 +518,7 @@ auto GUI::loadedModelName() const -> std::string_view
         return modelDisplayName(model_names[static_cast<std::size_t>(loaded)]);
     }
     // A model the library does not list, such as an absolute KATAGLYPHIS_MODEL_OVERRIDE, goes by its file's stem.
-    const std::string_view path = guiRendererSharedVars.loadedModelPath;
+    const std::string_view path = rendererFeedback.loadedModelPath;
     const std::size_t slash = path.find_last_of("/\\");
     const std::string_view file = slash == std::string_view::npos ? path : path.substr(slash + 1);
     const std::size_t dot = file.find_last_of('.');
@@ -1209,7 +1212,7 @@ void GUI::renderModelInspector()
     if (has_model) {
         ImGui::PushFont(studio->fonts.mono, 0.0F);
         const std::string &source =
-          listed ? model_paths[static_cast<std::size_t>(loaded)] : guiRendererSharedVars.loadedModelPath;
+          listed ? model_paths[static_cast<std::size_t>(loaded)] : rendererFeedback.loadedModelPath;
         mutedWrappedText(source.c_str());
         ImGui::PopFont();
     } else {
@@ -1277,7 +1280,7 @@ void GUI::renderRenderInspector()
     renderModeSwitch("##render_mode", -1.0F);
     if (!renderUserSelectionForRRT) {
         mutedWrappedText("Ray and path tracing need hardware ray tracing.");
-    } else if (!guiRendererSharedVars.tracingReady) {
+    } else if (!rendererFeedback.tracingReady) {
         mutedWrappedText(renderMode() != 0 ? "Your pick starts once a model has loaded; Raster cancels it."
                                            : "Ray and path tracing start once a model has loaded.");
     }
@@ -1394,10 +1397,8 @@ void GUI::renderProfilerTab()
 
     ImGui::TableSetColumnIndex(1);
     ImGui::PushStyleVarY(ImGuiStyleVar_CellPadding, std::round(style.CellPadding.y * 0.5F));
-    renderGpuPassTimings(guiRendererSharedVars.gpuTimings.supported,
-      guiRendererSharedVars.gpuTimings.pass_ms,
-      GPU_TIMED_PASS_NAMES,
-      frame_ms);
+    renderGpuPassTimings(
+      rendererFeedback.gpuTimings.supported, rendererFeedback.gpuTimings.pass_ms, GPU_TIMED_PASS_NAMES, frame_ms);
     ImGui::PopStyleVar();
 
     ImGui::EndTable();
@@ -1405,7 +1406,7 @@ void GUI::renderProfilerTab()
 
 void GUI::renderVisibilityTab()
 {
-    const auto &visibility = guiRendererSharedVars.visibility;
+    const auto &visibility = rendererFeedback.visibility;
     ImGui::AlignTextToFramePadding();
     ImGui::TextUnformatted("Frustum culling");
     ImGui::SameLine();

@@ -133,8 +133,6 @@ committed to.
 
 ## C++ engine ideas
 
-- **[P3] `GUI*` is a mutable cross-cutting dependency**: `VulkanRenderer` reads GUI state each
-  frame. An app-owned settings struct passed by const reference would decouple them.
 - **[P3] A stage registry**, so adding a pass does not mean editing `VulkanRenderer`. (A
   `SwapchainTarget` extraction was investigated 2026-07-23 and rejected: recreation is
   inherently cross-cutting.)

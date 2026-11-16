@@ -1,5 +1,6 @@
 // Structure only, never exact pixels; see docs/source/gpu-golden-testing.md § Writing a new golden test.
 
+#include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
 #include "GltfVariant.hpp"
 #include "GoldenMetrics.hpp"
@@ -45,8 +46,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
-import kataglyphis.vulkan.gui_renderer_shared_vars;
-import kataglyphis.vulkan.gui_scene_shared_vars;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.scene_config;
@@ -113,6 +113,9 @@ struct EngineHarness
 {
     // Only when the test picked no scene of its own; ScopedModelOverride clears the variable on exit.
     std::optional<ScopedModelOverride> golden_scene;
+    // App-owned in App::run: tests drive the settings and read the feedback as the editor does.
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
     std::unique_ptr<Kataglyphis::Frontend::Window> window;
     std::unique_ptr<Kataglyphis::Scene> scene;
     std::unique_ptr<Kataglyphis::Frontend::GUI> gui;
@@ -121,7 +124,8 @@ struct EngineHarness
 
     EngineHarness()
       : window(std::make_unique<Kataglyphis::Frontend::Window>(WINDOW_WIDTH, WINDOW_HEIGHT)),
-        scene(std::make_unique<Kataglyphis::Scene>()), gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())),
+        scene(std::make_unique<Kataglyphis::Scene>()),
+        gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)),
         camera(std::make_unique<Camera>())
     {
         if (const char *chosen = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); chosen == nullptr || *chosen == '\0') {
@@ -130,7 +134,9 @@ struct EngineHarness
         frame_golden_view(*camera);
         // The goldens frame the whole image; the docked editor would shrink the scene into its viewport.
         gui->setOverlayVisible(false);
-        renderer = std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
+        renderer =
+          std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
+        Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
     }
 
     EngineHarness(const EngineHarness &) = delete;
@@ -140,11 +146,7 @@ struct EngineHarness
     void render_frame()
     {
         glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
+        Kataglyphis::TestSupport::renderEditorFrame(*gui, *renderer, scene.get(), camera.get(), settings, feedback);
     }
 
     /// Pumps frames until the asynchronously parsed model is in the scene.
@@ -185,7 +187,7 @@ struct EngineHarness
 
     GUIRendererSharedVars &useForwardRaster()
     {
-        auto &renderer_vars = gui->getGuiRendererSharedVars();
+        auto &renderer_vars = settings.renderer;
         renderer_vars.raytracing = false;
         renderer_vars.pathTracing = false;
         renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -504,7 +506,7 @@ TEST(GoldenRender, RendersNonBlankFrame)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
 
@@ -547,9 +549,9 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     if (const char *with_ui = std::getenv("KATAGLYPHIS_FRAME_DUMP_WITH_UI"); with_ui != nullptr && *with_ui != '\0') {
         harness.gui->setOverlayVisible(true);
     }
-    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+    harness.settings.scene.shadows_enabled = true;
     // Must match ShadowsDarkenSomePixels' configuration, or the two cannot be compared.
-    harness.gui->getGuiSceneSharedVars().cascaded_shadow_intensity = 1.0F;
+    harness.settings.scene.cascaded_shadow_intensity = 1.0F;
 
     harness.render_frames(WARMUP_FRAMES);
     harness.render_frames(SETTLE_FRAMES);
@@ -577,7 +579,7 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     write("-shadows-on", frame);
 
     // ShadowsDarkenSomePixels' exact sequence, with the PNG of the very bytes each mean was taken over.
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
 
     scene_vars.cascaded_shadow_intensity = 0.0F;
     harness.render_frames(SETTLE_FRAMES);
@@ -666,8 +668,8 @@ TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    const auto &timings = harness.gui->getGuiRendererSharedVars().gpuTimings;
+    auto &scene_vars = harness.settings.scene;
+    const auto &timings = harness.feedback.gpuTimings;
     harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
@@ -806,7 +808,7 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     harness.useForwardRaster();
 
     // Only intensity varies, isolating "the shadow map is sampled" from "the shadow pass runs".
@@ -900,25 +902,25 @@ TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     auto &renderer_vars = harness.useForwardRaster();
 
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U)
+    ASSERT_GT(harness.feedback.visibility.shadow_casters_total, 0U)
       << "the renderer reported considering no shadow casters at all; "
          "the shadow visibility counters are not being written";
-    EXPECT_LE(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total);
+    EXPECT_LE(harness.feedback.visibility.shadow_casters_drawn, harness.feedback.visibility.shadow_casters_total);
 
     scene_vars.shadows_enabled = false;
     harness.render_frames(SETTLE_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
-    EXPECT_EQ(renderer_vars.visibility.shadow_casters_total, 0U)
+    EXPECT_EQ(harness.feedback.visibility.shadow_casters_total, 0U)
       << "shadow caster counters must be zeroed when the shadow pass does not run";
-    EXPECT_EQ(renderer_vars.visibility.shadow_casters_drawn, 0U)
+    EXPECT_EQ(harness.feedback.visibility.shadow_casters_drawn, 0U)
       << "shadow caster counters must be zeroed when the shadow pass does not run";
 }
 
@@ -929,7 +931,7 @@ TEST(GoldenRender, ShadowsOffFromTheFirstFrameLeaveTheCascadeArraySampleable)
 
     EngineHarness harness;
     harness.useForwardRaster();
-    harness.gui->getGuiSceneSharedVars().shadows_enabled = false;
+    harness.settings.scene.shadows_enabled = false;
     // After the harness: the arm64 runner's PowerVR ICD logs loader errors while devices are enumerated.
     ScopedValidationErrorCounter validation_errors;
     harness.render_frames(WARMUP_FRAMES);
@@ -946,7 +948,7 @@ TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     auto &renderer_vars = harness.useForwardRaster();
 
     scene_vars.shadows_enabled = true;
@@ -959,17 +961,17 @@ TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U)
+    ASSERT_GT(harness.feedback.visibility.shadow_casters_total, 0U)
       << "the renderer reported considering no shadow casters at all; "
          "the shadow visibility counters are not being written";
-    EXPECT_EQ(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total)
+    EXPECT_EQ(harness.feedback.visibility.shadow_casters_drawn, harness.feedback.visibility.shadow_casters_total)
       << "with frustum culling disabled, every shadow caster must be drawn regardless of the cascade frusta";
 
     renderer_vars.frustum_culling_enabled = true;
     harness.render_frames(SETTLE_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
-    EXPECT_LE(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total);
+    EXPECT_LE(harness.feedback.visibility.shadow_casters_drawn, harness.feedback.visibility.shadow_casters_total);
 }
 
 // A shadow that darkens but never moves passes ShadowsDarkenSomePixels and fails here.
@@ -981,7 +983,7 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
 
@@ -1100,8 +1102,8 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.settings.scene;
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = false;
     scene_vars.shadows_enabled = true;
@@ -1200,7 +1202,7 @@ TEST(GoldenRender, DeferredShadowsLandWhereForwardShadowsLand)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     auto &renderer_vars = harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
@@ -1274,7 +1276,7 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
         EngineHarness harness;
 
         harness.useForwardRaster();
-        harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+        harness.settings.scene.shadows_enabled = true;
         harness.render_frames(WARMUP_FRAMES);
         if (harness.renderer->hasDeviceLost()) {
             ADD_FAILURE() << "Device lost while warming up (" << label << ").";
@@ -1365,14 +1367,14 @@ TEST(GoldenRender, WorldUpIsScreenUp)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
     // A card's shadow on the ground would pull its changed-pixel centroid down.
-    harness.gui->getGuiSceneSharedVars().shadows_enabled = false;
+    harness.settings.scene.shadows_enabled = false;
 
     uint32_t width = 0;
     uint32_t height = 0;
     const auto capture_all = [&] {
         std::vector<std::vector<uint8_t>> frames;
         for (const Mode &mode : modes) {
-            auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+            auto &renderer_vars = harness.settings.renderer;
             renderer_vars.raytracing = mode.raytracing;
             renderer_vars.pathTracing = false;
             renderer_vars.rasterizationMode = mode.raster;
@@ -1419,10 +1421,10 @@ TEST(GoldenRender, EmissiveStrengthSurvivesTheDeferredGBuffer)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = false;
-    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+    harness.settings.scene.shadows_enabled = true;
 
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     harness.render_frames(WARMUP_FRAMES);
@@ -1480,26 +1482,26 @@ TEST(GoldenRender, FrustumCullingDropsOffscreenMeshesOnly)
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
     // The default debug camera frames the scene, so everything is visible.
-    const unsigned int considered = renderer_vars.visibility.meshes_total;
+    const unsigned int considered = harness.feedback.visibility.meshes_total;
     ASSERT_GT(considered, 0U) << "the renderer reported considering no meshes at all; "
                                  "the visibility counters are not being written";
-    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, considered)
+    EXPECT_EQ(harness.feedback.visibility.meshes_drawn, considered)
       << "culling dropped geometry the camera is looking straight at";
 
     // Far past the far plane, with the scene behind the camera.
     harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 5000.0F));
     harness.render_frames(SETTLE_FRAMES);
 
-    EXPECT_EQ(renderer_vars.visibility.meshes_total, considered)
+    EXPECT_EQ(harness.feedback.visibility.meshes_total, considered)
       << "the number of meshes considered must not change when the camera moves";
-    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U)
-      << "a scene entirely outside the view should be culled completely, but " << renderer_vars.visibility.meshes_drawn
-      << " mesh(es) were still drawn";
+    EXPECT_EQ(harness.feedback.visibility.meshes_drawn, 0U)
+      << "a scene entirely outside the view should be culled completely, but "
+      << harness.feedback.visibility.meshes_drawn << " mesh(es) were still drawn";
 
     // Separates "culling works" from "the renderer stopped drawing".
     renderer_vars.frustum_culling_enabled = false;
     harness.render_frames(SETTLE_FRAMES);
-    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, considered)
+    EXPECT_EQ(harness.feedback.visibility.meshes_drawn, considered)
       << "with culling disabled every mesh must be submitted regardless of the camera";
 
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
@@ -1519,7 +1521,7 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    const unsigned int meshes_with_one_model = renderer_vars.visibility.meshes_total;
+    const unsigned int meshes_with_one_model = harness.feedback.visibility.meshes_total;
     ASSERT_GT(meshes_with_one_model, 0U);
 
     uint32_t width = 0;
@@ -1539,7 +1541,7 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost after adding a model.";
 
     // The raster path must now consider more meshes than before.
-    EXPECT_GT(renderer_vars.visibility.meshes_total, meshes_with_one_model)
+    EXPECT_GT(harness.feedback.visibility.meshes_total, meshes_with_one_model)
       << "adding a model did not change how many meshes the raster path considered; "
          "the new model never reached the draw loop";
 
@@ -1571,7 +1573,7 @@ TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
     ASSERT_FALSE(harness.renderer->hasDeviceLost())
       << "Device lost rendering the two-primitive glTF - the split produced an invalid mesh.";
 
-    EXPECT_EQ(renderer_vars.visibility.meshes_total, 2U)
+    EXPECT_EQ(harness.feedback.visibility.meshes_total, 2U)
       << "the two-primitive glTF must build two meshes (one per primitive), not one flattened mesh";
 
     uint32_t width = 0;
@@ -1597,7 +1599,7 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
     {
         EngineHarness harness;
         harness.useForwardRaster();
-        harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+        harness.settings.scene.shadows_enabled = true;
 
         // Fresh query pools are unreadable until recorded once, so the first readbacks measure nothing.
         harness.render_frames(30);
@@ -1657,7 +1659,7 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -1764,7 +1766,7 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -1817,8 +1819,8 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -1875,7 +1877,7 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -1918,7 +1920,7 @@ TEST(GoldenRender, PathTracingHonorsTheUntexturedMetallicFactor)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -1966,7 +1968,7 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
@@ -2022,8 +2024,8 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -2062,7 +2064,7 @@ TEST(GoldenRender, RaytracedShadowsAreDarkerThanLitGround)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -2115,10 +2117,10 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     harness.render_frames(WARMUP_FRAMES + 30);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    const unsigned int forward_meshes_drawn = renderer_vars.visibility.meshes_drawn;
+    const unsigned int forward_meshes_drawn = harness.feedback.visibility.meshes_drawn;
     ASSERT_GT(forward_meshes_drawn, 0U) << "the renderer reported drawing no meshes at all in forward mode";
     const float forward_main_ms =
-      renderer_vars.gpuTimings
+      harness.feedback.gpuTimings
         .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
 
     renderer_vars.raytracing = true;
@@ -2126,14 +2128,14 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     harness.render_frames(30);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
-    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U)
+    EXPECT_EQ(harness.feedback.visibility.meshes_drawn, 0U)
       << "the raster pass must not run - and must not report stale mesh counts - while RT owns the frame";
-    EXPECT_EQ(renderer_vars.visibility.meshes_total, 0U)
+    EXPECT_EQ(harness.feedback.visibility.meshes_total, 0U)
       << "the raster pass must not run - and must not report stale mesh counts - while RT owns the frame";
 
-    if (renderer_vars.gpuTimings.supported) {
+    if (harness.feedback.gpuTimings.supported) {
         const float rt_main_ms =
-          renderer_vars.gpuTimings
+          harness.feedback.gpuTimings
             .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
         GTEST_LOG_(INFO) << "Main-pass GPU time: forward(raster only)=" << forward_main_ms
                          << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
@@ -2330,7 +2332,7 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -2444,7 +2446,7 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -2629,7 +2631,7 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Deferred;
@@ -2836,7 +2838,7 @@ TEST(GoldenRender, BlendCardsCompositeInDepthOrderFromBothSides)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // The disabled sky is one flat colour, so the card over it has one expected value.
     scene_vars.skybox_enabled = false;
@@ -2999,7 +3001,7 @@ TEST(GoldenRender, EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode)
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // Emission only: a lit black card would add a highlight to either half.
     scene_vars.directional_light_radiance = 0.0F;
@@ -3076,7 +3078,7 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -3183,7 +3185,7 @@ TEST(GoldenRender, CloudCompositeAndSkyLoadAreFreeOfSyncHazards)
     ScopedSyncValidation sync_validation;
     EngineHarness harness;
     harness.useForwardRaster();
-    harness.gui->getGuiSceneSharedVars().clouds_enabled = true;
+    harness.settings.scene.clouds_enabled = true;
     // From the first frame: the layer reports one message id ten times, then goes quiet, so warmup would spend them.
     ScopedValidationErrorCounter validation_errors;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
@@ -3235,8 +3237,8 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -3288,8 +3290,8 @@ TEST(GoldenRender, AddedModelBuildsOnlyItsOwnBlas)
     EngineHarness harness;
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -3346,7 +3348,7 @@ TEST(GoldenRender, TracedFramesFollowTheRasterModeAndTheSwapchain)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -3470,7 +3472,7 @@ TEST(GoldenRender, EditorMarksTheModelTheSceneLoaded)
 
         const int rig_row = sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), SHADOW_RIG_MODEL);
         ASSERT_GE(rig_row, 0) << SHADOW_RIG_MODEL << " is not in the model library";
-        EXPECT_EQ(harness.gui->getGuiSceneSharedVars().selected_model_index, rig_row)
+        EXPECT_EQ(harness.settings.scene.selected_model_index, rig_row)
           << "KATAGLYPHIS_MODEL_OVERRIDE loaded the shadow rig, but the library marks another row";
         EXPECT_EQ(harness.gui->loadedModelName(), std::string_view("ShadowTest/shadow_rig"))
           << "the library row's name";
@@ -3484,7 +3486,7 @@ TEST(GoldenRender, EditorMarksTheModelTheSceneLoaded)
         ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
         EXPECT_EQ(harness.scene->getModelCount(), 0U);
-        EXPECT_EQ(harness.gui->getGuiSceneSharedVars().selected_model_index, -1)
+        EXPECT_EQ(harness.settings.scene.selected_model_index, -1)
           << "nothing loaded, yet the library marks a row as loaded";
         EXPECT_TRUE(harness.gui->loadedModelName().empty()) << "nothing loaded, yet the editor names a model";
     }
@@ -3506,7 +3508,7 @@ TEST(GoldenRender, EditorTransformsAModelTheLibraryDoesNotList)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(harness.scene->getModelCount(), 1U) << "the absolute override " << unlisted << " did not load";
 
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     EXPECT_EQ(scene_vars.selected_model_index, -1) << "no library row holds an absolute path";
     // The inspector enables Position, Rotation and Reset exactly when the editor names a model.
     EXPECT_EQ(harness.gui->loadedModelName(), std::string_view("shadow_rig"))
@@ -3532,7 +3534,7 @@ TEST(GoldenRender, ReloadResetsTheInspectorTransform)
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     harness.render_frames(WARMUP_FRAMES);
 
     const std::array<float, 3> position = { 1.0F, 2.0F, 3.0F };
@@ -3569,18 +3571,18 @@ TEST(GoldenRender, TracedFramesSkipTheShadowPass)
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.useForwardRaster();
-    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+    harness.settings.scene.shadows_enabled = true;
     renderer_vars.pathTracingSamplesPerPixel = 1;
     renderer_vars.pathTracingMaxBounces = 1;
-    const auto shadow_pass_ms = [&renderer_vars] {
-        return renderer_vars.gpuTimings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)];
+    const auto shadow_pass_ms = [&harness] {
+        return harness.feedback.gpuTimings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)];
     };
 
     // A fresh query pool reads back nothing for its first frames, so the raster control runs long enough to sample.
     harness.render_frames(WARMUP_FRAMES + 10);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
-    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U) << "the raster frame drew no shadow casters";
-    if (renderer_vars.gpuTimings.supported) {
+    ASSERT_GT(harness.feedback.visibility.shadow_casters_total, 0U) << "the raster frame drew no shadow casters";
+    if (harness.feedback.gpuTimings.supported) {
         EXPECT_GE(shadow_pass_ms(), 0.0F) << "the raster frame's shadow pass reported no GPU time";
     }
 
@@ -3592,8 +3594,9 @@ TEST(GoldenRender, TracedFramesSkipTheShadowPass)
         ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
         const char *mode = raytracing ? "ray traced" : "path traced";
-        EXPECT_EQ(renderer_vars.visibility.shadow_casters_total, 0U) << mode << " frames still record the shadow pass";
-        if (renderer_vars.gpuTimings.supported) {
+        EXPECT_EQ(harness.feedback.visibility.shadow_casters_total, 0U)
+          << mode << " frames still record the shadow pass";
+        if (harness.feedback.gpuTimings.supported) {
             EXPECT_LT(shadow_pass_ms(), 0.0F) << mode << " frames still time a \"Shadow cascades\" pass";
         }
     }
@@ -3618,8 +3621,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
             GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
         }
 
-        auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-        harness.gui->getGuiSceneSharedVars().directional_light_radiance = 0.0F;
+        auto &renderer_vars = harness.settings.renderer;
+        harness.settings.scene.directional_light_radiance = 0.0F;
         renderer_vars.raytracing = false;
         renderer_vars.pathTracing = true;
         renderer_vars.pathTracingSamplesPerPixel = 4;
@@ -3664,8 +3667,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.8");
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -3728,8 +3731,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    harness.gui->getGuiSceneSharedVars().directional_light_radiance = 0.0F;
+    auto &renderer_vars = harness.settings.renderer;
+    harness.settings.scene.directional_light_radiance = 0.0F;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.pathTracingSamplesPerPixel = 8;
@@ -3792,8 +3795,8 @@ TEST(GoldenRender, PathTracedMetalCardReflectsTheSkyAndTheSun)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.pathTracingSamplesPerPixel = 4;
@@ -3932,7 +3935,7 @@ TEST(GoldenRender, PathTracingFloorsAZeroRoughnessTexel)
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
@@ -4013,7 +4016,7 @@ TEST(GoldenRender, TracedHitsTakeTheirSideFromTheTriangleWinding)
     }
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // Lit along the leaning normal: raster's N.L is 0.96, a normal flipped by the ray's side gets none.
     scene_vars.directional_light_direction[0] = -0.9F;
@@ -4105,8 +4108,8 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    auto &s = harness.gui->getGuiSceneSharedVars();
-    auto &r = harness.gui->getGuiRendererSharedVars();
+    auto &s = harness.settings.scene;
+    auto &r = harness.settings.renderer;
 
     // Random sampling almost never hits the all-maximum corner, the state most likely to exhaust the GPU.
     if (rt_supported) {
@@ -4248,7 +4251,7 @@ TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.clouds_enabled = true;
 
     harness.render_frames(WARMUP_FRAMES);
@@ -4275,7 +4278,7 @@ TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.clouds_enabled = false;
 
     // Test-only: the default slab sits far above the camera's eye line, and default wisps are too faint to measure.
@@ -4378,7 +4381,7 @@ TEST(GoldenRender, CloudOffsetMovesTheCloudVolume)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.clouds_enabled = false;
     scene_vars.cloud_coverage_threshold = 0.3F;
     harness.render_frames(WARMUP_FRAMES);
@@ -4436,7 +4439,7 @@ TEST(GoldenRender, CloudsStopAtTheSceneDepth)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     // The disabled sky is one known colour, so a pixel that is not it is geometry.
     scene_vars.skybox_enabled = false;
     scene_vars.cloud_coverage_threshold = 0.3F;
@@ -4500,7 +4503,7 @@ TEST(GoldenRender, CloudsStopAtTracedGeometry)
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.skybox_enabled = false;
     scene_vars.cloud_coverage_threshold = 0.3F;
     place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, -20.0F), glm::vec3(40.0F, 6.0F, 4.0F), 1.0F);
@@ -4593,7 +4596,7 @@ TEST(GoldenRender, CloudsCompositeOverTheSkyAsOverGeometry)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     // The disabled sky is linear (0, 0, 0.5): no red, like the black card.
     scene_vars.skybox_enabled = false;
     scene_vars.cloud_coverage_threshold = 0.3F;
@@ -4678,7 +4681,7 @@ TEST(GoldenRender, CloudsInFrontOfGeometryCoverItInEveryMode)
     const bool traced = harness.renderer->supportsHardwareRaytracing();
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.skybox_enabled = false;
     // Threshold 0 fills the box with fog, so every ray through it meets cloud.
     scene_vars.cloud_coverage_threshold = 0.0F;
@@ -4847,7 +4850,7 @@ TEST(GoldenRender, NormalMappedBackFaceFlipsItsWholeTangentFrame)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // From +X and the camera's side: the front card's mapped normal (0.71, 0, 0.71) faces it almost squarely.
     scene_vars.directional_light_direction[0] = -1.0F;
@@ -4927,7 +4930,7 @@ TEST(GoldenRender, MirroredModelKeepsItsWindingAndNormalMapRelief)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &renderer_vars = harness.useForwardRaster();
-    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // From above and behind the camera, in the mirror plane: the mapped normal (0, 0.71, 0.71) faces it squarely.
     scene_vars.directional_light_direction[0] = 0.0F;
@@ -4995,7 +4998,7 @@ TEST(GoldenRender, RaytracedLargeMeshDoesNotLoseTheDevice)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) { GTEST_SKIP() << "Hardware raytracing unsupported."; }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = harness.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;

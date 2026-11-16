@@ -8,24 +8,20 @@ export module kataglyphis.vulkan.gui;
 
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.gui_renderer_shared_vars;
-import kataglyphis.vulkan.gui_scene_shared_vars;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.window;
 
 export namespace Kataglyphis::Frontend {
 class GUI
 {
   public:
-    GUI(Window *window);
+    // The editor writes the app's settings and shows the renderer's feedback; both outlive it.
+    GUI(Window *window, RenderSettings &settings, const RendererFeedback &feedback);
 
     void initializeVulkanContext(const std::shared_ptr<VulkanDevice> &device,
       const vk::Instance &instance,
       vk::Format post_color_format,
       uint32_t image_count);
-
-    GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
-    { return guiRendererSharedVars; };
 
     void setUserSelectionForRRT(bool rrtCapabilitiesAvailable);
 
@@ -79,8 +75,9 @@ class GUI
     Window *window{ nullptr };
     vk::DescriptorPool gui_descriptor_pool{};
 
-    GUISceneSharedVars guiSceneSharedVars;
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
+    GUISceneSharedVars &guiSceneSharedVars;
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars;
+    const RendererFeedback &rendererFeedback;
 
     bool renderUserSelectionForRRT = true;
     bool overlayVisible = true;

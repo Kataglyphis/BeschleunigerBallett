@@ -20,7 +20,11 @@ kataglyphis_append_prefixed_files(
   PostStage.ixx
   CommandBufferManager.cpp)
 kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_INCLUDE_DIR}renderer/" GlobalUBO.hpp)
-kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_SRC_DIR}renderer/" GUIRendererSharedVars.ixx)
+kataglyphis_append_prefixed_files(
+  RENDERER_FILTER
+  "${PROJECT_SRC_DIR}renderer/"
+  GUIRendererSharedVars.ixx
+  RenderSettings.ixx)
 kataglyphis_append_prefixed_files(RENDERER_FILTER "${PROJECT_INCLUDE_DIR}renderer/" SceneUBO.hpp)
 
 kataglyphis_append_prefixed_files(

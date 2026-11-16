@@ -197,6 +197,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The renderer no longer holds the GUI: `App::run` owns the settings the editor writes
+  (`RenderSettings`) and the feedback it shows (`RendererFeedback`), and passes the settings to
+  `VulkanRenderer` by const reference each frame. The one-shot requests and the inspector's reset
+  after a load are applied by `applyRendererFeedback` after the renderer's update; frames render
+  as before.
 - `resolveModelPath` and the skybox lookup cache the `Resources` directories above the working
   directory, so a miss probes each of them once instead of every parent directory up to eight
   levels. Hits resolve to the same path as before; a chdir or a file created after a miss is

@@ -1,5 +1,6 @@
 // Device loss through VulkanRenderer's test seam, then App::run's teardown: reverse declaration order.
 
+#include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
 #include "ScopedEnvVar.hpp"
 #include "app/AppExitCode.hpp"
@@ -25,6 +26,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.instance;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.window;
@@ -77,21 +79,23 @@ struct AppObjects
 {
     ScopedEnvVar model{ "KATAGLYPHIS_MODEL_OVERRIDE", TEXTURED_CARD_MODEL };
     std::unique_ptr<Kataglyphis::Frontend::Window> window{ std::make_unique<Kataglyphis::Frontend::Window>(1200, 768) };
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
     std::unique_ptr<Kataglyphis::Scene> scene{ std::make_unique<Kataglyphis::Scene>() };
-    std::unique_ptr<Kataglyphis::Frontend::GUI> gui{ std::make_unique<Kataglyphis::Frontend::GUI>(window.get()) };
+    std::unique_ptr<Kataglyphis::Frontend::GUI> gui{
+        std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)
+    };
     std::unique_ptr<Camera> camera{ std::make_unique<Camera>() };
     std::unique_ptr<Kataglyphis::VulkanRenderer> renderer{
-        std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get())
+        std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback)
     };
+
+    AppObjects() { Kataglyphis::TestSupport::attachEditor(*gui, *renderer); }
 
     void frame()
     {
         glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
+        Kataglyphis::TestSupport::renderEditorFrame(*gui, *renderer, scene.get(), camera.get(), settings, feedback);
     }
 
     void warmUp()

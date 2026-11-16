@@ -1,3 +1,4 @@
+#include "EngineFrame.hpp"
 #include <gtest/gtest.h>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -30,6 +31,7 @@ bool glfw_reports_vulkan_support()
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.window;
@@ -57,12 +59,16 @@ TEST(Integration, VulkanEngine)
     using namespace Kataglyphis;
     std::unique_ptr<Kataglyphis::Frontend::Window> window =
       std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
+    RenderSettings settings;
+    RendererFeedback feedback;
     std::unique_ptr<Scene> scene = std::make_unique<Scene>();
-    std::unique_ptr<Kataglyphis::Frontend::GUI> gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
+    std::unique_ptr<Kataglyphis::Frontend::GUI> gui =
+      std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback);
     std::unique_ptr<Camera> camera = std::make_unique<Camera>();
 
     auto vulkan_renderer =
-      std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
+      std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
+    Kataglyphis::TestSupport::attachEditor(*gui, *vulkan_renderer);
 
     // App::run's order: the renderer first, while the scene and GUI it drew for keep its device alive.
     vulkan_renderer.reset();

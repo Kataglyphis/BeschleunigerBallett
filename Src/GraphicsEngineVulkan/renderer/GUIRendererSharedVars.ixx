@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <optional>
 #include <string>
 
 export module kataglyphis.vulkan.gui_renderer_shared_vars;
@@ -92,6 +93,7 @@ struct SceneViewport
     float y1 = 1.0F;
 };
 
+/// What the editor sets for the renderer; part of the app-owned RenderSettings, read by the renderer each frame.
 struct GUIRendererSharedVars
 {
     RasterizationMode rasterizationMode = RasterizationMode::Forward;
@@ -101,10 +103,6 @@ struct GUIRendererSharedVars
     // The selection; what a frame draws is drawnRenderMode() below.
     bool raytracing = false;
     bool pathTracing = false;
-    /// Written by the renderer: a TLAS exists, so an RT/PT selection owns the frame; until then raster draws.
-    bool tracingReady = false;
-    /// Written by the renderer after each load: the scene's model as the load named it, empty while it holds none.
-    std::string loadedModelPath;
 
     bool shader_hot_reload_triggered = false;
     /// CPU frustum culling. A switch rather than a constant because culling
@@ -117,11 +115,25 @@ struct GUIRendererSharedVars
     /// culling why this is missing" for shadows too.
     bool frustum_culling_enabled = true;
 
-    // Per-pass GPU timings, written by the renderer, read by the GUI.
+    // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
+    // with stale comments claiming 64/32); changing either mid-run resets the
+    // accumulation history - a mean over two different estimators is biased.
+    int pathTracingSamplesPerPixel = 8;
+    int pathTracingMaxBounces = 8;
+};
+
+/// What the renderer reports back for the editor to show, copied out of each per-frame call.
+struct RendererFeedback
+{
+    /// A TLAS exists, so an RT/PT selection owns the frame; until then raster draws.
+    bool tracingReady = false;
+    /// The scene's model as the load named it, empty while it holds none.
+    std::string loadedModelPath;
+
+    // Per-pass GPU timings.
     GpuTimings gpuTimings;
 
-    /// Meshes submitted vs considered by the last recorded frame, written by
-    /// the renderer and read by the GUI.
+    /// Meshes submitted vs considered by the last recorded frame.
     ///
     /// Culling is otherwise invisible: it has no visual signature when it is
     /// working and none when it is wrong either - geometry simply is not
@@ -130,11 +142,8 @@ struct GUIRendererSharedVars
     /// culling is doing anything at all in a given scene.
     VisibilityStats visibility;
 
-    // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
-    // with stale comments claiming 64/32); changing either mid-run resets the
-    // accumulation history - a mean over two different estimators is biased.
-    int pathTracingSamplesPerPixel = 8;
-    int pathTracingMaxBounces = 8;
+    /// Set by the update a load landed in: the library row now showing, -1 when the library does not list it.
+    std::optional<int> publishedModelIndex;
 };
 
 // 0 raster, 1 ray traced, 2 path traced: the one rule the renderer draws by and the editor shows.

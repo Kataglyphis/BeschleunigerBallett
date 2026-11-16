@@ -23,13 +23,11 @@ import kataglyphis.vulkan.frame_sync;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.frustum;
-import kataglyphis.vulkan.gui;
-import kataglyphis.vulkan.gui_renderer_shared_vars;
-import kataglyphis.vulkan.gui_scene_shared_vars;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
 import kataglyphis.vulkan.rasterizer;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.deferred_rasterizer;
 import kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.cascaded_shadow_map;
@@ -45,14 +43,16 @@ export namespace Kataglyphis {
 class VulkanRenderer
 {
   public:
+    // The settings and feedback are the app's; the renderer keeps neither reference.
     VulkanRenderer(Kataglyphis::Frontend::Window *window,
       Scene *scene,
-      Kataglyphis::Frontend::GUI *gui,
-      Camera *camera);
+      Camera *camera,
+      const RenderSettings &settings,
+      RendererFeedback &feedback);
 
-    void drawFrame(const GUISceneSharedVars &guiSceneSharedVars);
+    void drawFrame(const RenderSettings &settings, RendererFeedback &feedback);
 
-    void updateUniforms(Scene *scene_data, Camera *camera_data, const GUISceneSharedVars &guiSceneSharedVars);
+    void updateUniforms(Scene *scene_data, Camera *camera_data, const RenderSettings &settings);
 
     /// Adds a model to the current scene without replacing what is already
     /// there, and refreshes the descriptor sets that reference scene
@@ -70,12 +70,8 @@ class VulkanRenderer
     /// clears - the renderer draws the sky meanwhile rather than blocking.
     [[nodiscard]] bool isModelLoadPending() const { return scene != nullptr && scene->isModelLoadPending(); }
 
-    // Reads/mutates the caller-owned scene settings directly (no GUI pointer)
-    // so this can be driven by anything that produces a GUISceneSharedVars,
-    // not only a live GUI object. GUIRendererSharedVars (renderer-only state:
-    // rasterization mode, hot-reload trigger, ...) is unrelated to scene
-    // settings and still comes from the `gui` member.
-    void updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars);
+    // Acts on the settings' one-shot requests; the caller spends them with applyRendererFeedback afterwards.
+    void updateStateDueToUserInput(const RenderSettings &settings, RendererFeedback &feedback);
     bool hasDeviceLost() const { return device_lost_detected; }
     // True once any frame has hit a fatal (non-recoverable) error - a failed
     // wait/submit or an invalid sync handle - that forced the window closed.
@@ -88,6 +84,11 @@ class VulkanRenderer
     // Observes the device without extending its life, so a test can see when its last owner lets go.
     [[nodiscard]] std::weak_ptr<VulkanDevice> deviceLifetime() const { return device; }
     bool supportsHardwareRaytracing() const;
+    // What the editor's ImGui Vulkan backend is created against.
+    [[nodiscard]] std::shared_ptr<VulkanDevice> sharedDevice() const { return device; }
+    [[nodiscard]] vk::Instance vulkanInstance() const { return instance->getVulkanInstance(); }
+    [[nodiscard]] vk::Format swapChainFormat() const { return vulkanSwapChain.getSwapChainFormat(); }
+    [[nodiscard]] uint32_t swapChainImageCount() const { return vulkanSwapChain.getNumberSwapChainImages(); }
     // Test instrumentation: an addModel must build one BLAS and keep the others' handles.
     [[nodiscard]] std::uint64_t bottomLevelBuildCount() const { return asManager.getBlasBuildCount(); }
     [[nodiscard]] std::vector<vk::AccelerationStructureKHR> bottomLevelHandles() const
@@ -131,21 +132,21 @@ class VulkanRenderer
 
     // -- decomposed updateStateDueToUserInput handlers
     void handleShaderHotReloadRequest(
-      Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
+      const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
     void handleRasterizationModeChange(
-      Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
-    void handleShadowResolutionChange(GUISceneSharedVars &guiSceneSharedVars);
+      const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
+    void handleShadowResolutionChange(const GUISceneSharedVars &sceneSettings);
     // Tears down and re-creates dirShadowMap against the resolution/cascade
-    // count the GUI currently holds and the swapchain's current image count.
+    // count frameSettings holds and the swapchain's current image count.
     // Shared by handleShadowResolutionChange (GUI-driven resolution change)
     // and reprovisionPerImageResources (swapchain image count change) - both
     // need the exact same cleanUp()+init()+createGraphicsPipeline() sequence,
     // just triggered by a different condition.
     void reinitShadowMapForCurrentSettings();
-    void handleModelTransformChange(GUISceneSharedVars &guiSceneSharedVars);
-    void handleModelReloadRequest(GUISceneSharedVars &guiSceneSharedVars);
-    // The editor marks what the scene holds and restarts the inspector at the identity a load leaves.
-    void publishLoadedModel(GUISceneSharedVars &guiSceneSharedVars);
+    void handleModelTransformChange(const GUISceneSharedVars &sceneSettings);
+    void handleModelReloadRequest(const GUISceneSharedVars &sceneSettings);
+    // Reports what the scene now holds; applyRendererFeedback moves the editor's selection and inspector to it.
+    void publishLoadedModel();
 
     // The rasterization mode whose offscreen texture the post (and RT) input
     // descriptors currently point at. The mode branch in record_commands is
@@ -171,11 +172,16 @@ class VulkanRenderer
 
     Kataglyphis::Frontend::Window *window;
     Scene *scene;
-    Kataglyphis::Frontend::GUI *gui;
     Camera *camera;
 
+    // A copy of the settings the last per-frame call passed, for the paths that run outside one (addModel, resizes).
+    RenderSettings frameSettings;
+    // Written as the frame goes and copied out to the caller's feedback at the end of each per-frame call.
+    RendererFeedback output;
+    void drawFrameImpl();
+
     // -- pools
-    bool record_commands(uint32_t image_index, const GUISceneSharedVars &guiSceneSharedVars);
+    bool record_commands(uint32_t image_index);
 
     // Returns the offscreen colour texture of whichever raster path is active
     // this frame (forward vs deferred), reading the mode once. The RT/PT and

@@ -9844,7 +9844,7 @@ TEST(BuildIntegrity, PathTracedCloudDepthIsTracedOnlyForTheClouds)
     const auto renderer = readFileText(renderer_path);
     ASSERT_TRUE(renderer.has_value()) << "could not open " << renderer_path.string();
     EXPECT_NE(
-      renderer->find("recordRaytracingOrPathTracing(commandBuffer, image_index, guiSceneSharedVars.clouds_enabled);"),
+      renderer->find("recordRaytracingOrPathTracing(commandBuffer, image_index, sceneSettings.clouds_enabled);"),
       std::string::npos)
       << renderer_path.string() << " no longer hands the frame's clouds_enabled to the path tracer";
 }
@@ -10214,6 +10214,70 @@ TEST(BuildIntegrity, EveryGuiRendererSharedVarHasAControl)
       "guiRendererSharedVars.",
       8,
       {});
+}
+
+// The renderer reports through RendererFeedback alone; a field the editor never shows is output nobody reads.
+TEST(BuildIntegrity, EveryRendererFeedbackFieldReachesTheEditor)
+{
+    const std::map<std::string, std::string> kExempt{
+        { "publishedModelIndex", "applyRendererFeedback moves the editor's selection to it; nothing displays it" },
+    };
+    expect_every_member_has_a_gui_control("RendererFeedback",
+      "Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx",
+      "rendererFeedback.",
+      5,
+      kExempt);
+}
+
+// The renderer gets the app's settings by const reference; a GUI import or pointer would couple it to the editor again.
+TEST(BuildIntegrity, RendererAndItsStagesDoNotReachTheEditor)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path engine_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(sourceExists(engine_root)) << "missing " << engine_root.string();
+
+    static const std::regex kGuiImport(R"((^|\n)\s*(export\s+)?import\s+kataglyphis\.vulkan\.gui\s*;)");
+    // The settings owner takes them mutably to spend the requests; everywhere else the renderer only reads them.
+    const fs::path settings_owner = engine_root / "renderer" / "RenderSettings.ixx";
+    const std::array<std::string, 3> kSettingsTypes = {
+        "RenderSettings", "GUISceneSharedVars", "GUIRendererSharedVars"
+    };
+
+    std::vector<std::string> violations;
+    std::size_t scanned = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(engine_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+        const std::string relative = fs::relative(path, engine_root).generic_string();
+        if (relative.starts_with("gui/") || relative.starts_with("app/")) { continue; }
+        const auto contents = readFileText(path);
+        if (!contents) { continue; }
+        ++scanned;
+
+        if (std::regex_search(*contents, kGuiImport)) { violations.push_back(relative + ": imports the GUI module"); }
+        if (contents->find("Frontend::GUI") != std::string::npos) {
+            violations.push_back(relative + ": names Frontend::GUI");
+        }
+        if (path == settings_owner) { continue; }
+        for (const std::string &type : kSettingsTypes) {
+            const std::regex reference(R"((^|[^\w:])(const\s+)?(?:\w+::)*)" + type + R"(\s*&)");
+            for (auto match = std::sregex_iterator(contents->begin(), contents->end(), reference);
+              match != std::sregex_iterator();
+              ++match) {
+                if (!(*match)[2].matched) { violations.push_back(relative + ": takes a mutable " + type + " &"); }
+            }
+        }
+    }
+
+    // A wrong root or extension filter would scan nothing and pass.
+    EXPECT_GE(scanned, 50U) << "scanned only " << scanned << " engine source(s) under " << engine_root.string();
+    EXPECT_TRUE(violations.empty()) << "only app/ and gui/ may reach the editor, and the renderer reads settings "
+                                       "by const reference (RenderSettings, applyRendererFeedback):"
+                                    << joinViolations(violations);
 }
 
 // The key-bindings panel is a hand-written literal, so every bound key and button must map to prose in it.

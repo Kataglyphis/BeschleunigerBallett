@@ -20,6 +20,7 @@ import kataglyphis.shared.frontend.frame_input;
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.window;
@@ -43,12 +44,22 @@ auto Kataglyphis::App::run() -> int
         return EXIT_FAILURE;
     }
 
+    // The editor writes the settings and shows the feedback; the renderer reads one and fills the other per frame.
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
+
     std::unique_ptr<Scene> const scene = std::make_unique<Scene>();
-    std::unique_ptr<Kataglyphis::Frontend::GUI> const gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
+    std::unique_ptr<Kataglyphis::Frontend::GUI> const gui =
+      std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback);
     std::unique_ptr<Camera> const camera = std::make_unique<Camera>();
 
     // Declared last, so destroyed first: it drains the GPU, and the scene and GUI keep the device alive past it.
-    Kataglyphis::VulkanRenderer vulkan_renderer{ window.get(), scene.get(), gui.get(), camera.get() };
+    Kataglyphis::VulkanRenderer vulkan_renderer{ window.get(), scene.get(), camera.get(), settings, feedback };
+    gui->initializeVulkanContext(vulkan_renderer.sharedDevice(),
+      vulkan_renderer.vulkanInstance(),
+      vulkan_renderer.swapChainFormat(),
+      vulkan_renderer.swapChainImageCount());
+    gui->setUserSelectionForRRT(vulkan_renderer.supportsHardwareRaytracing());
 
     while (!window->get_should_close()) {
         // poll all events incoming from user
@@ -62,13 +73,13 @@ auto Kataglyphis::App::run() -> int
         //// retrieve updates from the UI
         gui->render();
 
-        // Then update Scene/Renderer state with the NEW GUI values
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        vulkan_renderer.updateStateDueToUserInput(guiSceneSharedVars);
-        vulkan_renderer.updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
+        // Then update Scene/Renderer state with the NEW settings
+        vulkan_renderer.updateStateDueToUserInput(settings, feedback);
+        Kataglyphis::applyRendererFeedback(settings, feedback);
+        vulkan_renderer.updateUniforms(scene.get(), camera.get(), settings);
 
         // Finally draw the frame with the updated state
-        vulkan_renderer.drawFrame(guiSceneSharedVars);
+        vulkan_renderer.drawFrame(settings, feedback);
     }
 
     return Kataglyphis::appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());

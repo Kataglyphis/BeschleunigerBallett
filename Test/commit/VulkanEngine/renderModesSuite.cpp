@@ -1,3 +1,4 @@
+#include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
 #include "ScopedEnvVar.hpp"
 #include <gtest/gtest.h>
@@ -17,7 +18,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
-import kataglyphis.vulkan.gui_renderer_shared_vars;
+import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.scene_config;
@@ -44,6 +45,8 @@ constexpr const char *MISSING_MODEL = "Models/ShadowTest/no_such_model.obj";
 // One engine with the editor showing, driven like App::run minus camera input and torn down in the usual order.
 struct EditorEngine
 {
+    Kataglyphis::RenderSettings settings;
+    Kataglyphis::RendererFeedback feedback;
     std::unique_ptr<Kataglyphis::Frontend::Window> window;
     std::unique_ptr<Kataglyphis::Scene> scene;
     std::unique_ptr<Kataglyphis::Frontend::GUI> gui;
@@ -52,20 +55,21 @@ struct EditorEngine
 
     EditorEngine()
       : window(std::make_unique<Kataglyphis::Frontend::Window>(1200, 768)),
-        scene(std::make_unique<Kataglyphis::Scene>()), gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get())),
+        scene(std::make_unique<Kataglyphis::Scene>()),
+        gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)),
         camera(std::make_unique<Camera>())
-    { renderer = std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get()); }
+    {
+        renderer =
+          std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
+        Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
+    }
     EditorEngine(const EditorEngine &) = delete;
     EditorEngine &operator=(const EditorEngine &) = delete;
 
     void frame()
     {
         glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
+        Kataglyphis::TestSupport::renderEditorFrame(*gui, *renderer, scene.get(), camera.get(), settings, feedback);
     }
 
     void waitForModel()
@@ -78,33 +82,16 @@ struct EditorEngine
 };
 
 // One iteration of the App::run frame loop (App.cpp) minus camera input.
-void run_frames(Kataglyphis::Frontend::Window *window,
-  Kataglyphis::Scene *scene,
-  Kataglyphis::Frontend::GUI *gui,
-  Camera *camera,
-  Kataglyphis::VulkanRenderer *renderer,
-  int frame_count,
-  const std::string &mode_label)
+void run_frames(EditorEngine &engine, int frame_count, const std::string &mode_label)
 {
     // The model parses on a worker thread, so the first frames show an empty scene.
-    Kataglyphis::TestSupport::waitForModelLoad(renderer, [&] {
-        glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene, camera, guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
-    });
+    engine.waitForModel();
 
     for (int frame = 0; frame < frame_count; ++frame) {
-        glfwPollEvents();
-        gui->render();
-        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
-        renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene, camera, guiSceneSharedVars);
-        renderer->drawFrame(guiSceneSharedVars);
+        engine.frame();
 
-        ASSERT_FALSE(renderer->hasDeviceLost()) << "Device lost in mode '" << mode_label << "' at frame " << frame;
+        ASSERT_FALSE(engine.renderer->hasDeviceLost())
+          << "Device lost in mode '" << mode_label << "' at frame " << frame;
     }
 }
 
@@ -114,25 +101,16 @@ TEST(Integration, RenderModesSelectableInGui)
 {
     if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
 
-    constexpr int window_width = 1200;
-    constexpr int window_height = 768;
     constexpr int frames_per_mode = 3;
 
-    using namespace Kataglyphis;
-    auto window = std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
-    auto scene = std::make_unique<Scene>();
-    auto gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
-    auto camera = std::make_unique<Camera>();
-
-    auto renderer = std::make_unique<VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
-
-    auto &renderer_vars = gui->getGuiRendererSharedVars();
+    EditorEngine engine;
+    auto &renderer_vars = engine.settings.renderer;
 
     // Rasterizer, forward shading (the startup default).
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "forward");
+    run_frames(engine, frames_per_mode, "forward");
 
     // The menu and status bars always stay, so the visible editor must hand the renderer an inner rect.
     const auto &scene_viewport = renderer_vars.scene_viewport;
@@ -144,44 +122,38 @@ TEST(Integration, RenderModesSelectableInGui)
     EXPECT_LT(scene_viewport.y0, scene_viewport.y1);
 
     // Hidden, the editor must give the scene the whole image again, as the goldens rely on.
-    gui->setOverlayVisible(false);
-    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), 1, "editor-hidden");
+    engine.gui->setOverlayVisible(false);
+    run_frames(engine, 1, "editor-hidden");
     EXPECT_FLOAT_EQ(scene_viewport.x0, 0.0F);
     EXPECT_FLOAT_EQ(scene_viewport.y0, 0.0F);
     EXPECT_FLOAT_EQ(scene_viewport.x1, 1.0F);
     EXPECT_FLOAT_EQ(scene_viewport.y1, 1.0F);
-    gui->setOverlayVisible(true);
+    engine.gui->setOverlayVisible(true);
 
     // Rasterizer, deferred shading.
     renderer_vars.rasterizationMode = RasterizationMode::Deferred;
-    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "deferred");
+    run_frames(engine, frames_per_mode, "deferred");
 
     // Back to forward: mode switches must be repeatable in both directions.
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
-    run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "forward-again");
+    run_frames(engine, frames_per_mode, "forward-again");
 
-    if (renderer->supportsHardwareRaytracing()) {
+    if (engine.renderer->supportsHardwareRaytracing()) {
         renderer_vars.raytracing = true;
         renderer_vars.pathTracing = false;
-        run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "raytracing");
+        run_frames(engine, frames_per_mode, "raytracing");
 
         renderer_vars.raytracing = false;
         renderer_vars.pathTracing = true;
-        run_frames(window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "path-tracing");
+        run_frames(engine, frames_per_mode, "path-tracing");
 
         renderer_vars.pathTracing = false;
-        run_frames(
-          window.get(), scene.get(), gui.get(), camera.get(), renderer.get(), frames_per_mode, "back-to-raster");
+        run_frames(engine, frames_per_mode, "back-to-raster");
     } else {
         GTEST_LOG_(INFO) << "Hardware raytracing not supported - raytracing/path tracing modes not exercised.";
     }
 
-    // App::run's order: the renderer first, while the scene and GUI it drew for keep its device alive.
-    renderer.reset();
-    camera.reset();
-    gui.reset();
-    scene.reset();
-    window.reset();
+    // EditorEngine tears down in App::run's order: the renderer first, while the scene and GUI keep its device alive.
 }
 
 // The renderer draws by this rule and the editor shows it, so an RT/PT pick reads raster until a TLAS exists.
@@ -215,7 +187,7 @@ TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
 
     const ScopedEnvVar missing("KATAGLYPHIS_MODEL_OVERRIDE", MISSING_MODEL);
     EditorEngine engine;
-    auto &renderer_vars = engine.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = engine.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
 
@@ -223,7 +195,7 @@ TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
     engine.frame();
     ASSERT_FALSE(engine.renderer->hasDeviceLost());
     ASSERT_EQ(engine.scene->getModelCount(), 0U) << MISSING_MODEL << " loaded after all";
-    EXPECT_FALSE(renderer_vars.tracingReady) << "no model, no TLAS: nothing can be traced yet";
+    EXPECT_FALSE(engine.feedback.tracingReady) << "no model, no TLAS: nothing can be traced yet";
     EXPECT_EQ(engine.gui->displayedRenderMode(), 0) << "the editor claims ray tracing while raster frames are drawn";
     EXPECT_TRUE(renderer_vars.raytracing) << "the pick must wait for the TLAS, not be dropped";
 
@@ -231,7 +203,7 @@ TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
     const int rig_row =
       sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), "Models/ShadowTest/shadow_rig.obj");
     ASSERT_GE(rig_row, 0) << "the shadow rig is not in the model library";
-    auto &scene_vars = engine.gui->getGuiSceneSharedVars();
+    auto &scene_vars = engine.settings.scene;
     scene_vars.selected_model_index = rig_row;
     scene_vars.model_reload_requested = true;
     engine.frame();
@@ -239,11 +211,11 @@ TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
     ASSERT_FALSE(engine.renderer->hasDeviceLost());
     ASSERT_EQ(engine.scene->getModelCount(), 1U) << "the shadow rig did not load";
     if (engine.renderer->supportsHardwareRaytracing()) {
-        EXPECT_TRUE(renderer_vars.tracingReady);
+        EXPECT_TRUE(engine.feedback.tracingReady);
         EXPECT_EQ(engine.gui->displayedRenderMode(), 1) << "the model has loaded, so ray tracing now draws";
-        EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U) << "a traced frame must not run the raster pass";
+        EXPECT_EQ(engine.feedback.visibility.meshes_drawn, 0U) << "a traced frame must not run the raster pass";
     } else {
-        EXPECT_FALSE(renderer_vars.tracingReady);
+        EXPECT_FALSE(engine.feedback.tracingReady);
         EXPECT_EQ(engine.gui->displayedRenderMode(), 0) << "without hardware ray tracing every frame is raster";
     }
 }
@@ -255,7 +227,7 @@ TEST(Integration, RasterSegmentCancelsAPendingTracingPick)
 
     const ScopedEnvVar missing("KATAGLYPHIS_MODEL_OVERRIDE", MISSING_MODEL);
     EditorEngine engine;
-    auto &renderer_vars = engine.gui->getGuiRendererSharedVars();
+    auto &renderer_vars = engine.settings.renderer;
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     engine.waitForModel();
