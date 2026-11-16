@@ -152,7 +152,6 @@ committed to.
   the runtime matches the compiler or value profiling can be turned off.
 - **[P3] `bugprone-unchecked-optional-access` is off for `Test/`**: clang-tidy 23.1.1 segfaults in
   its dataflow on gtest bodies. Re-enable it once an LLVM release fixes the crash.
-- **[P3] Coverage is clang-only** (Linux). GCC and Windows contribute nothing to Codecov.
 - **[P3] The `windows-clang-release-wix` package preset is still unbuilt.** It builds on
   `x64-ClangCL-Windows-Release` since 2026-10-21; no lane runs `cpack --preset` on it.
 - **[P3] The GUI input sweep runs in no CI lane**, for time (`docs/source/gpu-golden-testing.md`);

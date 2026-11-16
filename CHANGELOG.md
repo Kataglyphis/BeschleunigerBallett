@@ -226,6 +226,8 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The Linux x64 lane uploads the gcc job's coverage to Codecov too, flagged `gcc` (the
+  `gcovr.cfg` Cobertura report over `Src/`, from the CPU suites); clang's upload is now flagged `clang`.
 - The C++ renderer records its passes through a stage registry
   (`kataglyphis.vulkan.render_stage_registry`): each pass is a `RenderStage` with an explicit
   order and record, skip, resize and shader-reload hooks, and `VulkanRenderer::addRenderStage`

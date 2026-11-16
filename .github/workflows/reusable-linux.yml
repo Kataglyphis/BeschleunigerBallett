@@ -307,6 +307,7 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ env.COVERAGE_JSON }}
+          flags: clang
           name: codecov-umbrella
           fail_ci_if_error: false
           verbose: false
@@ -425,7 +426,7 @@ jobs:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-  # gcc: build, tests, coverage; no compiler cache, since neither ccache nor sccache caches -fmodules-ts TUs
+  # gcc: build, tests, coverage (uploaded with the gcc flag); no compiler cache, since neither ccache nor sccache caches -fmodules-ts TUs
   gcc:
     name: gcc + tests + coverage
     runs-on: ${{ inputs.runner }}
@@ -462,10 +463,23 @@ jobs:
 
       # gcovr reads the .gcda files the ctest run above left, so it stays in this job.
       - name: Build Code Coverage (gcc)
+        id: coverage
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: bash ./scripts/linux/build-coverage-gcovr.sh
           log-file: output.log
+
+      # gcovr.cfg writes build/cobertura.xml (Src only): the CPU suites under gcc, beside clang's compileTestSuite.
+      - name: Codecov (gcc)
+        if: ${{ !cancelled() && steps.coverage.outcome == 'success' && inputs.runner == 'ubuntu-26.04' }}
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: build/cobertura.xml
+          flags: gcc
+          name: gcc
+          fail_ci_if_error: false
+          verbose: false
 
   # Release build + packages, then on x64 the docs + wasm demo, uploaded as the bb-docs-site artifact
   release:

@@ -244,7 +244,8 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 profile runtime comes from Microsoft's ASan DLL, `initializeValueProfRuntimeRecord` dereferences a
 bad pointer (`InstrProfilingValue.c:327`), and `commitTestSuite.exe`/`compileTestSuite.exe` exited 1
 after all 654 tests had passed (run 36997000491). No Windows step reads the `.profraw` files;
-coverage is measured in the Linux lanes' `static-analysis` job. Revisit when the profile runtime
+coverage is measured in the Linux lanes, Codecov's `clang` flag from the `static-analysis` job and
+its `gcc` flag from the `gcc` job (x64 uploads both). Revisit when the profile runtime
 matches the compiler or value profiling can be turned off. Profile keeps it OFF
 (`x64-ClangCL-Windows-RelWithDebInfo-Base`, so benchmarks stay uninstrumented) and Release never
 instruments (`myproject_enable_coverage`).
