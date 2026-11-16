@@ -67,6 +67,7 @@ import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.render_settings;
+import kataglyphis.vulkan.render_stage_registry;
 import kataglyphis.vulkan.scene_ubo;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
@@ -149,6 +150,8 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     skyBox.init(device, graphics_command_pool.get());
     skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainFormat());
+
+    registerBuiltInStages();
 
     // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
     scene->beginModelLoadAsync();
@@ -427,33 +430,105 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(const GUISceneSharedV
     }
 }
 
-// Must reach every SPIR-V-loading stage (BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload).
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
+    renderStages.shaderHotReload();
+}
 
-    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
-    rasterizer.shaderHotReload(descriptor_set_layouts);
+// Must reach every SPIR-V-loading stage (BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload).
+void Kataglyphis::VulkanRenderer::registerBuiltInStages()
+{
+    using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
+    std::array<RenderStage, 5> built_in{};
 
-    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = {
-        sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
+    built_in[0].name = "shadow_cascades";
+    built_in[0].order = RenderStageOrder::ShadowCascades;
+    built_in[0].timedPass = GpuTimedPass::ShadowCascades;
+    built_in[0].labelColor = std::array{ 0.55F, 0.35F, 0.10F, 1.0F };
+    // RT traces one binary shadow ray and PT uses NEE: neither samples the cascades.
+    built_in[0].enabled = [this](const RenderStageFrame &frame) {
+        return frameSettings.scene.shadows_enabled && !frame.tracingOwnsFrame;
     };
-    deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
+    built_in[0].record = [this](const RenderStageFrame &frame) { recordShadowStage(frame); };
+    built_in[0].recordSkipped = [this](const RenderStageFrame &frame) {
+        vk::CommandBuffer commandBuffer = frame.commandBuffer;
+        dirShadowMap.recordSkippedPass(commandBuffer);
+        output.visibility.shadow_casters_drawn = 0;
+        output.visibility.shadow_casters_total = 0;
+    };
+    built_in[0].shaderHotReload = [this] { dirShadowMap.shaderHotReload(); };
 
-    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_post = { postDescriptors.getLayout(),
-        sharedRenderDescriptors.getLayout() };
-    postStage.shaderHotReload(descriptor_set_layouts_post);
+    built_in[1].name = "main";
+    built_in[1].order = RenderStageOrder::Main;
+    built_in[1].timedPass = GpuTimedPass::Main;
+    built_in[1].record = [this](const RenderStageFrame &frame) { recordMainStage(frame); };
+    // The extent-sized offscreen, G-buffer, depth and traced targets follow the new swapchain.
+    built_in[1].resize = [this](const RenderStageResize &) {
+        rasterizer.recreateFrameResources(graphics_command_pool.get());
+        deferredRasterizer.recreateFrameResources();
+        // The accumulation history is extent-sized; recreating it also resets the frame counter.
+        if (device->supportsHardwareAcceleratedRRT()) {
+            createPathTracingAccumulationResources();
+            createTracedDepthResources();
+        }
+    };
+    built_in[1].shaderHotReload = [this] {
+        std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
+        rasterizer.shaderHotReload(descriptor_set_layouts);
+        std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = {
+            sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
+        };
+        deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
+        if (device->supportsHardwareAcceleratedRRT()) {
+            std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
+                raytracingDescriptors.getLayout() };
+            raytracingStage.shaderHotReload(layouts);
+            pathTracing.shaderHotReload(layouts);
+        }
+    };
 
-    skyBox.shaderHotReload(sharedRenderDescriptors.getLayout());
-    dirShadowMap.shaderHotReload();
-    clouds.shaderHotReload(sharedRenderDescriptors.getLayout());
+    built_in[2].name = "clouds";
+    built_in[2].order = RenderStageOrder::Clouds;
+    built_in[2].timedPass = GpuTimedPass::Clouds;
+    built_in[2].labelColor = std::array{ 0.80F, 0.85F, 0.95F, 1.0F };
+    built_in[2].enabled = [this](const RenderStageFrame &) { return frameSettings.scene.clouds_enabled; };
+    built_in[2].record = [this](const RenderStageFrame &frame) { recordCloudsStage(frame); };
+    built_in[2].resize = [this](const RenderStageResize &resize) {
+        clouds.recreateFrameResources(graphics_command_pool.get(), resize.extent.width, resize.extent.height);
+    };
+    built_in[2].shaderHotReload = [this] { clouds.shaderHotReload(sharedRenderDescriptors.getLayout()); };
 
-    if (device->supportsHardwareAcceleratedRRT()) {
-        std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
-            raytracingDescriptors.getLayout() };
-        raytracingStage.shaderHotReload(layouts);
-        pathTracing.shaderHotReload(layouts);
+    built_in[3].name = "sky";
+    built_in[3].order = RenderStageOrder::Sky;
+    built_in[3].timedPass = GpuTimedPass::Sky;
+    built_in[3].labelColor = std::array{ 0.30F, 0.70F, 0.90F, 1.0F };
+    built_in[3].record = [this](const RenderStageFrame &frame) { recordSkyStage(frame); };
+    built_in[3].shaderHotReload = [this] { skyBox.shaderHotReload(sharedRenderDescriptors.getLayout()); };
+
+    built_in[4].name = "post";
+    built_in[4].order = RenderStageOrder::Post;
+    built_in[4].timedPass = GpuTimedPass::Post;
+    built_in[4].labelColor = std::array{ 0.35F, 0.80F, 0.40F, 1.0F };
+    built_in[4].record = [this](const RenderStageFrame &frame) { recordPostStage(frame); };
+    built_in[4].shaderHotReload = [this] {
+        std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_post = { postDescriptors.getLayout(),
+            sharedRenderDescriptors.getLayout() };
+        postStage.shaderHotReload(descriptor_set_layouts_post);
+    };
+
+    for (RenderStage &stage : built_in) {
+        if (renderStages.add(std::move(stage)) != RenderStageRegistry::AddResult::Added) {
+            spdlog::critical("A built-in render stage was refused by the stage registry.");
+            std::abort();
+        }
     }
+}
+
+bool Kataglyphis::VulkanRenderer::removeRenderStage(std::string_view name)
+{
+    std::ignore = device->getLogicalDevice().waitIdle();
+    return renderStages.remove(name);
 }
 
 void Kataglyphis::VulkanRenderer::drawFrame(const RenderSettings &settings, RendererFeedback &feedback)
@@ -714,18 +789,8 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    // The extent-sized offscreen, G-buffer and depth targets follow the new swapchain.
-    rasterizer.recreateFrameResources(graphics_command_pool.get());
-    deferredRasterizer.recreateFrameResources();
-    clouds.recreateFrameResources(graphics_command_pool.get(),
-      vulkanSwapChain.getSwapChainExtent().width,
-      vulkanSwapChain.getSwapChainExtent().height);
-
-    // The accumulation history is extent-sized; recreating it also resets the frame counter.
-    if (device->supportsHardwareAcceleratedRRT()) {
-        createPathTracingAccumulationResources();
-        createTracedDepthResources();
-    }
+    renderStages.resize(
+      RenderStageResize{ .extent = vulkanSwapChain.getSwapChainExtent(), .imageCount = newImageCount });
 
     // A new image count re-provisions every per-image resource, not just the descriptor pools.
     if (newImageCount != oldImageCount) {
@@ -843,14 +908,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         return false;
     }
 
-    const GUISceneSharedVars &sceneSettings = frameSettings.scene;
-    const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings =
-      frameSettings.renderer;
-
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
-    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
-    using FrontendShared::GpuTimedPass;
+    using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
 
     // Per-pass GPU timing: the query slice must be reset outside any render pass.
     const bool record_gpu_timings = gpuTiming.isSupported() && gpuTiming.queryPool();
@@ -873,105 +933,25 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         if (!start) { recorded_pass_mask |= (1U << pass_index); }
     };
 
-    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = { sharedRenderDescriptors.sets()[image_index] };
-    const bool tracing_owns_frame = raytracingOwnsFrame(image_index);
+    Texture &swap_chain_image = vulkanSwapChain.getSwapChainImage(image_index);
+    const RenderStageFrame frame{
+        .commandBuffer = commandBuffer,
+        .imageIndex = image_index,
+        .extent = vulkanSwapChain.getSwapChainExtent(),
+        .swapchainImage = swap_chain_image.getImage(),
+        .swapchainImageView = swap_chain_image.getImageView(),
+        .swapchainFormat = vulkanSwapChain.getSwapChainFormat(),
+        .tracingOwnsFrame = raytracingOwnsFrame(image_index),
+    };
 
-    {
-        // RT traces one binary shadow ray and PT uses NEE: neither samples the cascades.
-        if (sceneSettings.shadows_enabled && !tracing_owns_frame) {
-            Kataglyphis::debug::ScopedCmdLabel const label(
-              commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
-            write_pass_timestamp(GpuTimedPass::ShadowCascades, true);
-            dirShadowMap.recordCommands(
-              commandBuffer, image_index, scene, rasterizer_descriptor_sets, rendererSettings.frustum_culling_enabled);
-            write_pass_timestamp(GpuTimedPass::ShadowCascades, false);
-            output.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
-            output.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
-        } else {
-            dirShadowMap.recordSkippedPass(commandBuffer);
-            output.visibility.shadow_casters_drawn = 0;
-            output.visibility.shadow_casters_total = 0;
+    // Every pass records through the registry, in RenderStageOrder; the bracket labels and times each one.
+    renderStages.recordFrame(frame, [&](const RenderStage &stage, bool begin) {
+        if (begin && stage.labelColor.has_value()) {
+            Kataglyphis::debug::beginCmdLabel(commandBuffer, stage.name.c_str(), *stage.labelColor);
         }
-    }
-
-    write_pass_timestamp(GpuTimedPass::Main, true);
-
-    // From globalUBO, like the shaders; the shadow pass above must not use it, as off-screen geometry casts into view.
-    const std::optional<FrustumPlanes> camera_frustum =
-      rendererSettings.frustum_culling_enabled
-        ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
-        : std::nullopt;
-
-    if (!tracing_owns_frame) {
-        recordRasterPass(commandBuffer, image_index, rasterizer_descriptor_sets, camera_frustum);
-    } else {
-        output.visibility.meshes_drawn = 0;
-        output.visibility.meshes_total = 0;
-    }
-
-    recordRaytracingOrPathTracing(commandBuffer, image_index, sceneSettings.clouds_enabled);
-
-    write_pass_timestamp(GpuTimedPass::Main, false);
-
-    // After the main pass: the march stops at the depth it just wrote.
-    if (sceneSettings.clouds_enabled) {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
-        write_pass_timestamp(GpuTimedPass::Clouds, true);
-
-        // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
-        recordGeneralImageBarrier(commandBuffer,
-          clouds.getCloudOutputTexture()->getImage(),
-          vk::PipelineStageFlagBits2::eFragmentShader,
-          vk::PipelineStageFlagBits2::eComputeShader,
-          vk::AccessFlagBits2::eNone,
-          vk::AccessFlagBits2::eShaderStorageWrite);
-
-        // A raster depth buffer reaches this read through its pass's closing barrier; traced depth does not.
-        if (tracing_owns_frame) {
-            recordGeneralImageBarrier(commandBuffer,
-              tracedDepth.getImage(),
-              vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
-              vk::PipelineStageFlagBits2::eComputeShader,
-              vk::AccessFlagBits2::eShaderStorageWrite,
-              vk::AccessFlagBits2::eShaderSampledRead);
-        }
-
-        clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
-
-        // The post pass samples the clouds; nothing else orders this compute write before it.
-        recordGeneralImageBarrier(commandBuffer,
-          clouds.getCloudOutputTexture()->getImage(),
-          vk::PipelineStageFlagBits2::eComputeShader,
-          vk::PipelineStageFlagBits2::eFragmentShader,
-          vk::AccessFlagBits2::eShaderStorageWrite,
-          vk::AccessFlagBits2::eShaderSampledRead);
-
-        write_pass_timestamp(GpuTimedPass::Clouds, false);
-    }
-
-    write_pass_timestamp(GpuTimedPass::Sky, true);
-    {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "sky", { 0.30F, 0.70F, 0.90F, 1.0F });
-        Texture &swap_chain_image = vulkanSwapChain.getSwapChainImage(image_index);
-        skyBox.recordCommands(commandBuffer,
-          swap_chain_image.getImage(),
-          swap_chain_image.getImageView(),
-          vulkanSwapChain.getSwapChainExtent(),
-          rasterizer_descriptor_sets,
-          sceneSettings.skybox_enabled);
-    }
-    write_pass_timestamp(GpuTimedPass::Sky, false);
-
-    // No swapchain barrier here: PostStage orders its load after the sky and leaves the image presentable.
-    write_pass_timestamp(GpuTimedPass::Post, true);
-    {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "post", { 0.35F, 0.80F, 0.40F, 1.0F });
-        const std::array<vk::DescriptorSet, 2> post_descriptor_sets = { postDescriptors.sets()[image_index],
-            sharedRenderDescriptors.sets()[image_index] };
-        postStage.recordCommands(
-          commandBuffer, image_index, post_descriptor_sets, sceneSettings.clouds_enabled, sceneSettings.skybox_enabled);
-    }
-    write_pass_timestamp(GpuTimedPass::Post, false);
+        if (stage.timedPass.has_value()) { write_pass_timestamp(*stage.timedPass, begin); }
+        if (!begin && stage.labelColor.has_value()) { Kataglyphis::debug::endCmdLabel(commandBuffer); }
+    });
 
     // Capture copies from the ePresentSrcKHR image and restores that layout before the present.
     if (frameCapture.isArmed()) {
@@ -992,6 +972,108 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     if (record_gpu_timings) { gpuTiming.setPassRecordedMask(image_index, recorded_pass_mask); }
 
     return true;
+}
+
+void Kataglyphis::VulkanRenderer::recordShadowStage(const RenderStageFrame &frame)
+{
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = {
+        sharedRenderDescriptors.sets()[frame.imageIndex]
+    };
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    dirShadowMap.recordCommands(commandBuffer,
+      frame.imageIndex,
+      scene,
+      rasterizer_descriptor_sets,
+      frameSettings.renderer.frustum_culling_enabled);
+    output.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
+    output.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
+}
+
+void Kataglyphis::VulkanRenderer::recordMainStage(const RenderStageFrame &frame)
+{
+    const GUISceneSharedVars &sceneSettings = frameSettings.scene;
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    const uint32_t image_index = frame.imageIndex;
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = { sharedRenderDescriptors.sets()[image_index] };
+
+    // From globalUBO, like the shaders; the shadow pass must not use it, as off-screen geometry casts into view.
+    const std::optional<FrustumPlanes> camera_frustum =
+      frameSettings.renderer.frustum_culling_enabled
+        ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
+        : std::nullopt;
+
+    if (!frame.tracingOwnsFrame) {
+        recordRasterPass(commandBuffer, image_index, rasterizer_descriptor_sets, camera_frustum);
+    } else {
+        output.visibility.meshes_drawn = 0;
+        output.visibility.meshes_total = 0;
+    }
+
+    recordRaytracingOrPathTracing(commandBuffer, image_index, sceneSettings.clouds_enabled);
+}
+
+// After the main stage: the march stops at the depth it just wrote.
+void Kataglyphis::VulkanRenderer::recordCloudsStage(const RenderStageFrame &frame)
+{
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = {
+        sharedRenderDescriptors.sets()[frame.imageIndex]
+    };
+
+    // Cross-frame WAR on the single cloudOutputTexture; the frame fence alone covers only 3 frames back.
+    recordGeneralImageBarrier(commandBuffer,
+      clouds.getCloudOutputTexture()->getImage(),
+      vk::PipelineStageFlagBits2::eFragmentShader,
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::AccessFlagBits2::eNone,
+      vk::AccessFlagBits2::eShaderStorageWrite);
+
+    // A raster depth buffer reaches this read through its pass's closing barrier; traced depth does not.
+    if (frame.tracingOwnsFrame) {
+        recordGeneralImageBarrier(commandBuffer,
+          tracedDepth.getImage(),
+          vk::PipelineStageFlagBits2::eRayTracingShaderKHR | vk::PipelineStageFlagBits2::eComputeShader,
+          vk::PipelineStageFlagBits2::eComputeShader,
+          vk::AccessFlagBits2::eShaderStorageWrite,
+          vk::AccessFlagBits2::eShaderSampledRead);
+    }
+
+    clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
+
+    // The post pass samples the clouds; nothing else orders this compute write before it.
+    recordGeneralImageBarrier(commandBuffer,
+      clouds.getCloudOutputTexture()->getImage(),
+      vk::PipelineStageFlagBits2::eComputeShader,
+      vk::PipelineStageFlagBits2::eFragmentShader,
+      vk::AccessFlagBits2::eShaderStorageWrite,
+      vk::AccessFlagBits2::eShaderSampledRead);
+}
+
+void Kataglyphis::VulkanRenderer::recordSkyStage(const RenderStageFrame &frame)
+{
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = {
+        sharedRenderDescriptors.sets()[frame.imageIndex]
+    };
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    skyBox.recordCommands(commandBuffer,
+      frame.swapchainImage,
+      frame.swapchainImageView,
+      frame.extent,
+      rasterizer_descriptor_sets,
+      frameSettings.scene.skybox_enabled);
+}
+
+// No swapchain barrier before it: PostStage orders its load after the sky and leaves the image presentable.
+void Kataglyphis::VulkanRenderer::recordPostStage(const RenderStageFrame &frame)
+{
+    const std::array<vk::DescriptorSet, 2> post_descriptor_sets = { postDescriptors.sets()[frame.imageIndex],
+        sharedRenderDescriptors.sets()[frame.imageIndex] };
+    vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    postStage.recordCommands(commandBuffer,
+      frame.imageIndex,
+      post_descriptor_sets,
+      frameSettings.scene.clouds_enabled,
+      frameSettings.scene.skybox_enabled);
 }
 
 void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuffer,

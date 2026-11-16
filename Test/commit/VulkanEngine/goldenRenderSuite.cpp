@@ -6,6 +6,8 @@
 #include "GoldenMetrics.hpp"
 #include "ScopedEnvVar.hpp"
 #include "common/GuiModelTransform.hpp"
+#include "common/ImageBarrierHelper.hpp"
+#include "common/RenderingHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
@@ -54,6 +56,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
+import kataglyphis.vulkan.render_stage_registry;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.scene_config;
@@ -549,6 +552,104 @@ TEST(GoldenRender, RendersNonBlankFrame)
                                   << "% of pixels are non-black; the frame looks empty.";
     EXPECT_GT(buckets, 8U) << "Only " << buckets
                            << " distinct luminance levels present; the frame looks like a flat fill.";
+}
+
+// The registry replaced a hard-wired record_commands; a frame must still record the passes in its old order.
+TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    auto &scene_vars = harness.settings.scene;
+    harness.useForwardRaster();
+    scene_vars.shadows_enabled = true;
+    scene_vars.clouds_enabled = true;
+    harness.render_frames(1);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "sky", "post" }));
+
+    scene_vars.shadows_enabled = false;
+    scene_vars.clouds_enabled = false;
+    harness.render_frame();
+    EXPECT_EQ(
+      harness.renderer->renderStageRegistry().lastRecorded(), (std::vector<std::string>{ "main", "sky", "post" }));
+}
+
+// What the registry is for: a pass added from outside VulkanRenderer records, resizes and leaves again.
+TEST(GoldenRender, StageAddedFromOutsideTheRendererDrawsAfterPost)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const ScopedValidationErrorCounter validation;
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+
+    int resizes = 0;
+    vk::Extent2D resized_to{};
+    Kataglyphis::RenderStage overlay;
+    overlay.name = "test_overlay";
+    overlay.order = Kataglyphis::RenderStageOrder::Post + 50;
+    // Clears the presentable image post left behind to magenta, then hands it back presentable.
+    overlay.record = [](const Kataglyphis::RenderStageFrame &frame) {
+        Kataglyphis::recordImageBarrier(frame.commandBuffer,
+          Kataglyphis::buildImageMemoryBarrier(frame.swapchainImage,
+            vk::ImageLayout::ePresentSrcKHR,
+            vk::ImageLayout::eColorAttachmentOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::AccessFlagBits2::eColorAttachmentWrite));
+        const std::array<vk::RenderingAttachmentInfo, 1> colour = { Kataglyphis::buildRenderingAttachmentInfo(
+          frame.swapchainImageView,
+          vk::ImageLayout::eColorAttachmentOptimal,
+          vk::AttachmentLoadOp::eClear,
+          vk::AttachmentStoreOp::eStore,
+          vk::ClearValue{ vk::ClearColorValue{ std::array{ 1.0F, 0.0F, 1.0F, 1.0F } } }) };
+        frame.commandBuffer.beginRendering(Kataglyphis::buildRenderingInfo(frame.extent, colour, nullptr));
+        frame.commandBuffer.endRendering();
+        Kataglyphis::recordImageBarrier(frame.commandBuffer,
+          Kataglyphis::buildImageMemoryBarrier(frame.swapchainImage,
+            vk::ImageLayout::eColorAttachmentOptimal,
+            vk::ImageLayout::ePresentSrcKHR,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::AccessFlagBits2::eNone));
+    };
+    overlay.resize = [&resizes, &resized_to](const Kataglyphis::RenderStageResize &resize) {
+        ++resizes;
+        resized_to = resize.extent;
+    };
+    ASSERT_EQ(harness.renderer->addRenderStage(std::move(overlay)), Kataglyphis::RenderStageRegistry::AddResult::Added);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> covered = harness.capture_frame(width, height);
+    ASSERT_FALSE(covered.empty()) << "Frame capture returned no pixels.";
+    const std::vector<std::string> &recorded = harness.renderer->renderStageRegistry().lastRecorded();
+    ASSERT_GE(recorded.size(), 2U);
+    EXPECT_EQ(recorded[recorded.size() - 2U], "post");
+    EXPECT_EQ(recorded.back(), "test_overlay");
+
+    size_t magenta = 0;
+    for (size_t pixel = 0; pixel < covered.size() / 4U; ++pixel) {
+        const uint8_t *rgba = &covered[pixel * 4U];
+        if (rgba[0] >= 253U && rgba[1] <= 2U && rgba[2] >= 253U) { ++magenta; }
+    }
+    EXPECT_EQ(magenta, covered.size() / 4U) << "the added stage's clear did not cover the frame post drew";
+
+    harness.renderer->recreateSwapChain();
+    EXPECT_EQ(resizes, 1);
+    EXPECT_EQ(resized_to, (vk::Extent2D{ width, height }));
+
+    ASSERT_TRUE(harness.renderer->removeRenderStage("test_overlay"));
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> scene = harness.capture_frame(width, height);
+    EXPECT_GT(luminance_stddev(scene), 2.0) << "the scene did not come back once the stage was removed";
+    EXPECT_EQ(validation.errorCount(), 0) << "the added stage's frames raised validation errors";
 }
 
 // Disabled: writes PNGs and asserts nothing; see docs/source/gpu-golden-testing.md § Writing a new golden test.

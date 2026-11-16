@@ -113,12 +113,6 @@ committed to.
   upsamples with `cloud_upsample_depth_weight`; the C++ engine would need a half-size
   `clouds_main` dispatch and an upsample pass importing it.
 
-## C++ engine ideas
-
-- **[P3] A stage registry**, so adding a pass does not mean editing `VulkanRenderer`. (A
-  `SwapchainTarget` extraction was investigated 2026-07-23 and rejected: recreation is
-  inherently cross-cutting.)
-
 ## Rust renderer ideas (OxidANT)
 
 - **[P3] Texture streaming / bindless** for photogrammetry-scale scenes.

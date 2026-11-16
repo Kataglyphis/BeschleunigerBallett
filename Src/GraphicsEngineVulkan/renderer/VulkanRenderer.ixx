@@ -7,6 +7,8 @@ module;
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -28,6 +30,7 @@ import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
 import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.render_settings;
+import kataglyphis.vulkan.render_stage_registry;
 import kataglyphis.vulkan.deferred_rasterizer;
 import kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.cascaded_shadow_map;
@@ -120,6 +123,12 @@ class VulkanRenderer
     void recreateSwapChain();
     void reprovisionPerImageResources();
 
+    // A pass added here records, resizes and hot-reloads with the built-in ones, without editing this class.
+    RenderStageRegistry::AddResult addRenderStage(RenderStage stage) { return renderStages.add(std::move(stage)); }
+    // Drains the GPU first, since the stage's closures may own resources a frame in flight still reads.
+    bool removeRenderStage(std::string_view name);
+    [[nodiscard]] const RenderStageRegistry &renderStageRegistry() const { return renderStages; }
+
     VulkanRenderer(const VulkanRenderer &) = delete;
     VulkanRenderer &operator=(const VulkanRenderer &) = delete;
     VulkanRenderer(VulkanRenderer &&) = delete;
@@ -182,6 +191,14 @@ class VulkanRenderer
 
     // -- pools
     bool record_commands(uint32_t image_index);
+
+    // The built-in passes, in RenderStageOrder; each hook below is one stage's record step.
+    void registerBuiltInStages();
+    void recordShadowStage(const RenderStageFrame &frame);
+    void recordMainStage(const RenderStageFrame &frame);
+    void recordCloudsStage(const RenderStageFrame &frame);
+    void recordSkyStage(const RenderStageFrame &frame);
+    void recordPostStage(const RenderStageFrame &frame);
 
     // Returns the offscreen colour texture of whichever raster path is active
     // this frame (forward vs deferred), reading the mode once. The RT/PT and
@@ -286,6 +303,9 @@ class VulkanRenderer
     // kataglyphis.vulkan.frame_capture for the arm/record/bind/take lifecycle.
     FrameCapture frameCapture;
     FrameCapture hdrCapture;
+
+    // Released before the device, after the destructor drained the GPU, so a stage's captured resources go first.
+    RenderStageRegistry renderStages;
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;

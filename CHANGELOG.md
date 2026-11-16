@@ -215,6 +215,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The C++ renderer records its passes through a stage registry
+  (`kataglyphis.vulkan.render_stage_registry`): each pass is a `RenderStage` with an explicit
+  order and record, skip, resize and shader-reload hooks, and `VulkanRenderer::addRenderStage`
+  adds one without editing the renderer. Frames, pass names and GPU timing names are unchanged.
 - The renderer no longer holds the GUI: `App::run` owns the settings the editor writes
   (`RenderSettings`) and the feedback it shows (`RendererFeedback`), and passes the settings to
   `VulkanRenderer` by const reference each frame. The one-shot requests and the inspector's reset

@@ -6960,11 +6960,13 @@ TEST(BuildIntegrity, PostKeepsItsSkyAndCloudBarriers)
 
     const auto renderer = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp");
     ASSERT_TRUE(renderer.has_value()) << "could not open VulkanRenderer.cpp";
-    const std::size_t dispatch = renderer->find("clouds.recordComputeCommands(");
-    ASSERT_NE(dispatch, std::string::npos) << "the clouds' compute dispatch was not found";
-    const std::size_t clouds_end = renderer->find("write_pass_timestamp(GpuTimedPass::Clouds, false)", dispatch);
-    ASSERT_NE(clouds_end, std::string::npos) << "the clouds block's closing timestamp was not found";
-    const std::string after_dispatch = renderer->substr(dispatch, clouds_end - dispatch);
+    // The clouds stage ends where its record hook does; the registry times it, so no timestamp marks the end.
+    const auto clouds_stage = function_body_span(*renderer, "Kataglyphis::VulkanRenderer::recordCloudsStage");
+    ASSERT_TRUE(clouds_stage.has_value()) << "VulkanRenderer::recordCloudsStage was not found";
+    const std::size_t dispatch = renderer->find("clouds.recordComputeCommands(", clouds_stage->first);
+    ASSERT_TRUE(dispatch != std::string::npos && dispatch < clouds_stage->second)
+      << "the clouds' compute dispatch is not in recordCloudsStage";
+    const std::string after_dispatch = renderer->substr(dispatch, clouds_stage->second - dispatch);
     EXPECT_NE(after_dispatch.find("getCloudOutputTexture()"), std::string::npos)
       << "nothing orders the clouds' compute write before post's fragment read of the cloud output";
     EXPECT_NE(after_dispatch.find("vk::AccessFlagBits2::eShaderStorageWrite"), std::string::npos)
@@ -7827,12 +7829,22 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
     ASSERT_TRUE(renderer_contents_opt.has_value()) << "missing " << renderer_path.string();
     const std::string &renderer_contents = *renderer_contents_opt;
 
-    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
+    // The reload runs every stage's hook, and the built-in stages' hooks are set where they are registered.
+    const auto reload_span = function_body_span(renderer_contents, "Kataglyphis::VulkanRenderer::shaderHotReload");
+    ASSERT_TRUE(reload_span.has_value()) << "VulkanRenderer::shaderHotReload is no longer defined in "
+                                         << renderer_path.string();
+    EXPECT_NE(renderer_contents.substr(reload_span->first, reload_span->second - reload_span->first)
+                .find("renderStages.shaderHotReload()"),
+      std::string::npos)
+      << "VulkanRenderer::shaderHotReload no longer runs the stage registry's reload hooks";
+
+    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::registerBuiltInStages(");
     ASSERT_NE(signature_pos, std::string::npos)
-      << "VulkanRenderer::shaderHotReload is no longer defined in " << renderer_path.string();
+      << "VulkanRenderer::registerBuiltInStages is no longer defined in " << renderer_path.string();
 
     const std::size_t body_open = renderer_contents.find('{', signature_pos);
-    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
+    ASSERT_NE(body_open, std::string::npos)
+      << "could not locate the opening brace of VulkanRenderer::registerBuiltInStages";
 
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
@@ -7848,7 +7860,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
         }
     }
     ASSERT_NE(body_close, std::string::npos)
-      << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+      << "could not brace-match the closing '}' of VulkanRenderer::registerBuiltInStages";
 
     const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
     std::size_t call_sites = 0;
@@ -7859,8 +7871,8 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
     }
 
     EXPECT_GE(call_sites, implementing_classes.size())
-      << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
-      << implementing_classes.size()
+      << "VulkanRenderer::registerBuiltInStages' reload hooks call only " << call_sites
+      << " stage(s)' shaderHotReload, but " << implementing_classes.size()
       << " stage(s) implement it - some implementation is silently unreachable. "
          "Stage classes implementing shaderHotReload: "
       << joinViolations(implementing_classes);
@@ -7918,12 +7930,22 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
     ASSERT_TRUE(renderer_contents_opt.has_value()) << "missing " << renderer_path.string();
     const std::string &renderer_contents = *renderer_contents_opt;
 
-    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
+    // The reload runs every stage's hook, and the built-in stages' hooks are set where they are registered.
+    const auto reload_span = function_body_span(renderer_contents, "Kataglyphis::VulkanRenderer::shaderHotReload");
+    ASSERT_TRUE(reload_span.has_value()) << "VulkanRenderer::shaderHotReload is no longer defined in "
+                                         << renderer_path.string();
+    EXPECT_NE(renderer_contents.substr(reload_span->first, reload_span->second - reload_span->first)
+                .find("renderStages.shaderHotReload()"),
+      std::string::npos)
+      << "VulkanRenderer::shaderHotReload no longer runs the stage registry's reload hooks";
+
+    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::registerBuiltInStages(");
     ASSERT_NE(signature_pos, std::string::npos)
-      << "VulkanRenderer::shaderHotReload is no longer defined in " << renderer_path.string();
+      << "VulkanRenderer::registerBuiltInStages is no longer defined in " << renderer_path.string();
 
     const std::size_t body_open = renderer_contents.find('{', signature_pos);
-    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
+    ASSERT_NE(body_open, std::string::npos)
+      << "could not locate the opening brace of VulkanRenderer::registerBuiltInStages";
 
     int brace_depth = 0;
     std::size_t body_close = std::string::npos;
@@ -7939,7 +7961,7 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
         }
     }
     ASSERT_NE(body_close, std::string::npos)
-      << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+      << "could not brace-match the closing '}' of VulkanRenderer::registerBuiltInStages";
 
     const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
     std::size_t call_sites = 0;
@@ -7950,8 +7972,9 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
     }
 
     EXPECT_GE(call_sites, spirv_loading_files.size())
-      << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
-      << spirv_loading_files.size() << " subsystem(s) load SPIR-V - some reload is silently unreachable.";
+      << "VulkanRenderer::registerBuiltInStages' reload hooks call only " << call_sites
+      << " stage(s)' shaderHotReload, but " << spirv_loading_files.size()
+      << " subsystem(s) load SPIR-V - some reload is silently unreachable.";
 }
 
 // Hot reload must destroy the old pipeline layout before recreating it, or each reload leaks one.
@@ -9109,6 +9132,29 @@ TEST(BuildIntegrity, DeviceLossSimulationIsArmedOnlyByTests)
     }
 
     EXPECT_TRUE(violations.empty()) << "engine source arms the simulated device loss:" << joinViolations(violations);
+}
+
+// A pass recorded straight from record_commands skips the registry's order, timestamps, resize and reload hooks.
+TEST(BuildIntegrity, RecordCommandsRecordsPassesOnlyThroughTheStageRegistry)
+{
+    const fs::path renderer_path = repoRoot() / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const auto text = readFileText(renderer_path);
+    ASSERT_TRUE(text.has_value()) << "could not open " << renderer_path.string();
+
+    const auto span = function_body_span(*text, "Kataglyphis::VulkanRenderer::record_commands");
+    ASSERT_TRUE(span.has_value()) << "VulkanRenderer::record_commands was not found in " << renderer_path.string();
+    const std::string body = text->substr(span->first, span->second - span->first);
+
+    EXPECT_NE(body.find("renderStages.recordFrame("), std::string::npos)
+      << "record_commands no longer records the frame through renderStages.recordFrame";
+    for (const char *direct : { "recordCommands(",
+           "recordComputeCommands(",
+           "recordRasterPass(",
+           "recordRaytracingOrPathTracing(",
+           "recordSkippedPass(" }) {
+        EXPECT_EQ(body.find(direct), std::string::npos)
+          << "record_commands calls " << direct << " directly; register the pass as a RenderStage instead";
+    }
 }
 
 // By value costs two atomic refcount ops per call, so non-sinks take const &; sinks carry a DEVICE_SINK_OK marker.
