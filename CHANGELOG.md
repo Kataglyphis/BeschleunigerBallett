@@ -261,6 +261,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 - A failed Windows package step prints the tail of every CPack generator log (NSIS, WiX) from
   `_CPack_Packages`, through the hub's `Write-CPackGeneratorLog`; ANTfrastructure moves to `ff0235f5` for it.
+- The Windows NSIS installers build again: since the glTF bridge, OxidANT's `profiling` license texts were
+  staged under their whole repo path, and the NSIS source path reached 268 characters. The hub's
+  `stage-cargo-licenses.py` now stages a workspace text as `workspace/<file name>`; ANTfrastructure moves to
+  `d9379d1a`.
 - A glTF material without `pbrMetallicRoughness`, and the fallback for a primitive without a material,
   take glTF's defaults in the cgltf `GltfLoader` (owner decision 2026-11-17): white, metallic 1, roughness 1,
   instead of the engine's 0.8 dielectric whose roughness came from `shininess`. The Rust loader already did; the
