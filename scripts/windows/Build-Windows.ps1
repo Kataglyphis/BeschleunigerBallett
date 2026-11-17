@@ -357,7 +357,12 @@ try {
       $packageArgs = @(Get-CmakeBuildArgs -Context $context -BuildPath $buildPathClangRelease -Target 'package' `
         -Configuration 'Release' -ParallelJobs $ParallelJobs -CpuCount ([Environment]::ProcessorCount))
       Write-BuildLog -Context $context -Message "DEBUG: Package command: cmake $($packageArgs -join ' ')"
-      Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
+      try {
+        Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
+      } catch {
+        Write-CPackGeneratorLog -Context $context -BuildPath $buildPathClangRelease
+        throw
+      }
     } | Out-Null
 
     # The install tree plus its imported DLL closure runs on a clean machine; vulkan-1.dll is the GPU driver's, never shipped.
