@@ -258,6 +258,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
   a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
   failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
+- OxidANT moves to `fe273c9`: the Rust renderer marches clouds at half resolution by default, as
+  the C++ one now does, and its debug build compiles the renderer crate at opt-level 1 (the path
+  tracer's CPU BVH build drops from 16-21 s to under 2 s). No shader, crate or licence text changes.
 - OxidANT moves to `ae01294`: its renderer inflates Zstandard-supercompressed UASTC KTX2 with
   `ruzstd` 0.9.1, bounded per level, instead of `basisu`'s `ruzstd` 0.7.3 (RUSTSEC-2026-0344, a
   decompression bomb). Only the wasm demo's staged crate texts move with it.
