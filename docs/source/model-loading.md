@@ -36,6 +36,11 @@ available. This mirrors the WebGPU Rust loader's
 `default_scene().or_else(|| scenes().next())` rule
 (`crates/webgpu_renderer/src/asset/gltf_loader.rs`); keep the two in sync.
 
+The same walk reads each visited node's `KHR_lights_punctual` light, mesh or no mesh, posed by the
+node's world transform (`GltfLoader::readLight`, as the Rust loader's `read_light`). The lights ride
+on the `Model`, so `adoptParsed` moves them with the geometry, and the renderer places them by the
+model's matrix when it packs the punctual-light buffer.
+
 ## The async parse/upload split
 
 The parse is device-free and dominates load time (2802 ms of a 2818 ms load on

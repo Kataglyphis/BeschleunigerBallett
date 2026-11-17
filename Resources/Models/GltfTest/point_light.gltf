@@ -1,0 +1,183 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "kataglyphis punctual-light scene"
+ },
+ "extensionsUsed": [
+  "KHR_lights_punctual"
+ ],
+ "extensions": {
+  "KHR_lights_punctual": {
+   "lights": [
+    {
+     "type": "point",
+     "color": [
+      1.0,
+      0.05,
+      0.05
+     ],
+     "intensity": 15.0,
+     "range": 6.0
+    },
+    {
+     "type": "spot",
+     "color": [
+      0.05,
+      1.0,
+      0.1
+     ],
+     "intensity": 25.0,
+     "range": 8.0,
+     "spot": {
+      "innerConeAngle": 0.35,
+      "outerConeAngle": 0.6
+     }
+    }
+   ]
+  }
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    1,
+    2
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "mesh": 0
+  },
+  {
+   "extensions": {
+    "KHR_lights_punctual": {
+     "light": 0
+    }
+   },
+   "translation": [
+    -1.2,
+    1.0,
+    0.0
+   ]
+  },
+  {
+   "extensions": {
+    "KHR_lights_punctual": {
+     "light": 1
+    }
+   },
+   "translation": [
+    1.5,
+    2.0,
+    0.0
+   ],
+   "rotation": [
+    -0.7071068,
+    0.0,
+    0.0,
+    0.7071068
+   ]
+  }
+ ],
+ "meshes": [
+  {
+   "name": "plane",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0,
+      "NORMAL": 1,
+      "TEXCOORD_0": 2
+     },
+     "indices": 3,
+     "material": 0,
+     "mode": 4
+    }
+   ]
+  }
+ ],
+ "materials": [
+  {
+   "pbrMetallicRoughness": {
+    "baseColorFactor": [
+     0.9,
+     0.9,
+     0.9,
+     1.0
+    ],
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.9
+   }
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3",
+   "min": [
+    -4.0,
+    0.0,
+    -4.0
+   ],
+   "max": [
+    4.0,
+    0.0,
+    4.0
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC3"
+  },
+  {
+   "bufferView": 2,
+   "componentType": 5126,
+   "count": 4,
+   "type": "VEC2"
+  },
+  {
+   "bufferView": 3,
+   "componentType": 5123,
+   "count": 6,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 48,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 48,
+   "byteLength": 48,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 96,
+   "byteLength": 32,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 128,
+   "byteLength": 14,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 142,
+   "uri": "data:application/octet-stream;base64,AACAwAAAAAAAAIBAAACAQAAAAAAAAIBAAACAQAAAAAAAAIDAAACAwAAAAAAAAIDAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAAAAAAAAAAAAgD8AAIA/AACAPwAAgD8AAAAAAAAAAAAAAAAAAAEAAgAAAAIAAwAAAA=="
+  }
+ ]
+}

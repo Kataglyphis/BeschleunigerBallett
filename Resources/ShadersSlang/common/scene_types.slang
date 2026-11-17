@@ -9,6 +9,7 @@ static const int OBJECT_DESCRIPTION_BINDING = 2;
 static const int TEXTURES_BINDING = 3;
 static const int SAMPLER_BINDING = 4;
 static const int SHADOW_MAP_BINDING = 5;
+static const int PUNCTUAL_LIGHTS_BINDING = 6;
 
 // ---- RAYTRACING BINDING (only used by RT/path-tracing shaders)
 static const int TLAS_BINDING = 0;

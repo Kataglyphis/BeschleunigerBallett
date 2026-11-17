@@ -3,6 +3,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdlib>
 #include <filesystem>
@@ -62,6 +63,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     textureSamplerDescs = std::move(other.textureSamplerDescs);
     textureSrgb = std::move(other.textureSrgb);
     meshRanges = std::move(other.meshRanges);
+    punctualLights = std::move(other.punctualLights);
 }
 
 std::shared_ptr<Model> GltfLoader::uploadParsed()
@@ -82,6 +84,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
 
     // One mesh per glTF primitive; each shares the full materials array (materialIndex keeps original indices).
     addMeshesForRanges(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
+    model->setPunctualLights(punctualLights);
     return model;
 }
 
@@ -546,22 +549,59 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
       alphaBlended });
 }
 
+namespace {
+    // The spec ignores a skinned node's transform; without joint animation it stays in bind pose.
+    glm::mat4 nodeWorld(const cgltf_node *node)
+    {
+        if (node->skin != nullptr) { return glm::mat4(1.0F); }
+        cgltf_float worldRaw[16];
+        cgltf_node_transform_world(node, worldRaw);
+        return glm::make_mat4(worldRaw);
+    }
+}// namespace
+
+void GltfLoader::readLight(const cgltf_node *node, const glm::mat4 &world)
+{
+    const cgltf_light *source = node->light;
+    if (source == nullptr) { return; }
+    PunctualLight light;
+    switch (source->type) {
+    case cgltf_light_type_point:
+        light.kind = PunctualLightKind::Point;
+        break;
+    case cgltf_light_type_spot:
+        light.kind = PunctualLightKind::Spot;
+        light.cosInner = std::cos(source->spot_inner_cone_angle);
+        light.cosOuter = std::cos(source->spot_outer_cone_angle);
+        break;
+    case cgltf_light_type_directional:
+        light.kind = PunctualLightKind::Directional;
+        break;
+    default:
+        return;
+    }
+    light.color = glm::vec3(source->color[0], source->color[1], source->color[2]);
+    light.intensity = source->intensity;
+    light.range = source->range;
+    light.position = glm::vec3(world * glm::vec4(0.0F, 0.0F, 0.0F, 1.0F));
+    const glm::vec3 direction = glm::mat3(world) * glm::vec3(0.0F, 0.0F, -1.0F);
+    const float length = glm::length(direction);
+    light.direction = length > 0.0F ? direction / length : glm::vec3(0.0F, 0.0F, -1.0F);
+    punctualLights.push_back(light);
+}
+
 void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial)
 {
-    if (node->mesh != nullptr) {
-        // The spec ignores a skinned node's transform; without joint animation it stays in bind pose.
-        glm::mat4 world(1.0F);
-        if (node->skin == nullptr) {
-            cgltf_float worldRaw[16];
-            cgltf_node_transform_world(node, worldRaw);
-            world = glm::make_mat4(worldRaw);
-        }
-        const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
-        // A negative determinant means a mirrored node (glTF 2.0 SS3.7.4); skinned nodes never are.
-        const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
-
-        for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial, mirrored);
+    if (node->mesh != nullptr || node->light != nullptr) {
+        const glm::mat4 world = nodeWorld(node);
+        readLight(node, world);
+        if (node->mesh != nullptr) {
+            const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
+            // A negative determinant means a mirrored node (glTF 2.0 SS3.7.4); skinned nodes never are.
+            const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
+            for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
+                processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial, mirrored);
+            }
         }
     }
 
@@ -579,6 +619,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     textureSamplerDescs.clear();
     textureSrgb.clear();
     meshRanges.clear();
+    punctualLights.clear();
 
     cgltf_options options{};
     cgltf_data *data = nullptr;
@@ -645,14 +686,10 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         spdlog::warn("GltfLoader: {} has no scenes; loading every node in the document", modelFile);
         for (cgltf_size n = 0; n < data->nodes_count; ++n) {
             const cgltf_node *node = &data->nodes[n];
+            if (node->mesh == nullptr && node->light == nullptr) { continue; }
+            const glm::mat4 world = nodeWorld(node);
+            readLight(node, world);
             if (node->mesh == nullptr) { continue; }
-
-            glm::mat4 world(1.0F);
-            if (node->skin == nullptr) {
-                cgltf_float worldRaw[16];
-                cgltf_node_transform_world(node, worldRaw);
-                world = glm::make_mat4(worldRaw);
-            }
             const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
             const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
 

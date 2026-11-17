@@ -23,6 +23,13 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Punctual lights in the C++ renderer: `KHR_lights_punctual` point, spot and directional lights,
+  read on every visited node (mesh-less ones too) and placed by their model's matrix, reach the
+  shaders as set 0's `PUNCTUAL_LIGHTS_BINDING` (a count row, then OxidANT's four rows per light)
+  and shade through OxidANT's shared `punctual_light.slang`. Forward and deferred add them
+  unshadowed, as OxidANT's raster passes do; the closest-hit shader traces a shadow ray per light
+  and the path tracer samples one light per bounce. `GoldenRender.PunctualLightsPoolOnThePlane*`
+  (one per mode, on OxidANT's `point_light.gltf`) and `GltfParseUnit.ReadsPunctualLightsPosedByTheirNodes`.
 - Half-resolution C++ clouds, OxidANT's switch: the sky inspector's Half resolution (on by
   default since 2026-11-16, as OxidANT's) marches a half-size target, each texel to the nearest depth of its 2x2
   pixels, and a new `cloud_upsample` stage fills the full-size one from its four nearest texels,

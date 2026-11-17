@@ -116,6 +116,9 @@ class GltfLoader
     // the tests assert on.
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
+    /// The KHR_lights_punctual lights of every visited node, posed by its world transform.
+    const std::vector<PunctualLight> &getPunctualLights() const { return punctualLights; }
+
   private:
     /// Processes a single glTF primitive into the flat arrays: reads its
     /// attributes, bakes positions/normals into world space, gathers and
@@ -144,6 +147,9 @@ class GltfLoader
     /// visited node gets.
     void visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial);
 
+    /// Records `node`'s light, if it has one, posed by `world`; the mesh walk's twin for lights.
+    void readLight(const cgltf_node *node, const glm::mat4 &world);
+
     std::shared_ptr<VulkanDevice> device;
     vk::CommandPool command_pool;
 
@@ -160,6 +166,7 @@ class GltfLoader
     std::vector<unsigned char> textureSrgb;
     // One slice per glTF primitive; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
+    std::vector<PunctualLight> punctualLights;
 };
 
 }// namespace Kataglyphis

@@ -2,6 +2,7 @@ module;
 #include <glm/glm.hpp>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -12,6 +13,7 @@ import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.vertex;
+export import kataglyphis.vulkan.punctual_light;
 // Re-exported: GltfSamplerDesc appears in addTexture()'s parameter type, so
 // consumers that import this module can pass one without a second import.
 export import kataglyphis.vulkan.sampler_builder;
@@ -48,6 +50,10 @@ class Model
     glm::mat4 getModel() const { return model; };
 
     void set_model(glm::mat4 new_model);
+
+    /// The document's KHR_lights_punctual lights in model space; `model` places them like the meshes.
+    const std::vector<PunctualLight> &getPunctualLights() const { return punctualLights; }
+    void setPunctualLights(std::vector<PunctualLight> lights) { punctualLights = std::move(lights); }
     void addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc = {});
 
     ~Model();
@@ -61,6 +67,7 @@ class Model
     // Mesh is move-only (noexcept move), so vector storage is fine.
     std::vector<Mesh> meshes;
     glm::mat4 model{};
+    std::vector<PunctualLight> punctualLights;
 
     std::vector<Texture> modelTextures;
     std::vector<vk::Sampler> modelTextureSamplers;

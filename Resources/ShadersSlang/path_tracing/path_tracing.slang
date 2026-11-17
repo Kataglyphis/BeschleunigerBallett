@@ -8,6 +8,8 @@ import material_textures;
 import normal_map;
 import path_estimator;
 import skybox_radiance;
+import punctual_light;
+import punctual_lights;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
@@ -76,6 +78,32 @@ float primary_hit_depth(uint2 pixel, uint2 resolution, float3 origin)
     float3 hitPosition = origin + direction * depthQuery.CommittedRayT();
     float4 clip = mul(globalUBO.projection, mul(globalUBO.view, float4(hitPosition, 1.0)));
     return clip.z / clip.w;
+}
+
+// A shadow query towards `direction`; true when an unmasked triangle lies within `tMax`.
+bool occluded_inline(float3 origin, float3 direction, float tMax)
+{
+    // Not forced opaque: the search ends at the first committed hit, so masked-out candidates are skipped.
+    RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
+    RayDesc shadowRay;
+    shadowRay.Origin = origin;
+    shadowRay.Direction = direction;
+    shadowRay.TMin = 0.001;
+    shadowRay.TMax = tMax;
+    shadowQuery.TraceRayInline(TLAS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFFu, shadowRay);
+    while (shadowQuery.Proceed())
+    {
+        if (shadowQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+        {
+            uint candidateObjIndex = shadowQuery.CandidateInstanceID() + shadowQuery.CandidateGeometryIndex();
+            ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
+            if (!ray_hit_masked_out(candidateObj, shadowQuery.CandidatePrimitiveIndex(), shadowQuery.CandidateTriangleBarycentrics()))
+            {
+                shadowQuery.CommitNonOpaqueTriangleHit();
+            }
+        }
+    }
+    return shadowQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT;
 }
 
 [shader("compute")]
@@ -274,35 +302,26 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
             if (dot(shadingNormal, lightDir) > 0.0)
             {
-                // Not forced opaque: the search ends at the first committed hit, so masked-out candidates are skipped.
-                RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
-                RayDesc shadowRay;
-                shadowRay.Origin = rayOrigin;
-                shadowRay.Direction = lightDir;
-                shadowRay.TMin = 0.001;
-                shadowRay.TMax = 10000.0;
-                shadowQuery.TraceRayInline(
-                    TLAS,
-                    RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-                    0xFFu,
-                    shadowRay);
-                while (shadowQuery.Proceed())
-                {
-                    if (shadowQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
-                    {
-                        uint candidateObjIndex = shadowQuery.CandidateInstanceID() + shadowQuery.CandidateGeometryIndex();
-                        ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
-                        if (!ray_hit_masked_out(candidateObj, shadowQuery.CandidatePrimitiveIndex(), shadowQuery.CandidateTriangleBarycentrics()))
-                        {
-                            shadowQuery.CommitNonOpaqueTriangleHit();
-                        }
-                    }
-                }
-                if (shadowQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+                if (!occluded_inline(rayOrigin, lightDir, 10000.0))
                 {
                     // brdf_direct is raster's BRDF times n.l and the light, so an unshadowed hit matches forward's.
                     float3 lightRadiance = sceneUBO.dirLight.color.rgb * sceneUBO.dirLight.color.w;
                     radiance += throughput * brdf_direct(shadingNormal, V, lightDir, albedo, metallic, roughness, f0, lightRadiance);
+                }
+            }
+
+            // One punctual light per bounce, picked uniformly and weighted by the count; no draw without lights.
+            uint punctualCount = punctual_light_count();
+            if (punctualCount > 0u)
+            {
+                uint pick = min(uint(rng_next(rngState) * float(punctualCount)), punctualCount - 1u);
+                PunctualLight light = fetch_punctual_light(pick);
+                PunctualIncidence incidence = punctual_incidence(light, rayOrigin);
+                if (incidence.attenuation > 0.0 && dot(shadingNormal, incidence.l) > 0.0
+                    && !occluded_inline(rayOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
+                {
+                    float3 lightRadiance = light.radiance * incidence.attenuation * float(punctualCount);
+                    radiance += throughput * brdf_direct(shadingNormal, V, incidence.l, albedo, metallic, roughness, f0, lightRadiance);
                 }
             }
 

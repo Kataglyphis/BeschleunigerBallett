@@ -15,6 +15,8 @@ const int MAX_PCF_RADIUS = 5;
 #define TEXTURES_BINDING 3
 #define SAMPLER_BINDING 4
 #define SHADOW_MAP_BINDING 5
+// KHR_lights_punctual lights: a count row, then four rows per light (punctual_light.slang's layout).
+#define PUNCTUAL_LIGHTS_BINDING 6
 // ----- MAIN RENDER DESCRIPTOR SET ----- END
 
 // ---- RAYTRACING BINDING ---- START

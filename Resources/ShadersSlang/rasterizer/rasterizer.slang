@@ -8,6 +8,7 @@ import push_constants;
 import raster_geometry;
 import material_textures;
 import hdr_safe;
+import punctual_lights;
 
 // The normal matrix comes precomputed in push constants: Slang has no inverse() for SPIR-V.
 
@@ -81,6 +82,9 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
 
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
     color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
+
+    // The cascades shadow the sun only; punctual lights stay unshadowed, as in the Rust raster passes.
+    color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);

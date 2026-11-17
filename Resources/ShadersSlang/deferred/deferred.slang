@@ -9,6 +9,7 @@ import raster_geometry;
 import material_textures;
 import fullscreen;
 import hdr_safe;
+import punctual_lights;
 
 // Deferred geometry pass (writes the G-buffer) and lighting pass.
 
@@ -131,6 +132,9 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
 
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
     color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
+
+    // The cascades shadow the sun only; punctual lights stay unshadowed, as in the Rust raster passes.
+    color += punctual_lighting(worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;

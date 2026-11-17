@@ -5,12 +5,32 @@ import base_color;
 import material_fetch;
 import material_textures;
 import normal_map;
+import punctual_light;
+import punctual_lights;
 
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
+
+// A shadow ray towards `direction`; true when anything lies within `tMax`. The shadow miss clears the payload.
+bool occluded(float3 origin, float3 direction, float tMax)
+{
+    RayDesc shadowRay;
+    shadowRay.Origin = origin;
+    shadowRay.Direction = direction;
+    shadowRay.TMin = 0.001;
+    shadowRay.TMax = tMax;
+    bool shadowed = true;
+    TraceRay(TLAS,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
+        0xFFu,
+        0u, 0u, 1u,   // sbt offset, stride, miss index (shadow miss)
+        shadowRay,
+        shadowed);
+    return shadowed;
+}
 
 [shader("closesthit")]
 void rchit_main(
@@ -96,24 +116,8 @@ void rchit_main(
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
-    // Shadow ray: trace from the hit point towards the light.
-    bool shadowed = true;
-    if (dot(facingNormal, L) > 0)
-    {
-        RayDesc shadowRay;
-        shadowRay.Origin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-        shadowRay.Direction = L;
-        shadowRay.TMin = 0.001;
-        shadowRay.TMax = 10000.0;
-
-        TraceRay(TLAS,
-            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
-            0xFFu,
-            0u, 0u, 1u,   // sbt offset, stride, miss index (shadow miss)
-            shadowRay,
-            shadowed);
-    }
-
+    float3 shadowOrigin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
+    bool shadowed = dot(facingNormal, L) <= 0 || occluded(shadowOrigin, L, 10000.0);
     // Explicit LOD: see the base-colour sample above for why.
     float2 metallicRoughness = resolved_metallic_roughness_lod0(obj, material, texCoords);
     float metallic = metallicRoughness.x;
@@ -131,6 +135,21 @@ void rchit_main(
         payload.hit_value += brdf_direct(
             N, V, L, albedo, metallic, roughness, f0,
             lightColor * lightIntensity);
+    }
+
+    // Each punctual light with its own shadow ray, which stops short of the light.
+    float3 f0Punctual = lerp(float3(0.04), albedo, metallic);
+    uint punctualCount = punctual_light_count();
+    for (uint i = 0u; i < punctualCount; i++)
+    {
+        PunctualLight light = fetch_punctual_light(i);
+        PunctualIncidence incidence = punctual_incidence(light, shadowOrigin);
+        if (incidence.attenuation <= 0.0 || dot(facingNormal, incidence.l) <= 0.0)
+            continue;
+        if (occluded(shadowOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
+            continue;
+        payload.hit_value += brdf_direct(N, V, incidence.l, albedo, metallic, roughness, f0Punctual,
+            light.radiance * incidence.attenuation);
     }
 
     // Emissive is added after shadowing (emitted light is not shadowed); explicit LOD as above.

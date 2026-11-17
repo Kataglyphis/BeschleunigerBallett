@@ -7,14 +7,18 @@
 #include <filesystem>
 #include <fstream>
 #include <glm/geometric.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/mat4x4.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <optional>
 #include <set>
 #include <string>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 import kataglyphis.vulkan.gltf_loader;
+import kataglyphis.vulkan.punctual_light;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.scene_config;
@@ -24,6 +28,8 @@ namespace {
 std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb"); }
 
 std::string test_textured_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf"); }
+
+std::string test_punctual_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/point_light.gltf"); }
 
 }// namespace
 
@@ -2321,4 +2327,64 @@ TEST(GltfParseUnit, UploadParsedBeforeAnyParseReturnsNull)
     Kataglyphis::GltfLoader loader;// device-free, and parseCpu never called
 
     EXPECT_EQ(loader.uploadParsed(), nullptr) << "uploadParsed must refuse to run before a successful parseCpu";
+}
+
+// Both lights sit on mesh-less nodes, which the mesh walk alone would skip.
+TEST(GltfParseUnit, ReadsPunctualLightsPosedByTheirNodes)
+{
+    if (!std::filesystem::exists(test_punctual_gltf())) { GTEST_SKIP() << "test gltf not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_punctual_gltf()));
+    const auto &lights = loader.getPunctualLights();
+    ASSERT_EQ(lights.size(), 2U);
+
+    const Kataglyphis::PunctualLight &point = lights[0];
+    EXPECT_EQ(point.kind, Kataglyphis::PunctualLightKind::Point);
+    EXPECT_NEAR(point.position.x, -1.2F, 1e-5F);
+    EXPECT_NEAR(point.position.y, 1.0F, 1e-5F);
+    EXPECT_NEAR(point.intensity, 15.0F, 1e-5F);
+    EXPECT_NEAR(point.range, 6.0F, 1e-5F);
+    EXPECT_NEAR(point.color.g, 0.05F, 1e-5F);
+
+    const Kataglyphis::PunctualLight &spot = lights[1];
+    EXPECT_EQ(spot.kind, Kataglyphis::PunctualLightKind::Spot);
+    // Rotated -90 degrees about X, so the node's -Z points straight down.
+    EXPECT_NEAR(spot.direction.y, -1.0F, 1e-4F);
+    EXPECT_NEAR(spot.cosInner, std::cos(0.35F), 1e-5F);
+    EXPECT_NEAR(spot.cosOuter, std::cos(0.6F), 1e-5F);
+}
+
+TEST(GltfParseUnit, PackedLightsFollowTheModelMatrixAndCarryTheirCount)
+{
+    Kataglyphis::PunctualLight spot;
+    spot.kind = Kataglyphis::PunctualLightKind::Spot;
+    spot.color = glm::vec3(1.0F, 0.5F, 0.25F);
+    spot.intensity = 2.0F;
+    spot.range = 10.0F;
+    spot.position = glm::vec3(1.0F, 2.0F, 3.0F);
+    spot.direction = glm::vec3(0.0F, 0.0F, -1.0F);
+    spot.cosInner = 0.9F;
+    spot.cosOuter = 0.8F;
+    const std::vector<Kataglyphis::PunctualLight> lights{ spot };
+    // A quarter turn about Y and a shift: the light moves and turns with the model's meshes.
+    const glm::mat4 model = glm::translate(glm::mat4(1.0F), glm::vec3(10.0F, 0.0F, 0.0F))
+                            * glm::rotate(glm::mat4(1.0F), glm::radians(90.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    const std::vector<Kataglyphis::PlacedPunctualLights> placed{ { lights, model } };
+
+    const std::vector<glm::vec4> rows = Kataglyphis::packPunctualLights(placed);
+    ASSERT_EQ(rows.size(), 1U + Kataglyphis::PUNCTUAL_LIGHT_ROWS);
+    EXPECT_EQ(rows[0].x, 1.0F);
+    EXPECT_NEAR(rows[1].x, 13.0F, 1e-4F);
+    EXPECT_NEAR(rows[1].z, -1.0F, 1e-4F);
+    EXPECT_EQ(rows[1].w, 2.0F) << "kind code 2 is a spot light";
+    EXPECT_NEAR(rows[2].r, 2.0F, 1e-5F);
+    EXPECT_NEAR(rows[2].g, 1.0F, 1e-5F);
+    EXPECT_EQ(rows[2].w, 10.0F);
+    EXPECT_NEAR(rows[3].x, -1.0F, 1e-4F);
+    EXPECT_NEAR(rows[3].z, 0.0F, 1e-4F);
+    EXPECT_EQ(rows[3].w, 0.9F);
+    EXPECT_EQ(rows[4].x, 0.8F);
+
+    EXPECT_EQ(Kataglyphis::packPunctualLights({}).size(), 1U) << "an empty scene keeps its count row";
 }

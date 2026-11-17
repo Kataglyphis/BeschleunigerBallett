@@ -279,6 +279,8 @@ constexpr const char *EMISSIVE_CARD_MODEL = "Models/GltfTest/emissive_card.gltf"
 constexpr const char *EMISSIVE_STRENGTH_CARD_MODEL = "Models/GltfTest/emissive_strength_card.gltf";
 // The lit-but-not-glowing control for EMISSIVE_CARD_MODEL.
 constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf";
+// A grey plane under a red point light (x -1.2) and a green spot light (x 1.5) pointing down; OxidANT's fixture.
+constexpr const char *PUNCTUAL_LIGHTS_MODEL = "Models/GltfTest/point_light.gltf";
 // A card with a normal texture and nothing else, the base for a normal-map control.
 constexpr const char *NORMAL_MAP_CARD_MODEL = "Models/GltfTest/uv_transform_normal_only_card.gltf";
 // A unit cube, metallic 0: a dielectric the library lists, so the editor's reload can pick it.
@@ -2433,6 +2435,114 @@ TEST(GoldenRender, PathTracingHonorsTheUntexturedMetallicFactor)
 }
 
 // The light must scale diffuse as well as specular, or only sparse highlights respond to radiance.
+namespace {
+
+// Which renderer a punctual-light golden draws with.
+enum class PunctualMode { Forward, Deferred, Raytracing, PathTracing };
+
+struct PunctualPools
+{
+    size_t red = 0;
+    size_t green = 0;
+    bool skipped = false;
+};
+
+// Renders `model` lit by its lights alone (the sun at zero), framed on the plane, with `mode`'s renderer.
+std::vector<uint8_t> render_punctual_scene(const std::string &model, PunctualMode mode, bool &skipped)
+{
+    ScopedModelOverride scene(model.c_str());
+    EngineHarness harness;
+    if (!harness.supportsFrameCapture()) {
+        skipped = true;
+        return {};
+    }
+    const bool traced = mode == PunctualMode::Raytracing || mode == PunctualMode::PathTracing;
+    if (traced && !harness.renderer->supportsHardwareRaytracing()) {
+        skipped = true;
+        return {};
+    }
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 7.0F));
+    harness.camera->set_orientation(-90.0F, -40.0F);
+    harness.settings.scene.directional_light_radiance = 0.0F;
+    auto &renderer_vars = harness.useForwardRaster();
+    renderer_vars.rasterizationMode =
+      mode == PunctualMode::Deferred ? RasterizationMode::Deferred : RasterizationMode::Forward;
+    renderer_vars.raytracing = mode == PunctualMode::Raytracing;
+    renderer_vars.pathTracing = mode == PunctualMode::PathTracing;
+    // Two short paths a pixel: the pools are thousands of pixels, so their count survives the noise.
+    renderer_vars.pathTracingSamplesPerPixel = 2;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES + (mode == PunctualMode::PathTracing ? 12 : SETTLE_FRAMES));
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    EXPECT_FALSE(harness.renderer->hasDeviceLost());
+    return frame;
+}
+
+// Pixels the lights turn clearly red or green against the same scene with every light at zero intensity.
+PunctualPools punctual_pools(PunctualMode mode)
+{
+    PunctualPools pools;
+    const auto dark =
+      write_gltf_variant(PUNCTUAL_LIGHTS_MODEL, "kataglyphis_punctual_dark.gltf", [](nlohmann::json &gltf) {
+          for (auto &light : gltf["extensions"]["KHR_lights_punctual"]["lights"]) { light["intensity"] = 0.0; }
+      });
+    EXPECT_TRUE(dark.has_value()) << "could not write the dark twin of " << PUNCTUAL_LIGHTS_MODEL;
+    if (!dark.has_value()) { return pools; }
+
+    const std::vector<uint8_t> lit = render_punctual_scene(PUNCTUAL_LIGHTS_MODEL, mode, pools.skipped);
+    if (pools.skipped) { return pools; }
+    const std::vector<uint8_t> unlit = render_punctual_scene(dark->string(), mode, pools.skipped);
+    EXPECT_EQ(lit.size(), unlit.size());
+    if (lit.empty() || lit.size() != unlit.size()) { return pools; }
+
+    for (size_t i = 0; i + 3 < lit.size(); i += 4) {
+        const int dr = int(lit[i]) - int(unlit[i]);
+        const int dg = int(lit[i + 1]) - int(unlit[i + 1]);
+        const int db = int(lit[i + 2]) - int(unlit[i + 2]);
+        if (dr > 60 && dr > dg + 40 && dr > db + 40) { ++pools.red; }
+        if (dg > 60 && dg > dr + 40 && dg > db + 40) { ++pools.green; }
+    }
+    GTEST_LOG_(INFO) << "punctual pools: " << pools.red << " red, " << pools.green << " green pixels";
+    return pools;
+}
+
+void expect_punctual_pools(PunctualMode mode)
+{
+    const PunctualPools pools = punctual_pools(mode);
+    if (pools.skipped) { GTEST_SKIP() << "no frame capture, or no hardware ray tracing for a traced mode"; }
+    // OxidANT's punctual_lights_pool_on_plane asks 200 and 100 of a smaller frame.
+    EXPECT_GT(pools.red, 200U) << "the red point light lit no pool on the plane";
+    EXPECT_GT(pools.green, 100U) << "the green spot light lit no pool on the plane";
+}
+
+}// namespace
+
+TEST(GoldenRender, PunctualLightsPoolOnThePlaneInForward)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_pools(PunctualMode::Forward);
+}
+
+TEST(GoldenRender, PunctualLightsPoolOnThePlaneInDeferred)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_pools(PunctualMode::Deferred);
+}
+
+TEST(GoldenRender, PunctualLightsPoolOnThePlaneWhenRaytraced)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_pools(PunctualMode::Raytracing);
+}
+
+TEST(GoldenRender, PunctualLightsPoolOnThePlaneWhenPathTraced)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_pools(PunctualMode::PathTracing);
+}
+
 TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
 {
     SKIP_WITHOUT_GPU();

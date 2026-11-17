@@ -312,6 +312,8 @@ class VulkanRenderer
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
+    // The scene's packed punctual lights; rebuilt with the object descriptions on every scene change.
+    VulkanBuffer punctualLightBuffer;
     void create_object_description_buffer();
     // Discards and re-uploads the object-description buffer. The scene-changed
     // paths (finishModelLoad / addModel / updateStateDueToUserInput) all do this

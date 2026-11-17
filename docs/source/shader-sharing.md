@@ -96,9 +96,12 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   implementations bounds-check in the sampling statement:
   `cascaded_shadow.slang`'s `CombinedTaps` (the C++ forward and deferred
   paths) and OxidANT's `forward/forward_lighting.slang`. Both.
-- `common/punctual_light.slang` — `KHR_lights_punctual` as OxidANT's raster
-  passes and its tracer shade it. WGSL only: the C++ engine has a single
-  directional light.
+- `common/punctual_light.slang` — `KHR_lights_punctual` as both renderers
+  shade it. The C++ engine reads it through `common/punctual_lights.slang`,
+  which owns set 0's `PUNCTUAL_LIGHTS_BINDING` (a count row, then the four
+  rows per light): forward and deferred add the lights unshadowed, the
+  closest-hit shader traces one shadow ray per light, and the path tracer
+  samples one light per bounce. Both.
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, exercised
   on both targets by `tests/noise_test.slang`; no production shader imports it yet.
 - `common/fullscreen.slang` — the fullscreen-triangle vertex trick
@@ -301,7 +304,8 @@ imports.
 | `common/noise.slang` | both |
 | `common/normal_map.slang` | spirv |
 | `common/path_estimator.slang` | both |
-| `common/punctual_light.slang` | wgsl |
+| `common/punctual_light.slang` | both |
+| `common/punctual_lights.slang` | spirv |
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |

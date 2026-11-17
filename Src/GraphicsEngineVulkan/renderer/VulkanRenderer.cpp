@@ -1417,6 +1417,7 @@ void Kataglyphis::VulkanRenderer::createTracedDepthResources()
 void Kataglyphis::VulkanRenderer::rebuildObjectDescriptions()
 {
     objectDescriptionBuffer.cleanUp();
+    punctualLightBuffer.cleanUp();
     create_object_description_buffer();
 }
 
@@ -1451,6 +1452,16 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
         }
     }
 
+    // Never empty: the count row is always there, so a scene without lights reads zero.
+    if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
+          graphics_command_pool.get(),
+          punctualLightBuffer,
+          vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          scene->packPunctualLights())) {
+        spdlog::error("VulkanRenderer::create_object_description_buffer: punctual-light upload failed.");
+    }
+
     updateObjectDescriptionDescriptorSets();
 }
 
@@ -1463,6 +1474,10 @@ void Kataglyphis::VulkanRenderer::updateObjectDescriptionDescriptorSets()
 
         sharedRenderDescriptors.writeBuffer(
           i, OBJECT_DESCRIPTION_BINDING, objectDescriptionBuffer.getBuffer(), VK_WHOLE_SIZE);
+        if (punctualLightBuffer.getBuffer()) {
+            sharedRenderDescriptors.writeBuffer(
+              i, PUNCTUAL_LIGHTS_BINDING, punctualLightBuffer.getBuffer(), VK_WHOLE_SIZE);
+        }
     }
 }
 
@@ -1504,6 +1519,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags sampler_stages = vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags textures_stages = vk::ShaderStageFlagBits::eFragment;
+    vk::ShaderStageFlags punctual_light_stages = vk::ShaderStageFlagBits::eFragment;
 
     if (raytracing_available) {
         global_ubo_stages |= vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute;
@@ -1515,6 +1531,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
                           | vk::ShaderStageFlagBits::eCompute;
         textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
                            | vk::ShaderStageFlagBits::eCompute;
+        punctual_light_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
     }
 
     sharedRenderDescriptors.addBinding(globalUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1, global_ubo_stages)
@@ -1525,7 +1542,8 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       .addBinding(
         SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT), sampler_stages)
       // Cascaded shadow map array, consumed by the forward lighting shader.
-      .addBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
+      .addBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1, punctual_light_stages);
 
     if (!sharedRenderDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create shared render descriptor resources!");

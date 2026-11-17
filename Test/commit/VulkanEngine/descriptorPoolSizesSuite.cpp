@@ -83,7 +83,7 @@ TEST(DescriptorPoolSizesUnit, ReturnsEmptyForNoBindings)
     EXPECT_TRUE(deriveDescriptorPoolSizes(bindings, 3).empty());
 }
 
-TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
+TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOneStorageBufferPerBindingPerSet)
 {
     constexpr uint32_t set_count = 3;
     const std::vector<vk::DescriptorSetLayoutBinding> bindings = {
@@ -93,6 +93,7 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
         makeBinding(TEXTURES_BINDING, vk::DescriptorType::eSampledImage, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
+        makeBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1),
     };
 
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);
@@ -101,7 +102,7 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
       pool_sizes.end(),
       [](const vk::DescriptorPoolSize &pool_size) { return pool_size.type == vk::DescriptorType::eStorageBuffer; });
     ASSERT_NE(storage_buffer_entry, pool_sizes.end());
-    EXPECT_EQ(storage_buffer_entry->descriptorCount, set_count);
+    EXPECT_EQ(storage_buffer_entry->descriptorCount, 2U * set_count);
     EXPECT_NE(storage_buffer_entry->descriptorCount, 1600U);
 }
 
@@ -129,6 +130,7 @@ TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)
         makeBinding(TEXTURES_BINDING, vk::DescriptorType::eSampledImage, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
+        makeBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1),
     };
     EXPECT_EQ(firstDuplicateBinding(shared_render_set_bindings), std::nullopt);
 

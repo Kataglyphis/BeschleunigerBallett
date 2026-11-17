@@ -144,6 +144,17 @@ class Scene
     [[nodiscard]] const std::string &getLoadedModelPath() const { return loadedModelPath; }
     std::vector<std::shared_ptr<Model>> const &get_model_list() const { return model_list; };
 
+    /// Every model's punctual lights placed by its matrix, packed for the punctual-light buffer.
+    [[nodiscard]] std::vector<glm::vec4> packPunctualLights() const
+    {
+        std::vector<PlacedPunctualLights> placed;
+        placed.reserve(model_list.size());
+        for (const std::shared_ptr<Model> &model : model_list) {
+            if (model != nullptr) { placed.push_back({ model->getPunctualLights(), model->getModel() }); }
+        }
+        return Kataglyphis::packPunctualLights(placed);
+    }
+
     void loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
     /// Starts parsing the configured model on a worker thread and returns
