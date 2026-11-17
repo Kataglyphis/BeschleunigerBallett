@@ -19,8 +19,9 @@ Every sample's radiance and the kernel's output pass through `hdr_safe`
 the `rgba16f` target, ACES would turn that into NaN, and one NaN sample would
 stay in the running mean until the next reset.
 
-A path-traced frame runs neither the raster pass nor the shadow-cascade pass:
-the kernel shades its own visibility, and NEE traces its own shadow rays. The
+A path-traced frame runs neither the raster pass nor the shadow-cascade and
+punctual-cube passes: the kernel shades its own visibility, and NEE traces its
+own shadow rays. The
 RT mode skips both too. For the clouds, which march to the scene depth, the
 kernel also traces one ray through each pixel centre and writes that primary
 hit's NDC depth to `tracedDepth` (`TRACED_DEPTH_IMAGE_BINDING`, `1.0` on a

@@ -300,6 +300,7 @@ const std::vector<std::string> kSharedConstantNames = { "MAX_TEXTURE_COUNT",
     "SAMPLER_BINDING",
     "SHADOW_MAP_BINDING",
     "PUNCTUAL_LIGHTS_BINDING",
+    "PUNCTUAL_SHADOW_MAP_BINDING",
     "TLAS_BINDING",
     "OUT_IMAGE_BINDING",
     "ACCUMULATION_IMAGE_BINDING",
@@ -1009,6 +1010,7 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "pcfRadius", offsetof(SceneUBO, pcfRadius) },
             { "cascadedShadowIntensity", offsetof(SceneUBO, cascadedShadowIntensity) },
             { "numCascades", offsetof(SceneUBO, numCascades) },
+            { "punctualShadowCount", offsetof(SceneUBO, punctualShadowCount) },
             { "cascadeSplits", offsetof(SceneUBO, cascadeSplits) },
             { "cascadeLightSpaceMatrices", offsetof(SceneUBO, cascadeLightSpaceMatrices) },
             { "view_dir", offsetof(SceneUBO, view_dir) },
@@ -1594,6 +1596,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("SAMPLER_BINDING"), SAMPLER_BINDING);
     EXPECT_EQ(shader.at("SHADOW_MAP_BINDING"), SHADOW_MAP_BINDING);
     EXPECT_EQ(shader.at("PUNCTUAL_LIGHTS_BINDING"), PUNCTUAL_LIGHTS_BINDING);
+    EXPECT_EQ(shader.at("PUNCTUAL_SHADOW_MAP_BINDING"), PUNCTUAL_SHADOW_MAP_BINDING);
     EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
@@ -4065,7 +4068,10 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
     static const std::string kGeLower = ">= 0.0";
     static const std::string kLeUpper = "<= 1.0";
 
+    // A cube map has no border, so its taps are counted apart and need no range check.
+    static const std::string kCubeMarker = "punctualShadowMaps.SampleCmpLevelZero(";
     int occurrences_checked = 0;
+    int cube_occurrences = 0;
     std::vector<std::string> violations;
     std::error_code error;
     for (const auto &shader_path : shaderSourceFiles(slang_root, error)) {
@@ -4085,6 +4091,13 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
         while (true) {
             const auto marker_pos = stripped_text.find(kMarker, search_from);
             if (marker_pos == std::string::npos) { break; }
+            const std::size_t cube_prefix = kCubeMarker.size() - kMarker.size();
+            if (marker_pos >= cube_prefix
+                && stripped_text.compare(marker_pos - cube_prefix, kCubeMarker.size(), kCubeMarker) == 0) {
+                ++cube_occurrences;
+                search_from = marker_pos + kMarker.size();
+                continue;
+            }
             ++occurrences_checked;
 
             // The tap coordinate must be range-checked to [0,1] somewhere in its enclosing statement.
@@ -4127,6 +4140,7 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
       << "expected exactly 3 SampleCmpLevelZero call site(s), found " << occurrences_checked
       << " - update this count if a new PCF kernel was intentionally added, and confirm it also "
          "bounds-checks its tap coordinate";
+    EXPECT_EQ(cube_occurrences, 1) << "punctual_lights.slang's cube taps should sample through one call site";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()

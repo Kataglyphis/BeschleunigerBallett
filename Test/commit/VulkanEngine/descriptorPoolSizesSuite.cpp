@@ -94,6 +94,7 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOneStorageBufferPerBindingP
         makeBinding(SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
         makeBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1),
+        makeBinding(PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
     };
 
     const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);
@@ -104,6 +105,13 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOneStorageBufferPerBindingP
     ASSERT_NE(storage_buffer_entry, pool_sizes.end());
     EXPECT_EQ(storage_buffer_entry->descriptorCount, 2U * set_count);
     EXPECT_NE(storage_buffer_entry->descriptorCount, 1600U);
+
+    // The cascades and the punctual cubes: two combined image samplers per set.
+    const auto sampler_entry = std::find_if(pool_sizes.begin(),
+      pool_sizes.end(),
+      [](const vk::DescriptorPoolSize &size) { return size.type == vk::DescriptorType::eCombinedImageSampler; });
+    ASSERT_NE(sampler_entry, pool_sizes.end());
+    EXPECT_EQ(sampler_entry->descriptorCount, 2U * set_count);
 }
 
 // Array bindings declare MAX_TEXTURE_COUNT descriptors; a single-descriptor write would leave the rest unwritten.
@@ -131,6 +139,7 @@ TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)
         makeBinding(SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
         makeBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
         makeBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1),
+        makeBinding(PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
     };
     EXPECT_EQ(firstDuplicateBinding(shared_render_set_bindings), std::nullopt);
 

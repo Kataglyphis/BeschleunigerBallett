@@ -21,8 +21,8 @@ struct SceneUBO
     float cascadedShadowIntensity;
     uint numCascades;
 
-    // std140 aligns cascadeSplits to byte 48 on the GPU; glm's vec4 does not, so the pad is explicit.
-    uint _pad_std140_0;
+    // Cube shadow maps drawn this frame (0: punctual lights unshadowed); also std140's pad before cascadeSplits.
+    uint punctualShadowCount;
 
     // Cascaded shadow maps
     vec4 cascadeSplits;// up to 4 cascades

@@ -201,6 +201,15 @@
       "targets": [
         "spirv"
       ]
+    },
+    {
+      "_comment": "Punctual-light cube shadow maps; the fragment entry is shadow_fs_main above.",
+      "file": "rasterizer/shadows/shadow_map.slang",
+      "entry": "cube_shadow_vs_main",
+      "stage": "vertex",
+      "targets": [
+        "spirv"
+      ]
     }
   ],
   "wgslManifest": "../../third_party/OxidANT/shaders/shader-manifest.json",

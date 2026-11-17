@@ -242,7 +242,8 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     if (!physical_device) {
         spdlog::critical(
           "Failed to find a suitable Vulkan physical device: one needs graphics and present queues, "
-          "VK_KHR_swapchain, and Vulkan 1.3 dynamic rendering + synchronization2 (errors above name what each lacks).");
+          "VK_KHR_swapchain, Vulkan 1.3 dynamic rendering + synchronization2, and imageCubeArray (errors above name "
+          "what each lacks).");
         std::abort();
     }
 
@@ -367,6 +368,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features2.features.logicOp = available_features2.features.logicOp;
     // The shadow pass pancakes casters with depth clamp; a device without it clips them instead.
     features2.features.depthClamp = available_features2.features.depthClamp;
+    // Selection rejects a device without it: the punctual lights' cube shadow maps are one cube-array view.
+    features2.features.imageCubeArray = available_features2.features.imageCubeArray;
     features2.features.robustBufferAccess = VK_FALSE;
 
     std::vector<const char *> extensions(device_extensions);
@@ -385,6 +388,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
+    deviceSupportsImageCubeArray = available_features2.features.imageCubeArray == VK_TRUE;
     deviceSupportsSamplerAnisotropy = available_features2.features.samplerAnisotropy == VK_TRUE;
     deviceMaxSamplerAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     const bool hasRequiredDescriptorIndexingFeatures =
@@ -620,8 +624,16 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
           missing_rendering_requirement);
     }
 
+    // Forward and deferred declare the punctual cube-shadow array, so a pipeline without imageCubeArray cannot build.
+    const bool cube_arrays = features2.features.imageCubeArray == VK_TRUE;
+    if (!cube_arrays) {
+        spdlog::error("Vulkan device '{}' lacks imageCubeArray, which the raster shaders require; skipping it.",
+          device.getProperties().deviceName.data());
+    }
+
     // samplerAnisotropy is not required: it has a fallback, and requiring it rejects software Vulkan such as lavapipe.
-    return indices.is_valid() && extensions_supported && swap_chain_valid && missing_rendering_requirement == nullptr;
+    return indices.is_valid() && extensions_supported && swap_chain_valid && missing_rendering_requirement == nullptr
+           && cube_arrays;
 }
 
 auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevice device) -> bool

@@ -106,6 +106,8 @@ export struct GUISceneSharedVars
 
     // Shadows
     bool shadows_enabled = true;
+    // Cube shadow maps for the first MAX_SHADOWED_PUNCTUAL_LIGHTS point and spot lights, raster modes only.
+    bool punctual_shadows_enabled = true;
 
     // Skybox
     bool skybox_enabled = true;

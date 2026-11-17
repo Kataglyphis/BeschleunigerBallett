@@ -1,4 +1,5 @@
 module;
+#include <array>
 #include <glm/glm.hpp>
 #include <memory>
 #include <span>
@@ -85,6 +86,15 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
 // pin the invariant that was once broken: the shadow pass must transform
 // casters by the SAME model matrix as the forward pass, not by identity.
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex);
+
+// What shadow_map.slang's vertex entries read: position, COLOR_0 and both UV sets, the MASK test's inputs.
+struct ShadowCasterVertexInput
+{
+    vk::VertexInputBindingDescription binding;
+    std::array<vk::VertexInputAttributeDescription, 4> attributes;
+};
+// Shared by the cascade and the punctual cube pipelines, so a masked caster cuts out alike in both.
+ShadowCasterVertexInput shadowCasterVertexInput();
 
 // vkCmdBindDescriptorSets arguments for the shadow pass's set 0/1 split. Named
 // and pulled out for the same reason as makeShadowPush: the no-shared-set

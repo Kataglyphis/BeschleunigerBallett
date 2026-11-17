@@ -72,8 +72,9 @@ committed to.
 
 ## Owner decisions
 
-- **`pointShadowMap`** was removed as dead allocation. Re-add it, or the whole omni pass,
-  when the point-light shadow feature is built.
+- **No standing omni shadow allocation.** `pointShadowMap` went as dead allocation; the
+  punctual-light cubes that replaced it (2026-11-17, `PunctualShadowMaps`) allocate only for a
+  scene's shadowed point and spot lights and keep a 1x1 placeholder otherwise. Keep it that way.
 
 ## Rust renderer ideas (OxidANT)
 
@@ -93,6 +94,10 @@ committed to.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
   `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
+
+- **[P3] Cheaper punctual-light cubes.** Every shadowed point or spot light redraws all six
+  faces every frame. A spot light needs only the faces its cone reaches, and a cube whose light
+  and casters did not move could keep last frame's depth; measure on a GPU host first.
 
 ## Recurring validation runs
 

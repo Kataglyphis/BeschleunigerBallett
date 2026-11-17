@@ -59,6 +59,7 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.cloud_wind[1] = 17.0F;
     vars.cloud_wind[2] = 18.0F;
     vars.shadows_enabled = false;
+    vars.punctual_shadows_enabled = false;
     vars.skybox_enabled = false;
     vars.camera_fov = 77.0F;
     vars.selected_model_index = 7;
@@ -111,6 +112,7 @@ TEST(GuiSceneVarsRoundTrip, ShadowControlsArrive)
     destination = source;
 
     EXPECT_EQ(destination.shadows_enabled, source.shadows_enabled);
+    EXPECT_EQ(destination.punctual_shadows_enabled, source.punctual_shadows_enabled);
     EXPECT_EQ(destination.num_shadow_cascades, source.num_shadow_cascades);
     EXPECT_EQ(destination.pcf_radius, source.pcf_radius);
     EXPECT_FLOAT_EQ(destination.cascaded_shadow_intensity, source.cascaded_shadow_intensity);

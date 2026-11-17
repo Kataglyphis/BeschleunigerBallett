@@ -23,6 +23,18 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
+  512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
+  every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the
+  cascades' caster shader, alpha test included. Forward and deferred shadow those lights with five
+  2x2-PCF taps and a normal and light offset of a texel against acne; directional punctual lights and
+  the lights past the fourth stay unshadowed, and ray and path tracing keep their shadow rays. A
+  light without a range gets its far plane from the scene's bounds. The shadows inspector's Light
+  shadows switch turns them off; the pass is timed as `PunctualShadows`, optional to
+  `Compare-RendererTimings.ps1`. The GPU timing pool keeps five spare queries, as lavapipe writes a
+  timestamp after a multiview pass to one query per view. A device without `imageCubeArray` is now
+  rejected at selection, with the reason logged, as one without dynamic rendering is.
+  `GoldenRender.PunctualLightShadowsTheCardOntoThePlane{InForward,InDeferred}`, `PunctualShadowUnit.*`.
 - Punctual lights in the C++ renderer: `KHR_lights_punctual` point, spot and directional lights,
   read on every visited node (mesh-less ones too) and placed by their model's matrix, reach the
   shaders as set 0's `PUNCTUAL_LIGHTS_BINDING` (a count row, then OxidANT's four rows per light)

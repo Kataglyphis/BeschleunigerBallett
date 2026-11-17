@@ -146,7 +146,7 @@ impl TimedPass {
     ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap,DrawCull'
   }
 
-  It 'excludes the C++ CloudUpsample pass, which only a half-resolution cloud frame records' {
+  It 'excludes the C++ CloudUpsample and PunctualShadows passes, which only some scenes record' {
     $fixture = Join-Path $script:tmpDir 'GUIRendererSharedVarsUpsample.ixx'
     @'
 inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
@@ -156,6 +156,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "Sky",
   "Post",
   "CloudUpsample",
+  "PunctualShadows",
 });
 '@ | Set-Content -Path $fixture
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath

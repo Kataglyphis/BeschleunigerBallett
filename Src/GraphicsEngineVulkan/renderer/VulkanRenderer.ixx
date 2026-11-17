@@ -34,6 +34,7 @@ import kataglyphis.vulkan.render_stage_registry;
 import kataglyphis.vulkan.deferred_rasterizer;
 import kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.punctual_shadow_map;
 import kataglyphis.vulkan.sky_box;
 import kataglyphis.vulkan.clouds;
 import kataglyphis.vulkan.scene_ubo;
@@ -154,6 +155,10 @@ class VulkanRenderer
     // need the exact same cleanUp()+init()+createGraphicsPipeline() sequence,
     // just triggered by a different condition.
     void reinitShadowMapForCurrentSettings();
+    // Re-creates the punctual cubes against the swapchain's image count and the shared layout, keeping the slots.
+    void reinitPunctualShadows();
+    // Gives the packed lights their cube slots and the cubes their lights; drains the GPU, as it may reallocate.
+    void applyPunctualShadowSlots(std::vector<glm::vec4> &packedLights);
     void handleModelTransformChange(const GUISceneSharedVars &sceneSettings);
     void handleModelReloadRequest(const GUISceneSharedVars &sceneSettings);
     // Reports what the scene now holds; applyRendererFeedback moves the editor's selection and inspector to it.
@@ -197,6 +202,7 @@ class VulkanRenderer
     // The built-in passes, in RenderStageOrder; each hook below is one stage's record step.
     void registerBuiltInStages();
     void recordShadowStage(const RenderStageFrame &frame);
+    void recordPunctualShadowStage(const RenderStageFrame &frame);
     void recordMainStage(const RenderStageFrame &frame);
     void recordCloudsStage(const RenderStageFrame &frame);
     void recordCloudUpsampleStage(const RenderStageFrame &frame);
@@ -287,6 +293,9 @@ class VulkanRenderer
     // for the new settings. Consumed (and cleared) by update_uniform_buffers(),
     // the first point in the frame where cascadeData is guaranteed fresh.
     bool lightMatricesNeedFullReseed{ false };
+    // Cube shadow maps for the first point and spot lights; the slots survive a re-init.
+    Kataglyphis::PunctualShadowMaps punctualShadows;
+    std::vector<Kataglyphis::PunctualShadowSlot> punctualShadowSlots;
 
     // -- synchronization
     // All frame-sync primitives (current_frame, frame_sync_count, the per-frame

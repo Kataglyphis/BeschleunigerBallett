@@ -63,8 +63,8 @@ function Get-ExpectedPassNames {
     return , $names
 }
 
-# The upsample runs only while the clouds march at half resolution, so a frame without clouds or at full resolution has none.
-$CppOptionalPasses = @('CloudUpsample')
+# Only a half-resolution cloud frame records the upsample, and only a scene with a point or spot light the cubes.
+$CppOptionalPasses = @('CloudUpsample', 'PunctualShadows')
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
     $CppExpectedPasses = @($cppAllPasses | Where-Object { $_ -notin $CppOptionalPasses })

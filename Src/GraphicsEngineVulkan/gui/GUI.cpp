@@ -1167,6 +1167,9 @@ void GUI::renderLightInspector()
         endStudioProperties();
     }
     studioEndDisabled();
+
+    sectionHeader("LIGHT SHADOWS", "##punctual_shadows_enabled", &guiSceneSharedVars.punctual_shadows_enabled);
+    mutedWrappedText("A 512 px cube for each of the scene's first four point and spot lights, redrawn every frame.");
 }
 
 void GUI::renderCameraInspector()

@@ -133,8 +133,9 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
     color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
 
-    // The cascades shadow the sun only; punctual lights stay unshadowed, as in the Rust raster passes.
-    color += punctual_lighting(worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0);
+    // The cascades shadow the sun only; the first point and spot lights have their own cubes.
+    color += punctual_lighting(
+        worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0, sceneUBO_lighting.punctualShadowCount);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;

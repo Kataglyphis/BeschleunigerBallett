@@ -38,6 +38,7 @@ class VulkanDevice
     bool supportsHardwareAcceleratedRRT() const { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
+    bool supportsImageCubeArray() const { return deviceSupportsImageCubeArray; };
     bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; };
     // VkPhysicalDeviceLimits::maxSamplerAnisotropy - the ceiling a sampler's
     // maxAnisotropy may request without violating
@@ -86,6 +87,7 @@ class VulkanDevice
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
     bool deviceSupportsDepthClamp = false;
+    bool deviceSupportsImageCubeArray = false;
     bool deviceSupportsSamplerAnisotropy = false;
     float deviceMaxSamplerAnisotropy = 1.0F;
     uint32_t maxMultiviewViewCount = 0;

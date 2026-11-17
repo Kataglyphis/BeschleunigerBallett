@@ -10,6 +10,7 @@ static const int TEXTURES_BINDING = 3;
 static const int SAMPLER_BINDING = 4;
 static const int SHADOW_MAP_BINDING = 5;
 static const int PUNCTUAL_LIGHTS_BINDING = 6;
+static const int PUNCTUAL_SHADOW_MAP_BINDING = 7;
 
 // ---- RAYTRACING BINDING (only used by RT/path-tracing shaders)
 static const int TLAS_BINDING = 0;
@@ -116,6 +117,7 @@ struct SceneUBO
     uint pcfRadius;
     float cascadedShadowIntensity;
     uint numCascades;
+    uint punctualShadowCount;
     float4 cascadeSplits;
     float4x4 cascadeLightSpaceMatrices[MAX_CASCADES];
     float4 view_dir;

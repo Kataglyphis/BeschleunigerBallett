@@ -99,9 +99,11 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 - `common/punctual_light.slang` — `KHR_lights_punctual` as both renderers
   shade it. The C++ engine reads it through `common/punctual_lights.slang`,
   which owns set 0's `PUNCTUAL_LIGHTS_BINDING` (a count row, then the four
-  rows per light): forward and deferred add the lights unshadowed, the
-  closest-hit shader traces one shadow ray per light, and the path tracer
-  samples one light per bounce. Both.
+  rows per light) and `PUNCTUAL_SHADOW_MAP_BINDING` (one depth cube per
+  shadowed light): forward and deferred shadow the first four point and
+  spot lights by their cubes and add the rest unshadowed, the closest-hit
+  shader traces one shadow ray per light, and the path tracer samples one
+  light per bounce. Both.
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, exercised
   on both targets by `tests/noise_test.slang`; no production shader imports it yet.
 - `common/fullscreen.slang` — the fullscreen-triangle vertex trick

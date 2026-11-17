@@ -38,6 +38,24 @@ ShadowVsOut shadow_vs_main(
     return o;
 }
 
+// Punctual-light cubes: SV_ViewID is the face; the dynamic offset picks the light's six face matrices.
+[vk::binding(2, 1)] ConstantBuffer<float4x4[6]> cubeFaceMatrices;
+
+[shader("vertex")]
+ShadowVsOut cube_shadow_vs_main(
+    float3 pos : POSITION,
+    [[vk::location(2)]] float4 color : COLOR,
+    [[vk::location(3)]] float2 tex_coords : TEXCOORD0,
+    [[vk::location(5)]] float2 tex_coords1 : TEXCOORD1,
+    uint viewId : SV_ViewID)
+{
+    ShadowVsOut o;
+    o.fragUV = uv_sets(tex_coords, tex_coords1);
+    o.fragAlpha = color.a;
+    o.svPosition = mul(mul(cubeFaceMatrices[min(viewId, 5u)], pc.model), float4(pos, 1.0));
+    return o;
+}
+
 [shader("fragment")]
 void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
 {

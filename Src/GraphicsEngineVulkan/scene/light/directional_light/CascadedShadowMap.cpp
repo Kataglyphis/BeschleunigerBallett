@@ -187,16 +187,8 @@ void CascadedShadowMap::shaderHotReload()
     buildGraphicsPipeline();
 }
 
-void CascadedShadowMap::buildGraphicsPipeline()
+ShadowCasterVertexInput shadowCasterVertexInput()
 {
-    // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
-    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
-
-    // No geometry stage: under multiview the vertex shader picks the cascade matrix by SV_ViewID.
-    ShaderStagePair stages{
-        device, slang_spv_dir + "shadow_map.shadow_vs_main.spv", slang_spv_dir + "shadow_map.shadow_fs_main.spv"
-    };
-
     vk::VertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
     bindingDesc.stride = sizeof(Vertex);
@@ -229,6 +221,21 @@ void CascadedShadowMap::buildGraphicsPipeline()
     colorAttr.format = vk::Format::eR32G32B32A32Sfloat;
     colorAttr.offset = offsetof(Vertex, color);
 
+    return ShadowCasterVertexInput{ bindingDesc, { posAttr, uvAttr, uv1Attr, colorAttr } };
+}
+
+void CascadedShadowMap::buildGraphicsPipeline()
+{
+    // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
+
+    // No geometry stage: under multiview the vertex shader picks the cascade matrix by SV_ViewID.
+    ShaderStagePair stages{
+        device, slang_spv_dir + "shadow_map.shadow_vs_main.spv", slang_spv_dir + "shadow_map.shadow_fs_main.spv"
+    };
+
+    const ShadowCasterVertexInput vertexInput = shadowCasterVertexInput();
+
     vk::PushConstantRange pushConstantRange{};
     // The fragment stage now reads objectIndex from the push block too.
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
@@ -248,7 +255,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
-        .setVertexInput({ bindingDesc }, { posAttr, uvAttr, uv1Attr, colorAttr })
+        .setVertexInput({ vertexInput.binding }, { vertexInput.attributes.begin(), vertexInput.attributes.end() })
         // No culling: the cascade orthos lack the camera's Y flip, so back-face culling dropped the faces that cast.
         .setCullMode(vk::CullModeFlagBits::eNone)
         // Pancake casters in front of the near plane rather than clip them; a wider depth range would scale the bias.

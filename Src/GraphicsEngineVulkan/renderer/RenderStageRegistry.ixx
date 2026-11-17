@@ -39,6 +39,8 @@ struct RenderStageResize
 // The built-in stages' slots; a new stage takes a free value between them.
 namespace RenderStageOrder {
     inline constexpr int ShadowCascades = 100;
+    // Only while the scene has a shadowed point or spot light.
+    inline constexpr int PunctualShadows = 150;
     inline constexpr int Main = 200;
     inline constexpr int Clouds = 300;
     // Only while the clouds march at half resolution.

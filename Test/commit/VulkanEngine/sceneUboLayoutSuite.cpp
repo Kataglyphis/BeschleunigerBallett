@@ -19,6 +19,7 @@ TEST(SceneUboLayoutUnit, MatchesTheCompiledStd140Block)
     EXPECT_EQ(offsetof(SceneUBO, pcfRadius), 32U);
     EXPECT_EQ(offsetof(SceneUBO, cascadedShadowIntensity), 36U);
     EXPECT_EQ(offsetof(SceneUBO, numCascades), 40U);
+    EXPECT_EQ(offsetof(SceneUBO, punctualShadowCount), 44U);
     EXPECT_EQ(offsetof(SceneUBO, cascadeSplits), 48U);
     EXPECT_EQ(offsetof(SceneUBO, cascadeLightSpaceMatrices), 64U);
     EXPECT_EQ(offsetof(SceneUBO, view_dir), 256U);

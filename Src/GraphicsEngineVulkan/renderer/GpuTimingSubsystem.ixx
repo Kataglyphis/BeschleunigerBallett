@@ -23,7 +23,7 @@ export namespace Kataglyphis {
 // verbatim from VulkanRenderer, mirroring the FrameSync extraction.
 //
 // Layout: one slice of QUERIES_PER_IMAGE queries per swapchain image, two
-// queries (start/end) per timed pass. A frame resets only its own image's
+// queries (start/end) per timed pass, then a spill tail. A frame resets only its own image's
 // slice inside its command buffer, and results are read back for that slice
 // on the NEXT use of the image (after its fence signaled), so queries are
 // never reset while still in flight.
@@ -38,8 +38,10 @@ class GpuTimingSubsystem
     ~GpuTimingSubsystem() { destroy(); }
 
     static constexpr uint32_t QUERIES_PER_PASS = 2;
+    // Lavapipe writes a timestamp after a multiview pass to one query per view; each slice's tail takes that spill.
+    static constexpr uint32_t MULTIVIEW_TIMESTAMP_SPILL = 5;
     static constexpr uint32_t QUERIES_PER_IMAGE =
-      QUERIES_PER_PASS * static_cast<uint32_t>(FrontendShared::GPU_TIMED_PASS_COUNT);
+      QUERIES_PER_PASS * static_cast<uint32_t>(FrontendShared::GPU_TIMED_PASS_COUNT) + MULTIVIEW_TIMESTAMP_SPILL;
 
     // Rolling-window mean over the last WINDOW samples, used to smooth the
     // per-pass milliseconds shown in the GUI.

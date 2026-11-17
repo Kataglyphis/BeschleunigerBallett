@@ -2447,8 +2447,19 @@ struct PunctualPools
     bool skipped = false;
 };
 
+// What a punctual render recorded besides its pixels.
+struct PunctualRenderInfo
+{
+    std::vector<std::string> stages;
+    uint32_t width = 0;
+};
+
 // Renders `model` lit by its lights alone (the sun at zero), framed on the plane, with `mode`'s renderer.
-std::vector<uint8_t> render_punctual_scene(const std::string &model, PunctualMode mode, bool &skipped)
+std::vector<uint8_t> render_punctual_scene(const std::string &model,
+  PunctualMode mode,
+  bool &skipped,
+  bool lightShadows = true,
+  PunctualRenderInfo *info = nullptr)
 {
     ScopedModelOverride scene(model.c_str());
     EngineHarness harness;
@@ -2464,6 +2475,7 @@ std::vector<uint8_t> render_punctual_scene(const std::string &model, PunctualMod
     harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 7.0F));
     harness.camera->set_orientation(-90.0F, -40.0F);
     harness.settings.scene.directional_light_radiance = 0.0F;
+    harness.settings.scene.punctual_shadows_enabled = lightShadows;
     auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.rasterizationMode =
       mode == PunctualMode::Deferred ? RasterizationMode::Deferred : RasterizationMode::Forward;
@@ -2477,6 +2489,7 @@ std::vector<uint8_t> render_punctual_scene(const std::string &model, PunctualMod
     uint32_t height = 0;
     std::vector<uint8_t> frame = harness.capture_frame(width, height);
     EXPECT_FALSE(harness.renderer->hasDeviceLost());
+    if (info != nullptr) { *info = { harness.renderer->renderStageRegistry().lastRecorded(), width }; }
     return frame;
 }
 
@@ -2541,6 +2554,96 @@ TEST(GoldenRender, PunctualLightsPoolOnThePlaneWhenPathTraced)
 {
     SKIP_WITHOUT_GPU();
     expect_punctual_pools(PunctualMode::PathTracing);
+}
+
+namespace {
+
+struct PunctualShadowCounts
+{
+    // Pixels of the red pool, and of them how many the card's shadow darkens.
+    size_t redPool = 0;
+    size_t darkened = 0;
+    size_t darkenedLeftOfCentre = 0;
+    // Pixels whose green the cube shadows dim: the spot light's pool has no occluder, so acne would show here.
+    size_t greenDimmed = 0;
+    size_t greenPool = 0;
+    bool skipped = false;
+};
+
+// point_light.gltf with a 0.8-unit card halfway between the red point light and the plane.
+PunctualShadowCounts punctual_shadow_counts(PunctualMode mode)
+{
+    PunctualShadowCounts counts;
+    const auto carded =
+      write_gltf_variant(PUNCTUAL_LIGHTS_MODEL, "kataglyphis_punctual_card.gltf", [](nlohmann::json &gltf) {
+          gltf["scenes"][0]["nodes"].push_back(gltf["nodes"].size());
+          gltf["nodes"].push_back(
+            { { "mesh", 0 }, { "translation", { -1.2, 0.5, 0.0 } }, { "scale", { 0.1, 1.0, 0.1 } } });
+      });
+    EXPECT_TRUE(carded.has_value()) << "could not write the carded twin of " << PUNCTUAL_LIGHTS_MODEL;
+    if (!carded.has_value()) { return counts; }
+
+    PunctualRenderInfo with_shadows;
+    PunctualRenderInfo without_shadows;
+    const std::vector<uint8_t> on = render_punctual_scene(carded->string(), mode, counts.skipped, true, &with_shadows);
+    if (counts.skipped) { return counts; }
+    const std::vector<uint8_t> off =
+      render_punctual_scene(carded->string(), mode, counts.skipped, false, &without_shadows);
+    const auto recorded = [](const PunctualRenderInfo &info) {
+        return std::find(info.stages.begin(), info.stages.end(), "punctual_shadows") != info.stages.end();
+    };
+    EXPECT_TRUE(recorded(with_shadows)) << "the punctual_shadows stage did not record with two shadowed lights";
+    EXPECT_FALSE(recorded(without_shadows)) << "the punctual_shadows stage recorded with the light shadows off";
+    EXPECT_EQ(on.size(), off.size());
+    if (on.empty() || on.size() != off.size() || with_shadows.width == 0) { return counts; }
+
+    const size_t width = with_shadows.width;
+    for (size_t i = 0; i + 3 < off.size(); i += 4) {
+        const int r = off[i];
+        const int g = off[i + 1];
+        const int b = off[i + 2];
+        if (r > 60 && r > g + 40 && r > b + 40) { ++counts.redPool; }
+        if (r - int(on[i]) > 40) {
+            ++counts.darkened;
+            if ((i / 4) % width < width / 2) { ++counts.darkenedLeftOfCentre; }
+        }
+        // Only inside the green pool: the red light's own green is dimmed by the card's shadow too.
+        if (g > 60 && g > r + 40 && g > b + 40) {
+            ++counts.greenPool;
+            if (g - int(on[i + 1]) > 20) { ++counts.greenDimmed; }
+        }
+    }
+    GTEST_LOG_(INFO) << "punctual shadow: " << counts.darkened << " of " << counts.redPool << " red px darkened ("
+                     << counts.darkenedLeftOfCentre << " left of centre), " << counts.greenDimmed << " of "
+                     << counts.greenPool << " green px dimmed";
+    return counts;
+}
+
+void expect_punctual_shadow(PunctualMode mode)
+{
+    const PunctualShadowCounts counts = punctual_shadow_counts(mode);
+    if (counts.skipped) { GTEST_SKIP() << "no frame capture"; }
+    EXPECT_GT(counts.darkened, 400U) << "the card casts no shadow from the point light onto the plane";
+    EXPECT_LT(counts.darkened * 2, counts.redPool) << "the shadow darkens most of the red pool: the cube leaks shadow";
+    EXPECT_GT(counts.darkenedLeftOfCentre * 10, counts.darkened * 9)
+      << "the shadow is not under the card, which sits left of the camera";
+    EXPECT_GT(counts.greenPool, 100U) << "the green spot light lit no pool";
+    EXPECT_LT(counts.greenDimmed * 50, counts.greenPool) << "the unoccluded spot light's pool shadows itself (acne)";
+}
+
+}// namespace
+
+// A card between the red point light and the plane must shadow the plane, and the open spot light must not.
+TEST(GoldenRender, PunctualLightShadowsTheCardOntoThePlaneInForward)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_shadow(PunctualMode::Forward);
+}
+
+TEST(GoldenRender, PunctualLightShadowsTheCardOntoThePlaneInDeferred)
+{
+    SKIP_WITHOUT_GPU();
+    expect_punctual_shadow(PunctualMode::Deferred);
 }
 
 TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)

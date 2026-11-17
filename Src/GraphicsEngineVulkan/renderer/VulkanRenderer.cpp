@@ -129,6 +129,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
       vulkanSwapChain.getSwapChainExtent().height);
     // Same path as later shadow-setting changes, so the settings' default is the one source of truth.
     reinitShadowMapForCurrentSettings();
+    reinitPunctualShadows();
 
     std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_post = { postDescriptors.getLayout(),
         sharedRenderDescriptors.getLayout() };
@@ -199,6 +200,8 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
     // Populate the settings into SceneUBO
     sceneUBO.pcfRadius = clampPcfRadius(sceneSettings.pcf_radius);
     sceneUBO.cascadedShadowIntensity = sceneSettings.cascaded_shadow_intensity;
+    // The punctual_shadows stage's own condition, less the traced frames, which never read it.
+    sceneUBO.punctualShadowCount = sceneSettings.punctual_shadows_enabled ? punctualShadows.slotCount() : 0U;
 
     // Calculate CSM cascades
     dirShadowMap.updateCascades(globalUBO.view,
@@ -382,6 +385,23 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
     lightMatricesNeedFullReseed = true;
 }
 
+void Kataglyphis::VulkanRenderer::reinitPunctualShadows()
+{
+    punctualShadows.cleanUp();
+    punctualShadows.init(device, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages());
+    punctualShadows.createGraphicsPipeline();
+    punctualShadows.setSlots(punctualShadowSlots);
+}
+
+void Kataglyphis::VulkanRenderer::applyPunctualShadowSlots(std::vector<glm::vec4> &packedLights)
+{
+    const AABB bounds = sceneWorldBounds(*scene);
+    punctualShadowSlots = assignPunctualShadowSlots(packedLights, bounds.min, bounds.max);
+    // A scene change, so rare; the cube array may be reallocated under frames still sampling it.
+    std::ignore = device->getLogicalDevice().waitIdle();
+    punctualShadows.setSlots(punctualShadowSlots);
+}
+
 void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(const GUISceneSharedVars &sceneSettings)
 {
     if (sceneSettings.shadow_resolution_changed) {
@@ -440,7 +460,7 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 void Kataglyphis::VulkanRenderer::registerBuiltInStages()
 {
     using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
-    std::array<RenderStage, 6> built_in{};
+    std::array<RenderStage, 7> built_in{};
 
     built_in[0].name = "shadow_cascades";
     built_in[0].order = RenderStageOrder::ShadowCascades;
@@ -458,6 +478,21 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
         output.visibility.shadow_casters_total = 0;
     };
     built_in[0].shaderHotReload = [this] { dirShadowMap.shaderHotReload(); };
+
+    built_in[6].name = "punctual_shadows";
+    built_in[6].order = RenderStageOrder::PunctualShadows;
+    built_in[6].timedPass = GpuTimedPass::PunctualShadows;
+    built_in[6].labelColor = std::array{ 0.75F, 0.45F, 0.15F, 1.0F };
+    // Every frame while enabled: lights and casters can move; traced frames shadow the lights by rays.
+    built_in[6].enabled = [this](const RenderStageFrame &frame) {
+        return frameSettings.scene.punctual_shadows_enabled && !frame.tracingOwnsFrame
+               && punctualShadows.slotCount() > 0;
+    };
+    built_in[6].record = [this](const RenderStageFrame &frame) { recordPunctualShadowStage(frame); };
+    built_in[6].recordSkipped = [this](const RenderStageFrame &frame) {
+        punctualShadows.recordSkippedPass(frame.commandBuffer);
+    };
+    built_in[6].shaderHotReload = [this] { punctualShadows.shaderHotReload(); };
 
     built_in[1].name = "main";
     built_in[1].order = RenderStageOrder::Main;
@@ -790,6 +825,7 @@ void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
 
     // After initDescriptorResources(): the shadow map is per image and caches the shared layout just replaced.
     reinitShadowMapForCurrentSettings();
+    reinitPunctualShadows();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         raytracingDescriptors.cleanUp();
@@ -860,6 +896,7 @@ bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
         // Must land in the same image's buffers as the sceneUBO sample matrices.
         dirShadowMap.uploadLightMatrices(image_index);
     }
+    punctualShadows.uploadFaceMatrices(image_index);
     return true;
 }
 
@@ -1028,6 +1065,15 @@ void Kataglyphis::VulkanRenderer::recordShadowStage(const RenderStageFrame &fram
       frameSettings.renderer.frustum_culling_enabled);
     output.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
     output.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
+}
+
+void Kataglyphis::VulkanRenderer::recordPunctualShadowStage(const RenderStageFrame &frame)
+{
+    punctualShadows.recordCommands(frame.commandBuffer,
+      frame.imageIndex,
+      scene,
+      sharedRenderDescriptors.sets()[frame.imageIndex],
+      frameSettings.renderer.frustum_culling_enabled);
 }
 
 void Kataglyphis::VulkanRenderer::recordMainStage(const RenderStageFrame &frame)
@@ -1453,12 +1499,14 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     }
 
     // Never empty: the count row is always there, so a scene without lights reads zero.
+    std::vector<glm::vec4> packedLights = scene->packPunctualLights();
+    applyPunctualShadowSlots(packedLights);
     if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool.get(),
           punctualLightBuffer,
           vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
           vk::MemoryPropertyFlagBits::eDeviceLocal,
-          scene->packPunctualLights())) {
+          packedLights)) {
         spdlog::error("VulkanRenderer::create_object_description_buffer: punctual-light upload failed.");
     }
 
@@ -1543,7 +1591,10 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
         SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT), sampler_stages)
       // Cascaded shadow map array, consumed by the forward lighting shader.
       .addBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1, punctual_light_stages);
+      .addBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1, punctual_light_stages)
+      // The punctual lights' cube shadow maps, sampled by the forward and deferred lighting shaders.
+      .addBinding(
+        PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!sharedRenderDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create shared render descriptor resources!");
@@ -1636,6 +1687,16 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
               shadow_map_array->getImageView(),
               vk::ImageLayout::eShaderReadOnlyOptimal,
               shadow_map_array->getSampler());
+        }
+    }
+
+    if (Kataglyphis::Texture *cubes = punctualShadows.getCubeArray(); cubes != nullptr && cubes->getSampler()) {
+        for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+            sharedRenderDescriptors.writeImage(i,
+              PUNCTUAL_SHADOW_MAP_BINDING,
+              cubes->getImageView(),
+              vk::ImageLayout::eShaderReadOnlyOptimal,
+              cubes->getSampler());
         }
     }
 
