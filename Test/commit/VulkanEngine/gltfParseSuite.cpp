@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <glm/geometric.hpp>
@@ -918,6 +919,41 @@ TEST(GltfParseUnit, MissingNormalsAreComputedFlatNotDefaultedUp)
     }
 }
 
+TEST(GltfParseUnit, MissingNormalsGiveEachFaceOfASharedCornerItsOwnNormal)
+{
+    // Two faces folded along a shared edge; an indexed corner holding one normal kept only its last face's.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }, "indices": 1
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 4, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,1], "bufferView": 0 },
+                     { "componentType": 5123, "count": 6, "type": "SCALAR", "bufferView": 1 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 48 }, { "buffer": 0, "byteOffset": 48, "byteLength": 12 } ],
+      "buffers": [ { "byteLength": 60,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAABAAIAAAADAAEA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_folded_no_normal.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getIndices().size(), 6U);
+    ASSERT_EQ(loader.getVertices().size(), 6U) << "one vertex per corner";
+    const std::vector<glm::vec3> faceNormals = { { 0, 0, 1 }, { 0, 1, 0 } };
+    for (std::size_t corner = 0; corner < 6; ++corner) {
+        const glm::vec3 n = loader.getVertices()[loader.getIndices()[corner]].normal;
+        EXPECT_LT(glm::length(n - faceNormals[corner / 3]), 1e-5F) << "corner " << corner << " of face " << corner / 3;
+    }
+}
+
 TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
 {
     // A 4-vertex strip (mode 5) triangulates to 6 indices.
@@ -944,7 +980,8 @@ TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
     ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a triangle-strip mesh must load, not be dropped as non-triangle";
     std::filesystem::remove(tmp);
 
-    EXPECT_EQ(loader.getVertices().size(), 4U) << "four strip vertices";
+    // Without NORMAL every corner is its own vertex, so each face keeps its flat normal.
+    EXPECT_EQ(loader.getVertices().size(), 6U) << "one vertex per corner of the two strip triangles";
     EXPECT_EQ(loader.getIndices().size(), 6U) << "a 4-vertex strip triangulates to 2 triangles";
     EXPECT_EQ(loader.getIndices().size() % 3U, 0U);
 }
@@ -975,11 +1012,16 @@ TEST(GltfParseUnit, TriangleFanIsTriangulatedAroundTheHubVertex)
     ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a triangle-fan mesh must load, not be dropped as non-triangle";
     std::filesystem::remove(tmp);
 
-    EXPECT_EQ(loader.getVertices().size(), 4U) << "four fan vertices";
+    // Without NORMAL every corner is its own vertex, so the winding shows in the corners' positions.
+    ASSERT_EQ(loader.getVertices().size(), 6U) << "one vertex per corner of the two fan triangles";
     ASSERT_EQ(loader.getIndices().size(), 6U) << "a 4-vertex fan triangulates to 2 triangles";
-    const std::vector<unsigned int> expected = { 0U, 1U, 2U, 0U, 2U, 3U };
-    EXPECT_EQ(loader.getIndices(), expected)
-      << "a fan must triangulate around the shared hub vertex 0, not with the strip winding";
+    const std::vector<glm::vec3> expected = {
+        { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 0 }, { 0, 1, 0 }, { 1, 1, 0 }
+    };
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        EXPECT_EQ(loader.getVertices()[loader.getIndices()[i]].position, expected[i])
+          << "corner " << i << ": a fan must triangulate around the hub vertex 0, not with the strip winding";
+    }
 }
 
 TEST(GltfParseUnit, OutOfRangeIndicesDropTheirTriangleNotTheMesh)
@@ -1267,9 +1309,9 @@ TEST(GltfParseUnit, MetallicFactorReachesTheMaterial)
       << "the fixture's metallicFactor must reach ObjMaterial::metallic";
 }
 
-TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasZeroMetallic)
+TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessTakesTheGltfDefaults)
 {
-    // The metallic read is gated on has_pbr_metallic_roughness, like base colour and roughness.
+    // glTF 2.0: an absent pbrMetallicRoughness block means all of its defaults (owner decision 2026-11-17).
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [ {} ],
@@ -1296,8 +1338,10 @@ TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasZeroMetallic)
     std::filesystem::remove(tmp);
 
     ASSERT_GT(loader.getMaterials().size(), 0U);
-    EXPECT_NEAR(loader.getMaterials()[0].metallic, 0.0F, 1e-6F)
-      << "a material without pbrMetallicRoughness must default to metallic 0.0";
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_EQ(material.diffuse, glm::vec3(1.0F)) << "baseColorFactor defaults to white";
+    EXPECT_FLOAT_EQ(material.dissolve, 1.0F) << "baseColorFactor's alpha defaults to 1";
+    EXPECT_FLOAT_EQ(material.metallic, 1.0F) << "metallicFactor defaults to 1";
 }
 
 TEST(GltfParseUnit, RoughnessFactorReachesTheMaterialUnchanged)
@@ -1335,9 +1379,9 @@ TEST(GltfParseUnit, RoughnessFactorReachesTheMaterialUnchanged)
       << "the material's roughnessFactor must reach ObjMaterial::roughness";
 }
 
-TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness)
+TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasTheDefaultRoughness)
 {
-    // The negative sentinel is what makes material_roughness() fall back to shininess.
+    // roughnessFactor defaults to 1, so a glTF material never reaches the shininess fallback's -1 sentinel.
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [ {} ],
@@ -1364,13 +1408,13 @@ TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness)
     std::filesystem::remove(tmp);
 
     ASSERT_GT(loader.getMaterials().size(), 0U);
-    EXPECT_LT(loader.getMaterials()[0].roughness, 0.0F)
-      << "a material without pbrMetallicRoughness must have no authored roughness";
+    EXPECT_FLOAT_EQ(loader.getMaterials()[0].roughness, 1.0F)
+      << "a material without pbrMetallicRoughness takes glTF's default roughnessFactor of 1";
 }
 
 TEST(GltfParseUnit, GltfShininessIsThePinnedFallbackValue)
 {
-    // Shininess is read only when no roughness is authored, so kFallbackShininess ignores roughnessFactor.
+    // Shininess is pinned for every glTF material, with or without a pbr block, and ignores roughnessFactor.
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [
@@ -1405,8 +1449,8 @@ TEST(GltfParseUnit, GltfShininessIsThePinnedFallbackValue)
 
     EXPECT_NEAR(withPbr.roughness, 0.1F, 1e-5F)
       << "the authored roughnessFactor must still reach ObjMaterial::roughness";
-    EXPECT_LT(withoutPbr.roughness, 0.0F)
-      << "the material without pbrMetallicRoughness must have no authored roughness";
+    EXPECT_FLOAT_EQ(withoutPbr.roughness, 1.0F)
+      << "the material without pbrMetallicRoughness takes glTF's default roughnessFactor of 1";
 
     EXPECT_FLOAT_EQ(withPbr.shininess, 1.0F)
       << "shininess must be the pinned fallback value regardless of roughnessFactor";
@@ -1527,7 +1571,7 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     Kataglyphis::GltfLoader loader;
     ASSERT_TRUE(loader.parseCpu(path));
 
-    EXPECT_EQ(loader.getVertices().size(), 4U) << "a quad card has four corners";
+    EXPECT_EQ(loader.getVertices().size(), 6U) << "a quad card without NORMAL has a vertex per triangle corner";
     EXPECT_EQ(loader.getIndices().size(), 6U) << "two triangles";
 
     ASSERT_GT(loader.getMaterials().size(), 0U);
@@ -1768,15 +1812,15 @@ TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)
     ASSERT_TRUE(loader.parseCpu(path));
 
     ASSERT_EQ(loader.getMeshRanges().size(), 2U) << "one MeshRange per glTF primitive";
-    EXPECT_EQ(loader.getVertices().size(), 8U) << "two quads = eight vertices";
+    EXPECT_EQ(loader.getVertices().size(), 12U) << "two quads without NORMAL = a vertex per corner of four triangles";
     EXPECT_EQ(loader.getIndices().size(), 12U) << "two quads = four triangles";
 
     const auto &r0 = loader.getMeshRanges()[0];
     const auto &r1 = loader.getMeshRanges()[1];
     EXPECT_EQ(r0.vertexBase, 0U);
-    EXPECT_EQ(r0.vertexCount, 4U);
-    EXPECT_EQ(r1.vertexBase, 4U) << "the second primitive's vertices follow the first";
-    EXPECT_EQ(r1.vertexCount, 4U);
+    EXPECT_EQ(r0.vertexCount, 6U);
+    EXPECT_EQ(r1.vertexBase, 6U) << "the second primitive's vertices follow the first";
+    EXPECT_EQ(r1.vertexCount, 6U);
     // The ranges partition the flat arrays exactly.
     EXPECT_EQ(r0.indexCount + r1.indexCount, loader.getIndices().size());
     EXPECT_EQ(r0.triCount + r1.triCount, loader.getMaterialIndices().size());
@@ -1812,7 +1856,7 @@ TEST(GltfParseUnit, ReadsColor0VertexColours)
 
     Kataglyphis::GltfLoader loader;
     ASSERT_TRUE(loader.parseCpu(path));
-    ASSERT_EQ(loader.getVertices().size(), 4U);
+    ASSERT_EQ(loader.getVertices().size(), 6U) << "a quad without NORMAL has a vertex per triangle corner";
 
     const auto has_color = [&](float r, float g, float b) {
         for (const Vertex &v : loader.getVertices()) {
@@ -1865,7 +1909,7 @@ TEST(GltfParseUnit, VertexColorAlphaIsCarriedFromColor0)
     ASSERT_TRUE(loader.parseCpu(tmp.string()));
     std::filesystem::remove(tmp);
 
-    ASSERT_EQ(loader.getVertices().size(), 4U);
+    ASSERT_EQ(loader.getVertices().size(), 6U) << "a quad without NORMAL has a vertex per triangle corner";
     for (const Vertex &v : loader.getVertices()) {
         EXPECT_NEAR(v.color.w, 0.25F, 1e-4F) << "VEC4 COLOR_0 alpha must reach Vertex::color's fourth component";
     }
@@ -1908,7 +1952,7 @@ TEST(GltfParseUnit, Vec3Color0DefaultsVertexAlphaToOne)
     ASSERT_TRUE(loader.parseCpu(tmp.string()));
     std::filesystem::remove(tmp);
 
-    ASSERT_EQ(loader.getVertices().size(), 4U);
+    ASSERT_EQ(loader.getVertices().size(), 6U) << "a quad without NORMAL has a vertex per triangle corner";
     for (const Vertex &v : loader.getVertices()) {
         EXPECT_NEAR(v.color.w, 1.0F, 1e-6F)
           << "VEC3 COLOR_0 must default Vertex::color's alpha to 1.0, not leave it uninitialized";
@@ -1974,6 +2018,13 @@ TEST(GltfParseUnit, PrimitiveWithoutMaterialRoutesToNeutralFallback)
         EXPECT_EQ(id, 0U)
           << "a material-less primitive must use the neutral fallback (index 0), not an arbitrary material";
     }
+    // glTF's default material: white, metallic 1, roughness 1.
+    const ObjMaterial &fallback = loader.getMaterials()[0];
+    EXPECT_EQ(fallback.diffuse, glm::vec3(1.0F));
+    EXPECT_FLOAT_EQ(fallback.metallic, 1.0F);
+    EXPECT_FLOAT_EQ(fallback.roughness, 1.0F);
+    EXPECT_FLOAT_EQ(fallback.dissolve, 1.0F);
+    EXPECT_EQ(fallback.textureID, -1);
 }
 
 TEST(GltfParseUnit, OnlyTheDefaultSceneIsLoaded)

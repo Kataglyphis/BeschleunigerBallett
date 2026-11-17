@@ -23,6 +23,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- A second glTF parser behind `KATAGLYPHIS_GLTF_LOADER=rust`: OxidANT's loader, the WebGPU renderer's, called over
+  the cxx bridge (`load_gltf_flat`) and copied into `GltfLoader`'s arrays by `scene/GltfLoaderRust.cpp`, so
+  `adoptParsed`, `uploadParsed` and `AsyncModelParse` are unchanged. cgltf stays the default.
+  `GltfLoaderDiff.*` parses every `GltfTest` fixture and every fetched glTF scene with both parsers and fails on
+  any field that differs. The bridge's namespace is `kataglyphis::oxidant`.
 - Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
   512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
   every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the
@@ -117,6 +122,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- The cgltf `GltfLoader` gives a primitive without `NORMAL` a vertex per triangle corner, as glTF's flat
+  normals need; a corner shared by two faces kept only the last face's normal. Normals and generated tangents are
+  now finished in the mesh's space and then baked, as the Rust loader does, and a zero or non-finite authored
+  `TANGENT` is replaced by a perpendicular instead of normalizing to NaN (3605 vertices of `Colosseum-gltf`).
 - `BM_RecordCommands*` skip, instead of failing the perf gate, where they cannot draw: on
   `windows-11-arm`, whose Vulkan loader finds no driver (instance creation aborted the suite), and
   in the Windows container, where llvmpipe acquires no swapchain image (every mode reported
@@ -250,6 +259,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- A glTF material without `pbrMetallicRoughness`, and the fallback for a primitive without a material,
+  take glTF's defaults in the cgltf `GltfLoader` (owner decision 2026-11-17): white, metallic 1, roughness 1,
+  instead of the engine's 0.8 dielectric whose roughness came from `shininess`. The Rust loader already did; the
+  two parsers now agree on every material.
 - The C++ clouds march at half resolution by default (owner decision 2026-11-16; OxidANT flips
   its own default with it). The cloud goldens now grade the half path with unchanged thresholds;
   `HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch` and

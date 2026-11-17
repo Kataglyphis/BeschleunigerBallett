@@ -4,4 +4,4 @@
 
 #include "oxidant_bridge/lib.h"
 
-TEST(RustBridgeUnit, CallsIntoRust) { EXPECT_EQ(rusty_cxxbridge_integer(), 42); }
+TEST(RustBridgeUnit, CallsIntoRust) { EXPECT_EQ(kataglyphis::oxidant::rusty_cxxbridge_integer(), 42); }

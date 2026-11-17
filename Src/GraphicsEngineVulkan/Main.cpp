@@ -101,7 +101,7 @@ auto main(int argc, char **argv) -> int
         }
     }
 
-    const auto value = rusty_cxxbridge_integer();
+    const auto value = kataglyphis::oxidant::rusty_cxxbridge_integer();
     std::cout << "A value given by the Rust bridge function " << value << "\n";
     spdlog::default_logger_raw()->log(spdlog::level::info, std::string("Rust extern value: ") + std::to_string(value));
 

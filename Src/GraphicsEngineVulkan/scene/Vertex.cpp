@@ -77,6 +77,10 @@ void computeTangents(std::span<Vertex> vertices,
   std::size_t firstIndex,
   unsigned int uvSet)
 {
+#if defined(__clang__)
+// No fused multiply-add, as Rust never fuses: a mirrored-UV corner's sums nearly cancel, and a fused rounding turns it.
+#pragma clang fp contract(off)
+#endif
     const auto uvOf = [uvSet](const Vertex &v) { return uvSet == 1U ? v.texture_coords1 : v.texture_coords; };
     if (firstIndex + 2 >= indices.size()) { return; }
 

@@ -32,9 +32,30 @@ the default scene (`data->scene`) if the document names one, else the first
 entry of `data->scenes`. Only nodes reachable from that scene's roots are
 loaded. A document with no `scenes` array at all (`cgltf_validate` permits
 this) falls back to every node, with a warning, since that is the only geometry
-available. This mirrors the WebGPU Rust loader's
-`default_scene().or_else(|| scenes().next())` rule
-(`crates/webgpu_renderer/src/asset/gltf_loader.rs`); keep the two in sync.
+available. OxidANT's Rust loader walks the same nodes (`walk_nodes` in
+`crates/assets/src/gltf_loader.rs`, the scene-less fallback since its
+`gltf-bridge` change); keep the two in sync.
+
+### Two glTF parsers behind one switch
+
+`parseCpu` runs one of two parsers into the same arrays, picked by
+`KATAGLYPHIS_GLTF_LOADER`: unset or anything but `rust` is the cgltf parser in
+`GltfLoader.cpp`; `rust` is OxidANT's loader, the one the WebGPU renderer uses,
+called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge`, flattened
+by `crates/assets/src/flat.rs`) and copied into the arrays by
+`GltfLoaderRust.cpp`. `parseCpu(path, GltfParser)` picks one explicitly. Both
+bake world space, reverse a mirrored node's winding, give a primitive without
+`NORMAL` one vertex per corner with its face's normal, and hand textures over
+as the file's encoded bytes, deduped on `(image, sampler, srgb)`; the Rust
+parser takes a texture's core `source` only, so a `KHR_texture_basisu`-only
+texture gets no slot (stb reads no KTX2), and a panic or error comes back as a
+failed parse, never an exception. `GltfLoaderDiff.*` parses every fixture under
+`Resources/Models/GltfTest`, and every fetched glTF scene, with both and fails
+on any field that differs, materials included, except one class it prints
+instead: a generated tangent at a corner whose mirrored UV triangles cancel,
+whose direction is rounding noise in both. `Vertex.cpp`'s `computeTangents` turns off
+clang's fused multiply-add, which Rust never emits, so the rest agree within the
+suite's tolerances. cgltf stays the default.
 
 The same walk reads each visited node's `KHR_lights_punctual` light, mesh or no mesh, posed by the
 node's world transform (`GltfLoader::readLight`, as the Rust loader's `read_light`). The lights ride
@@ -152,7 +173,7 @@ field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 
 | Member | glTF source | `.mtl` source | Read by |
 | --- | --- | --- | --- |
-| `diffuse` | `pbrMetallicRoughness.baseColorFactor.rgb`; `(0.8, 0.8, 0.8)` if the material has no `pbrMetallicRoughness` block | `Kd` | `rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang` (untextured fallback / `base_color()` blend) |
+| `diffuse` | `pbrMetallicRoughness.baseColorFactor.rgb`; glTF's default `(1, 1, 1)` if the material has no `pbrMetallicRoughness` block, and for the no-material fallback (owner decision 2026-11-17) | `Kd` | `rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang` (untextured fallback / `base_color()` blend) |
 | `emission` | `emissiveFactor`, scaled by `KHR_materials_emissive_strength` when present (`1.0` otherwise) | `Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `shininess` | — (pinned to `1.0`, the OBJ-only fallback `material_roughness()` falls back to; `roughness_factor` is not read here) | `Ns` | `material_rules.slang`'s `material_roughness()`, OBJ materials only |
 | `dissolve` | `baseColorFactor.a` | `d` | `material_rules.slang`'s `alpha_masked_out()` and, for BLEND, `blend_coverage()` |
@@ -161,8 +182,8 @@ field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 | `srgb` (not an `ObjMaterial` field — tracked separately, index-parallel with `textures`/`textureImages`, via `ObjLoader::getTextureSrgbFlags()`/`GltfLoader::getTextureSrgbFlags()`) | `true` for base-colour/emissive views, `false` for the normal and metallic-roughness views | `true` for `map_Kd`/`map_Ke`, `false` for `norm`/`map_Bump`/`map_d` | `Texture::createFromMemory`/`createFromFile`, selecting `eR8G8B8A8Srgb` vs. `eR8G8B8A8Unorm` |
 | `alphaCutoff` | `material.alpha_cutoff` when `alphaMode == MASK`, else `-1` | — | `material_rules.slang`'s `alpha_masked_out()`, `shadow_map.slang` |
 | `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture (the extension is per-slot — see the normal/metallic-roughness/emissive row pairs below for the other three); identity rows if the extension is absent on this slot | — | `base_color.slang`'s `base_color_uv()` |
-| `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]` | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`), `path_tracing.slang` (`f0` and `brdf_direct`, for NEE and the sampled lobes) |
-| `roughness` | `pbrMetallicRoughness.roughnessFactor`, clamped `[0,1]`; `-1` sentinel ("unauthored") when the material has no `pbrMetallicRoughness` block | — | `material_rules.slang`'s `material_roughness()` |
+| `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]`; glTF's default `1` without the block and for the no-material fallback | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`), `path_tracing.slang` (`f0` and `brdf_direct`, for NEE and the sampled lobes) |
+| `roughness` | `pbrMetallicRoughness.roughnessFactor`, clamped `[0,1]`; glTF's default `1` without the block and for the no-material fallback, so a glTF material never reaches the `-1` ("unauthored") sentinel | — | `material_rules.slang`'s `material_roughness()` |
 | `emissiveTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID` — an emissive view naming the same `(image, sampler)` pair as the base-colour view lands on the same slot); `-1` if the material has no `emissiveTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=true)`); `-1` if the material has no `map_Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `normalTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID`/`emissiveTextureID`); `-1` if the material has no `normalTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=false)`); `norm` preferred over `map_Bump`/`map_bump`/`bump` when both are present; `-1` if the material has neither directive | all four shading paths, via `common/normal_map.slang`'s `apply_normal_map()`, using `Vertex::tangent` for the TBN basis |
 | `normalScale` | `normalTexture.scale`, guarded on the texture pointer (cgltf zero-initialises the field when there is no `normalTexture`); `1.0` if the material has no `normalTexture` | the winning normal-directive's own `-bm` option (`norm`'s if present, else `map_Bump`/`map_bump`/`bump`'s); `1.0` if neither directive is present | `common/normal_map.slang`'s `apply_normal_map()` |
@@ -235,8 +256,9 @@ Both loaders also emit per-vertex colours (glTF `COLOR_0` in
 `GltfLoader::processPrimitive`'s attribute switch; OBJ `attrib.colors` in
 `ObjLoader::loadVertices`) and fill missing normals from the shared
 `scene/Vertex.{ixx,cpp}` module, through different functions:
-`GltfLoader::processPrimitive` calls `computeFlatNormals` when a primitive has
-no `NORMAL` accessor, recomputing every corner; `ObjLoader::loadVertices` calls
+`GltfLoader::processPrimitive` gives a primitive without a `NORMAL` accessor
+one vertex per triangle corner and calls `computeFlatNormals`, so each face
+keeps its own normal, as the Rust loader does; `ObjLoader::loadVertices` calls
 the sibling `fillMissingFlatNormals`, which fills only corners left at a zero
 normal (a file with no `vn` at all behaves like `computeFlatNormals`; one with
 `vn` on only some faces keeps those).
