@@ -138,11 +138,6 @@ committed to.
 
 ## Build-time costs and papercuts
 
-- **[P3] sccache can serve stale importers after a module-interface edit.** The released sccache
-  hashes an importer without the BMIs it imports, and the shared WebDAV cache widens that to
-  every build that reads it. Until mozilla/sccache#2876 ships in the image, rebuild with the
-  cache bypassed after an `.ixx` edit (hub `docs/windows-container-build-performance.md`
-  § *sccache on a C++23 modules build*).
 - **[P3] An incremental container build can ship ODR-broken binaries after a module-interface
   change** (2026-07-20: consumers of a changed `.ixx` were not recompiled, an instant ASan
   heap-buffer-overflow at construction). Treat an ASan crash at object construction after an
