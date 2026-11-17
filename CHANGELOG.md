@@ -23,8 +23,8 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
-- Half-resolution C++ clouds, OxidANT's switch: the sky inspector's Half resolution (off by
-  default, as OxidANT's) marches a half-size target, each texel to the nearest depth of its 2x2
+- Half-resolution C++ clouds, OxidANT's switch: the sky inspector's Half resolution (on by
+  default since 2026-11-16, as OxidANT's) marches a half-size target, each texel to the nearest depth of its 2x2
   pixels, and a new `cloud_upsample` stage fills the full-size one from its four nearest texels,
   weighted by OxidANT's shared `cloud_upsample_depth_weight`. The upsample is timed as
   `CloudUpsample`, optional to `Compare-RendererTimings.ps1`. On aarch64 llvmpipe the clouds cost 41 ms
@@ -226,6 +226,10 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- The C++ clouds march at half resolution by default (owner decision 2026-11-16; OxidANT flips
+  its own default with it). The cloud goldens now grade the half path with unchanged thresholds;
+  `HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch` and
+  `BuiltInStagesRecordInTheFrameOrder` still render the full march.
 - A path-traced bounce that misses sees the sky the raster draws, as the Rust renderer's does:
   the skybox's cube map (or the navy with the skybox off) times 0.35, the Rust default ambient
   strength times environment intensity, which the C++ engine has no setting for. It was a fixed

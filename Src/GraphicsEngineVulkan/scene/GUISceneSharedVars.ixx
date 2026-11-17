@@ -96,8 +96,8 @@ export struct GUISceneSharedVars
     float cloud_pillowness = 0.966f;
     float cloud_cirrus_effect = 0.034f;
     bool cloud_powder_effect = true;
-    // Marches a quarter of the pixels and upsamples by depth; off, as OxidANT's CloudSettings::half_resolution.
-    bool cloud_half_resolution = false;
+    // Marches a quarter of the pixels and upsamples by depth; on, as OxidANT's CloudSettings::half_resolution (owner 2026-11-16).
+    bool cloud_half_resolution = true;
     bool clouds_enabled = false;
     float cloud_mesh_scale[3] = { 630.f, 3.15f, 630.f };
     float cloud_mesh_offset[3] = { -0.364f, 367.f, -18.351f };

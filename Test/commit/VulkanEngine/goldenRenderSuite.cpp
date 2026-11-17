@@ -564,16 +564,17 @@ TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
     harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
     scene_vars.clouds_enabled = true;
+    // The default half-resolution march records the upsample between the march and the sky.
     harness.render_frames(1);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "sky", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }));
 
-    // The upsample records only while the clouds march at half resolution, between the march and the sky.
-    scene_vars.cloud_half_resolution = true;
+    // A full-resolution march fills the full-size target itself.
+    scene_vars.cloud_half_resolution = false;
     harness.render_frame();
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "sky", "post" }));
 
     scene_vars.shadows_enabled = false;
     scene_vars.clouds_enabled = false;
@@ -5434,8 +5435,8 @@ TEST(GoldenRender, HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     const ScopedValidationErrorCounter validation;
 
-    EXPECT_FALSE(GUISceneSharedVars{}.cloud_half_resolution)
-      << "half resolution must stay off by default, as OxidANT's";
+    EXPECT_TRUE(GUISceneSharedVars{}.cloud_half_resolution)
+      << "half resolution must be on by default, as OxidANT's (owner 2026-11-16)";
     auto &renderer_vars = harness.useForwardRaster();
     auto &scene_vars = harness.settings.scene;
     scene_vars.skybox_enabled = false;

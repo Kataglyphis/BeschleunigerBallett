@@ -63,7 +63,7 @@ function Get-ExpectedPassNames {
     return , $names
 }
 
-# The upsample runs only while the clouds march at half resolution, which the golden harness leaves off.
+# The upsample runs only while the clouds march at half resolution, so a frame without clouds or at full resolution has none.
 $CppOptionalPasses = @('CloudUpsample')
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath

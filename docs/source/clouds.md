@@ -168,7 +168,8 @@ cheap CI-side text-shape guard and a rendered-pixel check.
 ## Half resolution
 
 OxidANT's `CloudSettings::half_resolution`, ported (the inspector's Half resolution,
-`GUISceneSharedVars::cloud_half_resolution`; off by default, as OxidANT's). The march then
+`GUISceneSharedVars::cloud_half_resolution`; on by default since 2026-11-16, owner decision,
+as OxidANT's flips with it). The march then
 covers a quarter of the pixels:
 
 - **The march** writes `cloudHalfTexture`, `cloudHalfExtent(width)` x `cloudHalfExtent(height)`
@@ -189,7 +190,19 @@ covers a quarter of the pixels:
 Both targets exist at every setting, so the switch rewrites no descriptor and stalls nothing;
 the full-size target is what post composites either way. The `clouds` stage times the march
 alone at either size, `cloud_upsample` the fill. `Compare-RendererTimings.ps1` treats
-`CloudUpsample` as optional, since the golden harness leaves the switch off.
+`CloudUpsample` as optional: a frame without clouds or at full resolution records none.
+
+Every cloud golden but this section's runs the default, so they grade the half-resolution path
+since 2026-11-16 with their thresholds unchanged. Against the full march on aarch64 llvmpipe:
+`EnablingCloudsChangesTheFrameAndAddsDetail` adds detail 0.0201 instead of 0.0273 over the
+0.0038 baseline, `CloudOffsetMovesTheCloudVolume` finds 48933 and 56379 px instead of 49020
+and 56445 (centroids within 0.1 column), `CloudsAreLitByTheSkyTheyDraw` 10 px outside the
+hemisphere means instead of 0 (bound 7176), and `CloudsStopAtTheSceneDepth`,
+`CloudsStopAtTracedGeometry`, `CloudsCompositeOverTheSkyAsOverGeometry`,
+`CloudWindMovesTheNoiseAndRepeatsWithItsPeriod` and `CloudsInFrontOfGeometryCoverItInEveryMode`
+keep their exact counts (0 geometry px clouded, 0 off between sky and card, 0 differing at
+time 0 and after a period, every card and lit px covered). The full march stays tested here
+and in `BuiltInStagesRecordInTheFrameOrder`, which records a frame at either setting.
 
 `GoldenRender.HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch` renders the box behind
 the shadow rig's slab, forward and deferred, at full and at half resolution: the half frame must

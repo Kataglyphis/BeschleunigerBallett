@@ -47,7 +47,7 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.cloud_pillowness = 0.33F;
     vars.cloud_cirrus_effect = 0.44F;
     vars.cloud_powder_effect = false;
-    vars.cloud_half_resolution = true;
+    vars.cloud_half_resolution = false;
     vars.clouds_enabled = true;
     vars.cloud_mesh_scale[0] = 10.0F;
     vars.cloud_mesh_scale[1] = 11.0F;
