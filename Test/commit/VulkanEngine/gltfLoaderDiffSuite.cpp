@@ -1,5 +1,4 @@
-// Differential suite: the cgltf GltfLoader and OxidANT's Rust loader (over the cxx bridge) parse each glTF into
-// the same arrays. A field that differs is listed by file and field, so a mismatch names its class.
+// Both glTF parsers (cgltf and OxidANT's Rust loader) must agree; a mismatch is listed by file and field.
 
 #include <gtest/gtest.h>
 
