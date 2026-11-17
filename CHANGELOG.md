@@ -282,6 +282,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - Vulkan creation and allocation calls go through `vkCheck` (`common/Utilities.hpp`): it unwraps
   a `ResultValue` or checks a bare result and, as `ASSERT_VULKAN` did, logs critical and aborts on
   failure. All 40 call sites in 23 files moved and the macro is gone; `BuildIntegrity` rejects it.
+- OxidANT moves to `7c81619`: the Rust renderer picks its adapter (discrete before integrated before
+  CPU, `--adapter`/`KATAGLYPHIS_ADAPTER`, a Use button that relaunches the viewer), names it in a
+  browser and hints at Windows' High performance setting on an integrated GPU, scales its internal
+  resolution (Auto holds a frame-rate target) and offers Low/Medium/High/Ultra presets, Medium by
+  default on a browser's integrated GPU. The web demo the docs build publishes carries all of it.
+  RUSTSEC-2026-0543 (chrono unmaintained) is ignored there until a move to jiff or time.
 - OxidANT moves to `fe273c9`: the Rust renderer marches clouds at half resolution by default, as
   the C++ one now does, and its debug build compiles the renderer crate at opt-level 1 (the path
   tracer's CPU BVH build drops from 16-21 s to under 2 s). No shader, crate or licence text changes.
