@@ -945,7 +945,8 @@ a step whose `uses:` points at ANTfrastructure is defined there: read the action
 x64 the `release` job generates the Doxygen XML, runs `scripts/linux/docs-build-web.sh` and the
 wasm budget, and uploads `docs/build/html/` as the `bb-docs-site` artifact. `linux-x64.yml`'s
 `docs` job (`needs: build-x64`, `if: !cancelled()`, so a red test elsewhere does not hold the site
-back) calls `build-docs.yml` with `artifact: bb-docs-site`: the hub's `.htaccess` and 404 page go
+back) calls `build-docs.yml` with `artifact: bb-docs-site` and `publish-timeout-minutes: 90` (the demo's 61 MB
+`Colosseum-web.glb` cannot finish in the default 30, and a cut-off upload saves no sync state): the hub's `.htaccess` and 404 page go
 in, a dead internal link or anchor fails the job (`verify_site_links.py`), and the upload runs only
 on a push to `develop` or `main`, never on a pull request or a dispatch. The `SERVER`, `USERNAME`
 and `PW` secrets map onto its `FTP_*`. `release.yml` downloads every artifact of its run, and

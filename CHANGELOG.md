@@ -98,6 +98,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
+- `BM_RecordCommands*` skip, instead of failing the perf gate, where they cannot draw: on
+  `windows-11-arm`, whose Vulkan loader finds no driver (instance creation aborted the suite), and
+  in the Windows container, where llvmpipe acquires no swapchain image (every mode reported
+  `error_occurred`, run 43987654040). The site publish gets 90 minutes: the demo's 61 MB
+  `Colosseum-web.glb` never finished in 30, so the site had not published since 2026-11-15.
 - The C++ clouds are lit by the sky the engine draws: the DOOM2016 cube map's mean radiance over
   each hemisphere (sRGB-decoded and untonemapped, as the sky pass shows it, computed once per
   load from at most 64 texels per face edge), or the untonemapped navy with the skybox off,

@@ -573,7 +573,27 @@ enum class RecordedMode : std::uint8_t { Forward, Deferred, Raytracing, PathTrac
 bool vulkanWindowAvailable()
 {
     if (glfwInit() == 0) { return false; }
-    const bool supported = glfwVulkanSupported() != 0;
+    bool supported = glfwVulkanSupported() != 0;
+    // windows-11-arm has a loader but no driver: the renderer's instance creation would abort the suite.
+    if (supported) {
+        const auto create_instance =
+          reinterpret_cast<PFN_vkCreateInstance>(glfwGetInstanceProcAddress(nullptr, "vkCreateInstance"));
+        VkApplicationInfo app_info{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
+        const VkInstanceCreateInfo create_info{ .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
+            .pApplicationInfo = &app_info };
+        VkInstance probe = VK_NULL_HANDLE;
+        supported = create_instance != nullptr && create_instance(&create_info, nullptr, &probe) == VK_SUCCESS;
+        if (supported) {
+            const auto enumerate_devices = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(
+              glfwGetInstanceProcAddress(probe, "vkEnumeratePhysicalDevices"));
+            const auto destroy_instance =
+              reinterpret_cast<PFN_vkDestroyInstance>(glfwGetInstanceProcAddress(probe, "vkDestroyInstance"));
+            std::uint32_t device_count = 0;
+            supported = enumerate_devices != nullptr && enumerate_devices(probe, &device_count, nullptr) == VK_SUCCESS
+                        && device_count > 0;
+            if (destroy_instance != nullptr) { destroy_instance(probe, nullptr); }
+        }
+    }
     glfwTerminate();
     return supported;
 }
@@ -668,7 +688,7 @@ RecordingRig *recordingRigFor(benchmark::State &state, RecordedMode mode)
     if (recording_rig != nullptr && recording_rig_mode == mode) { return recording_rig.get(); }
     releaseRecordingRig();
     if (!vulkanWindowAvailable()) {
-        state.SkipWithMessage("no display or Vulkan runtime; record_commands needs a device");
+        state.SkipWithMessage("no display, Vulkan driver or device; record_commands needs one");
         return nullptr;
     }
 
@@ -689,13 +709,24 @@ RecordingRig *recordingRigFor(benchmark::State &state, RecordedMode mode)
     renderer_vars.pathTracing = mode == RecordedMode::PathTracing;
     rig.settings.scene.shadows_enabled = true;
 
+    // A Windows container has llvmpipe and a window but no image to acquire: its first frame already fails.
+    rig.renderFrame();
+    if (rig.renderer->hasFatalFrameError() && !rig.renderer->hasDeviceLost()) {
+        releaseRecordingRig();
+        state.SkipWithMessage("the swapchain acquires no image; record_commands needs a presentable display");
+        return nullptr;
+    }
     constexpr int kMaxLoadFrames = 20000;
-    for (int frame = 0; frame < kMaxLoadFrames && rig.renderer->isModelLoadPending(); ++frame) { rig.renderFrame(); }
+    for (int frame = 0;
+      frame < kMaxLoadFrames && rig.renderer->isModelLoadPending() && !rig.renderer->hasFatalFrameError();
+      ++frame) {
+        rig.renderFrame();
+    }
     // A few more frames, so the mode switch and its descriptor rebinds have landed.
     for (int frame = 0; frame < 3; ++frame) { rig.renderFrame(); }
-    if (rig.renderer->isModelLoadPending() || rig.renderer->hasDeviceLost()) {
+    if (rig.renderer->isModelLoadPending() || rig.renderer->hasDeviceLost() || rig.renderer->hasFatalFrameError()) {
         releaseRecordingRig();
-        skipWithError(state, "the golden scene never loaded, or the device was lost");
+        skipWithError(state, "the golden scene never loaded, or a frame failed fatally");
         return nullptr;
     }
     if (traced && !rig.feedback.tracingReady) {

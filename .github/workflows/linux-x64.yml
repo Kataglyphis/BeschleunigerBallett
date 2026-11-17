@@ -92,6 +92,8 @@ jobs:
     uses: Kataglyphis/ANTfrastructure/.github/workflows/build-docs.yml@develop
     with:
       artifact: bb-docs-site
+      # The demo's 61 MB Colosseum-web.glb alone takes the server 14+ min; 30 cut it off on every run from 2026-11-16.
+      publish-timeout-minutes: 90
     secrets:
       FTP_SERVER: ${{ secrets.SERVER }}
       FTP_USERNAME: ${{ secrets.USERNAME }}
