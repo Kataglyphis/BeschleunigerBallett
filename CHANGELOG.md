@@ -36,6 +36,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - OxidANT moves to `0b79367`: the WebGPU renderer gets raster shadows for point and spot lights at parity with
   this engine's (four 512 px cubes, the same slots, depth range, face order and PCF), as layers of one 2D depth
   array so a WebGPU compatibility device samples them too.
+- OxidANT moves to `0b9e638`: its glTF loader rejects accessors that made gltf 1.4.1 panic (a POSITION naming
+  a missing accessor, a format its semantic does not allow, no elements, a range past its view). Each one, opened
+  from the model picker, aborted the engine through the bridge. A proptest over mutated glTF files, which found them,
+  replaces the cgltf fuzz target (`a_mutated_file_is_rejected_or_flattens_consistently` in OxidANT's
+  `crates/assets/tests/flat.rs`).
 - Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
   512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
   every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the
