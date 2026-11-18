@@ -4070,7 +4070,7 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
 
     // A cube has no border, nor do OxidANT's face layers whose uv the face selection picks: counted apart, unchecked.
     static const std::array<std::string, 2> kCubeMarkers = { "punctualShadowMaps.SampleCmpLevelZero(",
-                                                             "punctualShadowMap.SampleCmpLevelZero(" };
+        "punctualShadowMap.SampleCmpLevelZero(" };
     int occurrences_checked = 0;
     int cube_occurrences = 0;
     std::vector<std::string> violations;
