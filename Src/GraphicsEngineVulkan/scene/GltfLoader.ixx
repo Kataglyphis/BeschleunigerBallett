@@ -50,7 +50,7 @@ TexCoordSetInfo describeTexCoordSet(int texcoord);
 /// The parser `GltfLoader::parseCpu` runs: the engine's cgltf one, or OxidANT's Rust loader over the cxx bridge.
 enum class GltfParser { Cgltf, Rust };
 
-/// `KATAGLYPHIS_GLTF_LOADER=rust` selects the Rust loader; unset or any other value keeps cgltf.
+/// The Rust loader unless `KATAGLYPHIS_GLTF_LOADER=cgltf` asks for the cgltf one (owner decision 2026-11-18).
 GltfParser gltfParserFromEnvironment();
 
 /// Loads `.gltf`/`.glb` geometry into the SAME CPU-side arrays `ObjLoader`

@@ -39,8 +39,8 @@ available. OxidANT's Rust loader walks the same nodes (`walk_nodes` in
 ### Two glTF parsers behind one switch
 
 `parseCpu` runs one of two parsers into the same arrays, picked by
-`KATAGLYPHIS_GLTF_LOADER`: unset or anything but `rust` is the cgltf parser in
-`GltfLoader.cpp`; `rust` is OxidANT's loader, the one the WebGPU renderer uses,
+`KATAGLYPHIS_GLTF_LOADER`: `cgltf` is the cgltf parser in `GltfLoader.cpp`;
+unset or anything else is OxidANT's loader, the one the WebGPU renderer uses,
 called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge`, flattened
 by `crates/assets/src/flat.rs`) and copied into the arrays by
 `GltfLoaderRust.cpp`. `parseCpu(path, GltfParser)` picks one explicitly. Both
@@ -55,7 +55,8 @@ on any field that differs, materials included, except one class it prints
 instead: a generated tangent at a corner whose mirrored UV triangles cancel,
 whose direction is rounding noise in both. `Vertex.cpp`'s `computeTangents` turns off
 clang's fused multiply-add, which Rust never emits, so the rest agree within the
-suite's tolerances. cgltf stays the default. `BM_GltfLoaderParser_*` times
+suite's tolerances. The Rust loader is the default since 2026-11-18 (owner
+decision, on the timings below); cgltf goes once every lane has run on it. `BM_GltfLoaderParser_*` times
 both on one file (`/0` cgltf, `/1` Rust). On `linux-profile-clang`, 8-core
 aarch64 WSL, 2026-11-18, median of eight: `Colosseum-gltf` (206 MB of buffers)
 cgltf 481 ms with a 37 % spread, Rust 394 ms at 3 %; `cube_textured.gltf`

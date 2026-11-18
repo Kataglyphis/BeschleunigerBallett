@@ -28,6 +28,8 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   `adoptParsed`, `uploadParsed` and `AsyncModelParse` are unchanged. cgltf stays the default.
   `GltfLoaderDiff.*` parses every `GltfTest` fixture and every fetched glTF scene with both parsers and fails on
   any field that differs. The bridge's namespace is `kataglyphis::oxidant`.
+- The Rust glTF loader is the default (owner decision 2026-11-18): `GltfLoader::parseCpu` runs OxidANT's
+  parser unless `KATAGLYPHIS_GLTF_LOADER=cgltf`. cgltf stays for one round of every lane, then goes.
 - `BM_GltfLoaderParser_CubeTextured` and `BM_GltfLoaderParser_Colosseum` time both glTF parsers on the same
   file. On aarch64 WSL the Rust parser takes `Colosseum-gltf` in 394 ms against cgltf's 481 ms (medians of
   eight), and steadier; the Colosseum row skips when the scene is not fetched.

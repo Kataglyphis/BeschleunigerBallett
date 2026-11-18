@@ -673,7 +673,7 @@ void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsig
 GltfParser gltfParserFromEnvironment()
 {
     const char *choice = std::getenv("KATAGLYPHIS_GLTF_LOADER");
-    return (choice != nullptr && std::string_view(choice) == "rust") ? GltfParser::Rust : GltfParser::Cgltf;
+    return (choice != nullptr && std::string_view(choice) == "cgltf") ? GltfParser::Cgltf : GltfParser::Rust;
 }
 
 void GltfLoader::clearParsed()

@@ -14,6 +14,8 @@
 
 #include <glm/glm.hpp>
 
+#include "ScopedEnvVar.hpp"
+
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.punctual_light;
@@ -378,4 +380,27 @@ TEST(GltfLoaderDiff, FetchedSceneGltfsParseTheSameWithBothLoaders)
     for (const fs::path &file : files) { compareFile(log, known, file); }
     EXPECT_TRUE(log.empty()) << files.size() << " scenes; mismatches by file and field:" << log.report();
     std::cout << "Known divergences:" << known.report() << "\n";
+}
+
+// The Rust loader is the default since 2026-11-18; only an explicit cgltf keeps the old parser.
+TEST(GltfLoaderDiff, TheEnvironmentPicksRustUnlessItNamesCgltf)
+{
+    using Kataglyphis::GltfParser;
+    using Kataglyphis::TestSupport::ScopedEnvVar;
+    {
+        const ScopedEnvVar unset("KATAGLYPHIS_GLTF_LOADER", "");
+        EXPECT_EQ(Kataglyphis::gltfParserFromEnvironment(), GltfParser::Rust);
+    }
+    {
+        const ScopedEnvVar rust("KATAGLYPHIS_GLTF_LOADER", "rust");
+        EXPECT_EQ(Kataglyphis::gltfParserFromEnvironment(), GltfParser::Rust);
+    }
+    {
+        const ScopedEnvVar other("KATAGLYPHIS_GLTF_LOADER", "tinygltf");
+        EXPECT_EQ(Kataglyphis::gltfParserFromEnvironment(), GltfParser::Rust);
+    }
+    {
+        const ScopedEnvVar cgltf("KATAGLYPHIS_GLTF_LOADER", "cgltf");
+        EXPECT_EQ(Kataglyphis::gltfParserFromEnvironment(), GltfParser::Cgltf);
+    }
 }
