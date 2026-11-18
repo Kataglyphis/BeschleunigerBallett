@@ -140,7 +140,7 @@ in both the primary and the light march. Each step:
 `SceneUBO` (`cloudAmbientTop`/`cloudAmbientBottom`), which `fillSceneUboCloudAmbient`
 fills every frame from the skybox switch:
 
-- **Skybox on**: the DOOM2016 cube map's mean radiance over the upper and the lower
+- **Skybox on**: the cube map's mean radiance over the upper and the lower
   hemisphere, as the sky pass draws it: each texel sRGB-decoded, then through
   `aces_tonemap_inverse` (the sky pass is untonemapped, so that is the radiance its
   pixel stands for). `SkyBox::loadCubeMap` computes it once per load
@@ -155,7 +155,7 @@ Until 2026-11-16 the engine called the seven-argument overload, whose ambient is
 OxidANT's analytic sky (`cloud_ambient_analytic_sky`), a bright blue-grey under
 either sky. `GoldenRender.CloudsAreLitByTheSkyTheyDraw` lights a dense box by its
 ambient alone (sun radiance 0): over the navy it must vanish (the cloud scatters
-exactly the radiance it hides), and under DOOM2016 every opaque pixel must lie between
+exactly the radiance it hides), and under the cube map every opaque pixel must lie between
 the displayed hemisphere means, which the test computes from the PNGs with the same
 function.
 

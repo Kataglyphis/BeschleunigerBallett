@@ -1,0 +1,4 @@
+# The skybox cube faces this repo draws, never tracked: AssetANT release archives (https://github.com/Kataglyphis/AssetANT),
+# extracted into Resources/Textures/Skybox/<name> by cmake/FetchAssets.cmake, which checks each SHA-256.
+# sha256                                                          file                                   url
+e2e67e18b0f2e25d298c4edd1b10d75a145d65747853c3bdbd4fc3eee85f844e  kloofendal_43d_clear_puresky.tar.xz  https://github.com/Kataglyphis/AssetANT/releases/download/kloofendal_43d_clear_puresky-v1/kloofendal_43d_clear_puresky.tar.xz

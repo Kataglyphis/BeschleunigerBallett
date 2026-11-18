@@ -1,4 +1,4 @@
-# Puts the AssetANT scenes Resources/assets.lock pins into Resources/Models; runs alone as cmake -P cmake/FetchAssets.cmake.
+# Puts AssetANT's locked scenes into Resources/Models and skyboxes into Resources/Textures/Skybox; runs alone as cmake -P.
 include_guard(GLOBAL)
 
 if(CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)
@@ -29,6 +29,13 @@ function(kataglyphis_fetch_assets)
     "${_KATAGLYPHIS_ASSETS_ROOT}/Resources/Models"
     EXTRACT
     ${_only})
+  # Its own lock: KATAGLYPHIS_FETCH_ALL_ASSETS must not extract a skybox into Resources/Models.
+  kataglyphis_fetch_data(
+    LOCK
+    "${_KATAGLYPHIS_ASSETS_ROOT}/Resources/skyboxes.lock"
+    DEST
+    "${_KATAGLYPHIS_ASSETS_ROOT}/Resources/Textures/Skybox"
+    EXTRACT)
 endfunction()
 
 if(CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)

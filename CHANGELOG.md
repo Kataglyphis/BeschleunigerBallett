@@ -36,6 +36,11 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - OxidANT moves to `0b79367`: the WebGPU renderer gets raster shadows for point and spot lights at parity with
   this engine's (four 512 px cubes, the same slots, depth range, face order and PCF), as layers of one 2D depth
   array so a WebGPU compatibility device samples them too.
+- The skybox is Poly Haven's CC0 `kloofendal_43d_clear_puresky` by Greg Zaal, replacing the DOOM2016 faces,
+  which carried no licence. It is an AssetANT release (`kloofendal_43d_clear_puresky-v1`, six 512 px faces, 0.5 MiB)
+  that `Resources/skyboxes.lock` pins and every fetch extracts into `Resources/Textures/Skybox`; the packages install
+  it with its `ATTRIBUTION.txt` and `LICENSES/`, and `share/licenses/` carries `CC0-1.0.txt` and its NOTICE.
+  OxidANT moves to the matching rename (`SKYBOX_FACES`, `SKYBOX_DIR`).
 - OxidANT moves to `0b9e638`: its glTF loader rejects accessors that made gltf 1.4.1 panic (a POSITION naming
   a missing accessor, a format its semantic does not allow, no elements, a range past its view). Each one, opened
   from the model picker, aborted the engine through the bridge. A proptest over mutated glTF files, which found them,

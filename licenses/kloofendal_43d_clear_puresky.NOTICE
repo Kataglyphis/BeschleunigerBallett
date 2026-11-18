@@ -1,0 +1,13 @@
+"Kloofendal 43d Clear (Pure Sky)" by Greg Zaal, Poly Haven:
+https://polyhaven.com/a/kloofendal_43d_clear_puresky
+Original: kloofendal_43d_clear_puresky_2k.hdr (2048x1024 Radiance HDR),
+https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/kloofendal_43d_clear_puresky_2k.hdr,
+SHA-256 462a3cc63bfcd9fe0299137a0f33f4ade84e237f4cb6115fe46f5ab400693fe6.
+License: CC0 1.0 Universal (public domain dedication), https://creativecommons.org/publicdomain/zero/1.0/;
+Poly Haven publishes every asset under CC0 (https://polyhaven.com/license). The legal code is in
+CC0-1.0.txt, as creativecommons.org serves it.
+
+Converted by AssetANT's scripts/cubemap/equirect_to_cubemap.py with assets/kloofendal_43d_clear_puresky/cubemap.json:
+six 512x512 sRGB PNG faces in Vulkan's cubemap order (RT +X, LF -X, UP +Y, DN -Y, FT +Z, BK -Z),
+4x4 supersampled, radiance times 0.5 and clipped to 1 before sRGB encoding, turned -86 degrees about +Y
+so the HDRI's sun faces BeschleunigerBallett's default sun direction.

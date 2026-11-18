@@ -161,6 +161,10 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   far larger, the noise's 0.002 at most), the mask card takes its box from the changed pixels
   that survive a 3x3 erosion and counts every changed pixel inside it. The furnace and
   anti-aliasing goldens did not move (0.9823 and 312 of 312 in both variants).
+  Since 2026-11-18 the sky is Poly Haven's CC0 `kloofendal_43d_clear_puresky`, far brighter than
+  DOOM2016 (hemisphere means of 159-222 and 93-124 displayed levels): all 91 GPU tests passed
+  unchanged on aarch64 llvmpipe, the added model's box at 0.199 of its steps after the add (0.0008
+  before), the traced mask card at 0.350 of its box, the furnace at 0.9823.
 - **The furnace rig moved to roughness 0.8 on 2026-11-16**, when a bounce took the sampled
   Smith remap (`docs/source/path-tracing.md`): at 0.5 the BRDF's own `E(mu)` passes 1 at grazing
   angles and the rig's mean rose to 1.019. At 0.8 `E(mu)` stays in 0.981-0.997, so the mean is

@@ -4595,7 +4595,7 @@ TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
         return hdr.empty() ? glm::dvec3(-1.0) : mean_rgb(hdr, radiance);
     };
     const glm::dvec3 navy = traced_mirror(false);
-    const glm::dvec3 doom = traced_mirror(true);
+    const glm::dvec3 cubemap = traced_mirror(true);
 
     // The sky the raster draws where the mirror points: the sky pass stores the cube map's sRGB, untonemapped.
     harness.useForwardRaster();
@@ -4612,16 +4612,16 @@ TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
     // OxidANT's defaults, ambient strength 0.35 times environment intensity 1; a white metal at mu 1 returns all of it.
     constexpr double SKY_LIGHT = 0.35;
     GTEST_LOG_(INFO) << "mirror card, skybox off: (" << navy.r << ", " << navy.g << ", " << navy.b << "); skybox on: ("
-                     << doom.r << ", " << doom.g << ", " << doom.b << "); the drawn sky behind the camera times "
-                     << SKY_LIGHT << ": (" << SKY_LIGHT * sky.r << ", " << SKY_LIGHT * sky.g << ", "
-                     << SKY_LIGHT * sky.b << ")";
+                     << cubemap.r << ", " << cubemap.g << ", " << cubemap.b
+                     << "); the drawn sky behind the camera times " << SKY_LIGHT << ": (" << SKY_LIGHT * sky.r << ", "
+                     << SKY_LIGHT * sky.g << ", " << SKY_LIGHT * sky.b << ")";
 
     // The disabled sky is linear (0, 0, 0.5); the old gradient was white to light blue in every channel.
     EXPECT_LT(navy.r, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
     EXPECT_LT(navy.g, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
     EXPECT_NEAR(navy.b, SKY_LIGHT * 0.5, 0.01) << "the navy a bounce sees is not scaled by the sky light";
     for (int c = 0; c < 3; ++c) {
-        EXPECT_NEAR(doom[c], SKY_LIGHT * sky[c], 0.05 * SKY_LIGHT * sky[c] + 0.001)
+        EXPECT_NEAR(cubemap[c], SKY_LIGHT * sky[c], 0.05 * SKY_LIGHT * sky[c] + 0.001)
           << "the mirror does not reflect the cube map the raster draws, channel " << c;
     }
 }
@@ -5455,18 +5455,16 @@ int displayed_byte(float radiance)
     return static_cast<int>(std::lround(encoded * 255.0F));
 }
 
-// The DOOM2016 faces as SkyBox loads them, averaged by the same function; nullopt without the textures.
-std::optional<Kataglyphis::CloudAmbient> doom_skybox_ambient()
+// The skybox faces as SkyBox loads them, averaged by the same function; nullopt without the textures.
+std::optional<Kataglyphis::CloudAmbient> skybox_cubemap_ambient()
 {
-    const std::array<const char *, 6> names{
-        "DOOM16RT.png", "DOOM16LF.png", "DOOM16UP.png", "DOOM16DN.png", "DOOM16FT.png", "DOOM16BK.png"
-    };
+    const std::array<const char *, 6> names{ "RT.png", "LF.png", "UP.png", "DN.png", "FT.png", "BK.png" };
     std::array<unsigned char *, 6> pixels{};
     int width = 0;
     int height = 0;
     bool loaded = true;
     for (size_t face = 0; face < names.size(); ++face) {
-        const std::string path = std::string("Resources/Textures/Skybox/DOOM2016/") + names[face];
+        const std::string path = std::string("Resources/Textures/Skybox/kloofendal_43d_clear_puresky/") + names[face];
         int channels = 0;
         pixels[face] = stbi_load(path.c_str(), &width, &height, &channels, 4);
         loaded = loaded && pixels[face] != nullptr;
@@ -5483,7 +5481,7 @@ std::optional<Kataglyphis::CloudAmbient> doom_skybox_ambient()
     return ambient;
 }
 
-// Sun off, a cloud shows its sky's ambient: it vanishes into the navy and takes DOOM2016's means, not the analytic sky.
+// Sun off, a cloud shows its sky's ambient: it vanishes into the navy and takes the cube map's means, not the analytic sky.
 TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
 {
     SKIP_WITHOUT_GPU();
@@ -5493,8 +5491,9 @@ TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     // After the harness: faces freed into ASan's quarantine before it made LSan lose the window system's allocations.
-    const auto doom = doom_skybox_ambient();
-    ASSERT_TRUE(doom.has_value()) << "could not load the DOOM2016 faces - not running from the repo root?";
+    const auto cubemap = skybox_cubemap_ambient();
+    ASSERT_TRUE(cubemap.has_value())
+      << "could not load the skybox faces - not running from the repo root, or not fetched?";
 
     harness.useForwardRaster();
     auto &scene_vars = harness.settings.scene;
@@ -5517,14 +5516,14 @@ TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
     const std::vector<uint8_t> navy_off = capture(false, false, 0.0F);
     const std::vector<uint8_t> navy_sunlit = capture(false, true, 10.0F);
     const std::vector<uint8_t> navy_on = capture(false, true, 0.0F);
-    const std::vector<uint8_t> doom_off = capture(true, false, 0.0F);
-    const std::vector<uint8_t> doom_on = capture(true, true, 0.0F);
+    const std::vector<uint8_t> cubemap_off = capture(true, false, 0.0F);
+    const std::vector<uint8_t> cubemap_on = capture(true, true, 0.0F);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     for (const auto &[name, frame] : { std::pair{ "ambient-navy-off", &navy_off },
            std::pair{ "ambient-navy-sunlit", &navy_sunlit },
            std::pair{ "ambient-navy-on", &navy_on },
-           std::pair{ "ambient-doom-off", &doom_off },
-           std::pair{ "ambient-doom-on", &doom_on } }) {
+           std::pair{ "ambient-cubemap-off", &cubemap_off },
+           std::pair{ "ambient-cubemap-on", &cubemap_on } }) {
         dump_cloud_frame(name, *frame, width, height);
         ASSERT_EQ(frame->size(), navy_off.size()) << name;
     }
@@ -5541,44 +5540,45 @@ TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
 
     // Under the navy the ambient is the sky's own radiance, so the cloud scatters exactly what it hides.
     size_t navy_mismatched = 0;
-    // Under DOOM2016 each opaque pixel lies between the two hemisphere means, by its entry height.
+    // Under the cube map each opaque pixel lies between the two hemisphere means, by its entry height.
     std::array<int, 3> lowest{};
     std::array<int, 3> highest{};
     for (int c = 0; c < 3; ++c) {
-        lowest[static_cast<size_t>(c)] = std::min(displayed_byte(doom->top[c]), displayed_byte(doom->bottom[c]));
-        highest[static_cast<size_t>(c)] = std::max(displayed_byte(doom->top[c]), displayed_byte(doom->bottom[c]));
+        lowest[static_cast<size_t>(c)] = std::min(displayed_byte(cubemap->top[c]), displayed_byte(cubemap->bottom[c]));
+        highest[static_cast<size_t>(c)] = std::max(displayed_byte(cubemap->top[c]), displayed_byte(cubemap->bottom[c]));
     }
-    size_t doom_outside = 0;
-    double doom_cloud_luma = 0.0;
-    double doom_sky_luma = 0.0;
+    size_t cubemap_outside = 0;
+    double cubemap_cloud_luma = 0.0;
+    double cubemap_sky_luma = 0.0;
     for (size_t pixel = 0; pixel < cloud_mask.size(); ++pixel) {
         if (!cloud_mask[pixel]) { continue; }
         if (channel_delta(navy_off, navy_on, pixel) > 3) { ++navy_mismatched; }
         const size_t base = pixel * 4U;
         bool outside = false;
         for (size_t c = 0; c < 3U; ++c) {
-            const int value = doom_on[base + c];
+            const int value = cubemap_on[base + c];
             outside = outside || value < lowest[c] - 3 || value > highest[c] + 3;
         }
-        if (outside) { ++doom_outside; }
-        doom_cloud_luma += luminance_of(doom_on, pixel);
-        doom_sky_luma += luminance_of(doom_off, pixel);
+        if (outside) { ++cubemap_outside; }
+        cubemap_cloud_luma += luminance_of(cubemap_on, pixel);
+        cubemap_sky_luma += luminance_of(cubemap_off, pixel);
     }
     const auto count = static_cast<double>(cloud_pixels);
-    doom_cloud_luma /= count;
-    doom_sky_luma /= count;
+    cubemap_cloud_luma /= count;
+    cubemap_sky_luma /= count;
     GTEST_LOG_(INFO) << "sky-lit cloud over " << cloud_pixels << " px: navy " << navy_mismatched
-                     << " px off by more than 3 levels; DOOM2016 top (" << displayed_byte(doom->top.x) << ", "
-                     << displayed_byte(doom->top.y) << ", " << displayed_byte(doom->top.z) << "), bottom ("
-                     << displayed_byte(doom->bottom.x) << ", " << displayed_byte(doom->bottom.y) << ", "
-                     << displayed_byte(doom->bottom.z) << "), " << doom_outside << " px outside them; mean luma cloud "
-                     << doom_cloud_luma << ", sky behind " << doom_sky_luma;
+                     << " px off by more than 3 levels; cube map top (" << displayed_byte(cubemap->top.x) << ", "
+                     << displayed_byte(cubemap->top.y) << ", " << displayed_byte(cubemap->top.z) << "), bottom ("
+                     << displayed_byte(cubemap->bottom.x) << ", " << displayed_byte(cubemap->bottom.y) << ", "
+                     << displayed_byte(cubemap->bottom.z) << "), " << cubemap_outside
+                     << " px outside them; mean luma cloud " << cubemap_cloud_luma << ", sky behind "
+                     << cubemap_sky_luma;
 
     EXPECT_LT(static_cast<double>(navy_mismatched), 0.01 * count)
       << "with the skybox off a sky-lit cloud must vanish into the navy it is lit by; it is lit by another sky";
-    EXPECT_LT(static_cast<double>(doom_outside), 0.05 * count)
-      << "with the skybox on the cloud's colour is not the DOOM2016 hemisphere means the host computed";
-    EXPECT_GT(doom_cloud_luma, 0.5 * doom_sky_luma) << "the sky-lit cloud is much darker than the sky behind it";
+    EXPECT_LT(static_cast<double>(cubemap_outside), 0.05 * count)
+      << "with the skybox on the cloud's colour is not the cube map hemisphere means the host computed";
+    EXPECT_GT(cubemap_cloud_luma, 0.5 * cubemap_sky_luma) << "the sky-lit cloud is much darker than the sky behind it";
 }
 
 // The wind moves the noise by velocity times time; time 0 and a whole number of periods must not move it at all.

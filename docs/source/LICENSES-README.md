@@ -12,6 +12,7 @@ Created in the repository on request. Verification history:
 - **2026-11-15**: OxidANT moved on to `f8b8c587` and ANTfrastructure to `2c81ef49`, pulled before the commit. Both `LICENSE` files and OxidANT's `Cargo.lock` are unchanged across the moved ranges (`git diff` empty); at `2c81ef49` all 589 SPDX headers of the hub's own files say MIT.
 - **2026-11-16**: OxidANT moved to `78303c2`. `LICENSE` and `Cargo.lock` are unchanged across the range (`git diff` empty). The renderer's editor now also embeds two symbol subsets of egui's emoji fonts (`epaint_default_fonts` 0.37.0): Noto Emoji (OFL-1.1) and emoji-icon-font (MIT); OxidANT's fonts `NOTICE` records each source, hash and `pyftsubset` command and carries the MIT text, and its cargo-license policy re-pins that `NOTICE`. Both in *The docs site's WebGPU demo* below.
 - **2026-11-16 (later)**: OxidANT moved to `026ef42`. `LICENSE` is unchanged across the range (`git diff` empty). `Cargo.lock` adds `basisu` 0.1.0 (Apache-2.0) as a normal dependency of the renderer, with its dependency `ruzstd` 0.7.3 (MIT); `portable-atomic`, its other one, was already in the graph. Both are pure Rust, so they reach the docs site's wasm demo, whose staged crate texts grow from 258 to 260 packages (the hub stager over OxidANT's unchanged policy, run in the CI image: each crate ships its own `LICENSE`, so no policy row is needed). The C++ bridge (`cxx` only) still does not depend on the renderer, so the packaged crate texts are unchanged.
+- **2026-11-18 (latest)**: OxidANT moved to `ef283ed`, the skybox rename. `LICENSE`, `Cargo.lock` and the license policy are unchanged across the range (`git diff` empty), so the staged crates are too.
 - **2026-11-18 (later)**: OxidANT moved to `0b9e638`, glTF accessor checks and a `load_flat` fuzz property. `LICENSE` and the license policy are unchanged across the range (`git diff` empty); `Cargo.lock` adds only `proptest` (already in the graph) to `kataglyphis_assets`' dev-dependencies, so the staged crates are unchanged.
 - **2026-11-18**: OxidANT moved to `0b79367`, raster shadows for point and spot lights in the WebGPU renderer and a perf-host script fix. `LICENSE`, `Cargo.lock` and the license policy are unchanged across the range (`git diff` empty), so the staged crates are too.
 - **2026-11-17**: OxidANT moved to `4bff5e1`, adding the `kataglyphis_assets` crate (the CPU glTF/KTX2 loader, MIT, the workspace `LICENSE`) and `load_gltf_flat` to the C++ bridge. `LICENSE` is unchanged across the range (`git diff` empty). The bridge now depends on `kataglyphis_assets`, so its runtime graph grows from 12 to 55 crates (`gltf`, `image`, `png`, `zune-jpeg`, `ktx2`, `basisu`, `ruzstd`, `bevy_mikktspace`, `glam`, `serde_json`, `flate2`, `miniz_oxide` among them); every one was already in OxidANT's reviewed policy, which adds only `kataglyphis_assets@3.0.0`, and the hub's `stage-cargo-licenses.py` stages 129-130 packages for the bridge on every target. `licenses/third-party-licenses.txt` is unchanged.
@@ -41,7 +42,9 @@ Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) installs these under
 Dear ImGui carries no texts for its fonts, so `licenses/fonts/` holds the ones each
 font's name table names, copied unchanged; `licenses/imgui-fonts.NOTICE` records each
 font's copyright, its license and the source and SHA-256 of every text. The Sponza scene's
-texts sit beside the model. KTX is linked as headers only and no source includes one, so it
+texts sit beside the model. The skybox, AssetANT's `{N}` (Greg Zaal, Poly Haven, CC0 1.0),
+carries its `ATTRIBUTION.txt` and `LICENSES/` in `Resources/Textures/Skybox/{N}`, and
+`licenses/CC0-1.0.txt` and `licenses/{N}.NOTICE` (the same files) go under `share/licenses/` too. KTX is linked as headers only and no source includes one, so it
 ships no text. Not covered yet: the GCC runtime and glibc copy that the Linux packages carry
 for older hosts; that belongs to ANTfrastructure's closure helpers. For the MSVC runtime DLLs,
 every Windows package (ZIP, MSI, NSIS, the portable bundle and the MSIX staged from it) carries
@@ -114,7 +117,7 @@ which file was actually read.
 
 | Project | URL | Pin | Licence | Source checked |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | 0b9e638 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | ef283ed (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
 | ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 2c81ef49 (develop) | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); all 589 of its own files with an SPDX header carry `SPDX-License-Identifier: MIT`; OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
 
 ## Rust crate dependencies (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)

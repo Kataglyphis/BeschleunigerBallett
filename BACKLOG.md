@@ -42,12 +42,6 @@ No P0 item is open.
   arm64 job). Still unrun: the riscv64 GPU shards (Saturday's schedule, or dispatch
   `linux-riscv64.yml` with `gpu-tests`) and, on the RX 9070 XT, the golden suites plus
   `Invoke-SyncValidation.ps1`. The cloud and glossy-material goldens are the ones to watch.
-- [b] `Assets` **The DOOM2016 skybox ships without a known licence** (S, **blocked on the owner**).
-  `Resources/Textures/Skybox/DOOM2016` (six `DOOM16*.png` faces) is the one skybox the C++
-  renderer loads and every package installs, but no notice, source or licence for it exists in the
-  repo, and `licenses/third-party-licenses.txt` has no row. Find its origin and licence, or
-  replace it with a skybox under a known licence (AssetANT, with an `ATTRIBUTION.txt`), before the
-  next release.
 
 ### P2: medium
 

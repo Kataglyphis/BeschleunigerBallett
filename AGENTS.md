@@ -81,10 +81,16 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
 - **A changed scene is a new AssetANT release and a new lock line.** A published archive never
   changes; the fetch deletes a download whose hash differs and stops.
 - **What stays tracked**: the test fixtures (`GltfTest/`, `ShadowTest/`, `Plane/`, `VikingRoom/`,
-  and the loose `plane` and `suzanne` the perf suite parses) and `Resources/Textures/`, which the
-  packages install whole: `Skybox/DOOM2016`, the one skybox the renderer loads, and the three
-  1-pixel defaults (1.4 MiB). `Loading_Screen/`, the duplicated `space` skybox, `brick.png` and
-  `dirt.png` (12.6 MiB, read by nothing) went on 2026-10-17.
+  and the loose `plane` and `suzanne` the perf suite parses) and `Resources/Textures/`'s three
+  1-pixel defaults, which the packages install with the rest of `Resources/Textures/`.
+  `Loading_Screen/`, the duplicated `space` skybox, `brick.png` and `dirt.png` (12.6 MiB, read by
+  nothing) went on 2026-10-17.
+- **The skybox is fetched too** (2026-11-18): `Resources/skyboxes.lock` pins AssetANT's
+  `{N}` (Poly Haven's CC0 sky by Greg Zaal, six 512 px faces, 0.5 MiB), which
+  every configure and `cmake -P cmake/FetchAssets.cmake` extract into `Resources/Textures/Skybox/`
+  (ignored), and the packages install. Its own lock, so `KATAGLYPHIS_FETCH_ALL_ASSETS` never puts it
+  in `Resources/Models`. It replaced the DOOM2016 faces, which carried no licence. Without it the
+  renderer draws the black fallback cube map.
 - **The WebGPU demo is built, not tracked**: `scripts/linux/docs-build-web.sh` compiles it into
   the ignored `docs/source/_webgpu_demo/` on every docs build, which CI's release job runs. Without
   `wasm-bindgen` the docs publish without the demo (a warning in CI); without a wasm-bindgen version

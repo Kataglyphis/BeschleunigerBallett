@@ -49,18 +49,18 @@ void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPoo
 void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 {
     std::filesystem::path skybox_base_dir;
-    if (const auto resolved = Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/DOOM2016");
+    if (const auto resolved =
+          Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/kloofendal_43d_clear_puresky");
       resolved.has_value()) {
         skybox_base_dir = *resolved;
     } else {
         std::error_code current_path_ec;
         std::filesystem::path const cwd = std::filesystem::current_path(current_path_ec);
-        skybox_base_dir = (current_path_ec ? std::filesystem::path(".") : cwd) / "Resources/Textures/Skybox/DOOM2016";
+        skybox_base_dir = (current_path_ec ? std::filesystem::path(".") : cwd)
+                          / "Resources/Textures/Skybox/kloofendal_43d_clear_puresky";
     }
 
-    std::array<std::string, 6> skybox_textures = {
-        "DOOM16RT.png", "DOOM16LF.png", "DOOM16UP.png", "DOOM16DN.png", "DOOM16FT.png", "DOOM16BK.png"
-    };
+    std::array<std::string, 6> skybox_textures = { "RT.png", "LF.png", "UP.png", "DN.png", "FT.png", "BK.png" };
 
     cubeMapTexture = std::make_unique<Texture>();
 
