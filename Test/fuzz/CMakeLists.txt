@@ -89,10 +89,6 @@ kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)
 kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
 target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 
-# cgltf is what the GUI model picker exposes to untrusted files; like every target here it links no renderer.
-kataglyphis_add_fuzz_test(gltf_parsing_fuzz_test gltf_parsing_fuzz_test.cpp)
-target_link_libraries(gltf_parsing_fuzz_test PRIVATE cgltf)
-
 # Never link VulkanEngineCore: its PUBLIC -fsanitize=address would build this TU against uninstrumented abseil.
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
 target_sources(

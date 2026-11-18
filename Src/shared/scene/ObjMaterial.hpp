@@ -33,7 +33,7 @@ struct ObjMaterial
     // Normal texture slot in the shared texture budget; -1 = none.
     int normalTextureID{ -1 };
 
-    // Scales the sampled normal's XY (glTF 2.0 3.9.3); cgltf zeroes it without a normal texture, so loaders guard.
+    // Scales the sampled normal's XY (glTF 2.0 3.9.3); 1.0 when the material has no normal texture.
     float normalScale{ 1.0F };
 
     // Metallic-roughness texture slot, uploaded linear (G = roughness, B = metallic); -1 = none.

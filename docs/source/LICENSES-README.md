@@ -65,7 +65,6 @@ them; the wording is the hub's draft
 | spdlog | https://github.com/gabime/spdlog | v1.17.0-66-g6d9805df | MIT; contains a bundled {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
 | google/fuzztest | https://github.com/google/fuzztest | fcde2c27 (main, 2026-11-13) | Apache-2.0; an additional Lucent notice for `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
 | kompute (only the optional playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-99-g267e019 | Apache-2.0 | `third_party/KOMPUTE/LICENSE` |
-| cgltf | https://github.com/jkuhlmann/cgltf | v1.15-11-g85cd623 | MIT licence text (Copyright Johannes Kuhlmann) | `third_party/cgltf/LICENSE` |
 | tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-88-gcfd7159 | MIT | `third_party/tomlplusplus/LICENSE` |
 
 ## Vendored sources (no submodule)

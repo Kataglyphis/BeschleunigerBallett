@@ -8,7 +8,6 @@ imgui-fonts/ProggyFonts-LICENSE.txt=licenses/fonts/ProggyFonts-LICENSE.txt
 stb/LICENSE=third_party/STB/LICENSE
 glm/copying.txt=third_party/GLM/copying.txt
 tinyobjloader/LICENSE=third_party/TINY_OBJ_LOADER/LICENSE
-cgltf/LICENSE=third_party/cgltf/LICENSE
 vulkan-memory-allocator/LICENSE.txt=third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.txt
 spdlog/LICENSE=third_party/SPDLOG/LICENSE
 fmt/fmt.license.rst=third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst

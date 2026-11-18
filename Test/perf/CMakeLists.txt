@@ -22,8 +22,7 @@ target_link_libraries(
   ${PERF_TEST_SUITE}
   PRIVATE VulkanEngineCore
           benchmark::benchmark
-          tinyobjloader
-          cgltf)
+          tinyobjloader)
 
 # BM_RecordCommands* reaches the renderer; without delay-loading, a host with no Vulkan loader could not start the suite.
 kataglyphis_enable_windows_vulkan_delay_load(${PERF_TEST_SUITE})

@@ -3955,7 +3955,7 @@ TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " shader site(s) read material.shininess outside common/material_rules.slang - that field is pinned "
-         "to a fixed fallback value by GltfLoader.cpp and is only meaningful through material_roughness()'s "
+         "to a fixed fallback value by GltfLoaderRust.cpp and is only meaningful through material_roughness()'s "
          "sentinel branch:"
       << joinViolations(violations);
 }
@@ -9846,54 +9846,6 @@ TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
             }
         }
     }
-}
-
-// gltfTextureSlots() lists the four slots once, so per-slot guards and calls cannot multiply again.
-TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
-{
-    const fs::path repo_root = repoRoot();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "GltfLoader.cpp";
-    const auto lines_opt = readFileLines(path);
-    ASSERT_TRUE(lines_opt.has_value()) << "missing " << path.string();
-
-    // Comments stripped, since doc comments name the guard in prose.
-    std::string text;
-    for (const auto &raw_line : *lines_opt) {
-        text += strip_line_comment(raw_line);
-        text += '\n';
-    }
-
-    const auto slots_span = function_body_span(text, "gltfTextureSlots");
-    ASSERT_TRUE(slots_span.has_value()) << "gltfTextureSlots not found in " << path.string()
-                                        << " - was the table rewrite reverted?";
-
-    // Everything outside gltfTextureSlots' body, anchored on the function rather than a line number.
-    const std::string outside = text.substr(0, slots_span->first) + text.substr(slots_span->second);
-
-    const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
-        std::size_t count = 0;
-        for (std::size_t pos = haystack.find(needle); pos != std::string::npos;
-          pos = haystack.find(needle, pos + needle.size())) {
-            ++count;
-        }
-        return count;
-    };
-
-    EXPECT_LE(count_occurrences(outside, "has_pbr_metallic_roughness"), 1U)
-      << "has_pbr_metallic_roughness must be gated inside gltfTextureSlots (fromGltfMaterial's own factor read is "
-         "the one allowed exception), not repeated once per texture-slot call site";
-
-    // "materialName" right after the paren selects calls, since the free functions' own signatures match too.
-    EXPECT_LE(count_occurrences(outside, "readUvTransform(materialName"), 1U)
-      << "readUvTransform must be called from one loop over gltfTextureSlots' table, not once per texture slot";
-    EXPECT_LE(count_occurrences(outside, "warnUnsupportedTexCoordSet(materialName"), 1U)
-      << "warnUnsupportedTexCoordSet must be called from one loop over gltfTextureSlots' table, not once per "
-         "texture slot";
-    // assignTextureSlot is a lambda, so every "assignTextureSlot(" is a call.
-    EXPECT_LE(count_occurrences(outside, "assignTextureSlot("), 1U)
-      << "assignTextureSlot must be called from one loop over gltfTextureSlots' table, not once per texture slot";
 }
 
 // A false submit means nothing ran; discarding it reads failure as success unless SUBMIT_RESULT_IGNORED_OK marks it.

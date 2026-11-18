@@ -558,6 +558,14 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   where Sphinx never read them before. Every link and code pointer to them follows, the
   `BuildIntegrity` checks that read their markers included; their links into the hub go to GitHub.
 
+### Removed
+
+- The cgltf glTF parser: OxidANT's Rust loader is the only one (owner decision 2026-11-18, after every lane
+  passed on it as the default). `KATAGLYPHIS_GLTF_LOADER`, `GltfLoaderDiff.*`, `gltf_parsing_fuzz_test`, the
+  `BM_GltfParse_*` and `BM_GltfLoaderParser_*` benchmarks and the `third_party/cgltf` submodule go with it;
+  `BM_GltfLoaderParseCpu_CubeGlb` and `BM_GltfLoaderParseCpu_Colosseum` join `BM_GltfLoaderParseCpu_CubeTextured`.
+  The packages no longer carry cgltf's license text.
+
 ## [1.5.2] - 2026-10-17
 
 ### Added

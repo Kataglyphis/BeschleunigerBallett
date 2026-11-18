@@ -248,32 +248,19 @@
       "time_unit": "ms"
     },
     {
-      "name": "BM_GltfParse_CubeGlb",
+      "name": "BM_GltfLoaderParseCpu_CubeGlb",
       "family_index": 12,
       "per_family_instance_index": 0,
-      "run_name": "BM_GltfParse_CubeGlb",
+      "run_name": "BM_GltfLoaderParseCpu_CubeGlb",
       "run_type": "iteration",
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 56000,
-      "real_time": 1.3153505357227655e+01,
-      "cpu_time": 1.3113839285714286e+01,
-      "time_unit": "us"
-    },
-    {
-      "name": "BM_GltfParse_CubeTextured",
-      "family_index": 13,
-      "per_family_instance_index": 0,
-      "run_name": "BM_GltfParse_CubeTextured",
-      "run_type": "iteration",
-      "repetitions": 1,
-      "repetition_index": 0,
-      "threads": 1,
-      "iterations": 40727,
-      "real_time": 1.5737520563709001e+01,
-      "cpu_time": 1.5729737029489037e+01,
-      "time_unit": "us"
+      "iterations": 76000,
+      "real_time": 9.1900000000000000e+00,
+      "cpu_time": 9.1800000000000000e+00,
+      "time_unit": "us",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
     },
     {
       "name": "BM_ComputeTangents/1",
@@ -460,55 +447,10 @@
       "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
     },
     {
-      "name": "BM_GltfLoaderParser_CubeTextured/0",
-      "family_index": 0,
-      "per_family_instance_index": 0,
-      "run_name": "BM_GltfLoaderParser_CubeTextured/0",
-      "run_type": "iteration",
-      "repetitions": 1,
-      "repetition_index": 0,
-      "threads": 1,
-      "iterations": 43703,
-      "real_time": 16.075282977836455,
-      "cpu_time": 16.06357915932545,
-      "time_unit": "us",
-      "label": "cgltf; placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
-    },
-    {
-      "name": "BM_GltfLoaderParser_CubeTextured/1",
-      "family_index": 0,
-      "per_family_instance_index": 1,
-      "run_name": "BM_GltfLoaderParser_CubeTextured/1",
-      "run_type": "iteration",
-      "repetitions": 1,
-      "repetition_index": 0,
-      "threads": 1,
-      "iterations": 63145,
-      "real_time": 11.1130539708051,
-      "cpu_time": 11.087655396310081,
-      "time_unit": "us",
-      "label": "rust; placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
-    },
-    {
-      "name": "BM_GltfLoaderParser_Colosseum/0",
+      "name": "BM_GltfLoaderParseCpu_Colosseum",
       "family_index": 1,
       "per_family_instance_index": 0,
-      "run_name": "BM_GltfLoaderParser_Colosseum/0",
-      "run_type": "iteration",
-      "repetitions": 1,
-      "repetition_index": 0,
-      "threads": 1,
-      "iterations": 1,
-      "real_time": 755.5283239926212,
-      "cpu_time": 752.3623000000001,
-      "time_unit": "ms",
-      "label": "cgltf; placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
-    },
-    {
-      "name": "BM_GltfLoaderParser_Colosseum/1",
-      "family_index": 1,
-      "per_family_instance_index": 1,
-      "run_name": "BM_GltfLoaderParser_Colosseum/1",
+      "run_name": "BM_GltfLoaderParseCpu_Colosseum",
       "run_type": "iteration",
       "repetitions": 1,
       "repetition_index": 0,
@@ -517,7 +459,7 @@
       "real_time": 477.54158249881584,
       "cpu_time": 475.75509999999997,
       "time_unit": "ms",
-      "label": "rust; placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
     },
     {
       "name": "BM_UploadCpuHalf/64",

@@ -37,7 +37,7 @@ namespace {
     static_assert(offsetof(ox::GltfVertex, tangent) == offsetof(Vertex, tangent));
     static_assert(offsetof(ox::GltfVertex, uv1) == offsetof(Vertex, texture_coords1));
 
-    // The cgltf path's pinned shininess, which only an OBJ material's roughness falls back to.
+    // Pinned for every glTF material: only an OBJ material's roughness falls back to shininess.
     constexpr float kGltfShininess = 1.0F;
 
     glm::vec3 toVec3(const std::array<float, 3> &value) { return { value[0], value[1], value[2] }; }
@@ -83,7 +83,7 @@ namespace {
         }
     }
 
-    // The cgltf path's mapping: a bare NEAREST or LINEAR minification still samples the mip chain.
+    // A bare NEAREST or LINEAR minification still samples the mip chain.
     GltfSamplerDesc toSamplerDesc(const ox::GltfSampler &sampler)
     {
         GltfSamplerDesc desc{};

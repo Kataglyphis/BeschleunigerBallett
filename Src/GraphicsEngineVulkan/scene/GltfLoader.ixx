@@ -8,14 +8,6 @@ module;
 
 #include <glm/glm.hpp>
 
-// Forward-declared cgltf types used only in the private processPrimitive
-// signature. A private member must be declared in the class here, but the full
-// cgltf definitions belong to the implementation unit (which includes
-// <cgltf.h>); forward declarations keep them out of this module's interface.
-struct cgltf_primitive;
-struct cgltf_data;
-struct cgltf_node;
-
 export module kataglyphis.vulkan.gltf_loader;
 
 import kataglyphis.vulkan.device;
@@ -31,36 +23,11 @@ export import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
-/// Which UV set a glTF texture view's `texCoord` index names, and whether
-/// this engine can sample it. `Vertex` carries TEXCOORD_0 and TEXCOORD_1, so
-/// sets 0 and 1 are supported - anything higher names a channel the geometry
-/// does not carry and samples UV0.
-struct TexCoordSetInfo
-{
-    unsigned int set;
-    bool supported;
-};
-
-/// Resolves a glTF texture view's `texCoord` index to the UV set it names and
-/// whether `GltfLoader` can sample it. Exported so parse tests can assert the
-/// decision without a device; also the single definition `fromGltfMaterial`
-/// builds ObjMaterial::uv1SlotMask from and warns from on an unsupported set.
-TexCoordSetInfo describeTexCoordSet(int texcoord);
-
-/// The parser `GltfLoader::parseCpu` runs: the engine's cgltf one, or OxidANT's Rust loader over the cxx bridge.
-enum class GltfParser { Cgltf, Rust };
-
-/// The Rust loader unless `KATAGLYPHIS_GLTF_LOADER=cgltf` asks for the cgltf one (owner decision 2026-11-18).
-GltfParser gltfParserFromEnvironment();
-
 /// Loads `.gltf`/`.glb` geometry into the SAME CPU-side arrays `ObjLoader`
 /// produces, so it plugs into `Model`/`Mesh` and the `AsyncModelParse` worker
 /// unchanged. Touches no Vulkan - that is the point, the parse is the expensive
-/// part worth moving off the render thread.
-///
-/// Increment b: geometry (positions/normals/UVs, indices, baked node
-/// transforms) plus a single neutral material. Per-material import and texture
-/// resolution are follow-ups (see BACKLOG glTF increments c/d).
+/// part worth moving off the render thread. The parse is OxidANT's Rust
+/// loader over the cxx bridge, the WebGPU renderer's own.
 class GltfLoader
 {
   public:
@@ -86,12 +53,9 @@ class GltfLoader
     void adoptParsed(GltfLoader &&other);
 
     /// Parses the document into vertices/indices/materials/materialIndex with
-    /// the parser `gltfParserFromEnvironment` names. Returns false on a missing
-    /// or malformed file, leaving the instance empty.
+    /// OxidANT's Rust loader. Returns false on a missing or malformed file,
+    /// leaving the instance empty.
     bool parseCpu(const std::string &modelFile);
-
-    /// `parseCpu` with an explicit parser, so a test can run both on one file.
-    bool parseCpu(const std::string &modelFile, GltfParser parser);
 
     const std::vector<Vertex> &getVertices() const { return vertices; }
     const std::vector<unsigned int> &getIndices() const { return indices; }
@@ -132,40 +96,8 @@ class GltfLoader
   private:
     void clearParsed();
 
-    bool parseWithCgltf(const std::string &modelFile);
-
     /// Fills the arrays from OxidANT's `load_gltf_flat` (GltfLoaderRust.cpp).
     bool parseWithRust(const std::string &modelFile);
-
-    /// Processes a single glTF primitive into the flat arrays: reads its
-    /// attributes, bakes positions/normals into world space, gathers and
-    /// triangulates its index sequence (strip/fan/list), synthesises flat
-    /// normals when NORMAL is absent, fills one material id per emitted
-    /// triangle, and records the primitive's MeshRange. Points/lines and
-    /// position-less primitives are skipped (early return). `world` and
-    /// `normalMatrix` are the owning node's baked transforms; `fallbackMaterial`
-    /// is the neutral-material index used when the primitive references none.
-    /// `mirrored` is true when `world` has a negative determinant (glTF 2.0
-    /// §3.7.4), in which case emitted triangles get their winding reversed so
-    /// back-face culling and the flat-normal fallback stay correct.
-    void processPrimitive(const cgltf_primitive *primitive,
-      const glm::mat4 &world,
-      const glm::mat3 &normalMatrix,
-      const cgltf_data *data,
-      unsigned int fallbackMaterial,
-      bool mirrored);
-
-    /// Visits `node` and recurses over its children, processing every
-    /// primitive of every mesh reached this way. Shared with
-    /// `asset/gltf_loader.rs`'s `default_scene().or_else(|| scenes().next())`
-    /// walk - the two must change together. `cgltf_node_transform_world`
-    /// walks the parent chain regardless of where the walk started, so
-    /// recursion only changes which nodes are visited, never the transform a
-    /// visited node gets.
-    void visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial);
-
-    /// Records `node`'s light, if it has one, posed by `world`; the mesh walk's twin for lights.
-    void readLight(const cgltf_node *node, const glm::mat4 &world);
 
     std::shared_ptr<VulkanDevice> device;
     vk::CommandPool command_pool;

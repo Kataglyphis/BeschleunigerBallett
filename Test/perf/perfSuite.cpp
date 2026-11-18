@@ -28,10 +28,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// The engine's tinyobj and cgltf builds (ObjLoader.cpp, cgltf_impl.cpp); a second copy here would clash.
+// The engine's tinyobj build (ObjLoader.cpp); a second copy here would clash.
 #include "tiny_obj_loader.h"
-
-#include <cgltf.h>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
@@ -270,57 +268,6 @@ BENCHMARK(BM_ObjParse_Plane)->Unit(benchmark::kMicrosecond);
 void BM_ObjParse_Suzanne(benchmark::State &state) { parse_and_walk(find_model("suzanne.obj"), state); }
 BENCHMARK(BM_ObjParse_Suzanne)->Unit(benchmark::kMillisecond);
 
-// glTF load: .glb and base64 .gltf take different buffer decode paths; both guard gross regressions, not scale.
-
-void parse_and_walk_gltf(const std::string &path, benchmark::State &state)
-{
-    if (path.empty()) {
-        skipWithError(state, "gltf model not found (run from the repo root)");
-        return;
-    }
-
-    for (auto _ : state) {
-        cgltf_options options{};
-        cgltf_data *data = nullptr;
-        if (cgltf_parse_file(&options, path.c_str(), &data) != cgltf_result_success) {
-            skipWithError(state, "failed to parse gltf model");
-            return;
-        }
-        if (cgltf_load_buffers(&options, data, path.c_str()) != cgltf_result_success) {
-            cgltf_free(data);
-            skipWithError(state, "failed to load gltf buffers");
-            return;
-        }
-
-        double checksum = 0.0;
-        for (cgltf_size m = 0; m < data->meshes_count; ++m) {
-            const cgltf_mesh &mesh = data->meshes[m];
-            for (cgltf_size p = 0; p < mesh.primitives_count; ++p) {
-                const cgltf_primitive &primitive = mesh.primitives[p];
-                for (cgltf_size a = 0; a < primitive.attributes_count; ++a) {
-                    const cgltf_attribute &attribute = primitive.attributes[a];
-                    if (attribute.type != cgltf_attribute_type_position) { continue; }
-                    const cgltf_accessor *accessor = attribute.data;
-                    for (cgltf_size i = 0; i < accessor->count; ++i) {
-                        float pos[3] = { 0.0F, 0.0F, 0.0F };
-                        cgltf_accessor_read_float(accessor, i, pos, 3);
-                        checksum += static_cast<double>(pos[0]);
-                    }
-                }
-            }
-        }
-        cgltf_free(data);
-        benchmark::DoNotOptimize(checksum);
-    }
-}
-
-void BM_GltfParse_CubeGlb(benchmark::State &state) { parse_and_walk_gltf(find_model("GltfTest/cube.glb"), state); }
-BENCHMARK(BM_GltfParse_CubeGlb)->Unit(benchmark::kMicrosecond);
-
-void BM_GltfParse_CubeTextured(benchmark::State &state)
-{ parse_and_walk_gltf(find_model("GltfTest/cube_textured.gltf"), state); }
-BENCHMARK(BM_GltfParse_CubeTextured)->Unit(benchmark::kMicrosecond);
-
 // Tangent gen: one call per primitive over a growing array, where whole-array accumulators turn quadratic.
 
 void BM_ComputeTangents(benchmark::State &state)
@@ -506,13 +453,9 @@ void BM_ObjLoaderParseCpu_Suzanne(benchmark::State &state)
 }
 BENCHMARK(BM_ObjLoaderParseCpu_Suzanne)->Unit(benchmark::kMillisecond);
 
-void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
+// The loader's whole CPU parse (OxidANT's Rust loader): .glb and base64 .gltf take different buffer decode paths.
+void gltfLoaderParseCpu(benchmark::State &state, const std::string &path)
 {
-    const std::string path = find_model("GltfTest/cube_textured.gltf");
-    if (path.empty()) {
-        skipWithError(state, "gltf model not found (run from the repo root)");
-        return;
-    }
     for (auto _ : state) {
         Kataglyphis::GltfLoader loader;
         if (!loader.parseCpu(path)) {
@@ -522,45 +465,40 @@ void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
         benchmark::DoNotOptimize(loader.getVertices().data());
     }
 }
-BENCHMARK(BM_GltfLoaderParseCpu_CubeTextured)->Unit(benchmark::kMicrosecond);
 
-// Both parsers on the same file, Arg 0 cgltf and Arg 1 OxidANT's Rust loader: the KATAGLYPHIS_GLTF_LOADER choice.
-void gltfLoaderParseCpuWith(benchmark::State &state, const std::string &path)
+void BM_GltfLoaderParseCpu_CubeGlb(benchmark::State &state)
 {
-    const auto parser = state.range(0) == 0 ? Kataglyphis::GltfParser::Cgltf : Kataglyphis::GltfParser::Rust;
-    state.SetLabel(state.range(0) == 0 ? "cgltf" : "rust");
-    for (auto _ : state) {
-        Kataglyphis::GltfLoader loader;
-        if (!loader.parseCpu(path, parser)) {
-            skipWithError(state, "GltfLoader::parseCpu failed");
-            return;
-        }
-        benchmark::DoNotOptimize(loader.getVertices().data());
+    const std::string path = find_model("GltfTest/cube.glb");
+    if (path.empty()) {
+        skipWithError(state, "gltf model not found (run from the repo root)");
+        return;
     }
+    gltfLoaderParseCpu(state, path);
 }
+BENCHMARK(BM_GltfLoaderParseCpu_CubeGlb)->Unit(benchmark::kMicrosecond);
 
-void BM_GltfLoaderParser_CubeTextured(benchmark::State &state)
+void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
 {
     const std::string path = find_model("GltfTest/cube_textured.gltf");
     if (path.empty()) {
         skipWithError(state, "gltf model not found (run from the repo root)");
         return;
     }
-    gltfLoaderParseCpuWith(state, path);
+    gltfLoaderParseCpu(state, path);
 }
-BENCHMARK(BM_GltfLoaderParser_CubeTextured)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
+BENCHMARK(BM_GltfLoaderParseCpu_CubeTextured)->Unit(benchmark::kMicrosecond);
 
 // Colosseum-gltf is fetched only with KATAGLYPHIS_FETCH_ALL_ASSETS, so its absence skips rather than errs.
-void BM_GltfLoaderParser_Colosseum(benchmark::State &state)
+void BM_GltfLoaderParseCpu_Colosseum(benchmark::State &state)
 {
     const std::string path = find_model("Colosseum-gltf/Colosseum-gltf.gltf");
     if (path.empty()) {
         state.SkipWithMessage("Colosseum-gltf not fetched (KATAGLYPHIS_FETCH_ALL_ASSETS=ON)");
         return;
     }
-    gltfLoaderParseCpuWith(state, path);
+    gltfLoaderParseCpu(state, path);
 }
-BENCHMARK(BM_GltfLoaderParser_Colosseum)->Arg(0)->Arg(1)->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_GltfLoaderParseCpu_Colosseum)->Unit(benchmark::kMillisecond);
 
 // Upload, CPU half: uploadParsed slices a range, then the staging copy memcpys vertices and indices into mapped memory.
 void BM_UploadCpuHalf(benchmark::State &state)

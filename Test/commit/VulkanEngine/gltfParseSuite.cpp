@@ -444,8 +444,7 @@ TEST(GltfParseUnit, MaterialWithoutANormalTextureKeepsTheSentinel)
     EXPECT_EQ(loader.getMaterials()[0].normalTextureID, -1)
       << "a material without a normalTexture must keep the -1 sentinel";
     EXPECT_FLOAT_EQ(loader.getMaterials()[0].normalScale, 1.0F)
-      << "a material without a normalTexture must keep normalScale unscaled, even though cgltf leaves "
-         "cgltf_texture_view::scale zero-initialized in that case";
+      << "a material without a normalTexture must keep normalScale unscaled";
 }
 
 TEST(GltfParseUnit, NormalTextureScaleIsCarriedIntoTheMaterial)
@@ -715,7 +714,7 @@ TEST(GltfParseUnit, BaseColorFactorSurvivesATexturedMaterial)
     EXPECT_NEAR(material.diffuse.z, 1.0F, 1e-5F);
 }
 
-// The GUI model picker feeds arbitrary files to parseCpu; gltf_parsing_fuzz_test is the broad sweep.
+// The GUI model picker feeds arbitrary files to parseCpu, so a malformed one must fail, not crash.
 TEST(GltfParseUnit, MalformedTextIsRejectedNotCrashed)
 {
     Kataglyphis::GltfLoader loader;
@@ -1917,7 +1916,7 @@ TEST(GltfParseUnit, VertexColorAlphaIsCarriedFromColor0)
 
 TEST(GltfParseUnit, Vec3Color0DefaultsVertexAlphaToOne)
 {
-    // cgltf_accessor_read_float writes only 3 components here, so alpha must come from the 1.0 pre-fill.
+    // A VEC3 COLOR_0 carries no alpha, so the loader must supply 1.0.
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "meshes": [ { "primitives": [ {
@@ -2058,22 +2057,6 @@ TEST(GltfParseUnit, OnlyTheDefaultSceneIsLoaded)
     for (const Vertex &v : loader.getVertices()) {
         EXPECT_GT(v.position.x, 99.0F) << "the loaded triangle must carry scene 1's +100 translation";
     }
-}
-
-TEST(GltfParseUnit, TexCoordSetsAboveOneAreReported)
-{
-    // Vertex carries UV sets 0 and 1, so only a higher set is unsupported.
-    const Kataglyphis::TexCoordSetInfo set0 = Kataglyphis::describeTexCoordSet(0);
-    EXPECT_EQ(set0.set, 0U);
-    EXPECT_TRUE(set0.supported) << "TEXCOORD_0 lands in Vertex::texture_coords";
-
-    const Kataglyphis::TexCoordSetInfo set1 = Kataglyphis::describeTexCoordSet(1);
-    EXPECT_EQ(set1.set, 1U);
-    EXPECT_TRUE(set1.supported) << "TEXCOORD_1 lands in Vertex::texture_coords1";
-
-    const Kataglyphis::TexCoordSetInfo set2 = Kataglyphis::describeTexCoordSet(2);
-    EXPECT_EQ(set2.set, 2U);
-    EXPECT_FALSE(set2.supported) << "TEXCOORD_2 has no Vertex slot to land in";
 }
 
 namespace {

@@ -55,7 +55,3 @@
 	path = third_party/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git
 	branch = master
-[submodule "third_party/cgltf"]
-	path = third_party/cgltf
-	url = https://github.com/jkuhlmann/cgltf.git
-	branch = master
