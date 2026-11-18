@@ -77,6 +77,8 @@ class VulkanRenderer
     // Acts on the settings' one-shot requests; the caller spends them with applyRendererFeedback afterwards.
     void updateStateDueToUserInput(const RenderSettings &settings, RendererFeedback &feedback);
     bool hasDeviceLost() const { return device_lost_detected; }
+    // No skybox faces loaded, so the sky is OxidANT's procedural gradient baked into the cubemap.
+    bool skyIsAnalytic() const { return skyBox.usesAnalyticSky(); }
     // True once any frame has hit a fatal (non-recoverable) error - a failed
     // wait/submit or an invalid sync handle - that forced the window closed.
     // Distinct from hasDeviceLost(): a failed submit can leave a live device

@@ -146,8 +146,8 @@ fills every frame from the skybox switch:
   pixel stands for). `SkyBox::loadCubeMap` computes it once per load
   (`cloudAmbientOfCubemap` in `scene/sky_box/CloudAmbient.hpp`), from at most 64 texels per
   face edge; `+Y` counts toward the top, `-Y` toward the bottom, and a side face's
-  rows above its middle toward the top (the middle row toward both). The black fallback
-  cube map gives zero. OxidANT's `CloudAmbient::of_cubemap` is the same average.
+  rows above its middle toward the top (the middle row toward both). Without faces the
+  cube map is the baked analytic sky (`AnalyticSky.hpp`), whose means come out the same way. OxidANT's `CloudAmbient::of_cubemap` is the same average.
 - **Skybox off**: the untonemapped navy, `aces_tonemap_inverse(0, 0, 0.5)` in both
   halves (`cloudAmbientOfDisabledSky`).
 

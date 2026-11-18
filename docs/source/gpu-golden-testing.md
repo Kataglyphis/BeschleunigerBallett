@@ -165,6 +165,11 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   DOOM2016 (hemisphere means of 159-222 and 93-124 displayed levels): all 91 GPU tests passed
   unchanged on aarch64 llvmpipe, the added model's box at 0.199 of its steps after the add (0.0008
   before), the traced mask card at 0.350 of its box, the furnace at 0.9823.
+- **A missing skybox is the analytic sky since 2026-11-18**: `WithoutSkyboxFacesTheSkyIsTheAnalyticGradient`
+  points `KATAGLYPHIS_SKYBOX_DIR` at no folder and checks every sky pixel (the navy of the switched-off
+  sky marks them) against the displayed zenith, horizon and ground of OxidANT's gradient. On aarch64
+  llvmpipe: 254288 sky pixels, 0 dark, 0 outside the anchors' 92..210, 133..215, 128..221, blue minus
+  red 13.5. Negative control: the old black faces fail all three assertions (254288 dark).
 - **The furnace rig moved to roughness 0.8 on 2026-11-16**, when a bounce took the sampled
   Smith remap (`docs/source/path-tracing.md`): at 0.5 the BRDF's own `E(mu)` passes 1 at grazing
   angles and the rig's mean rose to 1.019. At 0.8 `E(mu)` stays in 0.981-0.997, so the mean is
@@ -283,7 +288,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=82 runnable=80 integration=12 total=92 excluded=3 -->
+<!-- golden-counts: defined=83 runnable=81 integration=12 total=93 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.

@@ -41,6 +41,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
+#include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 #include "shared/scene/Vertex.hpp"
@@ -6824,6 +6825,35 @@ TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
           << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from "
           << radiance_path.string();
     }
+}
+
+// The sky a missing skybox bakes is OxidANT's procedural one: AnalyticSky.hpp copies sky_model.slang's three colours.
+TEST(BuildIntegrity, AnalyticSkyMatchesOxidantsSkyModel)
+{
+    const fs::path model_path = sharedSlangRoot() / "common" / "sky_model.slang";
+    const auto contents = readFileText(model_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << model_path.string()
+                                      << " - is the OxidANT submodule checked out?";
+    const std::array<std::pair<const char *, glm::vec3>, 3> colours{ std::pair{
+                                                                       "SKY_ZENITH", Kataglyphis::kAnalyticSkyZenith },
+        std::pair{ "SKY_HORIZON", Kataglyphis::kAnalyticSkyHorizon },
+        std::pair{ "SKY_GROUND", Kataglyphis::kAnalyticSkyGround } };
+    for (const auto &[name, colour] : colours) {
+        std::smatch match;
+        const std::regex literal(
+          std::string(name) + R"(\s*=\s*float3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\))");
+        ASSERT_TRUE(std::regex_search(*contents, match, literal))
+          << model_path.string() << " no longer defines " << name << " as a float3 literal";
+        for (int channel = 0; channel < 3; ++channel) {
+            EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), colour[channel])
+              << "AnalyticSky.hpp's " << name << " channel " << channel << " differs from " << model_path.string();
+        }
+    }
+    // The gradient's shape: pow(y, 0.7) above the horizon, -y * 3 below it.
+    EXPECT_NE(contents->find("pow(clamp(dir.y, 0.0, 1.0), 0.7)"), std::string::npos)
+      << "sky_gradient's upper curve changed; update analyticSkyRadiance";
+    EXPECT_NE(contents->find("clamp(-dir.y * 3.0, 0.0, 1.0)"), std::string::npos)
+      << "sky_gradient's lower curve changed; update analyticSkyRadiance";
 }
 
 // Owning counterpart of CloudUboFieldPair, whose const char* fields may only point at literals.

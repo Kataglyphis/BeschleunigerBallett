@@ -31,6 +31,13 @@ inline auto srgbChannelToLinear(uint8_t encoded) -> float
     return value <= 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
 }
 
+// aces.slang's aces_tonemap, the display value post gives a radiance.
+inline auto acesTonemap(float radiance) -> float
+{
+    const float x = std::max(radiance, 0.0F);
+    return std::clamp((x * (2.51F * x + 0.03F)) / (x * (2.43F * x + 0.59F) + 0.14F), 0.0F, 1.0F);
+}
+
 // post.slang's aces_tonemap_inverse: the sky pass is untonemapped, so this is the radiance its pixel stands for.
 inline auto acesTonemapInverse(float display) -> float
 {

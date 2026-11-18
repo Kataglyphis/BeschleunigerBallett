@@ -1,6 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
 #include <span>
 
 namespace Kataglyphis {
@@ -15,7 +18,12 @@ constexpr bool cubemapFacesConsistent(std::span<const int, 6> widths, std::span<
     return true;
 }
 
-// SkyBox's fallback face, shared with the tests so the shipped bytes cannot drift from what they assert.
-inline constexpr unsigned char kFallbackCubemapFacePixel[4] = { 0, 0, 0, 255 };
+// KATAGLYPHIS_SKYBOX_DIR names another folder of the six faces; empty or unset keeps the fetched sky.
+inline auto skyboxDirectoryOverride() -> std::optional<std::filesystem::path>
+{
+    const char *value = std::getenv("KATAGLYPHIS_SKYBOX_DIR");
+    if (value == nullptr || *value == '\0') { return std::nullopt; }
+    return std::filesystem::path(value);
+}
 
 }// namespace Kataglyphis

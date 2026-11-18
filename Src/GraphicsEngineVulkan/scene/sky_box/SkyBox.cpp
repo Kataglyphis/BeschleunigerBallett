@@ -18,6 +18,7 @@ module;
 #include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
+#include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
 
@@ -49,8 +50,10 @@ void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPoo
 void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 {
     std::filesystem::path skybox_base_dir;
-    if (const auto resolved =
-          Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/kloofendal_43d_clear_puresky");
+    if (const auto overridden = skyboxDirectoryOverride(); overridden.has_value()) {
+        skybox_base_dir = *overridden;
+    } else if (const auto resolved =
+                 Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/kloofendal_43d_clear_puresky");
       resolved.has_value()) {
         skybox_base_dir = *resolved;
     } else {
@@ -58,6 +61,14 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         std::filesystem::path const cwd = std::filesystem::current_path(current_path_ec);
         skybox_base_dir = (current_path_ec ? std::filesystem::path(".") : cwd)
                           / "Resources/Textures/Skybox/kloofendal_43d_clear_puresky";
+    }
+
+    std::error_code exists_ec;
+    if (!std::filesystem::is_directory(skybox_base_dir, exists_ec)) {
+        // FETCH_ASSETS=OFF or a failed fetch: no faces is a supported configuration, not a broken one.
+        spdlog::warn("SkyBox: no skybox faces in {}; drawing the analytic sky", skybox_base_dir.string());
+        loadAnalyticSky(commandPool);
+        return;
     }
 
     std::array<std::string, 6> skybox_textures = { "RT.png", "LF.png", "UP.png", "DN.png", "FT.png", "BK.png" };
@@ -73,9 +84,9 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         std::string path = (skybox_base_dir / skybox_textures[i]).string();
         face_data[i] = stbi_load(path.c_str(), &face_widths[i], &face_heights[i], &bit_depth, 4);
         if (!face_data[i]) {
-            spdlog::error("Failed to load skybox texture: {}", path);
+            spdlog::error("Failed to load skybox texture: {}; drawing the analytic sky", path);
             for (size_t j = 0; j < i; j++) { stbi_image_free(face_data[j]); }
-            loadFallbackCubeMap(commandPool);
+            loadAnalyticSky(commandPool);
             return;
         }
     }
@@ -84,7 +95,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     if (!cubemapFacesConsistent(face_widths, face_heights)) {
         spdlog::error("Skybox faces have inconsistent or degenerate dimensions; all six faces must match.");
         for (size_t j = 0; j < 6; j++) { stbi_image_free(face_data[j]); }
-        loadFallbackCubeMap(commandPool);
+        loadAnalyticSky(commandPool);
         return;
     }
 
@@ -106,26 +117,31 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
 
     if (!uploaded) {
-        spdlog::error("SkyBox: cubemap upload failed, falling back to the black fallback cubemap.");
-        loadFallbackCubeMap(commandPool);
+        spdlog::error("SkyBox: cubemap upload failed; drawing the analytic sky.");
+        loadAnalyticSky(commandPool);
         return;
     }
 
+    analyticSky = false;
     updateDescriptorSetForCubeMap();
 }
 
-void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
+void SkyBox::loadAnalyticSky(vk::CommandPool commandPool)
 {
-    // Same upload path as the real faces, so a broken skybox renders black instead of binding nothing.
-    std::array<const unsigned char *, 6> faces = { kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel,
-        kFallbackCubemapFacePixel };
-    cloudAmbient = cloudAmbientOfCubemap(faces, 1, 1);
-    if (!uploadCubeMapFaces(commandPool, 1, 1, faces)) {
-        spdlog::error("SkyBox: fallback cubemap upload failed; leaving the cubemap descriptor unwritten.");
+    // OxidANT's procedural sky baked into faces, so the sky pass, post and the path tracer keep one cubemap path.
+    if (!cubeMapTexture) { cubeMapTexture = std::make_unique<Texture>(); }
+    const std::vector<unsigned char> texels = analyticSkyFaces(kAnalyticSkyFaceSize);
+    const std::size_t layer = static_cast<std::size_t>(kAnalyticSkyFaceSize) * kAnalyticSkyFaceSize * 4U;
+    const std::array<const unsigned char *, 6> faces = { texels.data(),
+        texels.data() + layer,
+        texels.data() + 2 * layer,
+        texels.data() + 3 * layer,
+        texels.data() + 4 * layer,
+        texels.data() + 5 * layer };
+    cloudAmbient = cloudAmbientOfCubemap(faces, kAnalyticSkyFaceSize, kAnalyticSkyFaceSize);
+    analyticSky = true;
+    if (!uploadCubeMapFaces(commandPool, kAnalyticSkyFaceSize, kAnalyticSkyFaceSize, faces)) {
+        spdlog::error("SkyBox: analytic sky upload failed; leaving the cubemap descriptor unwritten.");
         return;
     }
     updateDescriptorSetForCubeMap();

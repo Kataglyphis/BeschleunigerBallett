@@ -41,6 +41,15 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   that `Resources/skyboxes.lock` pins and every fetch extracts into `Resources/Textures/Skybox`; the packages install
   it with its `ATTRIBUTION.txt` and `LICENSES/`, and `share/licenses/` carries `CC0-1.0.txt` and its NOTICE.
   OxidANT moves to the matching rename (`SKYBOX_FACES`, `SKYBOX_DIR`).
+- Without skybox faces (`-DKATAGLYPHIS_FETCH_ASSETS=OFF`, a failed fetch, a broken face) the engine bakes
+  OxidANT's procedural sky into the cube map (`sky_model.slang`'s zenith-horizon-ground gradient,
+  `scene/sky_box/AnalyticSky.hpp`) and logs a warning, where it drew black; the sky pass, the cloud composite,
+  the cloud ambient and the path tracer's bounces all see it (owner decision 2026-11-18).
+  `KATAGLYPHIS_SKYBOX_DIR` loads the six faces from another folder. `GoldenRender.WithoutSkyboxFacesTheSkyIsTheAnalyticGradient`
+  and `BuildIntegrity.AnalyticSkyMatchesOxidantsSkyModel` hold both.
+- The docs site's WebGPU demo shows the same sky: `docs-build-web.sh` stages the faces and their CC0 notice in
+  `webgpu-demo/kloofendal_43d_clear_puresky/`, which OxidANT's demo fetches beside the page (owner decision
+  2026-11-18, OxidANT `4417f31`); an unfetchable archive keeps its procedural sky with a warning.
 - OxidANT moves to `0b9e638`: its glTF loader rejects accessors that made gltf 1.4.1 panic (a POSITION naming
   a missing accessor, a format its semantic does not allow, no elements, a range past its view). Each one, opened
   from the model picker, aborted the engine through the bridge. A proptest over mutated glTF files, which found them,

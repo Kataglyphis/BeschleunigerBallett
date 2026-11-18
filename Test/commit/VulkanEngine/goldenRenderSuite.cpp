@@ -10,6 +10,7 @@
 #include "common/RenderingHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -5579,6 +5580,76 @@ TEST(GoldenRender, CloudsAreLitByTheSkyTheyDraw)
     EXPECT_LT(static_cast<double>(cubemap_outside), 0.05 * count)
       << "with the skybox on the cloud's colour is not the cube map hemisphere means the host computed";
     EXPECT_GT(cubemap_cloud_luma, 0.5 * cubemap_sky_luma) << "the sky-lit cloud is much darker than the sky behind it";
+}
+
+// Without faces (FETCH_ASSETS=OFF, a failed fetch) the sky is OxidANT's gradient, not the black cube that stood in until 2026-11-18.
+TEST(GoldenRender, WithoutSkyboxFacesTheSkyIsTheAnalyticGradient)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedEnvVar no_faces("KATAGLYPHIS_SKYBOX_DIR", "Resources/Textures/Skybox/no-such-sky");
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    ASSERT_TRUE(harness.renderer->skyIsAnalytic()) << "KATAGLYPHIS_SKYBOX_DIR named no faces, yet a cube map loaded";
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.clouds_enabled = false;
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](bool skybox) {
+        scene_vars.skybox_enabled = skybox;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    // The navy of the switched-off sky marks the sky pixels; the analytic sky then fills exactly those.
+    const std::vector<uint8_t> navy = capture(false);
+    const std::vector<uint8_t> sky = capture(true);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(navy.empty());
+    ASSERT_EQ(sky.size(), navy.size());
+    dump_cloud_frame("analytic-sky-navy", navy, width, height);
+    dump_cloud_frame("analytic-sky", sky, width, height);
+
+    // Every gradient colour lies between its three anchors, channel by channel, as the sky pass shows them.
+    std::array<int, 3> lowest{ 255, 255, 255 };
+    std::array<int, 3> highest{ 0, 0, 0 };
+    for (const glm::vec3 &anchor :
+      { Kataglyphis::kAnalyticSkyZenith, Kataglyphis::kAnalyticSkyHorizon, Kataglyphis::kAnalyticSkyGround }) {
+        for (size_t c = 0; c < 3U; ++c) {
+            lowest[c] = std::min(lowest[c], displayed_byte(anchor[static_cast<int>(c)]));
+            highest[c] = std::max(highest[c], displayed_byte(anchor[static_cast<int>(c)]));
+        }
+    }
+    size_t sky_pixels = 0;
+    size_t dark = 0;
+    size_t outside = 0;
+    double blue_minus_red = 0.0;
+    for (size_t pixel = 0; pixel < navy.size() / 4U; ++pixel) {
+        if (!is_disabled_sky(navy, pixel)) { continue; }
+        ++sky_pixels;
+        const size_t base = pixel * 4U;
+        if (std::max({ sky[base], sky[base + 1U], sky[base + 2U] }) < 20U) { ++dark; }
+        bool off = false;
+        for (size_t c = 0; c < 3U; ++c) {
+            off = off || sky[base + c] < lowest[c] - 3 || sky[base + c] > highest[c] + 3;
+        }
+        if (off) { ++outside; }
+        blue_minus_red += static_cast<double>(sky[base + 2U]) - static_cast<double>(sky[base]);
+    }
+    ASSERT_GT(sky_pixels, 5000U) << "the rig shows too little sky - check the framing";
+    blue_minus_red /= static_cast<double>(sky_pixels);
+    GTEST_LOG_(INFO) << "analytic sky over " << sky_pixels << " px: " << dark << " dark, " << outside
+                     << " outside the anchors (" << lowest[0] << ".." << highest[0] << ", " << lowest[1] << ".."
+                     << highest[1] << ", " << lowest[2] << ".." << highest[2] << "), blue - red " << blue_minus_red;
+
+    EXPECT_EQ(dark, 0U) << "a missing skybox still draws the black fallback cube";
+    EXPECT_LT(static_cast<double>(outside), 0.01 * static_cast<double>(sky_pixels))
+      << "the sky is not OxidANT's zenith-horizon-ground gradient";
+    EXPECT_GT(blue_minus_red, 10.0) << "the analytic sky is not blue overhead";
 }
 
 // The wind moves the noise by velocity times time; time 0 and a whole number of periods must not move it at all.

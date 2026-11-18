@@ -46,8 +46,11 @@ class SkyBox
     // Null until init(); the post pass samples the same cubemap to put the sky under the clouds.
     Kataglyphis::Texture *getCubeMapTexture() const { return cubeMapTexture.get(); }
 
-    // The loaded faces' hemisphere means, computed once per load; zero for the black fallback.
+    // The loaded faces' hemisphere means, computed once per load; the analytic sky's when no faces loaded.
     const CloudAmbient &getCloudAmbient() const { return cloudAmbient; }
+
+    // No skybox faces loaded, so the cubemap holds OxidANT's procedural sky.
+    bool usesAnalyticSky() const { return analyticSky; }
 
     ~SkyBox();
 
@@ -57,6 +60,7 @@ class SkyBox
     std::unique_ptr<Kataglyphis::Mesh> skyMesh;
     std::unique_ptr<Kataglyphis::Texture> cubeMapTexture;
     CloudAmbient cloudAmbient{};
+    bool analyticSky{ false };
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
@@ -64,7 +68,7 @@ class SkyBox
     vk::Format colorFormat{ vk::Format::eUndefined };
 
     void loadCubeMap(vk::CommandPool commandPool);
-    void loadFallbackCubeMap(vk::CommandPool commandPool);
+    void loadAnalyticSky(vk::CommandPool commandPool);
     bool uploadCubeMapFaces(vk::CommandPool commandPool,
       uint32_t width,
       uint32_t height,

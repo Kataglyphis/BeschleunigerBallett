@@ -86,11 +86,12 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
   `Loading_Screen/`, the duplicated `space` skybox, `brick.png` and `dirt.png` (12.6 MiB, read by
   nothing) went on 2026-10-17.
 - **The skybox is fetched too** (2026-11-18): `Resources/skyboxes.lock` pins AssetANT's
-  `{N}` (Poly Haven's CC0 sky by Greg Zaal, six 512 px faces, 0.5 MiB), which
+  `kloofendal_43d_clear_puresky` (Poly Haven's CC0 sky by Greg Zaal, six 512 px faces, 0.5 MiB), which
   every configure and `cmake -P cmake/FetchAssets.cmake` extract into `Resources/Textures/Skybox/`
   (ignored), and the packages install. Its own lock, so `KATAGLYPHIS_FETCH_ALL_ASSETS` never puts it
   in `Resources/Models`. It replaced the DOOM2016 faces, which carried no licence. Without it the
-  renderer draws the black fallback cube map.
+  renderer bakes OxidANT's procedural sky (`sky_model.slang`'s gradient, `scene/sky_box/AnalyticSky.hpp`) into
+  the cube map and logs a warning; `KATAGLYPHIS_SKYBOX_DIR` points it at another folder of the six faces.
 - **The WebGPU demo is built, not tracked**: `scripts/linux/docs-build-web.sh` compiles it into
   the ignored `docs/source/_webgpu_demo/` on every docs build, which CI's release job runs. Without
   `wasm-bindgen` the docs publish without the demo (a warning in CI); without a wasm-bindgen version
@@ -98,7 +99,9 @@ directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images
   was committed instead. Since 2026-11-15 it also fetches `Colosseum-web` through the hub's
   fetcher and puts `Colosseum-web.glb` beside the demo, which the demo's Colosseum row loads, with
   the scene's notices in `webgpu-demo/Colosseum-web/` and the editor fonts' in
-  `webgpu-demo/fonts/`; an unfetchable archive is a warning, not a failure.
+  `webgpu-demo/fonts/`; an unfetchable archive is a warning, not a failure. Since 2026-11-18 the
+  skybox's faces and notices go to `webgpu-demo/kloofendal_43d_clear_puresky/` the same way, which the
+  demo fetches and draws (`demo_view().skybox`), keeping its procedural sky when they are missing.
 
 Still large: `Documents/GGD_Kit_milestone_document.pdf` (16 MiB, `linguist-vendored`), frozen with
 two test fixtures in `large-files.allow` for the hub's `large-files` gate. The engine screenshots
@@ -848,7 +851,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (70 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (71 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,

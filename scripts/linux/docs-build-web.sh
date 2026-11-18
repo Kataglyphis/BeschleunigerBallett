@@ -71,6 +71,19 @@ stage_webgpu_demo_colosseum() {
     cp -R "${scene}/ATTRIBUTION.txt" "${scene}/LICENSES" "${demo}/Colosseum-web/"
 }
 
+# The demo fetches the C++ engine's CC0 sky from a folder beside the page; the archive carries its notices.
+stage_webgpu_demo_skybox() {
+    local demo="docs/source/_webgpu_demo/webgpu-demo"
+    local name="kloofendal_43d_clear_puresky"
+    local sky="Resources/Textures/Skybox/${name}"
+    rm -rf "${demo:?}/${name}" || return 1
+    python3 -I "$(antfrastructure_path linux/scripts/lib/fetch-data-lock.py)" \
+        --lock Resources/skyboxes.lock --dest Resources/Textures/Skybox --extract --only "${name}" || return 1
+    mkdir -p "${demo}/${name}" || return 1
+    cp "${sky}"/{RT,LF,UP,DN,FT,BK}.png "${sky}/ATTRIBUTION.txt" "${demo}/${name}/" || return 1
+    cp -R "${sky}/LICENSES" "${demo}/${name}/"
+}
+
 info "Building the WebGPU WASM browser demo from the current renderer"
 # html_extra_path must exist under -W, demo or not.
 mkdir -p docs/source/_webgpu_demo
@@ -82,6 +95,13 @@ if build_webgpu_wasm_demo && stage_webgpu_demo_font_notices && stage_webgpu_demo
         echo "::warning::Colosseum-web could not be fetched; the demo publishes without its Colosseum row's scene"
     else
         warn "Colosseum-web could not be fetched; the demo builds without its Colosseum row's scene"
+    fi
+    if stage_webgpu_demo_skybox; then
+        info "The skybox staged beside the WebGPU demo"
+    elif [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo "::warning::The skybox could not be fetched; the demo publishes with its procedural sky"
+    else
+        warn "The skybox could not be fetched; the demo builds with its procedural sky"
     fi
 else
     # A wasm without its notices must not publish.

@@ -5,8 +5,11 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <vector>
 
+#include "ScopedEnvVar.hpp"
+#include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
 
@@ -52,12 +55,16 @@ TEST(SkyBoxUnit, AcceptsAllLargeEqualFaces)
     EXPECT_TRUE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
 
-TEST(SkyBoxUnit, FallbackCubemapFacePixelIsOpaqueBlack)
+TEST(SkyBoxUnit, TheSkyboxDirectoryOverrideIsReadAtUse)
 {
-    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[0], 0);
-    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[1], 0);
-    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[2], 0);
-    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[3], 255);
+    {
+        const Kataglyphis::TestSupport::ScopedEnvVar unset("KATAGLYPHIS_SKYBOX_DIR", "");
+        EXPECT_FALSE(Kataglyphis::skyboxDirectoryOverride().has_value());
+    }
+    const Kataglyphis::TestSupport::ScopedEnvVar elsewhere("KATAGLYPHIS_SKYBOX_DIR", "some/other/sky");
+    const auto overridden = Kataglyphis::skyboxDirectoryOverride();
+    ASSERT_TRUE(overridden.has_value());
+    EXPECT_EQ(*overridden, std::filesystem::path("some/other/sky"));
 }
 
 namespace {
@@ -171,15 +178,65 @@ TEST(SkyBoxUnit, TheDisabledSkyLightsTheCloudsWithItsUntonemappedNavy)
     EXPECT_NEAR((x * (2.51F * x + 0.03F)) / (x * (2.43F * x + 0.59F) + 0.14F), 0.5F, 1e-5F);
 }
 
-TEST(SkyBoxUnit, TheBlackFallbackCubemapGivesNoAmbient)
+namespace {
+
+// The texel of a baked face, decoded back to the display value the sky pass shows.
+glm::vec3 analyticTexel(const std::vector<unsigned char> &faces, size_t face, uint32_t column, uint32_t row)
 {
-    const std::array<const unsigned char *, 6> faces{ Kataglyphis::kFallbackCubemapFacePixel,
-        Kataglyphis::kFallbackCubemapFacePixel,
-        Kataglyphis::kFallbackCubemapFacePixel,
-        Kataglyphis::kFallbackCubemapFacePixel,
-        Kataglyphis::kFallbackCubemapFacePixel,
-        Kataglyphis::kFallbackCubemapFacePixel };
-    const auto ambient = Kataglyphis::cloudAmbientOfCubemap(faces, 1, 1);
-    EXPECT_EQ(ambient.top, glm::vec3(0.0F));
-    EXPECT_EQ(ambient.bottom, glm::vec3(0.0F));
+    const uint32_t size = Kataglyphis::kAnalyticSkyFaceSize;
+    const unsigned char *texel = faces.data() + ((face * size + row) * size + column) * 4U;
+    return { Kataglyphis::srgbChannelToLinear(texel[0]),
+        Kataglyphis::srgbChannelToLinear(texel[1]),
+        Kataglyphis::srgbChannelToLinear(texel[2]) };
+}
+
+glm::vec3 tonemapped(glm::vec3 radiance)
+{
+    return {
+        Kataglyphis::acesTonemap(radiance.x), Kataglyphis::acesTonemap(radiance.y), Kataglyphis::acesTonemap(radiance.z)
+    };
+}
+
+}// namespace
+
+// The missing-skybox sky is OxidANT's gradient: zenith above, horizon at a side face's middle, ground below.
+TEST(SkyBoxUnit, TheAnalyticSkyBakesZenithHorizonAndGroundWhereTheyBelong)
+{
+    const uint32_t size = Kataglyphis::kAnalyticSkyFaceSize;
+    const auto faces = Kataglyphis::analyticSkyFaces(size);
+    ASSERT_EQ(faces.size(), static_cast<size_t>(size) * size * 4U * 6U);
+    const auto near = [](glm::vec3 got, glm::vec3 want, float tolerance) {
+        return std::abs(got.x - want.x) < tolerance && std::abs(got.y - want.y) < tolerance
+               && std::abs(got.z - want.z) < tolerance;
+    };
+    // +Y's centre looks straight up, -Y's straight down; a byte's rounding is under 0.01 in linear.
+    EXPECT_TRUE(near(analyticTexel(faces, 2, size / 2, size / 2), tonemapped(Kataglyphis::kAnalyticSkyZenith), 0.01F));
+    EXPECT_TRUE(near(analyticTexel(faces, 3, size / 2, size / 2), tonemapped(Kataglyphis::kAnalyticSkyGround), 0.01F));
+    // A side face's middle rows straddle the horizon, its top row looks up.
+    for (size_t face : { 0U, 1U, 4U, 5U }) {
+        const glm::vec3 horizon = analyticTexel(faces, face, size / 2, size / 2);
+        EXPECT_TRUE(near(horizon, tonemapped(Kataglyphis::kAnalyticSkyHorizon), 0.03F)) << "face " << face;
+        EXPECT_LT(analyticTexel(faces, face, size / 2, 0).x, horizon.x) << "face " << face << ": the top row is zenith";
+        EXPECT_GT(analyticTexel(faces, face, size / 2, 0).z, analyticTexel(faces, face, size / 2, 0).x);
+    }
+    for (size_t at = 3; at < faces.size(); at += 4) { ASSERT_EQ(faces[at], 255); }
+}
+
+// Every face texel is lit: the black fallback it replaced gave the clouds no ambient at all.
+TEST(SkyBoxUnit, TheAnalyticSkyGivesTheCloudsABlueTopAndADarkerBottom)
+{
+    const uint32_t size = Kataglyphis::kAnalyticSkyFaceSize;
+    const auto texels = Kataglyphis::analyticSkyFaces(size);
+    const size_t layer = static_cast<size_t>(size) * size * 4U;
+    const std::array<const unsigned char *, 6> faces{ texels.data(),
+        texels.data() + layer,
+        texels.data() + 2 * layer,
+        texels.data() + 3 * layer,
+        texels.data() + 4 * layer,
+        texels.data() + 5 * layer };
+    const auto ambient = Kataglyphis::cloudAmbientOfCubemap(faces, size, size);
+    EXPECT_GT(ambient.top.z, ambient.top.x) << "the upper hemisphere is the blue zenith";
+    EXPECT_GT(ambient.top.z, 0.2F);
+    EXPECT_GT(ambient.bottom.x, 0.1F) << "the lower hemisphere is horizon and ground, not black";
+    EXPECT_LT(ambient.bottom.z, ambient.top.z);
 }

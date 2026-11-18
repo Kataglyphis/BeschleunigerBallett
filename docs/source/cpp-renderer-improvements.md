@@ -5,7 +5,7 @@ a three-way analysis (architecture/complexity, testing, performance). Each
 unit ships only after: container debug build green, the full commit suite
 (72 tests at campaign start, 697 as of 2026-10-01), and a
 validation-layer-clean runtime check where rendering changed.
-<!-- commit-suite-test-count: 809 -->
+<!-- commit-suite-test-count: 812 -->
 
 ## Shipped
 
@@ -129,6 +129,7 @@ validation-layer-clean runtime check where rendering changed.
 | (decision) | **The Rust glTF loader is the default** | Owner decision 2026-11-18, on `BM_GltfLoaderParser_*`: `Colosseum-gltf` parses in 394 ms against cgltf's 481 ms (medians of eight, aarch64 WSL, `linux-profile-clang`), at a 3 % spread against 37 %, and `GltfLoaderDiff.*` finds no difference on it. `gltfParserFromEnvironment` now returns `Rust` unless `KATAGLYPHIS_GLTF_LOADER=cgltf` (`GltfLoaderDiff.TheEnvironmentPicksRustUnlessItNamesCgltf`), so every lane's glTF goldens and parse suites run the Rust parser. cgltf goes once every lane has passed on it |
 | (decision) | **cgltf is gone: OxidANT's loader is the only glTF parser** | Owner decision 2026-11-18, once every lane had passed on the Rust default (`f5107baf`). `GltfLoader::parseCpu` calls `parseWithRust` alone; `parseWithCgltf` with its primitive, node and light walk, `cgltf_impl.cpp`, the `GltfParser` switch and `KATAGLYPHIS_GLTF_LOADER`, `describeTexCoordSet`, `GltfLoaderDiff.*`, the cgltf fuzz target (`gltf_parsing_fuzz_test`), the raw-cgltf `BM_GltfParse_*` benchmarks and the `third_party/cgltf` submodule went with it. `BM_GltfLoaderParseCpu_{CubeGlb,CubeTextured,Colosseum}` time the whole parse. Fuzzing the glTF input surface now belongs to OxidANT's loader: its `load_flat` proptest (OxidANT `0b9e638`) found four accessor shapes on which gltf 1.4.1 panicked, which would have aborted the engine; OxidANT now rejects them |
 | (decision) | **The skybox is Poly Haven's CC0 `kloofendal_43d_clear_puresky`** | Owner decision 2026-11-18: the DOOM2016 faces carried no source or licence and every package installed them. AssetANT's `kloofendal_43d_clear_puresky-v1` holds six 512 px faces its `equirect_to_cubemap.py` converted from Greg Zaal's 2k HDRI (exposure 0.5, turned -86 degrees so the sun stands at the default sun's azimuth); `Resources/skyboxes.lock` pins it and `FetchAssets.cmake` extracts it into `Resources/Textures/Skybox`, which the packages install. `SkyBox.cpp` and the golden helper read `RT.png`...`BK.png` from there; `licenses/CC0-1.0.txt` and the NOTICE get a `third-party-licenses.txt` row. All 91 GPU tests passed unchanged on aarch64 llvmpipe |
+| (decision) | **A missing skybox is OxidANT's procedural sky, not black** | Owner decision 2026-11-18. `SkyBox::loadAnalyticSky` bakes `sky_model.slang`'s gradient (zenith, horizon, ground; no sun) into six 64 px faces through ACES and sRGB, as the sky pass would show a radiance, and uploads them on the one cube-map path, so the sky pass, the cloud composite and ambient and the path tracer's bounces agree; a missing folder logs a warning, a broken face an error. `KATAGLYPHIS_SKYBOX_DIR` names another folder. `BuildIntegrity.AnalyticSkyMatchesOxidantsSkyModel` pins the copied constants and curves to OxidANT's file; `GoldenRender.WithoutSkyboxFacesTheSkyIsTheAnalyticGradient` and three `SkyBoxUnit` tests replace the two black-fallback ones |
 
 ## In progress
 

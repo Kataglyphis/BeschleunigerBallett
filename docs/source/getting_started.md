@@ -51,8 +51,9 @@ engine loads did not change.
 
 - `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` fetches every locked scene (all sixteen), for the model picker.
 - `cmake -P cmake/FetchAssets.cmake` fetches without configuring (add the same `-D` before `-P` for all).
-- The skybox comes the same way: `Resources/skyboxes.lock` pins AssetANT's CC0 `{N}`, which every
-  fetch extracts into `Resources/Textures/Skybox`.
+- The skybox comes the same way: `Resources/skyboxes.lock` pins AssetANT's CC0 `kloofendal_43d_clear_puresky`, which every
+  fetch extracts into `Resources/Textures/Skybox`. Without it the engine draws OxidANT's procedural sky
+  and logs a warning; `KATAGLYPHIS_SKYBOX_DIR=<folder>` loads another six faces (`RT LF UP DN FT BK.png`).
 - Offline, put each archive in the cache as `<sha256>-<name>.tar.xz`, or configure with
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` and go without the scenes and the tests that read them.
 
