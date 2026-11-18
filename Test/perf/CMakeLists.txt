@@ -18,11 +18,7 @@ kataglyphis_configure_common_test_target(${PERF_TEST_SUITE})
 target_sources(${PERF_TEST_SUITE} PRIVATE ${RENDERER_PERF_TEST_FILTER})
 kataglyphis_add_imgui_test_sources(${PERF_TEST_SUITE})
 
-target_link_libraries(
-  ${PERF_TEST_SUITE}
-  PRIVATE VulkanEngineCore
-          benchmark::benchmark
-          tinyobjloader)
+target_link_libraries(${PERF_TEST_SUITE} PRIVATE VulkanEngineCore benchmark::benchmark tinyobjloader)
 
 # BM_RecordCommands* reaches the renderer; without delay-loading, a host with no Vulkan loader could not start the suite.
 kataglyphis_enable_windows_vulkan_delay_load(${PERF_TEST_SUITE})
