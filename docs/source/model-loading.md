@@ -55,7 +55,12 @@ on any field that differs, materials included, except one class it prints
 instead: a generated tangent at a corner whose mirrored UV triangles cancel,
 whose direction is rounding noise in both. `Vertex.cpp`'s `computeTangents` turns off
 clang's fused multiply-add, which Rust never emits, so the rest agree within the
-suite's tolerances. cgltf stays the default.
+suite's tolerances. cgltf stays the default. `BM_GltfLoaderParser_*` times
+both on one file (`/0` cgltf, `/1` Rust). On `linux-profile-clang`, 8-core
+aarch64 WSL, 2026-11-18, median of eight: `Colosseum-gltf` (206 MB of buffers)
+cgltf 481 ms with a 37 % spread, Rust 394 ms at 3 %; `cube_textured.gltf`
+16.2 us against 11.1 us. The Colosseum row skips unless
+`KATAGLYPHIS_FETCH_ALL_ASSETS` fetched the scene.
 
 The same walk reads each visited node's `KHR_lights_punctual` light, mesh or no mesh, posed by the
 node's world transform (`GltfLoader::readLight`, as the Rust loader's `read_light`). The lights ride

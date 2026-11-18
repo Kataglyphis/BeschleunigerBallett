@@ -28,6 +28,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   `adoptParsed`, `uploadParsed` and `AsyncModelParse` are unchanged. cgltf stays the default.
   `GltfLoaderDiff.*` parses every `GltfTest` fixture and every fetched glTF scene with both parsers and fails on
   any field that differs. The bridge's namespace is `kataglyphis::oxidant`.
+- `BM_GltfLoaderParser_CubeTextured` and `BM_GltfLoaderParser_Colosseum` time both glTF parsers on the same
+  file. On aarch64 WSL the Rust parser takes `Colosseum-gltf` in 394 ms against cgltf's 481 ms (medians of
+  eight), and steadier; the Colosseum row skips when the scene is not fetched.
 - Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
   512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
   every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the

@@ -524,6 +524,44 @@ void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
 }
 BENCHMARK(BM_GltfLoaderParseCpu_CubeTextured)->Unit(benchmark::kMicrosecond);
 
+// Both parsers on the same file, Arg 0 cgltf and Arg 1 OxidANT's Rust loader: the KATAGLYPHIS_GLTF_LOADER choice.
+void gltfLoaderParseCpuWith(benchmark::State &state, const std::string &path)
+{
+    const auto parser = state.range(0) == 0 ? Kataglyphis::GltfParser::Cgltf : Kataglyphis::GltfParser::Rust;
+    state.SetLabel(state.range(0) == 0 ? "cgltf" : "rust");
+    for (auto _ : state) {
+        Kataglyphis::GltfLoader loader;
+        if (!loader.parseCpu(path, parser)) {
+            skipWithError(state, "GltfLoader::parseCpu failed");
+            return;
+        }
+        benchmark::DoNotOptimize(loader.getVertices().data());
+    }
+}
+
+void BM_GltfLoaderParser_CubeTextured(benchmark::State &state)
+{
+    const std::string path = find_model("GltfTest/cube_textured.gltf");
+    if (path.empty()) {
+        skipWithError(state, "gltf model not found (run from the repo root)");
+        return;
+    }
+    gltfLoaderParseCpuWith(state, path);
+}
+BENCHMARK(BM_GltfLoaderParser_CubeTextured)->Arg(0)->Arg(1)->Unit(benchmark::kMicrosecond);
+
+// Colosseum-gltf is fetched only with KATAGLYPHIS_FETCH_ALL_ASSETS, so its absence skips rather than errs.
+void BM_GltfLoaderParser_Colosseum(benchmark::State &state)
+{
+    const std::string path = find_model("Colosseum-gltf/Colosseum-gltf.gltf");
+    if (path.empty()) {
+        state.SkipWithMessage("Colosseum-gltf not fetched (KATAGLYPHIS_FETCH_ALL_ASSETS=ON)");
+        return;
+    }
+    gltfLoaderParseCpuWith(state, path);
+}
+BENCHMARK(BM_GltfLoaderParser_Colosseum)->Arg(0)->Arg(1)->Unit(benchmark::kMillisecond);
+
 // Upload, CPU half: uploadParsed slices a range, then the staging copy memcpys vertices and indices into mapped memory.
 void BM_UploadCpuHalf(benchmark::State &state)
 {
