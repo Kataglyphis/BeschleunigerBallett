@@ -55,7 +55,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`,
   `volumetric_clouds.slang`) are imported on both targets, so both renderers
   share them. The rest are shared within one
-  target: all but `sky_model.slang` on the C++/SPIR-V side, across its raster,
+  target: all but `sky_model.slang` and `punctual_shadow.slang` on the C++/SPIR-V side, across its raster,
   deferred, shadow-map, ray tracing and path tracing paths. The
   shared-module-targets table below is the exact, gated mapping.
 - **Entry points** `import` the math modules and compile to the target(s)
@@ -104,6 +104,11 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   spot lights by their cubes and add the rest unshadowed, the closest-hit
   shader traces one shadow ray per light, and the path tracer samples one
   light per bounce. Both.
+- `common/punctual_shadow.slang` — the WebGPU renderer's cube shadows as
+  layers of one 2D depth array (slot * 6 + face): the row-3 unpack, the
+  cube-map face selection and the depth formula `punctual_lights.slang`
+  also holds. Its face-picked uv cannot leave [0,1], so its tap needs no
+  range check. wgsl.
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, exercised
   on both targets by `tests/noise_test.slang`; no production shader imports it yet.
 - `common/fullscreen.slang` — the fullscreen-triangle vertex trick
@@ -307,6 +312,7 @@ imports.
 | `common/normal_map.slang` | spirv |
 | `common/path_estimator.slang` | both |
 | `common/punctual_light.slang` | both |
+| `common/punctual_shadow.slang` | wgsl |
 | `common/punctual_lights.slang` | spirv |
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |

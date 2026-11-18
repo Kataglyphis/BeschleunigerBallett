@@ -4068,8 +4068,9 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
     static const std::string kGeLower = ">= 0.0";
     static const std::string kLeUpper = "<= 1.0";
 
-    // A cube map has no border, so its taps are counted apart and need no range check.
-    static const std::string kCubeMarker = "punctualShadowMaps.SampleCmpLevelZero(";
+    // A cube has no border, nor do OxidANT's face layers whose uv the face selection picks: counted apart, unchecked.
+    static const std::array<std::string, 2> kCubeMarkers = { "punctualShadowMaps.SampleCmpLevelZero(",
+                                                             "punctualShadowMap.SampleCmpLevelZero(" };
     int occurrences_checked = 0;
     int cube_occurrences = 0;
     std::vector<std::string> violations;
@@ -4091,9 +4092,12 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
         while (true) {
             const auto marker_pos = stripped_text.find(kMarker, search_from);
             if (marker_pos == std::string::npos) { break; }
-            const std::size_t cube_prefix = kCubeMarker.size() - kMarker.size();
-            if (marker_pos >= cube_prefix
-                && stripped_text.compare(marker_pos - cube_prefix, kCubeMarker.size(), kCubeMarker) == 0) {
+            const bool cube_tap = std::ranges::any_of(kCubeMarkers, [&](const std::string &cube_marker) {
+                const std::size_t cube_prefix = cube_marker.size() - kMarker.size();
+                return marker_pos >= cube_prefix
+                       && stripped_text.compare(marker_pos - cube_prefix, cube_marker.size(), cube_marker) == 0;
+            });
+            if (cube_tap) {
                 ++cube_occurrences;
                 search_from = marker_pos + kMarker.size();
                 continue;
@@ -4140,7 +4144,8 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
       << "expected exactly 3 SampleCmpLevelZero call site(s), found " << occurrences_checked
       << " - update this count if a new PCF kernel was intentionally added, and confirm it also "
          "bounds-checks its tap coordinate";
-    EXPECT_EQ(cube_occurrences, 1) << "punctual_lights.slang's cube taps should sample through one call site";
+    EXPECT_EQ(cube_occurrences, 2)
+      << "punctual_lights.slang's cube taps and OxidANT's punctual_shadow_tap should sample through one call site each";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()

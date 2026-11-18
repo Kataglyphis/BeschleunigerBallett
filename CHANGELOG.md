@@ -31,6 +31,9 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 - `BM_GltfLoaderParser_CubeTextured` and `BM_GltfLoaderParser_Colosseum` time both glTF parsers on the same
   file. On aarch64 WSL the Rust parser takes `Colosseum-gltf` in 394 ms against cgltf's 481 ms (medians of
   eight), and steadier; the Colosseum row skips when the scene is not fetched.
+- OxidANT moves to `0b79367`: the WebGPU renderer gets raster shadows for point and spot lights at parity with
+  this engine's (four 512 px cubes, the same slots, depth range, face order and PCF), as layers of one 2D depth
+  array so a WebGPU compatibility device samples them too.
 - Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
   512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
   every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the
