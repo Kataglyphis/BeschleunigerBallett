@@ -36,12 +36,14 @@ No P0 item is open.
 
 ### P1: high value
 
-- [b] `CI` **Prove the 2026-11-15 renderer integration on riscv64 and the RX 9070 XT** (S,
-  **waits for the Saturday shards and the host**). Both Windows lanes and both arm64 lanes passed it
-  at 146919ad (on-request run 43895022074: the clang-cl build, both lavapipe GPU suites, Pester, every
-  arm64 job). Still unrun: the riscv64 GPU shards (Saturday's schedule, or dispatch
-  `linux-riscv64.yml` with `gpu-tests`) and, on the RX 9070 XT, the golden suites plus
-  `Invoke-SyncValidation.ps1`. The cloud and glossy-material goldens are the ones to watch.
+- [b] `CI` **Prove the 2026-11-15 renderer integration on riscv64 and the RX 9070 XT** (S, **waits for
+  the Saturday shards and the host**). Both Windows lanes and both arm64 lanes passed it at 146919ad
+  (on-request run 43895022074: the clang-cl build, both lavapipe GPU suites, Pester, every arm64 job).
+  Still unrun: the riscv64 GPU shards (Saturday's schedule, or dispatch `linux-riscv64.yml` with
+  `gpu-tests`) and, on the RX 9070 XT, the golden suites plus `Invoke-SyncValidation.ps1`. The cloud and
+  glossy-material goldens are the ones to watch. Since 2026-11-19 also the GPU-timing goldens
+  (`writeTimestamp2` and the nested Forward, GBuffer, DeferredLighting, RayTrace and PathTrace scopes,
+  sync-validated on llvmpipe only) and the glTF and reload goldens over the in-place upload.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -91,42 +93,32 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Bridge foundations:
 
-- [ ] `Rust` **Create `kataglyphis_render_core` with its first consumer, the settings drift test** (M,
-  plan I1 and B10 step 1). A wgpu-free OxidANT crate (glam, bytemuck, kataglyphis_assets, no features)
-  that `cxx_bridge` may link and `webgpu_renderer` re-exports. Move only what this consumer needs: the
-  plain settings data, ranges and `sanitize` out of `clouds.rs` and `shadow_settings.rs`. Bridge
-  `default_scene_settings`, `setting_ranges` and `sanitize`, and add a commit-suite test comparing them
-  field by field with `GUISceneSharedVars{}` and the GUI's ranges. Every later module moves in the change
-  that consumes it. Name the crate in OxidANT's AGENTS.md, `docs/crates.md`, the licence policy and the
-  coverage floors.
-- [ ] `CI` **Gate the bridge's crate graph** (S, plan X4). Give the hub's `stage-cargo-licenses.py` a
-  forbidden-package list (wgpu, naga, winit, egui, tokio, gstreamer, ort) and a package budget measured
-  today (55 runtime crates), add `#![forbid(unsafe_code)]` and the clippy denies for unwrap, expect and
-  panic outside tests to `kataglyphis_assets` (rewrite `ktx2_zstd.rs:63`).
-- [ ] `C++` **Upload the bridge's arrays without a second copy** (M, plan I13). `GltfLoaderRust.cpp`
-  copies every array again, about 0.5 GB for the Colosseum, and holds both copies at the peak. Keep the
-  bridge result behind a pimpl, upload from `std::span` over `data()`/`size()` and feed encoded images to
-  `Texture::createFromMemory` from the `rust::Vec`. Measure `BM_GltfLoaderParseCpu_Colosseum`,
-  `BM_UploadCpuHalf` and peak RSS before and after.
-- [ ] `C++` **One glTF fixture set in kataglyphis_assets, with a C++ round trip over all of it** (M,
-  plan X5). Move `webgpu_renderer/tests/assets` to `assets/tests/assets`, delete BB's three byte-identical
-  copies in `Resources/Models/GltfTest`, and add a parameterised `GltfParseUnit` round trip over every
-  fixture (morphs, skins, Basis, cameras, unlit, alpha) that checks the mapping into Mesh, MeshRange and
-  ObjMaterial. Parser-behaviour twins then live in Rust only. Paths go through `resolveModelPath`;
-  update the arm64 staging list and its Pester fixture.
-- [ ] `C++` **Cross-renderer parity entries and shared frustum vectors** (M, plan I5). `parity_*` bridge
-  entries for the viewport remap, the lens and the model transform, asserted against the C++ functions;
-  one JSON file of frustum verdicts (visible, caster) read by `frustumSuite.cpp` and a Rust test. A
-  hit-identity test against the Rust tracer waits until OBJ goes through Rust.
-- [ ] `C++` **One GPU-timing taxonomy for both renderers** (S, plan I5). Time Forward,
-  GBuffer+DeferredLighting, RayTrace and PathTrace as separate scopes inside Main, use one 32-sample window
-  and `writeTimestamp2`, and update `gpu-timing-budgets.json` and `Compare-RendererTimings`' pass list.
-- [ ] `CI` **The rest of "a skip is not a pass"** (S, plan X2). Since 2026-11-19 `KATAGLYPHIS_REQUIRE_GPU`
-  turns `SKIP_WITHOUT_GPU` into a failure under `run-ctest.sh --virtual-display` and in the riscv64 GPU
-  shards. Still counted as passes: the hardware-RT `GTEST_SKIP`s on llvmpipe, which need a reusable
-  `--fail-on-skipped REGEX` in the hub's `ctest-run.sh` (ctest's Skipped, not the two Disabled goldens),
-  and the Rust renderer tests, once `run-cargo-tests.sh` exports the variable: that step has no Xvfb and the
-  hub's `cargo_test.sh` runs `cargo test --all`, so check the crate selection first.
+- [ ] `Shared` **Apply the bridge review's rules of 2026-11-19** (S-M, plan I5 and B10). The rules are under
+  Owner decisions. Rust's `Frustum` and `draw_cull.slang` take the C++ culling rules, and the three cases go
+  into `frustum_verdicts.json`; `CloudSettings::sanitized` clamps every field to its range with NaN
+  fallbacks, and `sceneSettingsDriftSuite.cpp` checks NaN too; the Sun joins `default_scene_settings()`
+  and the drift suite compares it as a named difference; Rust's lens takes aspect 1 for a zero-height
+  frame, and the parity suite adds that case; both renderers read an empty
+  `KATAGLYPHIS_MIKKTSPACE_TANGENTS` as unset. Each with a negative control.
+- [ ] `C++` **Parser-behaviour twins in Rust only** (S, plan X5's remainder). `gltfParseSuite.cpp` still
+  tests behaviour of OxidANT's parser that `kataglyphis_assets` tests too. Pair each such case with its
+  Rust twin, delete the C++ copy and keep the cases that check the mapping into Mesh, MeshRange and
+  ObjMaterial; `GltfFixtureRoundTrip` already covers every fixture.
+- [ ] `Rust` **Criterion benchmarks for the renderer code behind the bridge** (M, plan X7's remainder;
+  `benches/load_flat.rs` is done). QEM, the tile grid, the cascade fit and the BVH build, under the
+  bench profile with fat LTO. BB adds a `BM_` row with a labelled placeholder baseline for each bridged
+  entry: `default_scene_settings`, `setting_ranges`, `sanitize`, `parity_viewport_remap`, `parity_lens`,
+  `parity_model_transform` and `load_gltf_flat_with` (Profile tree; `perfTestSuite` is not built in
+  Debug).
+- [ ] `Shared` **The timed scopes cover the same work in both renderers** (S, plan I5's remainder). The
+  names match since 2026-11-19, the contents do not: Rust's Forward and DeferredLighting include the
+  sky, which C++ times as Sky; Rust's ShadowCascades includes the punctual cube faces, which C++ times
+  as PunctualShadows; Rust times TraceResolve on its own and has no Main. Split Rust's scopes the C++
+  way, so `Compare-RendererTimings.ps1` compares like with like.
+- [ ] `C++` **`MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels** (S). It counts meshes only
+  and passed with the in-place upload's index re-base zeroed; only
+  `BlendCardsCompositeInDepthOrderFromBothSides` caught that mutant. Check that the left quad draws red
+  and the right one green.
 
 Loader:
 
@@ -148,19 +140,20 @@ Loader:
   `computeTangents`, `fillMissingFlatNormals`, `vertexTangentSuite`, `obj_parsing_fuzz_test` and
   `BM_ObjParse_*`. Pass through texture bytes stb can read instead of re-encoding them; keep parse time
   against `BM_ObjLoaderParseCpu_Suzanne`.
-- [b] `Assets` **Texture ingest in Rust** (L, plan B5; **after the zero-copy upload**). Step 1: prefer
+- [ ] `Assets` **Texture ingest in Rust** (L, plan B5). Step 1: prefer
   `KHR_texture_basisu` sources and deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with
   `Texture::createFromLevels` in C++ (basisu-only glTFs draw untextured in C++ today). Step 2: PNG and
   JPEG through the image crate with the shared `generate_mips`, which takes the Colosseum's 69-image
   decode off the render thread; measure the peak first, the RGBA8 chains likely exceed 1 GB, or stream
   per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new work. Formats (owner 2026-11-19): PNG, JPEG,
   BMP and TGA plus GIF, PNM and HDR through the image crate's features; PSD and PIC go with stb.
-- [b] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9; **after
-  render_core**). Frame only a scene with its own glTF camera or one whose fixed pose would need a too large
-  far plane; the other scenes keep their poses (owner 2026-11-19). Cameras, the active one and
-  `asset.copyright` in FlatModel; a bridged `frame_scene` returns eye, yaw and pitch in the C++ convention
-  (yaw + 180, -pitch), clip planes, fly speed and shadow distance. Shows the credit with an `ATTRIBUTION.txt`
-  fallback, or Sponza shows none. `framing.rs` must first lose its ties to `OrbitCamera` and `fly.rs` (winit).
+- [ ] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9). Frame
+  only a scene with its own glTF camera or one whose fixed pose would need a too large far plane; the
+  other scenes keep their poses (owner 2026-11-19). Cameras, the active one and `asset.copyright` in
+  FlatModel; a bridged `frame_scene` returns eye, yaw and pitch in the C++ convention (yaw + 180,
+  -pitch), clip planes, fly speed and shadow distance. Shows the credit with an `ATTRIBUTION.txt`
+  fallback, or Sponza shows none. `framing.rs` must first lose its ties to `OrbitCamera` and `fly.rs`
+  (winit).
 
 Shaders:
 
@@ -217,8 +210,8 @@ C++ catches up:
 - [ ] `C++` **One set of C++ scene targets** (M-L, plan C6 step 1). One set per swapchain image, and both
   raster paths always allocated, cost 116 B/px (about 229 MiB at 1080p); afterwards 12 B/px forward or
   32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
-- [b] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2; after one set of targets and
-  render_core). Every pass reads the swapchain extent today and must take a scene extent instead.
+- [b] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2; after one set of targets).
+  Every pass reads the swapchain extent today and must take a scene extent instead.
 - [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
   device thread onto the `AsyncModelParse` worker and batch texture uploads through a staging ring; route
   the editor reload through the worker and keep the old scene until the new one lands (a failed reload
@@ -285,10 +278,6 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
-- [ ] `Assets` **Load options instead of an environment read inside the shared loader** (S, plan X14).
-  `KATAGLYPHIS_MIKKTSPACE_TANGENTS` changes C++ geometry from inside `gltf_loader.rs`. A `GltfLoadOptions`
-  shared struct, `load_gltf_flat_with`, the old names as default wrappers; the read moves to each
-  application's start.
 - [ ] `C++` **Editor parity, part 2: adapter by name, orbit and wheel zoom, one key table** (M, plan C9).
   `--adapter` or `KATAGLYPHIS_ADAPTER` by name substring with the list in the Renderer tab; orbit and
   zoom with Rust's constants; one table drives the handlers and the key panel.
@@ -297,11 +286,11 @@ New in both:
 - [ ] `Shared` **Rotate the photo sky with the sun's azimuth** (M, plan X19), on by default in both renderers
   (owner 2026-11-19). The three C++ cube lookups (with post's cloud composite) take a yaw; Rust needs only a
   flag in `sky.slang`.
-- [b] `Assets` **Skybox faces and the cloud ambient from Rust** (M, plan B4; after render_core). One
+- [ ] `Assets` **Skybox faces and the cloud ambient from Rust** (M, plan B4). One
   face decode and average for both renderers; the navy gate needs a new form.
-- [b] `C++` **Fit the cascades in Rust** (M, plan B7; after render_core and the parity entries). The
-  first per-frame bridge call (about 1 µs, no allocation); brings Rust's near plane at the nearest caster
-  to devices without depthClamp, where C++ loses tall casters' shadows.
+- [ ] `C++` **Fit the cascades in Rust** (M, plan B7). The first per-frame bridge call (about 1 µs, no
+  allocation); brings Rust's near plane at the nearest caster to devices without depthClamp, where C++
+  loses tall casters' shadows.
 - [b] `C++` **Spot-light face masks** (M, plan B8; **measure the cube cost on a GPU host first**). One
   `cone_face_mask` in Rust; Rust skips faces, C++ needs per-mask pipelines or an `SV_ViewID` cull.
 - [b] `Shared` **Keep punctual shadow cubes whose light and casters did not change** (L, plan X10;
@@ -310,15 +299,15 @@ New in both:
 - [b] `C++` **LOD chains at load time from Rust's QEM** (L, plan B11; per-level material ids first).
   Harden `qem.rs` (`remap[i]` panics on bad indices), return each level's error, pick the level by
   screen-space error at draw time; shadows and BLAS keep full detail.
-- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; after the skin's rest pose and
-  render_core). Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked
-  snapshot. Extract the animator from `ForwardRenderer` into a wgpu-free crate
-  first; skinning in shared Slang, a compute pre-skin with a BLAS update for the traced modes.
+- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; after the skin's rest pose).
+  Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked snapshot.
+  Extract the animator from `ForwardRenderer` into a wgpu-free crate first; skinning in shared Slang, a
+  compute pre-skin with a BLAS update for the traced modes.
 - [ ] `C++` **GPU occlusion culling, then multi-draw indirect** (L + L, plan C12). A Hi-Z pyramid
   (R32Float over single-mip storage views), not occlusion queries (owner 2026-11-19; the Rust roadmap's
   queries row changes with it). GPU frustum culling alone gains nothing over the exact CPU cull.
-- [b] `C++` **Tiled punctual lights from the bridged tile grid** (M, plan C13; after render_core and the
-  shared lighting Slang).
+- [b] `C++` **Tiled punctual lights from the bridged tile grid** (M, plan C13; after the shared lighting
+  Slang).
 - [b] `C++` **A compute-BVH fallback for the ray-traced mode** (L, plan C14 step 2; **after a device
   without ray tracing runs the raster path at all**). The RT pipeline stays as the showcase and the A/B
   against ray query (owner 2026-11-19), so step 1, the ray-query kernel, is dropped.
@@ -396,7 +385,21 @@ committed to.
 - **1.6.0 ships after the plan's Phase 2** (2026-11-19): `bump-version.sh 1.6.0`, its CHANGELOG section, then
   develop goes to main once every lane is green.
 
-No decision of the 2026-11-18 plan is open.
+- **The bridge foundations' review rules** (2026-11-19, after Phase 2):
+  - Frustum culling follows the C++ rules in both renderers and `draw_cull.slang`: an inverted or invalid box
+    is visible, planes are normalised and a box up to 1e-4 outside still counts, a zero-normal plane is
+    skipped.
+  - The bridged cloud `sanitize` clamps every field to its editor range, and a NaN falls back to the default,
+    as the shadow settings already do.
+  - The Sun (direction, colour, radiance, ambient) joins `default_scene_settings()`; the drift test names its
+    fields as the expected difference until C++ takes Rust's Sun with the ambient term.
+  - A zero-height frame has aspect 1 in both renderers.
+  - An empty `KATAGLYPHIS_MIKKTSPACE_TANGENTS` counts as unset, in both renderers; only the Rust viewer and
+    the C++ engine read it, the Rust tools and tests load with the defaults.
+  - `Resources/Models/GltfTest/cube_textured.gltf` stays: two path-tracing goldens reload it through the
+    editor library, and `GltfFixtureRoundTrip` keeps it byte-identical to OxidANT's copy.
+
+No decision of the 2026-11-18 plan or of its Phase 2 is open.
 
 ## Rust renderer ideas (OxidANT)
 

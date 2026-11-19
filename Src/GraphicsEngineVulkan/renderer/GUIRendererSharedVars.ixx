@@ -11,9 +11,24 @@ enum class RasterizationMode { Forward, Deferred };
 
 // Passes bracketed by GPU timestamp pairs in VulkanRenderer::record_commands.
 // "Main" is forward/deferred rasterization or, in its place, the ray-/path-
-// tracing stage; "Post" includes the GUI draw (ImGui renders inside the post
-// render pass).
-enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, CloudUpsample, PunctualShadows, Count };
+// tracing stage, and times the one of Forward, GBuffer + DeferredLighting,
+// RayTrace or PathTrace that drew inside it; "Post" includes the GUI draw
+// (ImGui renders inside the post render pass).
+enum class GpuTimedPass : int {
+    Clouds = 0,
+    ShadowCascades,
+    Main,
+    Forward,
+    GBuffer,
+    DeferredLighting,
+    RayTrace,
+    PathTrace,
+    Sky,
+    Post,
+    CloudUpsample,
+    PunctualShadows,
+    Count
+};
 
 // Single source of truth for the pass count: bumping this table is the only
 // edit needed to add a pass, and the static_asserts below catch every other
@@ -22,6 +37,11 @@ inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
   "Clouds (compute)",
   "Shadow cascades",
   "Main (raster/RT)",
+  "  Forward",
+  "  G-buffer",
+  "  Deferred lighting",
+  "  Ray trace",
+  "  Path trace",
   "Sky",
   "Post + GUI",
   "Clouds upsample",
@@ -32,19 +52,43 @@ inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAME
 // Machine-readable identifiers for the same passes, used as JSON keys by the
 // KATAGLYPHIS_GPU_TIMING_JSON export. Separate from the display names above:
 // those may be reworded for the GUI at will, while these are diffed between
-// runs by tooling and must stay stable.
+// runs by tooling and must stay stable. A pass the Rust renderer times too
+// takes its TimedPass::name() (BuildIntegrity.GpuTimingMatchesTheRustRenderersTaxonomy).
 inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
   "Clouds",
   "ShadowCascades",
   "Main",
+  "Forward",
+  "GBuffer",
+  "DeferredLighting",
+  "RayTrace",
+  "PathTrace",
   "Sky",
   "Post",
   "CloudUpsample",
   "PunctualShadows",
 });
 
+// The pass whose scope encloses each one, Count for a top-level pass: a frame sum adds only the top level.
+inline constexpr std::array GPU_TIMED_PASS_PARENTS = std::to_array<GpuTimedPass>({
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
+  GpuTimedPass::Main,
+  GpuTimedPass::Main,
+  GpuTimedPass::Main,
+  GpuTimedPass::Main,
+  GpuTimedPass::Main,
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
+});
+
 static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(),
   "display and export name tables must stay parallel");
+static_assert(GPU_TIMED_PASS_PARENTS.size() == GPU_TIMED_PASS_NAMES.size(),
+  "the parent table must stay parallel to the name tables");
 static_assert(static_cast<int>(GpuTimedPass::Count) == GPU_TIMED_PASS_COUNT,
   "GpuTimedPass::Count must track the pass name table");
 

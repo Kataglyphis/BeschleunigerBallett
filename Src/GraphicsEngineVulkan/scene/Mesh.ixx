@@ -1,7 +1,10 @@
 ﻿module;
+#include <cstdint>
+#include <cstring>
 #include <glm/glm.hpp>
 #include <memory>
-#include <vector>
+#include <span>
+#include <utility>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.mesh;
@@ -19,12 +22,14 @@ export namespace Kataglyphis {
 class Mesh
 {
   public:
+    /// `indices` count from vertex `firstVertex` of the array `vertices` was cut from; the upload re-bases them.
     Mesh(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool transfer_command_pool,
-      const std::vector<Vertex> &vertices,
-      const std::vector<uint32_t> &indices,
-      const std::vector<unsigned int> &materialIndex,
-      const std::vector<ObjMaterial> &materials);
+      std::span<const Vertex> vertices,
+      std::span<const uint32_t> indices,
+      std::span<const unsigned int> materialIndex,
+      std::span<const ObjMaterial> materials,
+      uint32_t firstVertex = 0);
 
     Mesh();
     Mesh(const Mesh &) = delete;
@@ -96,32 +101,46 @@ class Mesh
 
     std::shared_ptr<VulkanDevice> device{ nullptr };
 
-    void createVertexBuffer(vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices);
+    void createVertexBuffer(vk::CommandPool transfer_command_pool, std::span<const Vertex> vertices);
 
-    void createIndexBuffer(vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices);
+    void
+      createIndexBuffer(vk::CommandPool transfer_command_pool, std::span<const uint32_t> indices, uint32_t firstVertex);
 
-    void createMaterialIDBuffer(vk::CommandPool transfer_command_pool, const std::vector<unsigned int> &materialIndex);
+    void createMaterialIDBuffer(vk::CommandPool transfer_command_pool, std::span<const unsigned int> materialIndex);
 
-    void createMaterialBuffer(vk::CommandPool transfer_command_pool, const std::vector<ObjMaterial> &materials);
+    void createMaterialBuffer(vk::CommandPool transfer_command_pool, std::span<const ObjMaterial> materials);
 
     // Shared body of the four create*Buffer uploads: a device-local buffer,
     // eTransferDst plus the caller's `baseUsage` bit(s), and - when the device
     // supports it - the buffer-device-address / ray-tracing-input usage and the
     // matching allocate flag, so the buffer's address can be fetched afterwards.
-    // Each create*Buffer differs only in its target buffer and base usage bit,
-    // so they all funnel through here.
+    // `fill` writes the `byteCount` bytes into the staging memory.
+    template<typename Fill>
+    bool uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
+      VulkanBuffer &targetBuffer,
+      vk::BufferUsageFlags baseUsage,
+      vk::DeviceSize byteCount,
+      Fill &&fill);
+
     template<typename T>
     bool uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
       VulkanBuffer &targetBuffer,
       vk::BufferUsageFlags baseUsage,
-      const std::vector<T> &data);
+      std::span<const T> data)
+    {
+        return uploadDeviceLocalBuffer(
+          transfer_command_pool, targetBuffer, baseUsage, data.size_bytes(), [data](void *staging) {
+              std::memcpy(staging, data.data(), data.size_bytes());
+          });
+    }
 };
 
-template<typename T>
+template<typename Fill>
 inline bool Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
   VulkanBuffer &targetBuffer,
   vk::BufferUsageFlags baseUsage,
-  const std::vector<T> &data)
+  vk::DeviceSize byteCount,
+  Fill &&fill)
 {
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
@@ -137,7 +156,13 @@ inline bool Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
-    return vulkanBufferManager.createBufferAndUploadVectorOnDevice(
-      device, transfer_command_pool, targetBuffer, usage_flags, memory_property_flags, data, memory_allocate_flags);
+    return vulkanBufferManager.createBufferAndUploadOnDevice(device,
+      transfer_command_pool,
+      targetBuffer,
+      usage_flags,
+      memory_property_flags,
+      byteCount,
+      std::forward<Fill>(fill),
+      memory_allocate_flags);
 }
 }// namespace Kataglyphis

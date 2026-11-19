@@ -172,7 +172,7 @@ TEST(SceneConfigUnit, ResolveModelPathFindsBundledModel)
 
 TEST(SceneConfigUnit, ResolveModelPathIsIdempotent)
 {
-    const std::string resolved = sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
+    const std::string resolved = sceneConfig::resolveModelPath("Models/GltfTest/two_primitives.gltf");
     EXPECT_TRUE(std::filesystem::exists(resolved)) << "Could not resolve bundled model: " << resolved;
 
     const std::string resolved_again = sceneConfig::resolveModelPath(resolved);

@@ -20,7 +20,9 @@ corrosion_add_cxxbridge(
   kataglyphis_cxx_bridge
   FILES
   gltf.rs
-  diagnostics.rs)
+  diagnostics.rs
+  settings.rs
+  parity.rs)
 
 add_subdirectory(GraphicsEngineVulkan)
 # Off by default: kompute's headers throw, so the playground cannot use the no-exceptions options.

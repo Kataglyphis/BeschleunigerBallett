@@ -6,7 +6,7 @@
 #include <cstring>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/matrix.hpp>
-#include <vector>
+#include <span>
 #include <vulkan/vulkan.hpp>
 
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
@@ -17,6 +17,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.vertex;
 
 using namespace Kataglyphis;
@@ -34,10 +35,11 @@ void Mesh::cleanUp()
 
 Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool transfer_command_pool,
-  const std::vector<Vertex> &vertices,
-  const std::vector<uint32_t> &indices,
-  const std::vector<unsigned int> &materialIndex,
-  const std::vector<ObjMaterial> &materials)
+  std::span<const Vertex> vertices,
+  std::span<const uint32_t> indices,
+  std::span<const unsigned int> materialIndex,
+  std::span<const ObjMaterial> materials,
+  uint32_t firstVertex)
   : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
     device(device)
 {
@@ -56,7 +58,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
 
     object_description = ObjectDescription{};
     createVertexBuffer(transfer_command_pool, vertices);
-    createIndexBuffer(transfer_command_pool, indices);
+    createIndexBuffer(transfer_command_pool, indices, firstVertex);
     createMaterialIDBuffer(transfer_command_pool, materialIndex);
     createMaterialBuffer(transfer_command_pool, materials);
 
@@ -85,7 +87,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
 
 Mesh::~Mesh() = default;
 
-void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices)
+void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool, std::span<const Vertex> vertices)
 {
     if (!uploadDeviceLocalBuffer(transfer_command_pool,
           vertexBuffer,
@@ -95,17 +97,23 @@ void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool, const std::
     }
 }
 
-void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices)
+void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
+  std::span<const uint32_t> indices,
+  uint32_t firstVertex)
 {
+    const auto rebase = [indices, firstVertex](void *staging) {
+        rebaseIndices(indices, firstVertex, std::span(static_cast<uint32_t *>(staging), indices.size()));
+    };
     if (!uploadDeviceLocalBuffer(transfer_command_pool,
           indexBuffer,
           vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
-          indices)) {
+          indices.size_bytes(),
+          rebase)) {
         spdlog::error("Mesh::createIndexBuffer: upload failed; index buffer left unwritten.");
     }
 }
 
-void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool, const std::vector<unsigned int> &materialIndex)
+void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool, std::span<const unsigned int> materialIndex)
 {
     // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(
@@ -114,7 +122,7 @@ void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool, const s
     }
 }
 
-void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool, const std::vector<ObjMaterial> &materials)
+void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool, std::span<const ObjMaterial> materials)
 {
     // Read as a storage buffer, never bound as an index buffer.
     if (!uploadDeviceLocalBuffer(

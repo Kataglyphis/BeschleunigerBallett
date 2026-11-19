@@ -226,6 +226,18 @@ std::string find_model(const char *name)
     return {};
 }
 
+// OxidANT's glTF fixtures, which both renderers load in place.
+std::string find_oxidant_fixture(const char *name)
+{
+    namespace fs = std::filesystem;
+    for (const auto *prefix : { "", "../", "../../", "../../../" }) {
+        fs::path candidate =
+          fs::path(prefix) / "third_party" / "OxidANT" / "crates" / "assets" / "tests" / "assets" / name;
+        if (fs::exists(candidate)) { return candidate.string(); }
+    }
+    return {};
+}
+
 void parse_and_walk(const std::string &path, benchmark::State &state)
 {
     if (path.empty()) {
@@ -419,7 +431,7 @@ void gltfLoaderParseCpu(benchmark::State &state, const std::string &path)
 
 void BM_GltfLoaderParseCpu_CubeGlb(benchmark::State &state)
 {
-    const std::string path = find_model("GltfTest/cube.glb");
+    const std::string path = find_oxidant_fixture("cube.glb");
     if (path.empty()) {
         skipWithError(state, "gltf model not found (run from the repo root)");
         return;
@@ -451,7 +463,7 @@ void BM_GltfLoaderParseCpu_Colosseum(benchmark::State &state)
 }
 BENCHMARK(BM_GltfLoaderParseCpu_Colosseum)->Unit(benchmark::kMillisecond);
 
-// Upload, CPU half: uploadParsed slices a range, then the staging copy memcpys vertices and indices into mapped memory.
+// Upload, CPU half: glTF stages a range's vertices straight from the parse and re-bases its indices as staged.
 void BM_UploadCpuHalf(benchmark::State &state)
 {
     const auto quadCount = static_cast<std::size_t>(state.range(0));
@@ -459,7 +471,6 @@ void BM_UploadCpuHalf(benchmark::State &state)
 
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
-    std::vector<unsigned int> materialIndex(quadCount * 2, 0U);
     vertices.reserve(quadCount * 4);
     indices.reserve(quadCount * 6);
     for (std::size_t q = 0; q < quadCount; ++q) {
@@ -475,20 +486,21 @@ void BM_UploadCpuHalf(benchmark::State &state)
     Kataglyphis::MeshRange range{};
     range.vertexCount = vertices.size();
     range.indexCount = indices.size();
-    range.triCount = materialIndex.size();
 
-    const std::size_t vertexBytes = sizeof(Vertex) * vertices.size();
-    const std::size_t indexBytes = sizeof(unsigned int) * indices.size();
-    std::vector<std::byte> staging(vertexBytes + indexBytes);
+    const std::span<const Vertex> range_vertices = std::span(vertices).subspan(range.vertexBase, range.vertexCount);
+    const std::span<const unsigned int> range_indices = std::span(indices).subspan(range.indexStart, range.indexCount);
+    std::vector<std::byte> vertex_staging(range_vertices.size_bytes());
+    std::vector<unsigned int> index_staging(range_indices.size());
 
     for (auto _ : state) {
-        const Kataglyphis::MeshSlice slice = Kataglyphis::sliceMeshRange(range, vertices, indices, materialIndex);
-        std::memcpy(staging.data(), slice.vertices.data(), vertexBytes);
-        std::memcpy(staging.data() + vertexBytes, slice.indices.data(), indexBytes);
-        benchmark::DoNotOptimize(staging.data());
+        std::memcpy(vertex_staging.data(), range_vertices.data(), range_vertices.size_bytes());
+        Kataglyphis::rebaseIndices(range_indices, static_cast<unsigned int>(range.vertexBase), index_staging);
+        benchmark::DoNotOptimize(vertex_staging.data());
+        benchmark::DoNotOptimize(index_staging.data());
         benchmark::ClobberMemory();
     }
-    state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(staging.size()));
+    state.SetBytesProcessed(static_cast<int64_t>(state.iterations())
+                            * static_cast<int64_t>(range_vertices.size_bytes() + range_indices.size_bytes()));
 }
 BENCHMARK(BM_UploadCpuHalf)->Arg(64)->Arg(4096)->Arg(65536);
 

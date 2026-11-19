@@ -63,8 +63,8 @@ function Get-ExpectedPassNames {
     return , $names
 }
 
-# Only a half-resolution cloud frame records the upsample, and only a scene with a point or spot light the cubes.
-$CppOptionalPasses = @('CloudUpsample', 'PunctualShadows')
+# Recorded only at half-resolution clouds, with a point or spot light, or in a deferred or traced frame.
+$CppOptionalPasses = @('CloudUpsample', 'PunctualShadows', 'GBuffer', 'DeferredLighting', 'RayTrace', 'PathTrace')
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
     $CppExpectedPasses = @($cppAllPasses | Where-Object { $_ -notin $CppOptionalPasses })

@@ -18,6 +18,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.async_model_parse;
+import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.scene_config;
@@ -27,6 +28,8 @@ class Scene
 {
   public:
     Scene();
+    /// Every glTF this scene loads, from any path, parses with these.
+    explicit Scene(GltfLoadOptions gltfLoadOptions);
 
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
 
@@ -215,6 +218,7 @@ class Scene
     ~Scene();
 
   private:
+    GltfLoadOptions gltfLoadOptions{};
     AsyncModelParse pendingModelParse;
     bool modelLoadPending{ false };
     std::string pendingModelPath{};

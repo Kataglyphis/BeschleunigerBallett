@@ -1,8 +1,10 @@
 module;
 
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -29,9 +31,27 @@ GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device,// DEVICE_SINK_OK: m
   : device(std::move(device)), command_pool(command_pool)
 {}
 
-std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
+GltfLoader::GltfLoader(GltfLoader &&other) noexcept : device(std::move(other.device)), command_pool(other.command_pool)
+{ adoptParsed(std::move(other)); }
+
+GltfLoader &GltfLoader::operator=(GltfLoader &&other) noexcept
 {
-    if (!parseCpu(modelFile)) {
+    if (this == &other) { return *this; }
+    device = std::move(other.device);
+    command_pool = other.command_pool;
+    adoptParsed(std::move(other));
+    return *this;
+}
+
+GltfLoadOptions gltfLoadOptionsFromEnvironment()
+{
+    // Set at all, as OxidANT's load_options_from_env reads it: an empty value asks for MikkTSpace too.
+    return GltfLoadOptions{ .mikktspaceTangents = std::getenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS") != nullptr };
+}
+
+std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile, const GltfLoadOptions &options)
+{
+    if (!parseCpu(modelFile, options)) {
         spdlog::error("Failed to parse glTF: {}", modelFile);
         return nullptr;
     }
@@ -40,16 +60,19 @@ std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
 
 void GltfLoader::adoptParsed(GltfLoader &&other)
 {
-    vertices = std::move(other.vertices);
-    indices = std::move(other.indices);
+    bridge = std::move(other.bridge);
+    vertices = other.vertices;
+    indices = other.indices;
     materials = std::move(other.materials);
-    materialIndex = std::move(other.materialIndex);
+    materialIndex = other.materialIndex;
     textureImages = std::move(other.textureImages);
     textureSamplerDescs = std::move(other.textureSamplerDescs);
     textureSrgb = std::move(other.textureSrgb);
     meshRanges = std::move(other.meshRanges);
     punctualLights = std::move(other.punctualLights);
     sun = other.sun;
+    // The moved-from loader reads as unparsed, not as a second view of these arrays.
+    other.clearParsed();
 }
 
 std::shared_ptr<Model> GltfLoader::uploadParsed()
@@ -60,7 +83,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
 
     // Upload order must match the textureIDs parseCpu assigned.
     for (std::size_t i = 0; i < textureImages.size(); ++i) {
-        const std::vector<unsigned char> &encoded = textureImages[i];
+        const std::span<const unsigned char> encoded = textureImages[i];
         Texture texture;
         const bool created =
           texture.createFromMemory(device, command_pool, encoded.data(), encoded.size(), textureSrgb[i] != 0);
@@ -69,7 +92,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     ensureAtLeastOneTexture(*model, device, command_pool);
 
     // One mesh per glTF primitive; each shares the full materials array (materialIndex keeps original indices).
-    addMeshesForRanges(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
+    addMeshesForRangesInPlace(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
     model->setPunctualLights(punctualLights);
     model->setSun(sun);
     return model;
@@ -77,23 +100,24 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
 
 void GltfLoader::clearParsed()
 {
-    vertices.clear();
-    indices.clear();
+    vertices = {};
+    indices = {};
     materials.clear();
-    materialIndex.clear();
+    materialIndex = {};
     textureImages.clear();
     textureSamplerDescs.clear();
     textureSrgb.clear();
     meshRanges.clear();
     punctualLights.clear();
     sun.reset();
+    bridge.reset();
 }
 
-bool GltfLoader::parseCpu(const std::string &modelFile)
+bool GltfLoader::parseCpu(const std::string &modelFile, const GltfLoadOptions &options)
 {
     // A reused loader starts empty, and a failed parse leaves it empty.
     clearParsed();
-    const bool parsed = parseWithRust(modelFile);
+    const bool parsed = parseWithRust(modelFile, options);
     if (!parsed) { clearParsed(); }
     return parsed;
 }

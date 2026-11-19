@@ -40,6 +40,8 @@ function Invoke-StageSourceCopyFixture {
         'Resources\Models\VikingRoom\fixture.txt' = 'model'
         'Resources\Models\crytek-sponza\fixture.txt' = 'model'
         'third_party\OxidANT\shaders\forward\forward.slang' = 'owned'
+        'third_party\OxidANT\crates\assets\tests\assets\cube.glb' = 'fixture'
+        'third_party\OxidANT\crates\render_core\tests\vectors\frustum_verdicts.json' = 'verdicts'
     }
 }
 
@@ -63,6 +65,20 @@ Describe 'ARM64 staged shader source closure' {
         ($mutant -ne $copyLoop) | Should Be $true
         $stage = Invoke-StageSourceCopyFixture -Loop $mutant -Root (Join-Path $TestDrive 'mutant')
         (Test-Path -LiteralPath (Join-Path $stage 'third_party\OxidANT\shaders\forward\forward.slang')) | Should Be $false
+    }
+
+    It 'stages the glTF fixtures and frustum verdicts the CPU suites read from OxidANT' {
+        $stage = Invoke-StageSourceCopyFixture -Loop $copyLoop -Root (Join-Path $TestDrive 'fixtures')
+        (Get-Content -LiteralPath (Join-Path $stage 'third_party\OxidANT\crates\assets\tests\assets\cube.glb') -Raw) | Should Be 'fixture'
+        (Get-Content -LiteralPath (Join-Path $stage 'third_party\OxidANT\crates\render_core\tests\vectors\frustum_verdicts.json') -Raw) | Should Be 'verdicts'
+        $mutant = $copyLoop.Replace(", 'third_party\OxidANT\crates\assets\tests\assets'", '')
+        ($mutant -ne $copyLoop) | Should Be $true
+        $stage = Invoke-StageSourceCopyFixture -Loop $mutant -Root (Join-Path $TestDrive 'no-fixtures')
+        (Test-Path -LiteralPath (Join-Path $stage 'third_party\OxidANT\crates\assets\tests\assets\cube.glb')) | Should Be $false
+        $mutant = $copyLoop.Replace(", 'third_party\OxidANT\crates\render_core\tests\vectors'", '')
+        ($mutant -ne $copyLoop) | Should Be $true
+        $stage = Invoke-StageSourceCopyFixture -Loop $mutant -Root (Join-Path $TestDrive 'no-verdicts')
+        (Test-Path -LiteralPath (Join-Path $stage 'third_party\OxidANT\crates\render_core\tests\vectors\frustum_verdicts.json')) | Should Be $false
     }
 
     It 'fails the source closure when only compiled Vulkan shaders are staged' {

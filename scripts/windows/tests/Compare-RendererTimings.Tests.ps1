@@ -165,6 +165,30 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
     ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'
   }
 
+  It 'requires the C++ Forward scope but not the deferred or traced ones, which a forward run never records' {
+    $fixture = Join-Path $script:tmpDir 'GUIRendererSharedVarsScopes.ixx'
+    @'
+inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
+  "Clouds",
+  "ShadowCascades",
+  "Main",
+  "Forward",
+  "GBuffer",
+  "DeferredLighting",
+  "RayTrace",
+  "PathTrace",
+  "Sky",
+  "Post",
+  "CloudUpsample",
+  "PunctualShadows",
+});
+'@ | Set-Content -Path $fixture
+    $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath
+    $result.ExitCode | Should Be 0
+    $json = $result.Output | ConvertFrom-Json
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Forward,Sky,Post'
+  }
+
   It 'requires DrawCull, which every forward frame with draws records' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0

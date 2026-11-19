@@ -40,7 +40,7 @@ class AsyncModelParse
     /// Starts parsing `modelFile`. If a parse is already running this blocks
     /// until it finishes and discards its result - see the note above about
     /// newest-wins.
-    void start(const std::string &modelFile)
+    void start(const std::string &modelFile, const GltfLoadOptions &gltfOptions = {})
     {
         waitForCompletion();
 
@@ -54,8 +54,8 @@ class AsyncModelParse
         // one so both load off the render thread.
         if (isGltfModelPath(modelFile)) {
             gltfLoader = std::make_unique<GltfLoader>();// device-free
-            worker = std::thread([this] {
-                const bool ok = gltfLoader->parseCpu(path);
+            worker = std::thread([this, gltfOptions] {
+                const bool ok = gltfLoader->parseCpu(path, gltfOptions);
                 succeeded.store(ok, std::memory_order_release);
                 finished.store(true, std::memory_order_release);
             });

@@ -7,6 +7,11 @@
 
 #include <array>
 #include <cmath>
+#include <string>
+
+#include <nlohmann/json.hpp>
+
+#include "RepoFiles.hpp"
 
 import kataglyphis.vulkan.frustum;
 
@@ -272,4 +277,56 @@ TEST(FrustumUnit, ShadowCasterTestKeepsTheOtherGuarantees)
 
     // And a box enclosing everything is still a caster.
     EXPECT_TRUE(isVisibleAsShadowCaster(planes, box_at({ 0.0F, 0.0F, 0.0F }, 1000.0F)));
+}
+
+namespace {
+
+glm::vec3 json_vec3(const nlohmann::json &value)
+{ return { value[0].get<float>(), value[1].get<float>(), value[2].get<float>() }; }
+
+// The view-projection a shared frustum entry names: right-handed look-at, clip depth 0..1 as the engine builds it.
+glm::mat4 shared_view_projection(const nlohmann::json &frustum)
+{
+    const glm::mat4 view =
+      glm::lookAt(json_vec3(frustum["eye"]), json_vec3(frustum["target"]), json_vec3(frustum["up"]));
+    if (frustum["kind"] == "orthographic") {
+        return glm::ortho(frustum["left"].get<float>(),
+                 frustum["right"].get<float>(),
+                 frustum["bottom"].get<float>(),
+                 frustum["top"].get<float>(),
+                 frustum["near"].get<float>(),
+                 frustum["far"].get<float>())
+               * view;
+    }
+    return glm::perspective(glm::radians(frustum["fov_y_deg"].get<float>()),
+             frustum["aspect"].get<float>(),
+             frustum["near"].get<float>(),
+             frustum["far"].get<float>())
+           * view;
+}
+
+}// namespace
+
+// One file of verdicts for both renderers: OxidANT's render_core Frustum reads it in tests/frustum_vectors.rs too.
+TEST(FrustumUnit, ReachesEverySharedVerdictOxidantsFrustumReaches)
+{
+    const std::filesystem::path path = Kataglyphis::TestSupport::repoRoot() / "third_party" / "OxidANT" / "crates"
+                                       / "render_core" / "tests" / "vectors" / "frustum_verdicts.json";
+    const auto text = Kataglyphis::TestSupport::readFileText(path);
+    ASSERT_TRUE(text.has_value()) << "could not read " << path.string() << " - is OxidANT checked out and staged?";
+    const nlohmann::json vectors = nlohmann::json::parse(*text, nullptr, /*allow_exceptions=*/false);
+    ASSERT_FALSE(vectors.is_discarded()) << path.string() << " is not valid JSON";
+    ASSERT_TRUE(vectors.contains("frusta") && vectors.contains("cases") && vectors["cases"].is_array());
+    ASSERT_GE(vectors["cases"].size(), 20U) << "the shared file lost its cases";
+
+    for (const auto &entry : vectors["cases"]) {
+        const std::string name = entry["name"].get<std::string>();
+        const std::string frustum = entry["frustum"].get<std::string>();
+        ASSERT_TRUE(vectors["frusta"].contains(frustum)) << name << " names an unknown frustum " << frustum;
+        const FrustumPlanes planes = extractFrustumPlanes(shared_view_projection(vectors["frusta"][frustum]));
+        const AABB box{ json_vec3(entry["min"]), json_vec3(entry["max"]) };
+        EXPECT_EQ(isVisible(planes, box), entry["visible"].get<bool>()) << name << ": isVisible";
+        EXPECT_EQ(Kataglyphis::isVisibleAsShadowCaster(planes, box), entry["caster"].get<bool>())
+          << name << ": isVisibleAsShadowCaster";
+    }
 }

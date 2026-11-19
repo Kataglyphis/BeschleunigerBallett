@@ -8,6 +8,8 @@
 #include <string>
 #include <thread>
 
+#include "RepoFiles.hpp"
+
 import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.obj_loader;
@@ -21,7 +23,7 @@ std::string test_model()
     return sceneConfig::resolveModelPath("Models/ShadowTest/shadow_rig.obj");
 }
 
-std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb"); }
+std::string test_gltf() { return Kataglyphis::TestSupport::oxidantGltfFixture("cube.glb"); }
 
 // Polls like a frame loop instead of joining: callers drive this by polling, not blocking.
 void spinUntilFinished(Kataglyphis::AsyncModelParse &parse)
@@ -82,6 +84,21 @@ TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
     EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
+}
+
+// The worker parses with the options it started with: MikkTSpace splits the quad's two mirrored corners.
+TEST(AsyncModelParseUnit, TheWorkerParsesWithTheLoadOptionsItStartedWith)
+{
+    const std::string quad = Kataglyphis::TestSupport::oxidantGltfFixture("mirrored_uv_quad.gltf");
+    ASSERT_TRUE(std::filesystem::exists(quad)) << quad;
+
+    Kataglyphis::AsyncModelParse parse;
+    parse.start(quad, Kataglyphis::GltfLoadOptions{ .mikktspaceTangents = true });
+    spinUntilFinished(parse);
+    ASSERT_TRUE(parse.wasSuccessful());
+    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeGltfResult();
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->getVertices().size(), 6U) << "the worker dropped the MikkTSpace option";
 }
 
 TEST(AsyncModelParseUnit, AFailedParseReportsFailureRatherThanEmptyGeometry)

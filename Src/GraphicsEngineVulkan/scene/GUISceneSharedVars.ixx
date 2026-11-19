@@ -20,6 +20,17 @@ export inline constexpr int kShadowMapResolutionCount = static_cast<int>(std::si
 export inline constexpr float kMinShadowDistance = 5.0F;
 export inline constexpr float kMaxShadowDistance = 500.0F;
 
+// The other editor bounds OxidANT's setting_ranges() also reports; SceneSettingsDrift holds the two to each other.
+// The lower cloud bounds are the marshal's floors (kMinCloudDensityMultiplier, kMinCloudMeshExtent).
+export inline constexpr float kMinUnitSetting = 0.0F;
+export inline constexpr float kMaxUnitSetting = 1.0F;
+export inline constexpr float kMaxCloudDensityMultiplier = 1.0F;
+export inline constexpr float kMaxCloudMeshExtent = 1000.0F;
+export inline constexpr float kMinCloudMeshOffset = -200.0F;
+export inline constexpr float kMaxCloudMeshOffset = 400.0F;
+// Either way along each axis; 100 in both renderers (owner 2026-11-19).
+export inline constexpr float kMaxCloudWindSpeed = 100.0F;
+
 // Clamps out-of-range indices into [0, kShadowMapResolutionCount - 1] rather
 // than silently falling through to 512 the way the old if/else chain did.
 //

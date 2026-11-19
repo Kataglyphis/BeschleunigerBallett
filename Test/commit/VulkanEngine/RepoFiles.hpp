@@ -30,6 +30,12 @@ inline std::filesystem::path slangRoot() { return repoRoot() / "Resources" / "Sh
 
 inline std::filesystem::path sharedSlangRoot() { return repoRoot() / "third_party" / "OxidANT" / "shaders"; }
 
+/// OxidANT's glTF fixtures, the one set both renderers load; outside Resources/, so resolveModelPath cannot reach them.
+inline std::filesystem::path oxidantGltfFixtureDir()
+{ return repoRoot() / "third_party" / "OxidANT" / "crates" / "assets" / "tests" / "assets"; }
+
+inline std::string oxidantGltfFixture(std::string_view name) { return (oxidantGltfFixtureDir() / name).string(); }
+
 inline std::filesystem::path shaderSourcePath(const std::filesystem::path &path)
 {
     const auto relative = path.lexically_normal().lexically_relative(slangRoot().lexically_normal());

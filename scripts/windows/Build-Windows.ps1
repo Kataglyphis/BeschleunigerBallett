@@ -418,8 +418,8 @@ try {
           $manifest.Add(@{ exe = 'commitTestSuite-debug.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
           & (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Copy-Arm64VsRuntime.ps1') -InstallDir $tests -Flat
         }
-        # repoRoot() walks up to the first Resources/ShadersSlang, so the suites find the shaders and models staged here.
-        foreach ($rel in 'Resources\ShadersSlang', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza', 'third_party\OxidANT\shaders') {
+        # repoRoot() walks up to the first Resources/ShadersSlang, so the suites find the shaders, models and OxidANT's fixtures staged here.
+        foreach ($rel in 'Resources\ShadersSlang', 'Resources\Models\Dinosaurs', 'Resources\Models\GltfTest', 'Resources\Models\ShadowTest', 'Resources\Models\VikingRoom', 'Resources\Models\crytek-sponza', 'third_party\OxidANT\shaders', 'third_party\OxidANT\crates\assets\tests\assets', 'third_party\OxidANT\crates\render_core\tests\vectors') {
           Copy-Item -LiteralPath (Join-Path $workspacePath $rel) -Destination (Join-Path $tests $rel) -Recurse -Force
         }
         # The two loose models the perf suite parses.

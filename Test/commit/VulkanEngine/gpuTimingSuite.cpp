@@ -1,4 +1,8 @@
+#include <array>
+#include <cstdint>
 #include <cstring>
+
+#include <nlohmann/json.hpp>
 
 #include <gtest/gtest.h>
 
@@ -23,9 +27,10 @@ TEST(GpuTimingUnit, WindowRollsOldestSample)
     GpuTimingSubsystem::GpuPassAverage average;
     for (uint32_t i = 0; i < GpuTimingSubsystem::GpuPassAverage::WINDOW; i++) { average.add(10.0F); }
 
-    // A 31st sample evicts the oldest (10.0): mean becomes (290 + 20) / 30.
+    // One sample past the window evicts the oldest (10.0).
     const float mean = average.add(20.0F);
-    constexpr float EXPECTED = (290.0F + 20.0F) / 30.0F;
+    constexpr auto WINDOW = static_cast<float>(GpuTimingSubsystem::GpuPassAverage::WINDOW);
+    constexpr float EXPECTED = (((WINDOW - 1.0F) * 10.0F) + 20.0F) / WINDOW;
     EXPECT_NEAR(mean, EXPECTED, 1e-4F);
 }
 
@@ -73,3 +78,59 @@ TEST(GpuTimingTablesUnit, DefaultTimingsReportNoSampleForEveryPass)
 
 TEST(GpuTimingTablesUnit, PassCountMatchesTheEnum)
 { EXPECT_EQ(static_cast<int>(FrontendShared::GpuTimedPass::Count), FrontendShared::GPU_TIMED_PASS_COUNT); }
+
+// Main encloses the scope that drew; Forward, GBuffer, DeferredLighting, RayTrace and PathTrace are the Rust names.
+TEST(GpuTimingTablesUnit, TheDrawingScopesNestInsideMainAndNothingNestsDeeper)
+{
+    using FrontendShared::GpuTimedPass;
+    for (const GpuTimedPass nested : { GpuTimedPass::Forward,
+           GpuTimedPass::GBuffer,
+           GpuTimedPass::DeferredLighting,
+           GpuTimedPass::RayTrace,
+           GpuTimedPass::PathTrace }) {
+        EXPECT_EQ(FrontendShared::GPU_TIMED_PASS_PARENTS[static_cast<size_t>(nested)], GpuTimedPass::Main)
+          << FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[static_cast<size_t>(nested)];
+    }
+    for (const GpuTimedPass parent : FrontendShared::GPU_TIMED_PASS_PARENTS) {
+        if (parent == GpuTimedPass::Count) { continue; }
+        EXPECT_EQ(FrontendShared::GPU_TIMED_PASS_PARENTS[static_cast<size_t>(parent)], GpuTimedPass::Count)
+          << FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[static_cast<size_t>(parent)] << " encloses a pass but nests";
+    }
+}
+
+TEST(GpuTimingExportUnit, TheExportNamesEachMeasuredNestedPassesParent)
+{
+    using FrontendShared::GpuTimedPass;
+    GpuTimingSubsystem::PassSums sums{};
+    GpuTimingSubsystem::PassSamples samples{};
+    const auto measure = [&](GpuTimedPass pass, double total_ms) {
+        sums[static_cast<size_t>(pass)] = total_ms;
+        samples[static_cast<size_t>(pass)] = 2U;
+    };
+    measure(GpuTimedPass::Main, 10.0);
+    measure(GpuTimedPass::Forward, 8.0);
+    measure(GpuTimedPass::Post, 4.0);
+
+    const nlohmann::json dump = GpuTimingSubsystem::timingExport(sums, samples, 2U, true);
+    ASSERT_TRUE(dump.contains("passes") && dump.contains("nested_in")) << dump.dump(2);
+
+    // value(), not operator[]: a const json aborts on a missing key, where a test must fail.
+    EXPECT_DOUBLE_EQ(dump["passes"].value("Main", -1.0), 5.0);
+    EXPECT_DOUBLE_EQ(dump["passes"].value("Forward", -1.0), 4.0);
+    EXPECT_EQ(dump["nested_in"].value("Forward", ""), "Main");
+    EXPECT_FALSE(dump["nested_in"].contains("Main")) << "a top-level pass names no parent";
+    EXPECT_FALSE(dump["nested_in"].contains("Post")) << "a top-level pass names no parent";
+    EXPECT_FALSE(dump["nested_in"].contains("GBuffer")) << "an unmeasured pass stays out of the export";
+    EXPECT_FALSE(dump["passes"].contains("GBuffer")) << "an unmeasured pass stays out of the export";
+}
+
+TEST(GpuTimingExportUnit, AnUnmeasuredRunStillWritesEmptyTables)
+{
+    const nlohmann::json dump =
+      GpuTimingSubsystem::timingExport(GpuTimingSubsystem::PassSums{}, GpuTimingSubsystem::PassSamples{}, 0U, false);
+    ASSERT_TRUE(dump.contains("passes") && dump.contains("nested_in")) << dump.dump(2);
+    EXPECT_EQ(dump["frames_measured"], 0U);
+    EXPECT_EQ(dump["timestamps_supported"], false);
+    EXPECT_TRUE(dump["passes"].is_object() && dump["passes"].empty());
+    EXPECT_TRUE(dump["nested_in"].is_object() && dump["nested_in"].empty());
+}

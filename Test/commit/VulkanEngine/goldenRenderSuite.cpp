@@ -5,6 +5,7 @@
 #include "GltfVariant.hpp"
 #include "GoldenMetrics.hpp"
 #include "GpuTestGuard.hpp"
+#include "RepoFiles.hpp"
 #include "ScopedEnvVar.hpp"
 #include "common/GuiModelTransform.hpp"
 #include "common/ImageBarrierHelper.hpp"
@@ -56,6 +57,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.render_stage_registry;
@@ -276,7 +278,7 @@ constexpr const char *EMISSIVE_STRENGTH_CARD_MODEL = "Models/GltfTest/emissive_s
 // The lit-but-not-glowing control for EMISSIVE_CARD_MODEL.
 constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf";
 // A grey plane under a red point light (x -1.2) and a green spot light (x 1.5) pointing down; OxidANT's fixture.
-constexpr const char *PUNCTUAL_LIGHTS_MODEL = "Models/GltfTest/point_light.gltf";
+std::string punctual_lights_model() { return Kataglyphis::TestSupport::oxidantGltfFixture("point_light.gltf"); }
 // That plane under a 4098 lx directional light, the Colosseum's sun, on a turned and scaled node, and the red light.
 constexpr const char *DIRECTIONAL_LIGHT_MODEL = "Models/GltfTest/directional_light.gltf";
 // A card with a normal texture and nothing else, the base for a normal-map control.
@@ -751,8 +753,8 @@ TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
 
-    // Past GpuPassAverage's 30-frame window, so each radius's pass times are its own.
-    constexpr int TIMED_FRAMES = 35;
+    // Past GpuPassAverage's window, so each radius's pass times are its own.
+    constexpr int TIMED_FRAMES = static_cast<int>(Kataglyphis::GpuTimingSubsystem::GpuPassAverage::WINDOW) + 3;
     using Frame = std::vector<uint8_t>;
     struct Sample
     {
@@ -2062,9 +2064,19 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
       << "Timestamps are supported but no frame produced a valid sample: " << dump.dump(2);
 
     // These are bracketed every frame, so absence means broken accumulation, not a disabled feature.
-    for (const char *always_recorded : { "Main", "Sky", "Post" }) {
+    for (const char *always_recorded : { "Main", "Forward", "Sky", "Post" }) {
         EXPECT_TRUE(dump["passes"].contains(always_recorded))
           << "Pass '" << always_recorded << "' is recorded every frame but missing: " << dump.dump(2);
+    }
+    // A forward frame draws inside Main through Forward alone; the budget script sums only what nests nowhere.
+    ASSERT_TRUE(dump.contains("nested_in") && dump["nested_in"].is_object()) << dump.dump(2);
+    EXPECT_EQ(dump["nested_in"].value("Forward", ""), "Main") << dump.dump(2);
+    for (const char *not_drawn : { "GBuffer", "DeferredLighting" }) {
+        EXPECT_FALSE(dump["passes"].contains(not_drawn)) << "a forward run timed " << not_drawn << ": " << dump.dump(2);
+    }
+    if (dump["passes"].contains("Main") && dump["passes"].contains("Forward")) {
+        EXPECT_LE(dump["passes"]["Forward"].get<double>(), dump["passes"]["Main"].get<double>() * 1.01)
+          << "Forward is stamped inside Main, so it cannot take longer: " << dump.dump(2);
     }
 
     for (const auto &[pass_name, average_ms] : dump["passes"].items()) {
@@ -2073,6 +2085,39 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
         EXPECT_TRUE(std::isfinite(value)) << "Pass '" << pass_name << "' average is not finite.";
         EXPECT_GE(value, 0.0) << "Pass '" << pass_name << "' average is negative.";
     }
+}
+
+// Main times the scope that drew inside it: Forward, or the deferred pair stamped around the G-buffer pass.
+TEST(GoldenRender, GpuTimingSplitsMainIntoTheScopeThatDrew)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    const auto &timings = harness.feedback.gpuTimings;
+    auto &renderer_vars = harness.useForwardRaster();
+    // A frame reads back what its swapchain image drew last, so past the image count every reading is this mode's.
+    constexpr int READBACK_FRAMES = 8;
+    harness.render_frames(WARMUP_FRAMES + READBACK_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    if (!timings.supported) { GTEST_SKIP() << "GPU timestamps unsupported on this device."; }
+
+    const auto ms = [&timings](GpuTimedPass pass) { return timings.pass_ms[static_cast<size_t>(pass)]; };
+    EXPECT_GE(ms(GpuTimedPass::Main), 0.0F);
+    EXPECT_GE(ms(GpuTimedPass::Forward), 0.0F) << "a forward frame must time Forward";
+    EXPECT_LT(ms(GpuTimedPass::GBuffer), 0.0F) << "a forward frame timed a G-buffer pass";
+    EXPECT_LT(ms(GpuTimedPass::DeferredLighting), 0.0F) << "a forward frame timed a lighting pass";
+
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    harness.render_frames(READBACK_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    EXPECT_GE(ms(GpuTimedPass::Main), 0.0F);
+    EXPECT_GE(ms(GpuTimedPass::GBuffer), 0.0F) << "a deferred frame must time its G-buffer pass";
+    EXPECT_GE(ms(GpuTimedPass::DeferredLighting), 0.0F) << "a deferred frame must time its lighting pass";
+    EXPECT_LT(ms(GpuTimedPass::Forward), 0.0F) << "a deferred frame timed Forward";
+    EXPECT_LT(ms(GpuTimedPass::RayTrace), 0.0F);
+    EXPECT_LT(ms(GpuTimedPass::PathTrace), 0.0F);
+    GTEST_LOG_(INFO) << "deferred G-buffer " << ms(GpuTimedPass::GBuffer) << " ms, lighting "
+                     << ms(GpuTimedPass::DeferredLighting) << " ms; Main's average still holds forward frames";
 }
 
 // New samples every frame must make early frames differ and late frames converge (1/N running mean).
@@ -2450,13 +2495,13 @@ PunctualPools punctual_pools(PunctualMode mode)
 {
     PunctualPools pools;
     const auto dark =
-      write_gltf_variant(PUNCTUAL_LIGHTS_MODEL, "kataglyphis_punctual_dark.gltf", [](nlohmann::json &gltf) {
+      write_gltf_variant(punctual_lights_model().c_str(), "kataglyphis_punctual_dark.gltf", [](nlohmann::json &gltf) {
           for (auto &light : gltf["extensions"]["KHR_lights_punctual"]["lights"]) { light["intensity"] = 0.0; }
       });
-    EXPECT_TRUE(dark.has_value()) << "could not write the dark twin of " << PUNCTUAL_LIGHTS_MODEL;
+    EXPECT_TRUE(dark.has_value()) << "could not write the dark twin of " << punctual_lights_model();
     if (!dark.has_value()) { return pools; }
 
-    const std::vector<uint8_t> lit = render_punctual_scene(PUNCTUAL_LIGHTS_MODEL, mode, pools.skipped);
+    const std::vector<uint8_t> lit = render_punctual_scene(punctual_lights_model(), mode, pools.skipped);
     if (pools.skipped) { return pools; }
     const std::vector<uint8_t> unlit = render_punctual_scene(dark->string(), mode, pools.skipped);
     EXPECT_EQ(lit.size(), unlit.size());
@@ -2605,12 +2650,12 @@ PunctualShadowCounts punctual_shadow_counts(PunctualMode mode)
 {
     PunctualShadowCounts counts;
     const auto carded =
-      write_gltf_variant(PUNCTUAL_LIGHTS_MODEL, "kataglyphis_punctual_card.gltf", [](nlohmann::json &gltf) {
+      write_gltf_variant(punctual_lights_model().c_str(), "kataglyphis_punctual_card.gltf", [](nlohmann::json &gltf) {
           gltf["scenes"][0]["nodes"].push_back(gltf["nodes"].size());
           gltf["nodes"].push_back(
             { { "mesh", 0 }, { "translation", { -1.2, 0.5, 0.0 } }, { "scale", { 0.1, 1.0, 0.1 } } });
       });
-    EXPECT_TRUE(carded.has_value()) << "could not write the carded twin of " << PUNCTUAL_LIGHTS_MODEL;
+    EXPECT_TRUE(carded.has_value()) << "could not write the carded twin of " << punctual_lights_model();
     if (!carded.has_value()) { return counts; }
 
     PunctualRenderInfo with_shadows;
@@ -2829,8 +2874,9 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = true;
 
-    // 30 frames flush GpuPassAverage::WINDOW with forward-only samples.
-    harness.render_frames(WARMUP_FRAMES + 30);
+    // A full GpuPassAverage::WINDOW of forward-only samples.
+    const int window = static_cast<int>(Kataglyphis::GpuTimingSubsystem::GpuPassAverage::WINDOW);
+    harness.render_frames(WARMUP_FRAMES + window);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
     const unsigned int forward_meshes_drawn = harness.feedback.visibility.meshes_drawn;
@@ -2841,7 +2887,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
 
     renderer_vars.raytracing = true;
     // Flush again so the average holds RT-only samples.
-    harness.render_frames(30);
+    harness.render_frames(window);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
     EXPECT_EQ(harness.feedback.visibility.meshes_drawn, 0U)
@@ -2855,6 +2901,9 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
             .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
         GTEST_LOG_(INFO) << "Main-pass GPU time: forward(raster only)=" << forward_main_ms
                          << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
+        const auto &pass_ms = harness.feedback.gpuTimings.pass_ms;
+        EXPECT_GE(pass_ms[static_cast<size_t>(GpuTimedPass::RayTrace)], 0.0F) << "an RT frame must time RayTrace";
+        EXPECT_LT(pass_ms[static_cast<size_t>(GpuTimedPass::Forward)], 0.0F) << "an RT frame timed Forward";
     }
 }
 

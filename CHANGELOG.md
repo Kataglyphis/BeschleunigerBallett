@@ -23,6 +23,33 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Added
 
+- The settings drift test (plan B10 step 1): `SceneSettingsDrift.*` compares OxidANT's bridged
+  `default_scene_settings`, `setting_ranges` and `sanitize` (`oxidant_bridge/settings.h`) field by field with
+  `GUISceneSharedVars{}`, the editor's bounds and the engine's clamps (`clampCloudMarchSteps`,
+  `clampCloudMeshScale`, `clampPcfRadius`, `shadowResolutionForIndex`). The editor's literal bounds became named
+  constants beside `kMinShadowDistance` in `GUISceneSharedVars.ixx`, which `GUI.cpp` reads. The Sun is the one
+  named difference, until BACKLOG "One set of defaults"; `BuildIntegrity.EveryGuiSceneVarIsComparedWithOxidantsSettingsOrExempt`
+  makes a new scene var name its comparison or its reason.
+- Cross-renderer parity (plan I5): `RendererParity.*` asserts `sanitizeViewportFraction`, `makeViewportRemap`,
+  the projection `updateUniforms` builds and `makeGuiModelTransform` against OxidANT's `parity_viewport_remap`,
+  `parity_lens` and `parity_model_transform` (`oxidant_bridge/parity.h`), Y flipped for Vulkan; and
+  `FrustumUnit.ReachesEverySharedVerdictOxidantsFrustumReaches` reads the 24 verdicts of OxidANT's
+  `crates/render_core/tests/vectors/frustum_verdicts.json`, which its Rust frustum test reads too.
+- One glTF fixture set (plan X5): `OxidantFixtures/GltfFixtureRoundTrip.*` parses every glTF in OxidANT's
+  `crates/assets/tests/assets` (morphs, skins, Basis, cameras, unlit, alpha) and checks that each reaches
+  `Vertex`, `MeshRange` and `ObjMaterial` as the bridge returns it, the ranges tiling the arrays and every index
+  re-based into its own range. `RepoFiles.hpp`'s `oxidantGltfFixture` finds them; the arm64 staging copies them
+  and the frustum verdicts (`Arm64StagedShaderSources.Tests.ps1`).
+- The bridge's crate graph is gated (plan X4): `cmake/CargoLicenses.cmake` passes the hub stager
+  `--forbid-package` for wgpu, naga, winit, egui, tokio, gstreamer and ort, and `--max-runtime-packages 56`, the
+  runtime packages measured on all five bridge targets; `BuildIntegrity.TheBridgeCrateGraphForbidsTheHeavyFamiliesAndHasABudget`.
+- A skipped GPU test fails on Linux (plan X2): `run-ctest.sh --virtual-display` passes the hub's
+  `--fail-on-skipped '^(GoldenRender|Integration)\.'`, so ctest's Skipped no longer counts as a pass; none of
+  the 96 skipped on llvmpipe. The riscv64 GPU shards run their ctest through the hub's `ctest_run_main` with the
+  same flag (`run-riscv64-tests.sh --gpu-ctest`, under Xvfb and the fp16 shim). `run-cargo-tests.sh` exports
+  `KATAGLYPHIS_REQUIRE_GPU=1` and runs under Xvfb, as OxidANT's lane does.
+  `BuildIntegrity.LinuxGpuRunsFailOnASkippedGpuTest` and `LinuxGpuRunsRequireTheGpuBeforeTheirVirtualDisplay`
+  hold all three scripts to it.
 - A second glTF parser behind `KATAGLYPHIS_GLTF_LOADER=rust`: OxidANT's loader, the WebGPU renderer's, called over
   the cxx bridge (`load_gltf_flat`) and copied into `GltfLoader`'s arrays by `scene/GltfLoaderRust.cpp`, so
   `adoptParsed`, `uploadParsed` and `AsyncModelParse` are unchanged. cgltf stays the default.
@@ -340,6 +367,44 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Changed
 
+- OxidANT moves to `d44af00` (`kataglyphis_render_core`, the settings and parity bridges, load options, the glTF
+  fixtures in `kataglyphis_assets`, images confined to the glTF file's folder and decoded from their bytes, the
+  bridged crates without unsafe code or explicit panics, tests that run without the source tree on the arm64
+  device) and ANTfrastructure to `092a1e20` (the stager's `--forbid-package` and `--max-runtime-packages`,
+  `ctest-run.sh`'s `--fail-on-skipped` and its 1500 s default per-test timeout).
+  `corrosion_add_cxxbridge` lists `settings.rs` and `parity.rs`.
+- The glTF loader reads no environment (plan X14): `GltfLoadOptions` reaches OxidANT's `load_gltf_flat_with`
+  through `GltfLoader::parseCpu`, `loadModel`, `AsyncModelParse::start` and `Scene`, and `App::run` reads
+  `KATAGLYPHIS_MIKKTSPACE_TANGENTS` once (`gltfLoadOptionsFromEnvironment`). Tests ask for MikkTSpace through the
+  options; `BuildIntegrity.TheMikkTSpaceVariableIsReadOnlyAtTheEngineStart`.
+- The cloud wind drag spans ±100 per axis, as OxidANT's (owner 2026-11-19; was ±50).
+- `Resources/Models/GltfTest/cube.glb` and `point_light.gltf`, byte-identical copies of OxidANT's fixtures, are
+  gone; the tests read OxidANT's. `cube_textured.gltf` stays, because the editor library lists it and two
+  goldens reload it through the library; `BuildIntegrity.GltfTestHoldsNoCopyOfOxidantsFixturesButTheLibrarysCheckerCube`
+  keeps it byte-identical and refuses any other copy.
+- `GltfLoader` keeps OxidANT's `GltfModel` behind a pimpl (`BridgeModel`, `GltfLoaderRust.cpp`) and uploads from
+  views of it instead of a second copy (plan I13): `getVertices()`, `getIndices()` and `getMaterialIndices()` are
+  `std::span`s over the bridge's `rust::Vec`s, `getTextureImages()` spans over the encoded images, which
+  `Texture::createFromMemory` reads in place, and `addMeshesForRangesInPlace` stages each primitive straight from
+  the parse, `Mesh` re-basing its indices into the staging memory (`rebaseIndices`, through
+  `VulkanBufferManager::createBufferAndUploadOnDevice`'s fill callback). The OBJ upload keeps `sliceMeshRange`.
+  On aarch64 WSL (`linux-profile-clang`) parsing `Colosseum-gltf` (`BM_GltfLoaderParseCpu_Colosseum`)
+  peaks at 755 MiB resident instead of 1013 (getrusage's max RSS), its time within the run-to-run noise
+  (medians 531-756 ms before, 559-736 after), and `BM_UploadCpuHalf/65536`, now the in-place staging, takes
+  1.34 ms instead of 2.03 (14.3 against 9.4 GiB/s). A moved-from loader reads as unparsed, as after `adoptParsed`,
+  instead of keeping views into the parse it gave away. `GltfParseUnit.LoadersShareTheBridgeArraysInsteadOfCopyingThem`,
+  `GltfParseUnit.AMovedFromLoaderReadsAsUnparsed`, `BuildIntegrity.GltfLoaderUploadsTheBridgeArraysWithoutACopy`,
+  `MeshRangeSlice.*`.
+- One GPU-timing taxonomy with the Rust renderer (plan I5): `Main` now times, nested inside it, `Forward`,
+  `GBuffer` and `DeferredLighting` (stamped around the G-buffer pass through `DeferredRasterizer::recordCommands`'
+  new `afterGeometryPass` hook), `RayTrace` or `PathTrace`, the Rust `TimedPass` names, listed indented under Main
+  in the profiler. The `KATAGLYPHIS_GPU_TIMING_JSON` dump names each nested pass's parent under `nested_in`, which
+  `Test-GpuTimingBudget.ps1` leaves out of the frame a share divides by; `Compare-RendererTimings.ps1` requires
+  `Forward` of the forward run. The profiler averages over 32 frames, as Rust does (was 30), and the stamps go
+  through `writeTimestamp2` in `GpuTimingSubsystem::beginFrame`/`writeTimestamp`/`endFrame`.
+  `gpu-timing-budgets.json`'s llvmpipe profile budgets `Forward` (15.3 ms, a 0.33 share) from five runs that fit
+  every existing budget. `GoldenRender.GpuTimingSplitsMainIntoTheScopeThatDrew`, `GpuTimingExportUnit.*`,
+  `BuildIntegrity.GpuTimingMatchesTheRustRenderersTaxonomy`.
 - A failed Windows package step prints the tail of every CPack generator log (NSIS, WiX) from
   `_CPack_Packages`, through the hub's `Write-CPackGeneratorLog`; ANTfrastructure moves to `ff0235f5` for it.
 - The Windows NSIS installers build again: since the glTF bridge, OxidANT's `profiling` license texts were

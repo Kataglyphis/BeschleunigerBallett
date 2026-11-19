@@ -1,4 +1,5 @@
 module;
+#include <functional>
 #include <optional>
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
@@ -47,12 +48,14 @@ class DeferredRasterizer
     /// the SHADOW pass must do exactly that: geometry behind or beside the
     /// camera still casts into view, so culling casters by the camera frustum
     /// deletes shadows rather than saving work.
+    /// `afterGeometryPass` runs between the G-buffer pass and the lighting pass, e.g. to stamp their GPU times.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const glm::vec3 &eye,
-      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
+      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt,
+      const std::function<void(vk::CommandBuffer)> &afterGeometryPass = {});
 
     /// Meshes drawn / considered by the most recent recordCommands call.
     /// Reset at the start of each call, so a frame that records nothing

@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-# The crate's GPU tests self-skip without an adapter, so a GPU-less runner still runs the CPU-only ones.
+# The hub's cargo_test.sh runs `cargo test --all`, which overrides a -p: the whole OxidANT workspace, as its own lane.
 
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 RUST_PROJECT_DIR="${RUST_PROJECT_DIR:-${REPO_ROOT}/third_party/OxidANT}"
@@ -24,5 +24,9 @@ if [[ "$(uname -m)" == aarch64 ]]; then export LP_NATIVE_VECTOR_WIDTH=128; fi
 
 info "cargo: $(command -v cargo) ($(cargo --version 2>/dev/null || echo 'version unavailable'))"
 
-info "=== Rust renderer test suite (kataglyphis_webgpu_renderer) ==="
-( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_TEST_SH}" -p kataglyphis_webgpu_renderer )
+# As in OxidANT's lane: under Xvfb, and a GPU test that finds no adapter fails instead of skipping itself.
+export KATAGLYPHIS_REQUIRE_GPU=1
+
+info "=== OxidANT workspace test suite (cargo test --all) ==="
+# A child, not exec: xvfb-run as PID 1 omits its readiness signal.
+( cd "${RUST_PROJECT_DIR}" && xvfb-run -a bash "${CARGO_TEST_SH}" )

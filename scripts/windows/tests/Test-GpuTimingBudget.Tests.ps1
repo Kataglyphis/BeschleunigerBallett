@@ -23,8 +23,10 @@ Describe 'Test-GpuTimingBudget' {
   }
 
   function New-Dump {
-    param([string]$Name, [hashtable]$Passes, [bool]$Supported = $true, [int]$Frames = 30)
-    return New-JsonFile -Name $Name -Content @{ frames_measured = $Frames; timestamps_supported = $Supported; passes = $Passes }
+    param([string]$Name, [hashtable]$Passes, [bool]$Supported = $true, [int]$Frames = 30, [hashtable]$NestedIn)
+    $content = @{ frames_measured = $Frames; timestamps_supported = $Supported; passes = $Passes }
+    if ($NestedIn) { $content.nested_in = $NestedIn }
+    return New-JsonFile -Name $Name -Content $content
   }
 
   function Invoke-Budget {
@@ -55,6 +57,15 @@ Describe 'Test-GpuTimingBudget' {
     $dump = New-Dump -Name 'share-dump.json' -Passes $passes
     $budget = New-JsonFile -Name 'share-budget.json' -Content @{ hosts = @{ 'test-host' = @{ max_share = @{ Post = 0.15 } } } }
     Invoke-Budget -TimingPath $dump -BudgetPath $budget | Should Be 1
+  }
+
+  It 'divides a share by the top-level passes only, so a nested scope is not counted twice' {
+    # Main 8 encloses Forward 7, and Post 2: Post takes 2 of 10 ms (0.2), not 2 of 17 (0.12).
+    $dump = New-Dump -Name 'nested-dump.json' -Passes @{ Main = 8.0; Forward = 7.0; Post = 2.0 } -NestedIn @{ Forward = 'Main' }
+    $budget = New-JsonFile -Name 'nested-budget.json' -Content @{ hosts = @{ 'test-host' = @{ max_share = @{ Post = 0.15 } } } }
+    Invoke-Budget -TimingPath $dump -BudgetPath $budget | Should Be 1
+    $roomy = New-JsonFile -Name 'nested-roomy-budget.json' -Content @{ hosts = @{ 'test-host' = @{ max_share = @{ Post = 0.25; Forward = 0.75 } } } }
+    Invoke-Budget -TimingPath $dump -BudgetPath $roomy | Should Be 0
   }
 
   It 'exits 1 when a budgeted pass is missing from the dump' {

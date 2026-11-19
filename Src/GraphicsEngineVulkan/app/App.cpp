@@ -19,6 +19,7 @@ module kataglyphis.vulkan.app;
 import kataglyphis.shared.frontend.frame_input;
 
 import kataglyphis.vulkan.camera;
+import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
@@ -48,7 +49,8 @@ auto Kataglyphis::App::run() -> int
     Kataglyphis::RenderSettings settings;
     Kataglyphis::RendererFeedback feedback;
 
-    std::unique_ptr<Scene> const scene = std::make_unique<Scene>();
+    // The environment's loader options are read here once; the loaders themselves read none.
+    std::unique_ptr<Scene> const scene = std::make_unique<Scene>(gltfLoadOptionsFromEnvironment());
     std::unique_ptr<Kataglyphis::Frontend::GUI> const gui =
       std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback);
     std::unique_ptr<Camera> const camera = std::make_unique<Camera>();

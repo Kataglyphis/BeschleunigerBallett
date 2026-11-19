@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <glm/glm.hpp>
 #include <span>
 #include <vector>
@@ -293,7 +294,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   Kataglyphis::Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const glm::vec3 &eye,
-  const std::optional<FrustumPlanes> &cameraFrustum)
+  const std::optional<FrustumPlanes> &cameraFrustum,
+  const std::function<void(vk::CommandBuffer)> &afterGeometryPass)
 {
     // Both passes bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
     if (descriptorSets.empty()) {
@@ -377,6 +379,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     meshesConsidered = draw_stats.considered;
 
     commandBuffer.endRendering();
+    if (afterGeometryPass) { afterGeometryPass(commandBuffer); }
 
     // The lighting fragment shader samples the G-buffer and depth; depth stays sampleable for the clouds' compute read.
     const auto colour_to_sampled = [](vk::Image image, vk::PipelineStageFlags2 consumers) {

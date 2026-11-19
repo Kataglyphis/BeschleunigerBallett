@@ -55,6 +55,16 @@ BUILD_DIR="build-riscv64"
 CTEST_GPU_SUITES='^(Integration|GoldenRender)\.'
 RISCV64_GPU_SHARD="${RISCV64_GPU_SHARD:-}"
 
+# The GPU step below re-runs the script here, under Xvfb and the fp16 shim, so the hub fails a skipped GPU test.
+if [[ "${1:-}" == "--gpu-ctest" ]]; then
+  shift
+  # riscv64_cross_env's Vulkan paths arrive in the environment; the x86_64 setup-env would undo them.
+  source_vulkan_env() { return 0; }
+  gpu_rc=0
+  ctest_run_main --fail-on-skipped "${CTEST_GPU_SUITES}" "$@" || gpu_rc=$?
+  exit "${gpu_rc}"
+fi
+
 # Ceilings leave a solo test 300 of the job's 360 min after the 23-33 min cross build; the measured times are in AGENTS.md.
 riscv64_gpu_shard_args() {
   local shard="$1" solo_tests
@@ -114,8 +124,8 @@ export KATAGLYPHIS_PT_GOLDEN_VARIANT="${KATAGLYPHIS_PT_GOLDEN_VARIANT:-light}"
 info "[gpu] path-traced goldens: KATAGLYPHIS_PT_GOLDEN_VARIANT=${KATAGLYPHIS_PT_GOLDEN_VARIANT}"
 # A GPU test that would skip fails instead (Test/commit/VulkanEngine/GpuTestGuard.hpp), so a broken Xvfb cannot pass.
 export KATAGLYPHIS_REQUIRE_GPU=1
-# --no-tests=error: a shard whose filter matches nothing must fail, not pass empty; -V keeps a passing test's log, variant line included.
+# --no-tests=error: a shard whose filter matches nothing must fail, not pass empty.
 xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \
-  ctest --test-dir "${TEST_DIR}" -C Debug -j1 "${CTEST_GPU_ARGS[@]}" \
-    --no-tests=error --output-on-failure -V
+  bash "${BASH_SOURCE[0]}" --gpu-ctest --build-dir "${TEST_DIR}" --build-type Debug -- \
+    -j1 "${CTEST_GPU_ARGS[@]}" --no-tests=error

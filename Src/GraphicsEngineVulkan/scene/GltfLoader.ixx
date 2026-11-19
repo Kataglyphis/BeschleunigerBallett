@@ -2,6 +2,7 @@ module;
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -24,7 +25,17 @@ export import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
-/// Loads `.gltf`/`.glb` geometry into the SAME CPU-side arrays `ObjLoader`
+/// What a load asks of OxidANT's loader beyond the file; each field's zero is the loader's default.
+struct GltfLoadOptions
+{
+    /// MikkTSpace tangents instead of Lengyel's where the file has none.
+    bool mikktspaceTangents = false;
+};
+
+/// `KATAGLYPHIS_MIKKTSPACE_TANGENTS` set means MikkTSpace; App::run reads it once at the engine's start, no loader does.
+GltfLoadOptions gltfLoadOptionsFromEnvironment();
+
+/// Loads `.gltf`/`.glb` geometry into the same flat CPU-side layout `ObjLoader`
 /// produces, so it plugs into `Model`/`Mesh` and the `AsyncModelParse` worker
 /// unchanged. Touches no Vulkan - that is the point, the parse is the expensive
 /// part worth moving off the render thread. The parse is OxidANT's Rust
@@ -36,11 +47,17 @@ class GltfLoader
     /// so the default constructor stays available for the CPU-only path.
     GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool);// DEVICE_SINK_OK: moved into member
     GltfLoader() = default;
+    GltfLoader(const GltfLoader &) = default;
+    GltfLoader &operator=(const GltfLoader &) = default;
+    /// A move is adoptParsed: the moved-from loader reads as unparsed, not as views into the parse it gave away.
+    GltfLoader(GltfLoader &&other) noexcept;
+    GltfLoader &operator=(GltfLoader &&other) noexcept;
+    ~GltfLoader() = default;
 
     /// Parses `modelFile` then builds the Vulkan-side Model from it - i.e.
     /// parseCpu + uploadParsed. Returns nullptr on a device-free loader or a
     /// failed parse.
-    std::shared_ptr<Model> loadModel(const std::string &modelFile);
+    std::shared_ptr<Model> loadModel(const std::string &modelFile, const GltfLoadOptions &options = {});
 
     /// Builds the Vulkan-side Model from the LAST parseCpu result - the GPU half,
     /// separated so a device-free worker can parse and a device-owning loader
@@ -51,23 +68,25 @@ class GltfLoader
 
     /// Moves another loader's parse results in, so a device-owning loader can
     /// upload what a device-free worker produced without copying the arrays.
+    /// Copying a loader shares its parse instead: the arrays are read-only.
     void adoptParsed(GltfLoader &&other);
 
     /// Parses the document into vertices/indices/materials/materialIndex with
     /// OxidANT's Rust loader. Returns false on a missing or malformed file,
     /// leaving the instance empty.
-    bool parseCpu(const std::string &modelFile);
+    bool parseCpu(const std::string &modelFile, const GltfLoadOptions &options = {});
 
-    const std::vector<Vertex> &getVertices() const { return vertices; }
-    const std::vector<unsigned int> &getIndices() const { return indices; }
+    /// The bridge's own arrays, valid while this loader holds the parse; nothing copies them before the upload.
+    std::span<const Vertex> getVertices() const { return vertices; }
+    std::span<const unsigned int> getIndices() const { return indices; }
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
-    const std::vector<unsigned int> &getMaterialIndices() const { return materialIndex; }
+    std::span<const unsigned int> getMaterialIndices() const { return materialIndex; }
     /// Encoded base-colour image bytes (PNG/JPG...), one entry per *distinct*
     /// image; materials sharing an image share a slot, indexed by that
     /// material's textureID. loadModel decodes and uploads them via
     /// Texture::createFromMemory; a test can assert the CPU extraction without
     /// a device.
-    const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
+    const std::vector<std::span<const unsigned char>> &getTextureImages() const { return textureImages; }
 
     /// The glTF sampler (wrap modes + filters) each entry of getTextureImages()
     /// was authored with, index-parallel with it. Two textures sharing one
@@ -101,18 +120,23 @@ class GltfLoader
     void clearParsed();
 
     /// Fills the arrays from OxidANT's `load_gltf_flat` (GltfLoaderRust.cpp).
-    bool parseWithRust(const std::string &modelFile);
+    bool parseWithRust(const std::string &modelFile, const GltfLoadOptions &options);
 
     std::shared_ptr<VulkanDevice> device;
     vk::CommandPool command_pool;
 
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
+    // The bridge's result, defined in GltfLoaderRust.cpp: no module interface may include a bridge header.
+    struct BridgeModel;
+    // Shared, so its deleter needs no complete BridgeModel here; the views below point into it.
+    std::shared_ptr<const BridgeModel> bridge;
+
+    std::span<const Vertex> vertices;
+    std::span<const unsigned int> indices;
     std::vector<ObjMaterial> materials;
     // Per-face (per-triangle) material id, exactly like the OBJ path.
-    std::vector<unsigned int> materialIndex;
+    std::span<const unsigned int> materialIndex;
     // One encoded image per textured material (see getTextureImages).
-    std::vector<std::vector<unsigned char>> textureImages;
+    std::vector<std::span<const unsigned char>> textureImages;
     // Index-parallel with textureImages; see getTextureSamplerDescs.
     std::vector<GltfSamplerDesc> textureSamplerDescs;
     // Index-parallel with textureImages; see getTextureSrgbFlags.

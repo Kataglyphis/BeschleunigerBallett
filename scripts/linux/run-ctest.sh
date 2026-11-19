@@ -25,8 +25,10 @@ if [[ "${1:-}" == "--virtual-display" ]]; then
   export VK_KHRONOS_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC=1
   # The GPU suites run for real here, so GpuTestGuard.hpp fails a GPU test that would skip (OxidANT's variable).
   export KATAGLYPHIS_REQUIRE_GPU=1
+  # ctest's own Skipped too: every GPU test runs on llvmpipe (none of 96 skipped, 2026-11-19), so a skip is a bug.
+  skipped_fails=(--fail-on-skipped '^(GoldenRender|Integration)\.')
   # -noreset: a golden's GLFW probe disconnects, and a window opened while Xvfb resets found no display.
-  xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" bash "${BASH_SOURCE[0]}" "$@"
+  xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" bash "${BASH_SOURCE[0]}" "${skipped_fails[@]}" "$@"
   exit 0
 fi
 

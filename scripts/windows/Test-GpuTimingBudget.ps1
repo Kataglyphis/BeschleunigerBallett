@@ -81,13 +81,15 @@ if (-not $dump.timestamps_supported -or [int64]$dump.frames_measured -le 0 -or $
 
 $passes = @{}
 foreach ($name in $dump.passes.Keys) { $passes[$name] = [double]$dump.passes[$name] }
-$frameMs = ($passes.Values | Measure-Object -Sum).Sum
+# A nested scope (Forward inside Main) is already part of its parent's time, so the frame adds only the top level.
+$nested = if ($dump.ContainsKey('nested_in') -and $null -ne $dump.nested_in) { @($dump.nested_in.Keys) } else { @() }
+$frameMs = ($passes.Keys | Where-Object { $_ -notin $nested } | ForEach-Object { $passes[$_] } | Measure-Object -Sum).Sum
 $shares = @{}
 if ($frameMs -gt 0.0) {
     foreach ($name in $passes.Keys) { $shares[$name] = $passes[$name] / $frameMs }
 }
 
-Write-Host ("Host profile '{0}', {1} frames measured, {2:N4} ms over all timed passes" -f $HostProfile, $dump.frames_measured, $frameMs)
+Write-Host ("Host profile '{0}', {1} frames measured, {2:N4} ms over the top-level timed passes" -f $HostProfile, $dump.frames_measured, $frameMs)
 $absolute = Test-PassBudget -Measured $passes -Limits $hostBudget['max_ms'] -Unit 'ms'
 $relative = Test-PassBudget -Measured $shares -Limits $hostBudget['max_share'] -Unit 'share'
 

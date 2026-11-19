@@ -33,6 +33,18 @@ class VulkanBufferManager
       uint32_t width,
       uint32_t height);
 
+    // `fill` writes the `byteCount` bytes straight into the mapped staging memory, so a caller stages without a copy.
+    template<typename Fill>
+    bool createBufferAndUploadOnDevice(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      VulkanBuffer &vulkanBuffer,
+      vk::BufferUsageFlags dstBufferUsageFlags,
+      vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
+      vk::DeviceSize byteCount,
+      Fill &&fill,
+      vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {},
+      vk::Queue transfer_queue = {});
+
     template<typename T>
     bool createBufferAndUploadVectorOnDevice(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
@@ -62,6 +74,38 @@ class VulkanBufferManager
     void ensureStagingBufferCapacity(const std::shared_ptr<VulkanDevice> &device, vk::DeviceSize size);
 };
 
+template<typename Fill>
+inline bool VulkanBufferManager::createBufferAndUploadOnDevice(const std::shared_ptr<VulkanDevice> &device,
+  vk::CommandPool commandPool,
+  VulkanBuffer &vulkanBuffer,
+  vk::BufferUsageFlags dstBufferUsageFlags,
+  vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
+  vk::DeviceSize byteCount,
+  Fill &&fill,
+  vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags,
+  vk::Queue transfer_queue)
+{
+    if (byteCount == 0) {
+        vulkanBuffer.create(
+          device, sizeof(uint32_t), dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
+        return true;
+    }
+
+    ensureStagingBufferCapacity(device, byteCount);
+
+    // The staging buffer is host-visible and therefore persistently mapped by VMA.
+    fill(stagingBuffer.getMappedData());
+
+    vulkanBuffer.create(
+      device, byteCount, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
+
+    vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
+
+    // stagingBuffer is intentionally kept alive for reuse by the next upload;
+    // it is released in cleanUp().
+    return copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, byteCount);
+}
+
 template<typename T>
 inline bool VulkanBufferManager::createBufferAndUploadVectorOnDevice(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
@@ -72,26 +116,16 @@ inline bool VulkanBufferManager::createBufferAndUploadVectorOnDevice(const std::
   vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags,
   vk::Queue transfer_queue)
 {
-    vk::DeviceSize bufferSize = sizeof(T) * data.size();
-    if (bufferSize == 0) {
-        bufferSize = sizeof(uint32_t);
-        vulkanBuffer.create(
-          device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
-        return true;
-    }
-
-    ensureStagingBufferCapacity(device, bufferSize);
-
-    // The staging buffer is host-visible and therefore persistently mapped by VMA.
-    std::memcpy(stagingBuffer.getMappedData(), data.data(), static_cast<size_t>(bufferSize));
-
-    vulkanBuffer.create(
-      device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
-
-    vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
-
-    // stagingBuffer is intentionally kept alive for reuse by the next upload;
-    // it is released in cleanUp().
-    return copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
+    const vk::DeviceSize bufferSize = sizeof(T) * data.size();
+    return createBufferAndUploadOnDevice(
+      device,
+      commandPool,
+      vulkanBuffer,
+      dstBufferUsageFlags,
+      dstBufferMemoryPropertyFlags,
+      bufferSize,
+      [&data, bufferSize](void *staging) { std::memcpy(staging, data.data(), static_cast<size_t>(bufferSize)); },
+      dstBufferMemoryAllocateFlags,
+      transfer_queue);
 }
 }// namespace Kataglyphis

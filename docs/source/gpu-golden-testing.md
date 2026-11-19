@@ -12,7 +12,8 @@ container build (`scripts/windows/Build-Windows-Container.ps1 -RunTests`) has no
 **skipped**, not passed. A green container build proves the code *compiles and links* and the CPU
 suites pass; it does **not** prove a render/device refactor preserves behaviour. With
 `KATAGLYPHIS_REQUIRE_GPU` set and non-empty (OxidANT's variable), the guard and
-`SKIP_WITHOUT_FRAME_CAPTURE` fail the test instead of skipping it; the hardware-RT guards still skip.
+`SKIP_WITHOUT_FRAME_CAPTURE` fail the test instead of skipping it; the hardware-RT guards still skip,
+which the Linux runs then fail (below).
 
 ## Linux CI runs them on llvmpipe
 
@@ -20,7 +21,11 @@ Since 2026-09-29 the family Linux image ships lavapipe/llvmpipe, a CPU Vulkan de
 tracing, and `Xvfb`. The Linux `clang-tests` job (`reusable-linux.yml`, x64 and arm64) runs the
 GPU suites for real: `run-ctest.sh --virtual-display` starts the run under `xvfb-run`, so
 `glfwInit()` finds an X server, and exports `KATAGLYPHIS_REQUIRE_GPU=1`, so a broken Xvfb or GLFW
-platform fails every GPU test instead of skipping it (the riscv64 GPU shards set it too). Locally:
+platform fails every GPU test instead of skipping it (the riscv64 GPU shards set it too). Since
+2026-11-19 it also passes the hub's `--fail-on-skipped '^(GoldenRender|Integration)\.'` (the riscv64
+shards too, through `ctest_run_main`), which fails the run on any ctest Skipped of those suites, the
+hardware-RT `GTEST_SKIP`s included: llvmpipe has ray tracing, and none of the 96 skipped that day; a
+test that cannot run there must be named, not skipped. The two Disabled goldens never count. Locally:
 
 ```bash
 bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-type Debug
@@ -292,7 +297,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=86 runnable=84 integration=12 total=96 excluded=3 -->
+<!-- golden-counts: defined=87 runnable=85 integration=12 total=97 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.

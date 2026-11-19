@@ -29,14 +29,27 @@ back-to-back on the calling (device-owning) thread.
 
 `GltfLoader::parseCpu` is OxidANT's loader, the one the WebGPU renderer uses,
 called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge/src/gltf.rs`,
-flattened by `crates/assets/src/flat.rs`) and copied into the arrays by
-`GltfLoaderRust.cpp`. It bakes world space, reverses a mirrored node's winding,
+flattened by `crates/assets/src/flat.rs`). `GltfLoaderRust.cpp` keeps the
+returned `GltfModel` behind `GltfLoader`'s `BridgeModel` pimpl and views its
+vertices, indices, material ids and encoded images in place (`std::span` over
+`data()`/`size()`; `GltfVertex` and `Vertex` agree field by field): nothing is
+copied before the staging buffer, which for `Colosseum-gltf` was about 0.5 GB
+held twice at the parse's peak. Copies of a loader share the parse. It bakes world space, reverses a mirrored node's winding,
 gives a primitive without `NORMAL` one vertex per corner with its face's
 normal, keeps only the vertices a primitive's indices use, and hands textures
 over as the file's encoded bytes, deduped on `(image, sampler settings, srgb)`.
 It takes a texture's core `source` only, so a `KHR_texture_basisu`-only texture
 gets no slot (stb reads no KTX2). The document, its buffers and its images must
 be regular files, the buffers and images inside the document's directory.
+
+What a load asks beyond the file is a `GltfLoadOptions` (`mikktspaceTangents`
+today), which `parseCpu`, `loadModel`, `AsyncModelParse::start` and `Scene`
+hand to `load_gltf_flat_with`; each field's zero is the loader's default. The
+loader reads no environment: `App::run` turns `KATAGLYPHIS_MIKKTSPACE_TANGENTS`
+into the options once, through `gltfLoadOptionsFromEnvironment`, and tests ask
+through the options. The fixtures both renderers load are OxidANT's
+`crates/assets/tests/assets`; `GltfFixtureRoundTrip.*` checks each one's
+mapping into `Vertex`, `MeshRange` and `ObjMaterial`.
 
 An error, or a panic in any build, comes back as a failed parse, never an
 exception or an abort: every bridged call runs inside OxidANT's `guarded()`,
@@ -130,14 +143,18 @@ for OBJ, which has neither concept; an OBJ `d` below 1 stays opaque.
 
 The type lives in its own module, `kataglyphis.vulkan.mesh_range`
 (`scene/MeshRange.ixx`), `export import`ed by both loaders. It exports
-`MeshRange`, the `MeshSlice` return type and `sliceMeshRange`, the one shared
-implementation of "sub-vertices copied, sub-indices re-based by `-vertexBase`,
-per-range material subset" that both loaders' `uploadParsed` call.
+`MeshRange`, the `MeshSlice` return type, `sliceMeshRange` ("sub-vertices
+copied, sub-indices re-based by `-vertexBase`, per-range material subset", the
+OBJ upload), and the two pieces both upload paths share: `meshRangeFits`, which
+decides whether a range gets its mesh or an empty one, and `rebaseIndices`.
 
 `parseCpu` records one range per sub-object and keeps the flat arrays intact
 (the `ObjParseUnit`/`GltfParseUnit` tests still assert on the flat getters);
-`uploadParsed` slices each range via `sliceMeshRange` into its own
-`add_new_mesh`. A sub-object is:
+`ObjLoader::uploadParsed` slices each range via `sliceMeshRange` into its own
+`add_new_mesh` (`addMeshesForRanges`); `GltfLoader::uploadParsed` hands
+`add_new_mesh` subspans of the bridge's arrays instead
+(`addMeshesForRangesInPlace`), and `Mesh` re-bases the indices while it writes
+them into the staging memory. A sub-object is:
 
 - **glTF** — one **primitive**. Primitives already parse into disjoint
   contiguous vertex ranges, so the range is recorded directly.
@@ -312,14 +329,15 @@ Where:
 
 - `parseCpu` leaves the flat `getVertices()`/`getIndices()`/
   `getMaterialIndices()`/`getMaterials()` exactly as before the split: the CPU
-  parse tests key on them, and the slice reads from them.
+  parse tests key on them, and both upload paths read from them.
 - Every `MeshRange` must tile the flat arrays contiguously (no gap/overlap),
   and every index in a range must stay inside that range's own vertex block, or
-  the `-vertexBase` re-base in `sliceMeshRange` corrupts the mesh. The
+  the `-vertexBase` re-base (`rebaseIndices`) corrupts the mesh. The
   `MultiShape…`/`MultiPrimitive…RecordsPerPrimitiveMeshRanges` parse tests
   assert this at parse level, and `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp`
-  unit-tests `sliceMeshRange` directly.
+  unit-tests `sliceMeshRange`, `rebaseIndices` and `meshRangeFits` directly.
 - Each mesh currently shares the full `materials` array (its `materialIndex`
   holds the original indices). Trimming to a per-mesh material subset would be
-  an optional optimisation, which no backlog entry tracks; the slice loop is
-  already shared in `sliceMeshRange`, so that trim edits one place for both loaders.
+  an optional optimisation, which no backlog entry tracks; it would go into
+  both assembly loops in `scene/ModelAssembly.ixx`, `addMeshesForRanges` (OBJ)
+  and `addMeshesForRangesInPlace` (glTF), or into a helper both call.

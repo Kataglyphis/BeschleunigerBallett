@@ -17,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <map>
 #include <optional>
@@ -48,6 +49,8 @@
 #include "shared/scene/Vertex.hpp"
 
 import kataglyphis.vulkan.cascaded_shadow_map; // Kataglyphis::ShadowPushConstants
+import kataglyphis.vulkan.gpu_timing;
+import kataglyphis.vulkan.gui_renderer_shared_vars;
 
 namespace {
 
@@ -1760,6 +1763,102 @@ TEST(BuildIntegrity, LinuxGpuRunsRequireTheGpuBeforeTheirVirtualDisplay)
     // Unindented: the shard run is the script's top-level flow, which an export inside a branch would not reach.
     EXPECT_TRUE(requires_gpu_before(*riscv, 0, *riscv_display, true))
       << riscv_path.string() << " must export KATAGLYPHIS_REQUIRE_GPU=1 at top level before the GPU shard's xvfb-run";
+
+    const fs::path cargo_path = scripts_dir / "run-cargo-tests.sh";
+    const auto cargo = readFileLines(cargo_path);
+    ASSERT_TRUE(cargo.has_value()) << "could not open " << cargo_path.string();
+    const auto cargo_display = first_shell_line_with(*cargo, 0, "xvfb-run");
+    ASSERT_TRUE(cargo_display.has_value()) << cargo_path.string() << " runs OxidANT's tests under no xvfb-run";
+    EXPECT_NE((*cargo)[*cargo_display].find("CARGO_TEST_SH"), std::string::npos)
+      << cargo_path.string() << "'s xvfb-run must run the hub's cargo_test.sh";
+    EXPECT_TRUE(requires_gpu_before(*cargo, 0, *cargo_display, true))
+      << cargo_path.string() << " must export KATAGLYPHIS_REQUIRE_GPU=1 at top level before its xvfb-run";
+}
+
+namespace {
+
+// The shell command starting at `first`, its backslash-continued lines joined.
+std::string shell_command_from(const std::vector<std::string> &lines, std::size_t first)
+{
+    std::string command;
+    for (std::size_t index = first; index < lines.size(); ++index) {
+        command += lines[index];
+        command += '\n';
+        if (lines[index].empty() || lines[index].back() != '\\') { break; }
+    }
+    return command;
+}
+
+bool names_both_gpu_suites(std::string_view text)
+{ return text.find("GoldenRender") != std::string_view::npos && text.find("Integration") != std::string_view::npos; }
+
+// `"${name[@]}"` for a line assigning the array `name`; empty for any other line.
+std::string shell_array_expansion(const std::string &line)
+{
+    static const std::regex assignment(R"(^\s*([A-Za-z_][A-Za-z0-9_]*)=\()");
+    std::smatch match;
+    if (!std::regex_search(line, match, assignment)) { return {}; }
+    return "\"${" + match[1].str() + "[@]}\"";
+}
+
+}// namespace
+
+// ctest counts a skipped test as passed, so each Linux GPU run hands both GPU suites to the hub's --fail-on-skipped.
+TEST(BuildIntegrity, LinuxGpuRunsFailOnASkippedGpuTest)
+{
+    const fs::path scripts_dir = repoRoot() / "scripts" / "linux";
+
+    const fs::path ctest_path = scripts_dir / "run-ctest.sh";
+    const auto ctest = readFileLines(ctest_path);
+    ASSERT_TRUE(ctest.has_value()) << "could not open " << ctest_path.string();
+    const auto branch = first_shell_line_with(*ctest, 0, R"(== "--virtual-display" ]])");
+    ASSERT_TRUE(branch.has_value()) << ctest_path.string() << " has no --virtual-display branch";
+    const auto display = first_shell_line_with(*ctest, *branch, "xvfb-run");
+    ASSERT_TRUE(display.has_value()) << ctest_path.string() << "'s --virtual-display branch runs no xvfb-run";
+    const std::string display_command = shell_command_from(*ctest, *display);
+    bool passes_flag =
+      display_command.find("--fail-on-skipped") != std::string::npos && names_both_gpu_suites(display_command);
+    if (const auto flag = first_shell_line_with(*ctest, *branch, "--fail-on-skipped");
+      !passes_flag && flag.has_value() && *flag < *display) {
+        const std::string expansion = shell_array_expansion((*ctest)[*flag]);
+        passes_flag = names_both_gpu_suites((*ctest)[*flag]) && !expansion.empty()
+                      && display_command.find(expansion) != std::string::npos;
+    }
+    EXPECT_TRUE(passes_flag) << ctest_path.string()
+                             << "'s --virtual-display xvfb-run must pass --fail-on-skipped with a pattern naming "
+                                "GoldenRender and Integration";
+
+    const fs::path riscv_path = scripts_dir / "run-riscv64-tests.sh";
+    const auto riscv = readFileLines(riscv_path);
+    ASSERT_TRUE(riscv.has_value()) << "could not open " << riscv_path.string();
+    static const std::regex direct_ctest(R"((^|[\s;&|(])ctest(\s|$))");
+    std::vector<std::string> direct;
+    for (std::size_t index = 0; index < riscv->size(); ++index) {
+        const std::string &line = (*riscv)[index];
+        const std::size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos || line[start] == '#') { continue; }
+        if (std::regex_search(line, direct_ctest)) { direct.push_back(std::to_string(index + 1) + ": " + line); }
+    }
+    EXPECT_TRUE(direct.empty()) << riscv_path.string()
+                                << " runs ctest itself, past the hub's --fail-on-skipped:" << joinViolations(direct);
+    const auto suites = first_shell_line_with(*riscv, 0, "CTEST_GPU_SUITES=");
+    ASSERT_TRUE(suites.has_value()) << riscv_path.string() << " defines no CTEST_GPU_SUITES";
+    EXPECT_TRUE(names_both_gpu_suites((*riscv)[*suites])) << riscv_path.string() << ": " << (*riscv)[*suites];
+    const auto gpu_branch = first_shell_line_with(*riscv, 0, R"(== "--gpu-ctest" ]])");
+    ASSERT_TRUE(gpu_branch.has_value()) << riscv_path.string() << " has no --gpu-ctest branch for the shard's ctest";
+    const auto branch_end = std::find(riscv->begin() + static_cast<std::ptrdiff_t>(*gpu_branch), riscv->end(), "fi");
+    ASSERT_NE(branch_end, riscv->end()) << riscv_path.string() << "'s --gpu-ctest branch has no unindented fi";
+    const auto run = first_shell_line_with(*riscv, *gpu_branch, "ctest_run_main");
+    ASSERT_TRUE(run.has_value() && *run < static_cast<std::size_t>(branch_end - riscv->begin()))
+      << riscv_path.string() << "'s --gpu-ctest branch does not run the hub's ctest_run_main";
+    EXPECT_NE((*riscv)[*run].find(R"(--fail-on-skipped "${CTEST_GPU_SUITES}")"), std::string::npos)
+      << riscv_path.string() << "'s --gpu-ctest branch must pass --fail-on-skipped \"${CTEST_GPU_SUITES}\"";
+    const auto shard_display =
+      first_shell_line_with(*riscv, static_cast<std::size_t>(branch_end - riscv->begin()), "xvfb-run");
+    ASSERT_TRUE(shard_display.has_value()) << riscv_path.string() << " runs its GPU shard under no xvfb-run";
+    EXPECT_NE(
+      shell_command_from(*riscv, *shard_display).find(R"(bash "${BASH_SOURCE[0]}" --gpu-ctest)"), std::string::npos)
+      << riscv_path.string() << "'s GPU shard xvfb-run must re-run the script's --gpu-ctest branch";
 }
 
 // Fuzz targets have no negative filter, so one missing from the Windows lane's array silently never runs.
@@ -9055,6 +9154,46 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
       << joinViolations(violations);
 }
 
+// A copy of the bridge's arrays into C++ containers held the Colosseum's 0.5 GB twice at the parse's peak.
+TEST(BuildIntegrity, GltfLoaderUploadsTheBridgeArraysWithoutACopy)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path scene_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "scene";
+
+    std::vector<std::string> violations;
+    const auto scan = [&](const char *file, std::initializer_list<const char *> banned) {
+        const auto lines = readFileLines(scene_dir / file);
+        ASSERT_TRUE(lines.has_value()) << "could not open " << file;
+        std::size_t line_number = 0;
+        for (const std::string &raw : *lines) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw);
+            const bool copies = std::ranges::any_of(
+              banned, [&line](const char *needle) { return line.find(needle) != std::string::npos; });
+            if (copies) { violations.push_back(std::string(file) + ":" + std::to_string(line_number) + ": " + raw); }
+        }
+    };
+    // An owning container for the vertices, indices, material ids or encoded images is the copy.
+    scan("GltfLoader.ixx",
+      { "std::vector<Vertex>", "std::vector<unsigned int>", "std::vector<std::vector<unsigned char>>" });
+    // The bridge's arrays are read through data() and size() only; anything that iterates or memcpys them copies.
+    scan("GltfLoaderRust.cpp", { "memcpy(", ".assign(", ".begin()", ".end()", ".resize(" });
+
+    const auto upload_text = readFileText(scene_dir / "GltfLoader.cpp");
+    ASSERT_TRUE(upload_text.has_value()) << "could not open GltfLoader.cpp";
+    const std::string upload_body = extract_function_body(*upload_text, "GltfLoader::uploadParsed(");
+    ASSERT_FALSE(upload_body.empty()) << "could not locate GltfLoader::uploadParsed";
+    if (upload_body.find("addMeshesForRangesInPlace(") == std::string::npos) {
+        violations.emplace_back(
+          "GltfLoader::uploadParsed builds its meshes without addMeshesForRangesInPlace, "
+          "so each range is sliced into a copy first");
+    }
+
+    EXPECT_TRUE(violations.empty()) << "GltfLoader must keep OxidANT's result and upload from views of it:"
+                                    << joinViolations(violations);
+}
+
 // Only the renderer owns a command pool, and the shadow map seeds its host-visible buffers without staging.
 TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
 {
@@ -10519,18 +10658,19 @@ TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
 
 namespace {
 
-// GUI.cpp must read or write every member of a GUI shared-vars struct, or the member has a reason in <exempt>.
+// GUI.cpp (or <consumer_rel>) must name every member of a shared-vars struct, or the member has a reason in <exempt>.
 void expect_every_member_has_a_gui_control(const std::string &struct_name,
   const std::string &header_rel,
   const std::string &gui_prefix,
   std::size_t min_members,
-  const std::map<std::string, std::string> &exempt)
+  const std::map<std::string, std::string> &exempt,
+  const std::string &consumer_rel = "Src/GraphicsEngineVulkan/gui/GUI.cpp")
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path header_path = repo_root / fs::path(header_rel);
-    const fs::path gui_path = repo_root / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
+    const fs::path gui_path = repo_root / fs::path(consumer_rel);
     const auto gui_text = readFileText(gui_path);
     ASSERT_TRUE(gui_text.has_value()) << "could not open " << gui_path.string();
 
@@ -10575,6 +10715,29 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
       "guiSceneSharedVars.",
       20,
       kExempt);
+}
+
+// A scene var OxidANT's settings also carry is compared with them; the rest name why not (plan B10).
+TEST(BuildIntegrity, EveryGuiSceneVarIsComparedWithOxidantsSettingsOrExempt)
+{
+    const std::map<std::string, std::string> kExempt{
+        { "shadow_resolution_changed", "a latch the resolution combo raises for the renderer, not a setting" },
+        { "model_reload_requested", "a latch the model picker raises, not a setting" },
+        { "model_transform_changed", "a latch the transform controls raise, not a setting" },
+        { "selected_model_index", "the model picker's selection, not a setting" },
+        { "available_shadow_map_resolutions",
+          "the combo's labels; the texels are compared through kShadowMapResolutions" },
+        { "skybox_enabled", "OxidANT's settings carry no skybox toggle yet" },
+        { "camera_fov", "the camera, which OxidANT's settings do not carry" },
+        { "model_position", "the Model tab's pose, compared through parity_model_transform (rendererParitySuite.cpp)" },
+        { "model_rotation", "the Model tab's pose, compared through parity_model_transform (rendererParitySuite.cpp)" },
+    };
+    expect_every_member_has_a_gui_control("GUISceneSharedVars",
+      "Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx",
+      "defaults.",
+      20,
+      kExempt,
+      "Test/commit/VulkanEngine/sceneSettingsDriftSuite.cpp");
 }
 
 // The renderer's shared vars had no gate; all of them are read or written by the GUI today, and this keeps it so.
@@ -10985,6 +11148,52 @@ TEST(BuildIntegrity, NonDebugBuildsLinkTheBridgeWithAPanicThatUnwinds)
       << cmake_path.string() << " must select OxidANT's bridge profile for every configuration but Debug";
 }
 
+// Compare-RendererTimings lines the renderers' passes up by name, and both GUIs smooth over one window of frames.
+TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
+{
+    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path rust_path =
+      repo_root / "third_party" / "OxidANT" / "crates" / "webgpu_renderer" / "src" / "render" / "gpu_timing.rs";
+    if (!sourceExists(rust_path)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const auto rust = readFileText(rust_path);
+    ASSERT_TRUE(rust.has_value()) << "could not read " << rust_path.string();
+
+    std::smatch name_fn;
+    ASSERT_TRUE(std::regex_search(*rust, name_fn, std::regex(R"(fn name\(self\)[^{]*\{\s*match self \{([^}]*)\})")))
+      << rust_path.string() << " has no TimedPass::name() match";
+    std::set<std::string> rust_names;
+    const std::string arms = name_fn[1].str();
+    static const std::regex kArm(R"re(=>\s*"([A-Za-z]+)")re");
+    for (std::sregex_iterator it(arms.begin(), arms.end(), kArm), end; it != end; ++it) {
+        rust_names.insert((*it)[1].str());
+    }
+    ASSERT_GE(rust_names.size(), 10U) << "parsed only " << rust_names.size() << " Rust pass names - the scan broke";
+
+    // The C++ renderer's own scopes; any other pass must carry the Rust renderer's name for the same work.
+    static const std::set<std::string> kCppOnly = { "Main", "Sky", "Post", "CloudUpsample", "PunctualShadows" };
+    for (const char *name : FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES) {
+        if (kCppOnly.contains(name)) {
+            EXPECT_FALSE(rust_names.contains(name)) << name << " is a Rust pass too: drop it from kCppOnly";
+        } else {
+            EXPECT_TRUE(rust_names.contains(name)) << "C++ times " << name << ", which no Rust TimedPass is named";
+        }
+    }
+    for (const char *shared : { "Forward", "GBuffer", "DeferredLighting", "RayTrace", "PathTrace" }) {
+        EXPECT_NE(std::ranges::find_if(FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES,
+                    [shared](const char *name) { return std::string_view(name) == shared; }),
+          FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES.end())
+          << "the C++ renderer no longer times " << shared << " inside Main";
+    }
+
+    std::smatch window;
+    ASSERT_TRUE(std::regex_search(*rust, window, std::regex(R"(const AVERAGE_WINDOW: usize = (\d+);)")))
+      << rust_path.string() << " has no AVERAGE_WINDOW";
+    EXPECT_EQ(std::to_string(Kataglyphis::GpuTimingSubsystem::GpuPassAverage::WINDOW), window[1].str())
+      << "the C++ GUI averages its pass times over another window than the Rust renderer's";
+}
+
 // A generated bridge header in a module interface or header would rebuild every importer on each bridge edit.
 TEST(BuildIntegrity, BridgeHeadersAreIncludedFromCppFilesOnly)
 {
@@ -11059,4 +11268,87 @@ TEST(BuildIntegrity, NoTranslationUnitIncludesAHeaderAfterAnImport)
     EXPECT_GT(importers, 10U) << "found only " << importers << " .cpp file(s) that import a module - the scan broke";
     EXPECT_TRUE(late_includes.empty()) << "move these #includes above the file's first import, or the gcc job fails:"
                                        << joinViolations(late_includes);
+}
+
+// One glTF fixture set (plan X5): a GltfTest file OxidANT also holds is a copy, kept only where the library needs it.
+TEST(BuildIntegrity, GltfTestHoldsNoCopyOfOxidantsFixturesButTheLibrarysCheckerCube)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path oxidant = repo_root / "third_party" / "OxidANT" / "crates" / "assets" / "tests" / "assets";
+    if (!sourceExists(oxidant)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const std::map<std::string, std::string> kKept{
+        { "cube_textured.gltf", "the editor library lists it, and two goldens reload it through the library" },
+    };
+
+    std::vector<std::string> violations;
+    std::size_t scanned = 0;
+    std::error_code error;
+    for (fs::directory_iterator it(repo_root / "Resources" / "Models" / "GltfTest", error), end; it != end;
+      it.increment(error)) {
+        if (error) { break; }
+        ++scanned;
+        const std::string name = it->path().filename().string();
+        const fs::path twin = oxidant / name;
+        std::error_code twin_error;
+        if (!fs::exists(twin, twin_error)) { continue; }
+        if (!kKept.contains(name)) {
+            violations.push_back(name + ": OxidANT holds it; read it from " + twin.generic_string() + " instead");
+        } else if (readFileText(it->path()) != readFileText(twin)) {
+            violations.push_back(name + ": differs from OxidANT's copy; the two must stay byte-identical");
+        }
+    }
+    EXPECT_GT(scanned, 10U) << "found only " << scanned << " GltfTest file(s) - the scan broke";
+    EXPECT_TRUE(violations.empty()) << joinViolations(violations);
+}
+
+// The loader reads no environment (plan X14): the variable is read once, at the engine's start.
+TEST(BuildIntegrity, TheMikkTSpaceVariableIsReadOnlyAtTheEngineStart)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path engine = repo_root / "Src" / "GraphicsEngineVulkan";
+
+    std::vector<std::string> readers;
+    std::vector<std::string> callers;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(engine, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error)) { continue; }
+        const auto contents = readFileText(it->path());
+        if (!contents) { continue; }
+        const std::string relative = fs::relative(it->path(), engine).generic_string();
+        if (contents->find("KATAGLYPHIS_MIKKTSPACE_TANGENTS") != std::string::npos) { readers.push_back(relative); }
+        if (contents->find("gltfLoadOptionsFromEnvironment()") != std::string::npos) { callers.push_back(relative); }
+    }
+    const std::vector<std::string> kReaders{ "scene/GltfLoader.cpp", "scene/GltfLoader.ixx" };
+    const std::vector<std::string> kCallers{ "app/App.cpp", "scene/GltfLoader.cpp", "scene/GltfLoader.ixx" };
+    std::sort(readers.begin(), readers.end());
+    std::sort(callers.begin(), callers.end());
+    EXPECT_EQ(readers, kReaders) << "only gltfLoadOptionsFromEnvironment() may name the variable";
+    EXPECT_EQ(callers, kCallers) << "App::run alone calls gltfLoadOptionsFromEnvironment()";
+}
+
+// The bridge's crate graph (plan X4): the hub stager fails a forbidden family or a graph past the measured budget.
+TEST(BuildIntegrity, TheBridgeCrateGraphForbidsTheHeavyFamiliesAndHasABudget)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path cmake_path = repo_root / "cmake" / "CargoLicenses.cmake";
+    const auto cmake = readFileText(cmake_path);
+    ASSERT_TRUE(cmake.has_value()) << "could not read " << cmake_path.string();
+
+    std::vector<std::string> missing;
+    for (const std::string pattern :
+      { "\"wgpu*\"", "\"naga*\"", "\"winit*\"", "\"egui*\"", "\"tokio*\"", "\"gstreamer*\"", "\"ort-*\"" }) {
+        if (cmake->find(pattern) == std::string::npos) { missing.push_back(pattern); }
+    }
+    // ort itself, unquoted: the bare name, not a prefix of another.
+    static const std::regex kOrt(R"(--forbid-package\s+ort(\s|\)))");
+    if (!std::regex_search(*cmake, kOrt)) { missing.push_back("ort"); }
+    EXPECT_TRUE(missing.empty()) << cmake_path.string() << " no longer forbids:" << joinViolations(missing);
+    EXPECT_NE(cmake->find("--max-runtime-packages ${_myproject_cargo_runtime_budget}"), std::string::npos)
+      << cmake_path.string() << " passes the stager no runtime package budget";
+    EXPECT_NE(cmake->find("${_myproject_cargo_forbidden}"), std::string::npos)
+      << cmake_path.string() << " passes the stager no forbidden list";
 }

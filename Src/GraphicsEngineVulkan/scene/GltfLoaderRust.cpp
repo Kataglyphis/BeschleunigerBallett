@@ -3,10 +3,11 @@ module;
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include <vulkan/vulkan.hpp>
@@ -32,14 +33,16 @@ namespace Kataglyphis {
 namespace {
     namespace ox = kataglyphis::oxidant::gltf;
 
-    // The bridge's vertex is copied into Vertex byte for byte, so the two layouts must agree field by field.
+    // The bridge's vertices are read as Vertex in place, so the two layouts must agree field by field.
     static_assert(sizeof(ox::GltfVertex) == sizeof(Vertex));
+    static_assert(alignof(ox::GltfVertex) >= alignof(Vertex));
     static_assert(offsetof(ox::GltfVertex, position) == offsetof(Vertex, position));
     static_assert(offsetof(ox::GltfVertex, normal) == offsetof(Vertex, normal));
     static_assert(offsetof(ox::GltfVertex, color) == offsetof(Vertex, color));
     static_assert(offsetof(ox::GltfVertex, uv0) == offsetof(Vertex, texture_coords));
     static_assert(offsetof(ox::GltfVertex, tangent) == offsetof(Vertex, tangent));
     static_assert(offsetof(ox::GltfVertex, uv1) == offsetof(Vertex, texture_coords1));
+    static_assert(std::is_same_v<std::uint32_t, unsigned int> && std::is_same_v<std::uint8_t, unsigned char>);
 
     // Pinned for every glTF material: only an OBJ material's roughness falls back to shininess.
     constexpr float kGltfShininess = 1.0F;
@@ -126,29 +129,36 @@ namespace {
     }
 }// namespace
 
-bool GltfLoader::parseWithRust(const std::string &modelFile)
+struct GltfLoader::BridgeModel
+{ ox::GltfModel model; };
+
+bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptions &options)
 {
     const std::vector<std::uint8_t> path = Shared::utf8PathBytes(std::filesystem::path(modelFile));
-    const ox::GltfModel model = ox::load_gltf_flat(rust::Slice<const std::uint8_t>(path.data(), path.size()));
+    const ox::GltfLoadOptions bridgeOptions{ .mikktspace_tangents = options.mikktspaceTangents };
+    auto parsed = std::make_shared<BridgeModel>(
+      BridgeModel{ ox::load_gltf_flat_with(rust::Slice<const std::uint8_t>(path.data(), path.size()), bridgeOptions) });
     logOxidantRecords();
+    const ox::GltfModel &model = parsed->model;
     if (!model.ok) {
         spdlog::warn("GltfLoader (Rust): {}", std::string(model.error));
         return false;
     }
 
-    vertices.resize(model.vertices.size());
-    std::memcpy(vertices.data(), model.vertices.data(), model.vertices.size() * sizeof(Vertex));
-    indices.assign(model.indices.begin(), model.indices.end());
-    materialIndex.assign(model.material_index.begin(), model.material_index.end());
+    // Rust's allocation holds implicit-lifetime Vertex objects: no C++ code ever reads it as GltfVertex.
+    vertices = { reinterpret_cast<const Vertex *>(model.vertices.data()), model.vertices.size() };
+    indices = { model.indices.data(), model.indices.size() };
+    materialIndex = { model.material_index.data(), model.material_index.size() };
     for (const ox::GltfMaterial &material : model.materials) { materials.push_back(toObjMaterial(material)); }
     for (const ox::GltfTexture &texture : model.textures) {
-        textureImages.emplace_back(texture.encoded.begin(), texture.encoded.end());
+        textureImages.emplace_back(texture.encoded.data(), texture.encoded.size());
         textureSamplerDescs.push_back(toSamplerDesc(texture.sampler));
         textureSrgb.push_back(texture.srgb ? 1 : 0);
     }
     for (const ox::GltfMeshRange &range : model.mesh_ranges) { meshRanges.push_back(toMeshRange(range)); }
     for (const ox::GltfLight &light : model.lights) { punctualLights.push_back(toPunctualLight(light)); }
     if (model.has_sun) { sun = toPunctualLight(model.sun); }
+    bridge = std::move(parsed);
     return !vertices.empty();
 }
 

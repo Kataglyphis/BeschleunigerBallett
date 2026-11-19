@@ -2,6 +2,7 @@ module;
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -82,21 +83,17 @@ void ensureAtLeastOneTexture(Model &model, const std::shared_ptr<VulkanDevice> &
     model.addTexture(std::move(defaultTexture));
 }
 
-/// The empty-ranges single-mesh case plus the per-range sliceMeshRange ->
-/// add_new_mesh loop, common to both loaders. Always forwards
-/// range.doubleSided and range.alphaBlended - MeshRange.ixx documents both as always false for OBJ, so
-/// that loader forwarding it is behaviour-identical to the default it used to
-/// rely on.
-///
-/// vertices/indices/materialIndex stay non-const references because
-/// Model::add_new_mesh takes them that way.
+/// The OBJ upload: the empty-ranges single-mesh case plus the per-range
+/// sliceMeshRange -> add_new_mesh loop. Always forwards range.doubleSided and
+/// range.alphaBlended - MeshRange.ixx documents both as always false for OBJ, so
+/// forwarding them is behaviour-identical to the default it used to rely on.
 void addMeshesForRanges(Model &model,
   const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool pool,
-  std::vector<Vertex> &vertices,
-  std::vector<unsigned int> &indices,
-  std::vector<unsigned int> &materialIndex,
-  std::vector<ObjMaterial> &materials,
+  const std::vector<Vertex> &vertices,
+  const std::vector<unsigned int> &indices,
+  const std::vector<unsigned int> &materialIndex,
+  const std::vector<ObjMaterial> &materials,
   const std::vector<MeshRange> &ranges)
 {
     if (ranges.empty()) {
@@ -113,6 +110,37 @@ void addMeshesForRanges(Model &model,
           materials,
           range.doubleSided,
           range.alphaBlended);
+    }
+}
+
+/// The glTF upload: addMeshesForRanges without the slice, each range staged from views of the flat arrays.
+void addMeshesForRangesInPlace(Model &model,
+  const std::shared_ptr<VulkanDevice> &device,
+  vk::CommandPool pool,
+  std::span<const Vertex> vertices,
+  std::span<const unsigned int> indices,
+  std::span<const unsigned int> materialIndex,
+  std::span<const ObjMaterial> materials,
+  std::span<const MeshRange> ranges)
+{
+    if (ranges.empty()) {
+        model.add_new_mesh(device, pool, vertices, indices, materialIndex, materials);
+        return;
+    }
+    for (const MeshRange &range : ranges) {
+        if (!meshRangeFits(range, vertices.size(), indices.size(), materialIndex.size())) {
+            model.add_new_mesh(device, pool, {}, {}, {}, materials, range.doubleSided, range.alphaBlended);
+            continue;
+        }
+        model.add_new_mesh(device,
+          pool,
+          vertices.subspan(range.vertexBase, range.vertexCount),
+          indices.subspan(range.indexStart, range.indexCount),
+          materialIndex.subspan(range.triStart, range.triCount),
+          materials,
+          range.doubleSided,
+          range.alphaBlended,
+          static_cast<unsigned int>(range.vertexBase));
     }
 }
 

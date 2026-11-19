@@ -2,6 +2,7 @@ module;
 #include <glm/glm.hpp>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,14 +29,16 @@ class Model
 
     void cleanUp();
 
+    /// `firstVertex` is the vertex of the caller's array that `indices` count from (Mesh's constructor).
     void add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
       vk::CommandPool command_pool,
-      std::vector<Vertex> &vertices,
-      std::vector<unsigned int> &indices,
-      std::vector<unsigned int> &materialIndex,
-      std::vector<ObjMaterial> &materials,
+      std::span<const Vertex> vertices,
+      std::span<const unsigned int> indices,
+      std::span<const unsigned int> materialIndex,
+      std::span<const ObjMaterial> materials,
       bool double_sided = false,
-      bool alpha_blended = false);
+      bool alpha_blended = false,
+      unsigned int firstVertex = 0);
 
     uint32_t getTextureCount() const { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }

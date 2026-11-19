@@ -29,11 +29,12 @@ namespace {
     /// `.gltf`/`.glb` go to GltfLoader, everything else to ObjLoader.
     std::shared_ptr<Model> loadModelByExtension(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
-      const std::string &modelFile)
+      const std::string &modelFile,
+      const GltfLoadOptions &gltfOptions)
     {
         if (isGltfModelPath(modelFile)) {
             GltfLoader gltf_loader(device, commandPool);
-            return gltf_loader.loadModel(modelFile);
+            return gltf_loader.loadModel(modelFile, gltfOptions);
         }
 
         ObjLoader obj_loader(device, commandPool);
@@ -44,11 +45,13 @@ namespace {
 
 Scene::Scene() = default;
 
+Scene::Scene(GltfLoadOptions gltfLoadOptions) : gltfLoadOptions(gltfLoadOptions) {}
+
 void Scene::loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {
     std::string const modelFileName = sceneConfig::getModelFile();
     spdlog::info("Loading model: {}", modelFileName);
-    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelFileName);
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelFileName, gltfLoadOptions);
 
     if (new_model) {
         const std::optional<uint32_t> model_index = add_model(new_model);
@@ -72,7 +75,7 @@ std::optional<uint32_t> Scene::loadAdditionalModel(const std::shared_ptr<VulkanD
     // Paths are relative to Resources/, and the app and tests run from different working directories.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
     spdlog::info("Loading additional model: {}", resolved);
-    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved, gltfLoadOptions);
     if (!new_model) {
         spdlog::error("Failed to load additional model: {}", modelPath);
         return std::nullopt;
@@ -91,7 +94,7 @@ void Scene::beginModelLoadAsync()
     pendingModelPath = sceneConfig::startupModelRelativePath();
     const std::string modelFileName = sceneConfig::resolveModelPath(pendingModelPath);
     spdlog::info("Loading model asynchronously: {}", modelFileName);
-    pendingModelParse.start(modelFileName);
+    pendingModelParse.start(modelFileName, gltfLoadOptions);
     modelLoadPending = true;
 }
 
@@ -191,7 +194,7 @@ void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device,
     // Paths are relative to Resources/, and the app and tests run from different working directories.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
 
-    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved, gltfLoadOptions);
     const std::optional<uint32_t> model_index = add_model(new_model);
     if (!model_index) {
         spdlog::error("reloadModel: '{}' (resolved: '{}') failed to load; scene is now empty.", modelPath, resolved);

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <optional>
+#include <span>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -42,15 +43,16 @@ void Model::cleanUp()
 
 void Model::add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
   vk::CommandPool command_pool,
-  std::vector<Vertex> &vertices,
-  std::vector<unsigned int> &indices,
-  std::vector<unsigned int> &materialIndex,
-  std::vector<ObjMaterial> &materials,
+  std::span<const Vertex> vertices,
+  std::span<const unsigned int> indices,
+  std::span<const unsigned int> materialIndex,
+  std::span<const ObjMaterial> materials,
   bool double_sided,
-  bool alpha_blended)
+  bool alpha_blended,
+  unsigned int firstVertex)
 {
     // One mesh per glTF primitive or OBJ group.
-    meshes.emplace_back(vulkan_device, command_pool, vertices, indices, materialIndex, materials);
+    meshes.emplace_back(vulkan_device, command_pool, vertices, indices, materialIndex, materials, firstVertex);
     meshes.back().setDoubleSided(double_sided);
     meshes.back().setAlphaBlended(alpha_blended);
 }

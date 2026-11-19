@@ -1,6 +1,7 @@
 module;
 
 #include <cstddef>
+#include <span>
 #include <vector>
 
 export module kataglyphis.vulkan.mesh_range;
@@ -41,29 +42,36 @@ struct MeshSlice
     std::vector<unsigned int> materialIndex;
 };
 
-/// Slices the flat arrays for a single range. Shared by both loaders'
-/// uploadParsed so the re-basing arithmetic lives in one place. A range that
-/// does not fit within the arrays (a malformed asset, or a slicer bug in the
-/// loader) yields an empty MeshSlice instead of reading past the arrays.
+/// Whether `range` lies within flat arrays of these lengths; both upload paths give one that does not an empty mesh.
+bool meshRangeFits(const MeshRange &range, std::size_t vertexCount, std::size_t indexCount, std::size_t triCount)
+{
+    return range.vertexBase <= vertexCount && range.vertexCount <= vertexCount - range.vertexBase
+           && range.indexStart <= indexCount && range.indexCount <= indexCount - range.indexStart
+           && range.triStart <= triCount && range.triCount <= triCount - range.triStart;
+}
+
+/// Writes each of `indices` minus `firstVertex` to `out`, up to the shorter of the two: both upload paths' re-base.
+void rebaseIndices(std::span<const unsigned int> indices, unsigned int firstVertex, std::span<unsigned int> out)
+{
+    for (std::size_t i = 0; i < indices.size() && i < out.size(); ++i) { out[i] = indices[i] - firstVertex; }
+}
+
+/// The OBJ upload's copy of one range (glTF uploads in place); a range that does not fit yields an empty MeshSlice.
 MeshSlice sliceMeshRange(const MeshRange &range,
   const std::vector<Vertex> &vertices,
   const std::vector<unsigned int> &indices,
   const std::vector<unsigned int> &materialIndex)
 {
-    if (range.vertexBase > vertices.size() || range.vertexCount > vertices.size() - range.vertexBase
-        || range.indexStart > indices.size() || range.indexCount > indices.size() - range.indexStart
-        || range.triStart > materialIndex.size() || range.triCount > materialIndex.size() - range.triStart) {
-        return {};
-    }
+    if (!meshRangeFits(range, vertices.size(), indices.size(), materialIndex.size())) { return {}; }
 
     MeshSlice slice;
     slice.vertices.assign(vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
       vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));
 
-    slice.indices.reserve(range.indexCount);
-    for (std::size_t i = 0; i < range.indexCount; ++i) {
-        slice.indices.push_back(indices[range.indexStart + i] - static_cast<unsigned int>(range.vertexBase));
-    }
+    slice.indices.resize(range.indexCount);
+    rebaseIndices(std::span(indices).subspan(range.indexStart, range.indexCount),
+      static_cast<unsigned int>(range.vertexBase),
+      slice.indices);
 
     slice.materialIndex.assign(materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
       materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));

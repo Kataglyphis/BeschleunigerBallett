@@ -9,7 +9,9 @@
 - Rust and cargo: every build links OxidANT's cxx bridge through Corrosion, `--locked` to OxidANT's
   `Cargo.lock`, and every build but Debug with OxidANT's `bridge` cargo profile (release, but a panic
   unwinds into an error value); Corrosion runs a `cxxbridge` on `PATH` at that lock's `cxx` version,
-  or else builds exactly that version into the build tree on the first build
+  or else builds exactly that version into the build tree on the first build. The build stages the
+  bridge's crate licences and fails when its graph gains a wgpu, naga, winit, egui, tokio, gstreamer or
+  ort package or more than 56 runtime packages (`cmake/CargoLicenses.cmake`)
 - network access for the first configure, which downloads the default scenes (see below)
 
 ## Clone the Repository
@@ -72,6 +74,7 @@ Each fetched scene carries its credit in `ATTRIBUTION.txt`; AssetANT's
 | the other eleven | AssetANT; `KATAGLYPHIS_FETCH_ALL_ASSETS` | per scene, in [AssetANT's README](https://github.com/Kataglyphis/AssetANT#the-assets) |
 | `VikingRoom` | tracked, a test fixture | CC BY 4.0: "Viking room" by nigelgoh on Sketchfab, the Vulkan Tutorial's copy with its material renamed |
 | `GltfTest`, `ShadowTest`, `Plane`, `plane.obj`, `suzanne.obj` | tracked, test fixtures | — |
+| OxidANT's `crates/assets/tests/assets` | the submodule; both renderers' glTF fixtures, which the C++ tests read in place | OxidANT's |
 
 ## Linux Workflow
 

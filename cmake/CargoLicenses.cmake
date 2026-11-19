@@ -10,6 +10,26 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(_myproject_oxidant "${_myproject_cargo_license_root}/third_party/OxidANT")
 set(_myproject_cargo_licenses "${PROJECT_BINARY_DIR}/cargo-licenses")
+# The engine links no GPU, window, GUI, async, media or ONNX crate (plan X4); one would bring ~260 packages.
+set(_myproject_cargo_forbidden
+    --forbid-package
+    "wgpu*"
+    --forbid-package
+    "naga*"
+    --forbid-package
+    "winit*"
+    --forbid-package
+    "egui*"
+    --forbid-package
+    "tokio*"
+    --forbid-package
+    "gstreamer*"
+    --forbid-package
+    ort
+    --forbid-package
+    "ort-*")
+# Measured 2026-11-19 on all five bridge targets; raise it with a reviewed dependency, never just to pass.
+set(_myproject_cargo_runtime_budget 56)
 add_custom_command(
   OUTPUT "${_myproject_cargo_licenses}/manifest.json"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_myproject_cargo_licenses}"
@@ -20,6 +40,7 @@ add_custom_command(
     "${_myproject_cargo_license_root}/third_party/ANTfrastructure/linux/scripts/06-packaging/stage-cargo-licenses.py"
     --workspace "${_myproject_oxidant}" --root-package kataglyphis_cxx_bridge --target "${Rust_CARGO_TARGET_CACHED}"
     --policy "${_myproject_oxidant}/packaging/cargo-license-policy.json" --output-dir "${_myproject_cargo_licenses}"
+    ${_myproject_cargo_forbidden} --max-runtime-packages ${_myproject_cargo_runtime_budget}
   DEPENDS "${_myproject_oxidant}/Cargo.lock" "${_myproject_oxidant}/packaging/cargo-license-policy.json"
   VERBATIM)
 add_custom_target(myproject_cargo_licenses ALL DEPENDS "${_myproject_cargo_licenses}/manifest.json")

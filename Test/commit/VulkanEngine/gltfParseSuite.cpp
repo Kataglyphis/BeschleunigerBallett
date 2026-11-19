@@ -1,4 +1,4 @@
-// cube.glb is the Rust renderer's asset, copied in, because both renderers must load the same glTF.
+// cube.glb, cube_textured.gltf and point_light.gltf are read from OxidANT's fixture set, which both renderers load.
 
 #include <gtest/gtest.h>
 
@@ -15,10 +15,13 @@
 #include <glm/vec3.hpp>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include "RepoFiles.hpp"
 
 import kataglyphis.shared.util.utf8_path;
 import kataglyphis.vulkan.gltf_loader;
@@ -29,11 +32,13 @@ import kataglyphis.vulkan.scene_config;
 
 namespace {
 
-std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb"); }
+using Kataglyphis::TestSupport::oxidantGltfFixture;
 
-std::string test_textured_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf"); }
+std::string test_gltf() { return oxidantGltfFixture("cube.glb"); }
 
-std::string test_punctual_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/point_light.gltf"); }
+std::string test_textured_gltf() { return oxidantGltfFixture("cube_textured.gltf"); }
+
+std::string test_punctual_gltf() { return oxidantGltfFixture("point_light.gltf"); }
 
 std::string test_directional_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/directional_light.gltf"); }
 
@@ -67,6 +72,67 @@ TEST(GltfParseUnit, MaterialsAndPerFaceIndexAreConsistent)
     }
 }
 
+// The loader views the bridge's arrays instead of copying them (about 0.5 GB for the Colosseum), so copies share them.
+TEST(GltfParseUnit, LoadersShareTheBridgeArraysInsteadOfCopyingThem)
+{
+    if (!std::filesystem::exists(test_textured_gltf())) { GTEST_SKIP() << "textured test gltf not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_textured_gltf()));
+    ASSERT_FALSE(loader.getVertices().empty());
+    ASSERT_FALSE(loader.getTextureImages().empty());
+
+    const Kataglyphis::GltfLoader copy = loader;
+    EXPECT_EQ(copy.getVertices().data(), loader.getVertices().data());
+    EXPECT_EQ(copy.getIndices().data(), loader.getIndices().data());
+    EXPECT_EQ(copy.getMaterialIndices().data(), loader.getMaterialIndices().data());
+    EXPECT_EQ(copy.getTextureImages()[0].data(), loader.getTextureImages()[0].data());
+
+    // The device-owning uploader takes the worker's parse the same way, and the worker reads as unparsed after.
+    const Vertex *parsed_vertices = loader.getVertices().data();
+    const glm::vec3 first_position = loader.getVertices()[0].position;
+    {
+        Kataglyphis::GltfLoader uploader;
+        uploader.adoptParsed(std::move(loader));
+        EXPECT_EQ(uploader.getVertices().data(), parsed_vertices);
+        EXPECT_TRUE(loader.getVertices().empty());
+        EXPECT_TRUE(loader.getTextureImages().empty());
+    }
+    // ASan reports this read if the uploader freed what the copy still views.
+    EXPECT_EQ(copy.getVertices()[0].position, first_position);
+}
+
+// A moved-from loader's views would point into the parse its destination now owns, and dangle once that goes.
+TEST(GltfParseUnit, AMovedFromLoaderReadsAsUnparsed)
+{
+    if (!std::filesystem::exists(test_textured_gltf())) { GTEST_SKIP() << "textured test gltf not present"; }
+
+    Kataglyphis::GltfLoader source;
+    ASSERT_TRUE(source.parseCpu(test_textured_gltf()));
+    ASSERT_FALSE(source.getVertices().empty());
+    const glm::vec3 first_position = source.getVertices()[0].position;
+    const auto expect_unparsed = [](const Kataglyphis::GltfLoader &loader, const char *how) {
+        EXPECT_TRUE(loader.getVertices().empty()) << how;
+        EXPECT_TRUE(loader.getIndices().empty()) << how;
+        EXPECT_TRUE(loader.getMaterialIndices().empty()) << how;
+        EXPECT_TRUE(loader.getMaterials().empty()) << how;
+        EXPECT_TRUE(loader.getTextureImages().empty()) << how;
+        EXPECT_TRUE(loader.getMeshRanges().empty()) << how;
+    };
+
+    Kataglyphis::GltfLoader assigned;
+    {
+        Kataglyphis::GltfLoader moved = std::move(source);
+        expect_unparsed(source, "after the move constructor");
+        ASSERT_FALSE(moved.getVertices().empty());
+        EXPECT_EQ(moved.getVertices()[0].position, first_position);
+        assigned = std::move(moved);
+        expect_unparsed(moved, "after the move assignment");
+    }
+    ASSERT_FALSE(assigned.getVertices().empty());
+    EXPECT_EQ(assigned.getVertices()[0].position, first_position);
+}
+
 TEST(GltfParseUnit, AMissingFileFailsInsteadOfCrashing)
 {
     Kataglyphis::GltfLoader loader;
@@ -84,7 +150,7 @@ TEST(GltfParseUnit, ExtractsAnEmbeddedBaseColorTexture)
     ASSERT_TRUE(loader.parseCpu(test_textured_gltf()));
 
     ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the one material has one base-colour texture";
-    const std::vector<unsigned char> &encoded = loader.getTextureImages()[0];
+    const std::span<const unsigned char> encoded = loader.getTextureImages()[0];
 
     // The PNG signature proves the base64 decode landed on real image data.
     ASSERT_GE(encoded.size(), 8U);
@@ -1295,7 +1361,7 @@ std::vector<unsigned int> indices_of_scaled_node_gltf(const std::string &scaleJs
     const bool parsed = loader.parseCpu(tmp.string());
     std::filesystem::remove(tmp);
     EXPECT_TRUE(parsed);
-    return loader.getIndices();
+    return { loader.getIndices().begin(), loader.getIndices().end() };
 }
 
 }// namespace
@@ -1677,7 +1743,7 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
       << "the fixture's MASK cutoff must reach ObjMaterial";
 
     ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the one cut-out base-colour texture";
-    const std::vector<unsigned char> &png = loader.getTextureImages()[0];
+    const std::span<const unsigned char> png = loader.getTextureImages()[0];
     ASSERT_GE(png.size(), 8U);
     const unsigned char png_magic[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
     for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
@@ -2276,7 +2342,7 @@ TEST(GltfParseUnit, TexCoord1IsReadIntoTheSecondUvSet)
     const auto loader =
       parse_document(dual_uv_triangle(R"({ "emissiveTexture": { "index": 0, "texCoord": 1 } })"), "kat_dual_uv.gltf");
     ASSERT_TRUE(loader.has_value());
-    const std::vector<Vertex> &vertices = loader->getVertices();
+    const std::span<const Vertex> vertices = loader->getVertices();
     ASSERT_EQ(vertices.size(), 3U);
     const std::array<glm::vec2, 3> uv0 = { glm::vec2(0.0F, 0.0F), glm::vec2(1.0F, 0.0F), glm::vec2(0.0F, 1.0F) };
     const std::array<glm::vec2, 3> uv1 = { glm::vec2(0.0F, 1.0F), glm::vec2(0.0F, 0.0F), glm::vec2(1.0F, 1.0F) };
@@ -2343,9 +2409,9 @@ TEST(GltfParseUnit, GeneratedTangentsFollowTheNormalTexturesUvSet)
       parse_document(dual_uv_triangle(R"({ "normalTexture": { "index": 0, "texCoord": 1 } })"), "kat_tangent_uv1.gltf");
     ASSERT_TRUE(on_uv0.has_value() && on_uv1.has_value());
 
-    std::vector<Vertex> expected_uv0 = on_uv0->getVertices();
-    std::vector<Vertex> expected_uv1 = on_uv1->getVertices();
-    const std::vector<unsigned int> &indices = on_uv0->getIndices();
+    std::vector<Vertex> expected_uv0(on_uv0->getVertices().begin(), on_uv0->getVertices().end());
+    std::vector<Vertex> expected_uv1(on_uv1->getVertices().begin(), on_uv1->getVertices().end());
+    const std::vector<unsigned int> indices(on_uv0->getIndices().begin(), on_uv0->getIndices().end());
     vertex::computeTangents(expected_uv0, indices, 0, 0U);
     vertex::computeTangents(expected_uv1, indices, 0, 1U);
     ASSERT_EQ(expected_uv1.size(), 3U);

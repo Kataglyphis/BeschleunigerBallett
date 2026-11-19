@@ -1156,7 +1156,8 @@ void GUI::renderLightInspector()
           {},
           -1.0F);
         studioPropertyLabel("Strength", "How dark shadowed areas get: 0 leaves them lit, 1 makes them black");
-        studioSlider("##strength", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F, "%.2f");
+        studioSlider(
+          "##strength", &guiSceneSharedVars.cascaded_shadow_intensity, kMinUnitSetting, kMaxUnitSetting, "%.2f");
         studioPropertyLabel("Distance", "How far from the camera the cascades reach");
         studioSlider("##distance",
           &guiSceneSharedVars.shadow_distance,
@@ -1165,7 +1166,8 @@ void GUI::renderLightInspector()
           "%.0f",
           ImGuiSliderFlags_Logarithmic);
         studioPropertyLabel("Split lambda", "0 splits the cascades evenly, 1 logarithmically");
-        studioSlider("##split_lambda", &guiSceneSharedVars.cascade_split_lambda, 0.0F, 1.0F, "%.2f");
+        studioSlider(
+          "##split_lambda", &guiSceneSharedVars.cascade_split_lambda, kMinUnitSetting, kMaxUnitSetting, "%.2f");
         endStudioProperties();
     }
     studioEndDisabled();
@@ -1247,14 +1249,15 @@ void GUI::renderSkyInspector()
         studioSlider("##density",
           &guiSceneSharedVars.cloud_density_multiplier,
           Kataglyphis::kMinCloudDensityMultiplier,
-          1.0F,
+          kMaxCloudDensityMultiplier,
           "%.3f");
         studioPropertyLabel("Coverage", "Noise below this threshold is clear sky (cloud.threshold)");
-        studioSlider("##coverage", &guiSceneSharedVars.cloud_coverage_threshold, 0.0F, 1.0F, "%.3f");
+        studioSlider(
+          "##coverage", &guiSceneSharedVars.cloud_coverage_threshold, kMinUnitSetting, kMaxUnitSetting, "%.3f");
         studioPropertyLabel("Pillowness", "cloud.pillowness");
-        studioSlider("##pillowness", &guiSceneSharedVars.cloud_pillowness, 0.0F, 1.0F, "%.3f");
+        studioSlider("##pillowness", &guiSceneSharedVars.cloud_pillowness, kMinUnitSetting, kMaxUnitSetting, "%.3f");
         studioPropertyLabel("Cirrus", "cloud.cirrus_effect");
-        studioSlider("##cirrus", &guiSceneSharedVars.cloud_cirrus_effect, 0.0F, 1.0F, "%.3f");
+        studioSlider("##cirrus", &guiSceneSharedVars.cloud_cirrus_effect, kMinUnitSetting, kMaxUnitSetting, "%.3f");
         studioPropertyLabel("Powder effect", "cloud.powder_effect");
         studioToggle("##powder_effect", &guiSceneSharedVars.cloud_powder_effect);
         studioPropertyLabel(
@@ -1266,20 +1269,25 @@ void GUI::renderSkyInspector()
           guiSceneSharedVars.cloud_mesh_scale,
           2.5F,
           Kataglyphis::kMinCloudMeshExtent,
-          1000.0F,
+          kMaxCloudMeshExtent,
           "%.1f",
           ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
         studioPropertyLabel("Offset", "Centre of the cloud box (cloud.offset)");
         studioDragAxes("##cloud_offset",
           guiSceneSharedVars.cloud_mesh_offset,
           1.0F,
-          -200.0F,
-          400.0F,
+          kMinCloudMeshOffset,
+          kMaxCloudMeshOffset,
           "%.1f",
           ImGuiSliderFlags_AlwaysClamp);
         studioPropertyLabel("Wind", "Units per second the noise drifts through the box (cloud.wind_offset)");
-        studioDragAxes(
-          "##cloud_wind", guiSceneSharedVars.cloud_wind, 0.1F, -50.0F, 50.0F, "%.1f", ImGuiSliderFlags_AlwaysClamp);
+        studioDragAxes("##cloud_wind",
+          guiSceneSharedVars.cloud_wind,
+          0.1F,
+          -kMaxCloudWindSpeed,
+          kMaxCloudWindSpeed,
+          "%.1f",
+          ImGuiSliderFlags_AlwaysClamp);
         endStudioProperties();
     }
     studioEndDisabled();

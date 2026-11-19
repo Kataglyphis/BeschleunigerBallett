@@ -24,9 +24,10 @@ export namespace Kataglyphis {
 //
 // Layout: one slice of QUERIES_PER_IMAGE queries per swapchain image, two
 // queries (start/end) per timed pass, then a spill tail. A frame resets only its own image's
-// slice inside its command buffer, and results are read back for that slice
+// slice inside its command buffer (beginFrame), and results are read back for that slice
 // on the NEXT use of the image (after its fence signaled), so queries are
-// never reset while still in flight.
+// never reset while still in flight. A pass may nest inside another
+// (GPU_TIMED_PASS_PARENTS), e.g. Forward inside Main.
 class GpuTimingSubsystem
 {
   public:
@@ -47,7 +48,8 @@ class GpuTimingSubsystem
     // per-pass milliseconds shown in the GUI.
     struct GpuPassAverage
     {
-        static constexpr uint32_t WINDOW = 30;
+        // The Rust renderer's AVERAGE_WINDOW, so both smooth over the same frames.
+        static constexpr uint32_t WINDOW = 32;
         std::array<float, WINDOW> samples{};
         uint32_t count{ 0 };
         uint32_t next{ 0 };
@@ -198,6 +200,37 @@ class GpuTimingSubsystem
         if (frame_has_export_sample) { gpu_timing_export_frames++; }
     }
 
+    using PassSums = std::array<double, FrontendShared::GPU_TIMED_PASS_COUNT>;
+    using PassSamples = std::array<uint64_t, FrontendShared::GPU_TIMED_PASS_COUNT>;
+
+    // The KATAGLYPHIS_GPU_TIMING_JSON document; "nested_in" names each nested pass's parent for frame sums.
+    [[nodiscard]] static nlohmann::json
+      timingExport(const PassSums &sum_ms, const PassSamples &samples, uint64_t frames, bool supported)
+    {
+        // The file is written even when timestamps are unsupported: a consumer
+        // must be able to tell "this device cannot measure" (file present,
+        // supported == false) from "the export never ran" (file missing).
+        nlohmann::json dump;
+        dump["frames_measured"] = frames;
+        dump["timestamps_supported"] = supported;
+        dump["passes"] = nlohmann::json::object();
+        dump["nested_in"] = nlohmann::json::object();
+
+        for (size_t pass = 0; pass < static_cast<size_t>(FrontendShared::GPU_TIMED_PASS_COUNT); pass++) {
+            // A pass with no samples was never recorded (disabled feature or
+            // unsupported timestamps); omitting it keeps 0.0 meaning "measured as
+            // free" rather than "never measured".
+            if (samples[pass] == 0U) { continue; }
+            const char *name = FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[pass];
+            dump["passes"][name] = sum_ms[pass] / static_cast<double>(samples[pass]);
+            const FrontendShared::GpuTimedPass parent = FrontendShared::GPU_TIMED_PASS_PARENTS[pass];
+            if (parent != FrontendShared::GpuTimedPass::Count) {
+                dump["nested_in"][name] = FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[static_cast<size_t>(parent)];
+            }
+        }
+        return dump;
+    }
+
     // Writes the per-pass averages as JSON when KATAGLYPHIS_GPU_TIMING_JSON
     // names a file. Called from the renderer's destructor, while the accumulators and the
     // supported flag still describe the finished run.
@@ -206,22 +239,8 @@ class GpuTimingSubsystem
         const char *out_path = std::getenv("KATAGLYPHIS_GPU_TIMING_JSON");
         if (out_path == nullptr || *out_path == '\0') { return; }
 
-        // The file is written even when timestamps are unsupported: a consumer
-        // must be able to tell "this device cannot measure" (file present,
-        // supported == false) from "the export never ran" (file missing).
-        nlohmann::json dump;
-        dump["frames_measured"] = gpu_timing_export_frames;
-        dump["timestamps_supported"] = gpu_timings_supported;
-
-        for (size_t pass = 0; pass < static_cast<size_t>(FrontendShared::GPU_TIMED_PASS_COUNT); pass++) {
-            // A pass with no samples was never recorded (disabled feature or
-            // unsupported timestamps); omitting it keeps 0.0 meaning "measured as
-            // free" rather than "never measured".
-            if (gpu_timing_export_samples[pass] == 0U) { continue; }
-            dump["passes"][FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[pass]] =
-              gpu_timing_export_sum_ms[pass] / static_cast<double>(gpu_timing_export_samples[pass]);
-        }
-        if (!dump.contains("passes")) { dump["passes"] = nlohmann::json::object(); }
+        const nlohmann::json dump = timingExport(
+          gpu_timing_export_sum_ms, gpu_timing_export_samples, gpu_timing_export_frames, gpu_timings_supported);
 
         // ofstream reports failure via the stream state, never throws by default -
         // which is the only option anyway with exceptions disabled project-wide.
@@ -246,6 +265,37 @@ class GpuTimingSubsystem
     [[nodiscard]] uint32_t queriesPerImage() const { return QUERIES_PER_IMAGE; }
     [[nodiscard]] bool isSupported() const { return gpu_timings_supported; }
     [[nodiscard]] uint64_t timestampMask() const { return gpu_timestamp_mask; }
+
+    // Resets imageIndex's slice; outside any rendering instance, before the frame's first writeTimestamp.
+    void beginFrame(vk::CommandBuffer commandBuffer, uint32_t imageIndex)
+    {
+        frame_mask = 0U;
+        frame_recording = gpu_timings_supported && gpu_timing_query_pool && imageIndex < gpu_timing_pass_mask.size();
+        if (!frame_recording) { return; }
+        frame_query_base = imageIndex * QUERIES_PER_IMAGE;
+        commandBuffer.resetQueryPool(gpu_timing_query_pool, frame_query_base, QUERIES_PER_IMAGE);
+    }
+
+    // Brackets one pass of the frame beginFrame started; a nested pass brackets inside its parent's pair.
+    void writeTimestamp(vk::CommandBuffer commandBuffer, FrontendShared::GpuTimedPass pass, bool start)
+    {
+        if (!frame_recording) { return; }
+        const auto pass_index = static_cast<uint32_t>(pass);
+        const uint32_t query = frame_query_base + pass_index * QUERIES_PER_PASS + (start ? 0U : 1U);
+        commandBuffer.writeTimestamp2(
+          start ? vk::PipelineStageFlagBits2::eTopOfPipe : vk::PipelineStageFlagBits2::eBottomOfPipe,
+          gpu_timing_query_pool,
+          query);
+        if (!start) { frame_mask |= (1U << pass_index); }
+    }
+
+    // Publishes which passes the frame wrote, for readTimings on the image's next use.
+    void endFrame(uint32_t imageIndex)
+    {
+        if (frame_recording) { setPassRecordedMask(imageIndex, frame_mask); }
+        frame_recording = false;
+    }
+
     // Records the mask of passes written into imageIndex's slice this frame,
     // and marks the slice as safe to read back (freshly created pools hold
     // queries in an undefined state until reset+written at least once).
@@ -276,6 +326,10 @@ class GpuTimingSubsystem
     // created pools contain queries in an undefined state that must not be
     // read).
     std::vector<bool> gpu_timing_slice_recorded;
+    // The frame between beginFrame and endFrame: whether it times, its slice, and the passes it ended.
+    bool frame_recording{ false };
+    uint32_t frame_query_base{ 0 };
+    uint32_t frame_mask{ 0 };
 
     std::array<GpuPassAverage, FrontendShared::GPU_TIMED_PASS_COUNT> gpu_pass_averages{};
 
@@ -285,8 +339,8 @@ class GpuTimingSubsystem
     // wants a short smoothed window, the export wants the true mean over every
     // measured frame. Deliberately not reset on swapchain recreation - the
     // queries restart, the run's statistics do not.
-    std::array<double, FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_sum_ms{};
-    std::array<uint64_t, FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_samples{};
+    PassSums gpu_timing_export_sum_ms{};
+    PassSamples gpu_timing_export_samples{};
     uint64_t gpu_timing_export_frames{ 0 };
 };
 }// namespace Kataglyphis

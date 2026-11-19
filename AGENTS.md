@@ -81,7 +81,8 @@ and which went on 2026-11-19 with the toml++ submodule (owner decision 2026-11-1
   overwritten. The packages leave the stamp out.
 - **A changed scene is a new AssetANT release and a new lock line.** A published archive never
   changes; the fetch deletes a download whose hash differs and stops.
-- **What stays tracked**: the test fixtures (`GltfTest/`, `ShadowTest/`, `Plane/`, `VikingRoom/`,
+- **What stays tracked**: the test fixtures (`GltfTest/`, which holds no copy of OxidANT's
+  `crates/assets/tests/assets` but the library's `cube_textured.gltf`, `ShadowTest/`, `Plane/`, `VikingRoom/`,
   and the loose `plane` and `suzanne` the perf suite parses) and `Resources/Textures/`'s three
   1-pixel defaults, which the packages install with the rest of `Resources/Textures/`.
   `Loading_Screen/`, the duplicated `space` skybox, `brick.png` and `dirt.png` (12.6 MiB, read by
@@ -251,6 +252,7 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
 - Every package installs third-party license texts under `share/licenses/GraphicsEngine/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
 - The C++ bridge's crate texts come from the hub's `stage-cargo-licenses.py` with OxidANT's reviewed policy (`cmake/CargoLicenses.cmake`); never write a notice for a crate that lacks one, add the original text to OxidANT's policy.
+- The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 56 runtime packages (measured 2026-11-19 on all five bridge targets); raise the budget only with a reviewed dependency.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
   keep Ballett's shader list, mutation and path assertions in this repo.
 
@@ -570,7 +572,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   -HostProfile <name>` checks a `KATAGLYPHIS_GPU_TIMING_JSON` dump (`-TimingPath`, or it runs
   `-SuitePath`'s `RendersNonBlankFrame`) against that host's entry in
   `Test/perf/baselines/gpu-timing-budgets.json`: `max_ms` per pass and `max_share` of the summed
-  passes. The share names the pass that regressed when a loaded host slows every pass: a post
+  top-level passes (a scope the dump lists under `nested_in`, such as `Forward` inside `Main`, is
+  in its parent's time already). The share names the pass that regressed when a loaded host slows every pass: a post
   shader made 256 tonemaps long moved every llvmpipe pass past its `max_ms`, but only Post past
   its share (0.45 against 0.20). Exit 1 over budget or a budgeted pass missing, 2 when the dump
   measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16); a host adds its own
@@ -599,7 +602,7 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   this repo's 2-3 h Windows lane.
 - **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in the Windows container and run for real
   on the host GPU. Linux CI's `clang-tests` job (x64 and arm64) runs them on the image's llvmpipe
-  under Xvfb (`run-ctest.sh --virtual-display`), minus the GUI input sweep (too slow for a push),
+  under Xvfb (`run-ctest.sh --virtual-display`, where a skipped GPU test fails the run), minus the GUI input sweep (too slow for a push),
   which `linux-x64.yml`'s weekly `gui-sweep` job runs alone (Sundays, or dispatch with `gui-sweep`).
   Both Windows lanes run them on lavapipe on the runner, outside the image
   (`scripts/windows/Invoke-LavapipeTests.ps1`; x64 on the runner host after the container build,
@@ -846,8 +849,12 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
   `LD_PRELOAD` built from `scripts/riscv64/fp16_helpers.c` (riscv64 glibc lacks the fp16 conversion
-  helpers llvmpipe's ORC JIT calls). A shard log's `cannot be preloaded` lines are noise from the
-  x86_64 `ctest` and that `env`; the riscv64 test loads the shim. On a 32-core host the suites pass
+  helpers llvmpipe's ORC JIT calls). The shard re-runs the script's `--gpu-ctest` branch there,
+  which runs ctest through the hub's `ctest_run_main` with
+  `--fail-on-skipped "${CTEST_GPU_SUITES}"`, so a skipped GPU test fails the shard as on x64
+  (`BuildIntegrity.LinuxGpuRunsFailOnASkippedGpuTest`). A shard log's `cannot be preloaded` lines
+  are noise from the x86_64 tools of that step (`env`, `bash`, `ctest`, the JUnit check's
+  `python3`); the riscv64 test loads the shim. On a 32-core host the suites pass
   (35/40 measured 2026-10-03 at `-j8`; the five misses were contention; a heavy path-tracing test
   took 23 min at `-j1`). One 4-vCPU runner would need about a day: the eight shards that pass below
   add up to 10.4 h of ctest. The serial lane before the shards hit its 7200 s ceiling on
@@ -859,7 +866,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (74 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (75 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -873,7 +880,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 72 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  tests timed below to 73 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
   pipeline, and ten more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
@@ -993,25 +1000,27 @@ only surfaces when that line runs, an hour into a gcc build.
 **One command, and it is the same one CI runs:**
 
 ```bash
-bash ./scripts/linux/run-lint-gates.sh   # the eight always-on gates, then --ratchets
+bash ./scripts/linux/run-lint-gates.sh   # the ten always-on gates, then --ratchets
 ```
 
 The wrapper hands this repo's root to the hub's `linux/scripts/run-lint-gates.sh`, which owns the
-eight always-on gates (shell, workflows + CI image refs, secrets, python, shared-config drift,
-consumer pin-forwarding, README length, mutation staleness), their pinned binaries and the contracts
-behind them
+ten always-on gates (shell, shell line endings, workflows + CI image refs, secrets, python,
+shared-config drift, consumer pin-forwarding, README length, pattern limits, mutation staleness),
+their pinned binaries and the contracts behind them
 ([`code-quality-tooling.md`](third_party/ANTfrastructure/docs/code-quality-tooling.md#the-scan-root-contract)).
 Mutation staleness runs the hub's `verify_mutations.py --stale-check` over
 `scripts/linux/tests/sponza-mutations.json`: a recipe whose find text no longer matches its target
 exactly once now turns `Lint gates` red, not only the mutation lane.
 All gates run even after one fails. The wrapper passes `--ratchets` itself since 2026-10-16. Once a
 clone opts in with
-`git config core.hooksPath third_party/ANTfrastructure/shared/linux/templates/git-hooks`, the hub's
-hook pair runs this wrapper: the commit hook with `--staged` (the large-file check and a secret scan
-of the staged blobs), the push hook in full. Without that line every local run prints a
-`core.hooksPath is unset` warning, and running the wrapper before a push is on you: the
-comment-size ratchet once failed `Lint gates` that way (run 37486873828). The doc-link gate reads
-the submodules, so a fresh clone needs `git submodule update --init` first.
+`git config core.hooksPath "$PWD/third_party/ANTfrastructure/shared/linux/templates/git-hooks"`
+(absolute: a linked worktree without the hub finds no relative hooks directory, and the wrapper warns
+about one), the hub's hook pair runs this wrapper: the commit hook with `--staged` (the large-file
+check, a secret scan and the shell line-ending check of the staged blobs), the push hook in full.
+Without that line every local run prints a `core.hooksPath is unset` warning, and running the
+wrapper before a push is on you: the comment-size ratchet once failed `Lint gates` that way (run
+37486873828). The doc-link gate reads the submodules, so a fresh clone needs
+`git submodule update --init` first.
 
 **`--ratchets` adds** `doc-links`, `large-files`, `doc-dupes --against-hub` and the eight `--root`
 measurement gates (stdout-returns, masked assignments, trailing conditionals, comment size, code
@@ -1019,15 +1028,18 @@ size, complexity, dead functions, shellcheck warnings). Their freeze files sit a
 (`comment-size.allow`, `dead-functions.allow`, `trailing-conditional.allow`,
 `shellcheck-warnings.allow`, `large-files.allow`, `doc-dupes-hub.allow`), each **two-way**: a new
 offender fails, and so does a frozen row whose offender is gone. `doc-links` has no freeze file by
-design. `large-files` measures the working tree, so on a Windows checkout with
-`core.autocrlf=true` it reads `Resources/Models/suzanne.obj` at 1017 KiB against the frozen 986 and
-fails; the LF checkout CI grades passes.
+design. `large-files` grades the index (blob sizes), so `core.autocrlf` does not change what it
+reads, and an unstaged deletion does not hide a file.
 
 ### Rust and Kompute in the Linux jobs
 
-**Both Linux legs test the Rust renderer crate** (x64 and arm64, since 2026-10-01):
-`scripts/linux/run-cargo-tests.sh` (`cargo test -p kataglyphis_webgpu_renderer`) in the
-`static-analysis` job of `reusable-linux.yml`; its GPU tests find the image's lavapipe. On arm64 the
+**Both Linux legs test the whole OxidANT workspace** (x64 and arm64, since 2026-10-01):
+`scripts/linux/run-cargo-tests.sh` in the `static-analysis` job of `reusable-linux.yml`. The hub's
+`cargo_test.sh` runs `cargo test --all`, which overrides a `-p`, so the script never named just the
+renderer crate it said it tested (probed 2026-11-19). Since 2026-11-19 it runs under Xvfb with
+`KATAGLYPHIS_REQUIRE_GPU=1`, as OxidANT's own lane does: a GPU test that finds no lavapipe fails
+instead of skipping. The variable's readers are the renderer's and `kataglyphis_gui`'s headless
+devices, and the CLI's GUI test, which also needs `KATAGLYPHIS_REQUIRE_GST`. On arm64 the
 script sets `LP_NATIVE_VECTOR_WIDTH=128` (since 2026-10-06): the image's 256 (hub CON44) serves this
 repo's BVH builds, and LLVM's AArch64 JIT aborted OxidANT's renderer tests on it about one run in
 five (`LLVM ERROR: Do not know how to split this operator's operand!`). Before this, the crate was

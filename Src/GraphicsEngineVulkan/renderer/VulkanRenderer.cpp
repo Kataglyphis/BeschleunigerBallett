@@ -998,28 +998,8 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
-    using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
-
     // Per-pass GPU timing: the query slice must be reset outside any render pass.
-    const bool record_gpu_timings = gpuTiming.isSupported() && gpuTiming.queryPool();
-    const uint32_t gpu_timing_base = image_index * gpuTiming.queriesPerImage();
-    uint32_t recorded_pass_mask = 0U;
-
-    if (record_gpu_timings) {
-        commandBuffer.resetQueryPool(gpuTiming.queryPool(), gpu_timing_base, gpuTiming.queriesPerImage());
-    }
-
-    const auto write_pass_timestamp = [&](GpuTimedPass pass, bool start) -> void {
-        if (!record_gpu_timings) { return; }
-        const uint32_t pass_index = static_cast<uint32_t>(pass);
-        const uint32_t query =
-          gpu_timing_base + pass_index * Kataglyphis::GpuTimingSubsystem::QUERIES_PER_PASS + (start ? 0U : 1U);
-        commandBuffer.writeTimestamp(
-          start ? vk::PipelineStageFlagBits::eTopOfPipe : vk::PipelineStageFlagBits::eBottomOfPipe,
-          gpuTiming.queryPool(),
-          query);
-        if (!start) { recorded_pass_mask |= (1U << pass_index); }
-    };
+    gpuTiming.beginFrame(commandBuffer, image_index);
 
     Texture &swap_chain_image = vulkanSwapChain.getSwapChainImage(image_index);
     const RenderStageFrame frame{
@@ -1037,7 +1017,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         if (begin && stage.labelColor.has_value()) {
             Kataglyphis::debug::beginCmdLabel(commandBuffer, stage.name.c_str(), *stage.labelColor);
         }
-        if (stage.timedPass.has_value()) { write_pass_timestamp(*stage.timedPass, begin); }
+        if (stage.timedPass.has_value()) { gpuTiming.writeTimestamp(commandBuffer, *stage.timedPass, begin); }
         if (!begin && stage.labelColor.has_value()) { Kataglyphis::debug::endCmdLabel(commandBuffer); }
     });
 
@@ -1057,7 +1037,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
           device_lost_detected);
     }
 
-    if (record_gpu_timings) { gpuTiming.setPassRecordedMask(image_index, recorded_pass_mask); }
+    gpuTiming.endFrame(image_index);
 
     return true;
 }
@@ -1216,18 +1196,31 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
   std::span<const vk::DescriptorSet> rasterizer_descriptor_sets,
   const std::optional<FrustumPlanes> &camera_frustum)
 {
+    using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
     const auto raster_mode = frameSettings.renderer.rasterizationMode;
 
     if (raster_mode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::Forward, true);
         rasterizer.recordCommands(
           commandBuffer, image_index, scene, rasterizer_descriptor_sets, glm::vec3(sceneUBO.cam_pos), camera_frustum);
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::Forward, false);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
         const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index],
             gbufferDescriptors.sets()[image_index] };
-        deferredRasterizer.recordCommands(
-          commandBuffer, image_index, scene, deferred_sets, glm::vec3(sceneUBO.cam_pos), camera_frustum);
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::GBuffer, true);
+        deferredRasterizer.recordCommands(commandBuffer,
+          image_index,
+          scene,
+          deferred_sets,
+          glm::vec3(sceneUBO.cam_pos),
+          camera_frustum,
+          [this](vk::CommandBuffer passes) {
+              gpuTiming.writeTimestamp(passes, GpuTimedPass::GBuffer, false);
+              gpuTiming.writeTimestamp(passes, GpuTimedPass::DeferredLighting, true);
+          });
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::DeferredLighting, false);
     }
 
     // Publish only the path that recorded: the inactive one still holds pre-switch numbers.
@@ -1270,11 +1263,14 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
       vk::AccessFlagBits2::eShaderStorageWrite,
       vk::AccessFlagBits2::eShaderStorageWrite);
 
+    using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
     const int mode = drawnRenderMode();
     if (mode == 1) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::RayTrace, true);
         raytracingStage.recordCommands(commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::RayTrace, false);
     } else if (mode == 2) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
@@ -1294,6 +1290,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
             pathTracingLastHistory = current_history;
         }
 
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::PathTrace, true);
         pathTracing.recordCommands(commandBuffer,
           image_index,
           renderResult.getVulkanImage(),
@@ -1305,6 +1302,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
           static_cast<uint32_t>(std::max(rendererSettings.pathTracingMaxBounces, 1)),
           clouds_enabled,
           frameSettings.scene.skybox_enabled);
+        gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::PathTrace, false);
         ++pathTracingAccumulatedFrames;
         output.pathTracingAccumulatedFrames = pathTracingAccumulatedFrames;
     }
