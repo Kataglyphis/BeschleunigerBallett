@@ -74,8 +74,8 @@ void Model::addSampler(const Texture &newTexture, const GltfSamplerDesc &sampler
         return;
     }
 
-    // No anisotropy for nearest-filtered textures: it would blur the blocky look the author chose.
-    const bool aniso = device->supportsSamplerAnisotropy() && !usesNearestFiltering(samplerDesc);
+    // Not for nearest filtering, whose blocky look the author chose, nor for glTF's mipmap-less min filters.
+    const bool aniso = device->supportsSamplerAnisotropy() && anisotropyAllowed(samplerDesc);
 
     vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(samplerDesc,
       static_cast<float>(key.mipLevel),

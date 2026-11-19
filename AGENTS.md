@@ -59,7 +59,8 @@ configure time through a per-user cache (`KATAGLYPHIS_ASSET_CACHE`, else `katagl
 `%LOCALAPPDATA%` or `~/.cache`). Every configure and `cmake -P` therefore needs Python 3.12+ on
 `PATH`: `python` on Windows, `python3` elsewhere. The paths the engine loads did not move. At
 `7b77802e`, the last commit that tracked them: 633 MiB tracked, 518 MiB of it the 14 scene
-directories; after, 116 MiB, 62 of them `third_party/KTX`'s vendored test images.
+directories; after, 116 MiB, 62 of them the vendored `third_party/KTX` tree, which no source included
+and which went on 2026-11-19 with the toml++ submodule (owner decision 2026-11-18).
 
 - **A configure fetches two**: `crytek-sponza` (the Release default, the one scene the packages
   install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, four `ObjParseUnit`
@@ -205,6 +206,12 @@ and `scripts/windows/Build-Windows.ps1` (the MSIX package version; a missing fil
 Bump it with `bash ./scripts/linux/bump-version.sh <x.y.z>` and nothing else; no reader keeps a
 copy of the number.
 
+**Every build links OxidANT's cxx bridge through Corrosion, `--locked`** (`corrosion_import_crate(... LOCKED)`
+in `Src/CMakeLists.txt`). Every configuration but Debug selects OxidANT's `[profile.bridge]` (release with
+`panic = "unwind"`, owner decision 2026-11-18) through `INTERFACE_CORROSION_CARGO_PROFILE`, so `guarded()` turns a
+loader panic into an error value instead of an abort; `BuildIntegrity.NonDebugBuildsLinkTheBridgeWithAPanicThatUnwinds`
+pins both halves. Corrosion runs a `cxxbridge` on `PATH` at the lock's `cxx` version, or builds exactly that one.
+
 > **Trap:** `cmake --list-presets` does **not** work on this host. The host CMake (3.29) cannot
 > read `CMakePresets.json` (`"version": 10`, `cmakeMinimumRequired` 4.1) and fails with
 > `CMake Error: Could not read presets ... Unrecognized "version" field` (verified 2026-08-02).
@@ -291,8 +298,9 @@ This repo's half:
 - **With ASAN on, three places move the clang-cl Debug build to the release CRT**, keyed on
   `myproject_ENABLE_SANITIZER_ADDRESS`: the hub's `/MDd` strip (`myproject_apply_compiler_build_flags`
   in `cmake/ProjectOptions.cmake`), the `CMAKE_MSVC_RUNTIME_LIBRARY` override beside it, and the
-  Rust bridge's `CXXFLAGS` in `Src/CMakeLists.txt` (`_myproject_configure_windows_rust_crate`). Keep
-  UBSan beside ASAN on Windows for UBSan reports.
+  Rust bridge's `CXXFLAGS`, which `Src/CMakeLists.txt` sets through the hub's
+  `kataglyphis_configure_corrosion_target` (`cmake/CorrosionToolchain.cmake`). Keep UBSan beside ASAN
+  on Windows for UBSan reports.
 
 ## Containerized Windows Builds (Stevedore)
 
@@ -851,7 +859,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (71 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (74 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -865,8 +873,9 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 68 runnable ones, also untimed under QEMU, and ten of them path-trace
-  besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
+  tests timed below to 72 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
+  pipeline, and ten more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
   deferred and ray-traced ones), `TracedSecondModelResolvesItsOwnMeshAndTextures` (a lone cube,
   2 spp for 8 frames),

@@ -55,6 +55,16 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   from the model picker, aborted the engine through the bridge. A proptest over mutated glTF files, which found them,
   replaces the cgltf fuzz target (`a_mutated_file_is_rejected_or_flattens_consistently` in OxidANT's
   `crates/assets/tests/flat.rs`).
+- OxidANT moves to `398021a`. Its C++ bridge is a file per area (`gltf.rs`, `diagnostics.rs`; namespaces
+  `kataglyphis::oxidant::gltf` and `::diagnostics`), returns errors, panics and log records as values, and drops
+  the `rusty_cxxbridge_integer` probe. Its loader keeps only the vertices a primitive's indices use (primitives on
+  one accessor each carried, and bounded, the whole of it), gives equal samplers one texture slot, reads the
+  document, its buffers and its images as regular files only, a buffer inside the document's directory, and hands
+  over the first directional light as the Sun. Its WebGPU ray-traced mode lights every punctual light, as this
+  engine's closest-hit shader has since `e43eb33e`, and `march_clouds` loses its seven-argument overload, which
+  leaves `sky_model.slang` to WebGPU alone. `GltfParseUnit.PrimitivesSharingAnAccessorEachKeepOnlyTheCornersTheyDraw`
+  and `GltfParseUnit.EqualSamplersShareATextureSlotWhateverTheirIndex` hold this engine to the compaction and the
+  slot key (against the old loader: 1000 vertices a mesh instead of 3, four slots instead of two).
 - Raster shadows for punctual lights in the C++ renderer: the first four point and spot lights get a
   512 px depth cube each (one cube-array image, set 0's `PUNCTUAL_SHADOW_MAP_BINDING`), redrawn
   every frame by a new `punctual_shadows` stage, one six-view multiview pass per light through the
@@ -283,6 +293,50 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   `GLFW_INSTALL` is off, the engine links it statically. `scripts/linux/check-deb-layout.sh` reads
   every lane's `.deb` after packaging (it fails on the 1.5.2 one with all four faults), and its
   synthetic-deb suite runs with Linux x64.
+- A shader reload (F5) restarts the path tracer's running mean, as OxidANT's does: the reloaded kernel's
+  samples were averaged into the old kernel's mean. The editor's PATH TRACING section shows the mean's
+  samples per pixel ("Accumulated", from the new `RendererFeedback::pathTracingAccumulatedFrames`).
+  `GoldenRender.ShaderHotReloadRestartsThePathTracedMean`.
+- The frame clock is a double with an injectable `frame_delta`, like OxidANT's `FrameClock::tick_at`: a float
+  clock rounded the camera's frame delta to 15.6 ms after 36 hours of uptime and to 0.125 s after 12 days. A NaN
+  delta becomes 0, and a non-finite light direction or GUI model transform field falls back as in Rust.
+  `FrameInputUnit.TwelveDaysOfUptimeStillGiveEqualFrameDeltas` and its NaN, light and transform twins.
+- glTF's bare `NEAREST` and `LINEAR` min filters read the base level only (a nearest mip, the LOD clamped to
+  [0, 0.25], no anisotropy), as OxidANT does; C++ minified them through the whole mip chain.
+  `GoldenRender.AMipmaplessMinFilterSamplesOnlyTheBaseLevel`, `GltfParseUnit.MipmaplessMinFiltersReadTheBaseLevelOnly`.
+- A texture larger than the device's `maxImageDimension2D`, or a skybox face larger than `maxImageDimensionCube`,
+  is halved on the CPU (a 2x2 box, sRGB averaged in linear space) until it fits, with a warning, as OxidANT
+  starts at the first level that fits; `vmaCreateImage` failed and `vkCheck` aborted the engine. A model under
+  `Resources/Models` or `KATAGLYPHIS_SKYBOX_DIR` reached it. `TextureLoadUnit.*`, `SkyBoxUnit.FacesPastTheCubeLimitAreHalvedUntilTheyFit`,
+  and `BuildIntegrity.OversizedTexturesAreFittedBeforeTheirImageIsCreated` for the two call sites.
+- Six equal but non-square skybox faces fall back to the analytic sky; they made a cube-compatible image with
+  width != height, which Vulkan forbids. `SkyBoxUnit.RejectsSixEqualNonSquareFaces`.
+- Every material texture index goes through `NonUniformResourceIndex`, and the device enables
+  `shaderSampledImageArrayDynamicIndexing` where it is offered: a multi-material OBJ shape, a ray hit and a path
+  bounce index the arrays per invocation, which is undefined without the decoration.
+  `BuildIntegrity.EveryMaterialTextureIndexIsNonUniform`, `BuildIntegrity.TheDeviceRequestsSampledImageArrayDynamicIndexing`.
+- The furnace goldens' oracle floors the GGX roughness at 0.045 and guards `d * d` at 1e-20, as `brdf.slang`
+  does; its 1e-6 guard on `PI * d * d` clipped every peak below a roughness of 0.154 (a white metal at 0.12
+  integrated to 0.60 instead of 1.00). It integrates the GGX lobe over half vectors uniform in the lobe's CDF:
+  its 320-step grid uniform in angle could not resolve a narrow lobe either, and gave a white metal 0.73 instead of
+  0.97 at roughness 0.12 and mu 0.3, and 0.03 to 1.16 instead of about 1 at the floor. Latent, since the goldens
+  use 0.25 to 0.7, where the two agree within 1e-4. It moved to `GoldenMetrics.hpp`; `GoldenMetrics.FurnaceOracle*`,
+  `BuildIntegrity.FurnaceOracleUsesBrdfSlangsConstants`.
+- A glTF's first directional light is the Sun, OxidANT's rule (owner decision 2026-11-18): the load publishes its
+  direction and colour (`RendererFeedback::publishedSun`), `applyRendererFeedback` gives them to the editor's Sun,
+  whose radiance stays the editor's, and it no longer reaches the punctual-light rows. The Colosseum's 4098 lx sun
+  was shaded there as a second, unattenuated sun in forward and deferred and a second, shadowed one in the tracers.
+  `GoldenRender.AGltfDirectionalLightBecomesTheSunInsteadOfAPunctualLight` on the new `GltfTest/directional_light.gltf`,
+  `GltfParseUnit.TheFirstDirectionalLightIsTheSunNotAPunctualLight`, `RenderSettingsUnit.*Sun*`.
+- A glTF loader panic comes back as a failed parse in Release and Profile too, as in Debug: their builds link the
+  bridge with OxidANT's `bridge` cargo profile (release, `panic = "unwind"`; owner decision 2026-11-18), selected
+  through Corrosion's `INTERFACE_CORROSION_CARGO_PROFILE`. Under the release profile's abort `guarded()` caught
+  nothing, and a malformed file from the model picker ended the engine. `BuildIntegrity.NonDebugBuildsLinkTheBridgeWithAPanicThatUnwinds`.
+- A model path with an umlaut loads on Windows: the bridge gets the path's UTF-8 bytes (`Shared::utf8PathBytes`),
+  where it got the ANSI code page's and rejected them as not UTF-8. `GltfParseUnit.ParsesAModelUnderADirectoryWithAnUmlaut`.
+- The Rust loader's warnings (dropped triangles, skipped primitives, unreadable images) reach the engine's log:
+  `logOxidantRecords` drains the records OxidANT keeps per thread into spdlog after each bridged call, on the
+  calling thread. `RustBridgeUnit.ALoaderWarningReachesSpdlogAndLeavesNothingBehind`, `RustBridgeUnit.AWorkerThreadLogsItsOwnLoaderWarnings`.
 
 ### Changed
 
@@ -576,6 +630,26 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   clouds, the shader pipeline, GPU golden testing, …) moved into `docs/source/` and its toctree,
   where Sphinx never read them before. Every link and code pointer to them follows, the
   `BuildIntegrity` checks that read their markers included; their links into the hub go to GitHub.
+- GPU tests share one guard, `Test/commit/VulkanEngine/GpuTestGuard.hpp`: with OxidANT's `KATAGLYPHIS_REQUIRE_GPU`
+  set, `SKIP_WITHOUT_GPU()` and `SKIP_WITHOUT_FRAME_CAPTURE()` fail instead of skipping, and so does a golden's
+  render helper through `frameCaptureAvailable` (the punctual-light and Sun goldens skipped on their own flag).
+  `run-ctest.sh --virtual-display` and the riscv64 GPU shards set it, so a broken Xvfb or GLFW platform no longer
+  turns the Linux GPU suites green. `BuildIntegrity.EveryGpuTestGuardsThroughTheSharedHeader` (which also refuses a
+  test that asks a harness for frame capture itself), `BuildIntegrity.LinuxGpuRunsRequireTheGpuBeforeTheirVirtualDisplay`,
+  `GpuTestGuardUnit.*`.
+- The C++ bridge crate builds with Cargo's `--locked` (`corrosion_import_crate(... LOCKED)`).
+- `--version` prints `GraphicsEngine <version> (Vulkan <API version>, OxidANT <version>)`, asking Rust, so the packages'
+  `--version` smoke tests prove the bridge links and runs, and the About window gains an OxidANT row. A start no
+  longer prints the bridge's 42 to stdout. `RustBridgeUnit.ReportsTheOxidantVersionItWasBuiltFrom` replaces
+  `RustBridgeUnit.CallsIntoRust`. `Main.cpp` imports its modules below its includes: GCC 16 redefined the standard
+  library when `<cctype>` followed the imports of `config` and `oxidant_diagnostics`, which the GNU preset's build
+  stopped on; `BuildIntegrity.NoTranslationUnitIncludesAHeaderAfterAnImport` holds every .cpp to that order.
+- `corrosion_add_cxxbridge` lists OxidANT's bridge files (`gltf.rs`, `diagnostics.rs`), each its own
+  `oxidant_bridge/<area>.h`, included from .cpp files only. `BuildIntegrity.CxxbridgeFilesAreExactlyOxidantsBridgeFiles`,
+  `BuildIntegrity.BridgeHeadersAreIncludedFromCppFilesOnly`.
+- Docs no longer contradict the code: the modules both renderers share (eight of OxidANT's ten), `path_tracing.slang`'s
+  `material_fetch` import, the clouds' eight-argument march, the path tracer's punctual-light NEE, the in-memory
+  GLB's `map_d` cut-out, why `histogram.wgsl` is hand-written, and the hub helper that sets the bridge's `CXXFLAGS`.
 
 ### Removed
 
@@ -584,6 +658,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   `BM_GltfParse_*` and `BM_GltfLoaderParser_*` benchmarks and the `third_party/cgltf` submodule go with it;
   `BM_GltfLoaderParseCpu_CubeGlb` and `BM_GltfLoaderParseCpu_Colosseum` join `BM_GltfLoaderParseCpu_CubeTextured`.
   The packages no longer carry cgltf's license text.
+- Dead dependencies (owner decision 2026-11-18): the vendored `third_party/KTX` tree (64.7 MB, mostly test images
+  and library sources; linked as headers that no source included), the `third_party/tomlplusplus` submodule (built with modules, imported by nothing; the packages
+  no longer carry its license text) and the configure-time, unpinned `cargo install cxxbridge-cmd`
+  (`_myproject_find_or_install_cxxbridge`, whose result nothing read: Corrosion uses a cxxbridge at the lock's
+  `cxx` version or builds exactly that one). `vertex::computeFlatNormals` and `BM_ComputeFlatNormals` with its
+  baseline rows go too; nothing but the benchmark called it.
 
 ## [1.5.2] - 2026-10-17
 

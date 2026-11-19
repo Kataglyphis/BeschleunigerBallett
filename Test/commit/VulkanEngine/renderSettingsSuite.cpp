@@ -84,3 +84,38 @@ TEST(RenderSettingsUnit, AnUnlistedLoadSelectsNoRow)
 
     EXPECT_EQ(settings.scene.selected_model_index, -1);
 }
+
+// A glTF's first directional light becomes the editor's Sun: its direction and colour, never its lux.
+TEST(RenderSettingsUnit, APublishedSunSetsTheSunsDirectionAndColourButNotItsRadiance)
+{
+    RenderSettings settings = settingsWithEveryRequestRaised();
+    settings.scene.directional_light_radiance = 7.5F;
+    RendererFeedback feedback;
+    feedback.publishedModelIndex = 2;
+    feedback.publishedSun = Kataglyphis::VulkanRendererInternals::FrontendShared::PublishedSun{ { 0.48F, -0.8F, 0.36F },
+        { 1.0F, 0.7F, 0.4F } };
+    applyRendererFeedback(settings, feedback);
+
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_direction[0], 0.48F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_direction[1], -0.8F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_direction[2], 0.36F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_color[0], 1.0F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_color[1], 0.7F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_color[2], 0.4F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_radiance, 7.5F) << "the radiance is the editor's alone";
+}
+
+// A load without a Sun, and every frame without a load, leave the editor's Sun as the user set it.
+TEST(RenderSettingsUnit, FeedbackWithoutASunKeepsTheEditorsSun)
+{
+    RenderSettings settings = settingsWithEveryRequestRaised();
+    settings.scene.directional_light_direction[0] = 0.25F;
+    settings.scene.directional_light_color[2] = 0.5F;
+    RendererFeedback feedback;
+    feedback.publishedModelIndex = 4;
+    applyRendererFeedback(settings, feedback);
+    applyRendererFeedback(settings, RendererFeedback{});
+
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_direction[0], 0.25F);
+    EXPECT_FLOAT_EQ(settings.scene.directional_light_color[2], 0.5F);
+}

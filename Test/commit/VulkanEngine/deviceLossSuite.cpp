@@ -2,6 +2,7 @@
 
 #include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
+#include "GpuTestGuard.hpp"
 #include "ScopedEnvVar.hpp"
 #include "app/AppExitCode.hpp"
 #include <gtest/gtest.h>
@@ -34,14 +35,6 @@ import kataglyphis.vulkan.window;
 namespace {
 
 using Kataglyphis::TestSupport::ScopedEnvVar;
-
-bool glfw_reports_vulkan_support()
-{
-    if (glfwInit() == 0) { return false; }
-    const bool supports_vulkan = glfwVulkanSupported() != 0;
-    glfwTerminate();
-    return supports_vulkan;
-}
 
 // A textured card: the scene then owns VMA buffers and images that must be released on a live allocator.
 constexpr const char *TEXTURED_CARD_MODEL = "Models/GltfTest/uv_transform_card.gltf";
@@ -133,7 +126,7 @@ struct AppObjects
 
 TEST(Integration, SimulatedDeviceLossEndsTheRunAsAFailureAndTearsDownCleanly)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     ScopedValidationErrorCounter validation_errors;
     AppObjects app;
@@ -160,7 +153,7 @@ TEST(Integration, SimulatedDeviceLossEndsTheRunAsAFailureAndTearsDownCleanly)
 
 TEST(Integration, TeardownAfterACleanRunReleasesTheDeviceAfterItsLastUser)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     ScopedValidationErrorCounter validation_errors;
     AppObjects app;

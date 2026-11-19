@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -16,7 +17,9 @@ using Kataglyphis::Test::GoldenMetrics::compare_shadow_masks;
 using Kataglyphis::Test::GoldenMetrics::Crop;
 using Kataglyphis::Test::GoldenMetrics::GroundPixel;
 using Kataglyphis::Test::GoldenMetrics::GroundRect;
+using Kataglyphis::Test::GoldenMetrics::ggx_distribution;
 using Kataglyphis::Test::GoldenMetrics::GroundShadowPrediction;
+using Kataglyphis::Test::GoldenMetrics::kBrdfMinRoughness;
 using Kataglyphis::Test::GoldenMetrics::post_display_level;
 using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
 using Kataglyphis::Test::GoldenMetrics::ShadowAgreement;
@@ -26,6 +29,7 @@ using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
 using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
 using Kataglyphis::Test::GoldenMetrics::SkySilhouette;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
+using Kataglyphis::Test::GoldenMetrics::white_directional_albedo;
 
 constexpr uint32_t WIDTH = 8;
 constexpr uint32_t HEIGHT = 8;
@@ -277,4 +281,33 @@ TEST(GoldenMetrics, PostDisplayLevelMapsMidGreyAndClipsOnlyAtTheTop)
         previous = level;
     }
     EXPECT_LT(post_display_level(4.0), 255.0) << "ACES compresses a highlight before clipping it.";
+}
+
+// The furnace goldens' oracle once guarded PI d^2 at 1e-6, which clipped every GGX peak below a roughness of 0.154.
+TEST(GoldenMetrics, FurnaceOracleKeepsTheGgxPeakBelowTheOldGuardsReach)
+{
+    // A white metal at normal incidence returns nearly all its light; the clipped peak gave 0.60 at roughness 0.12.
+    EXPECT_NEAR(white_directional_albedo(1.0, 0.12, 1.0), 1.0, 0.02);
+    EXPECT_NEAR(white_directional_albedo(0.7, 0.12, 1.0), 1.0, 0.02);
+}
+
+TEST(GoldenMetrics, FurnaceOracleFloorsTheNdfRoughnessAsBrdfSlangDoes)
+{
+    // The peak is the floor's 1 / (PI r^4) at and below MIN_ROUGHNESS; a narrower lobe barely moves the albedo.
+    constexpr double PI = 3.14159265358979323846;
+    EXPECT_NEAR(ggx_distribution(1.0, kBrdfMinRoughness) * PI * std::pow(kBrdfMinRoughness, 4.0), 1.0, 1e-9);
+    EXPECT_DOUBLE_EQ(ggx_distribution(1.0, 0.01), ggx_distribution(1.0, kBrdfMinRoughness));
+    const double floor = white_directional_albedo(0.7, kBrdfMinRoughness, 1.0);
+    ASSERT_GT(floor, 0.0);
+    EXPECT_NEAR(white_directional_albedo(0.7, 0.01, 1.0) / floor, 1.0, 0.01);
+}
+
+// Its grid uniform in angle could not resolve a lobe this narrow: a white metal at the floor gave 0.03 to 1.16.
+TEST(GoldenMetrics, FurnaceOracleResolvesTheNarrowestLobeTheFloorAllows)
+{
+    for (const double mu : { 0.3, 0.7, 1.0 }) {
+        EXPECT_NEAR(white_directional_albedo(mu, kBrdfMinRoughness, 1.0), 1.0, 0.03) << "mu " << mu;
+    }
+    // A 4000-step angle grid and a fine half-vector grid agree on 0.9667 here; the 320-step grid gave 0.730.
+    EXPECT_NEAR(white_directional_albedo(0.3, 0.12, 1.0), 0.9667, 0.002);
 }

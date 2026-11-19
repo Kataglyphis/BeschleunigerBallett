@@ -9,6 +9,8 @@
 
 #include <glm/glm.hpp>
 
+#include "common/SrgbConversion.hpp"
+
 namespace Kataglyphis {
 
 // Mean sky radiance over the upper and the lower hemisphere: volumetric_clouds.slang's CloudAmbient.
@@ -23,13 +25,6 @@ inline constexpr uint32_t kCloudAmbientMaxEdgeTexels = 64;
 
 // skybox_radiance.slang's SKYBOX_DISABLED_RADIANCE, the linear navy the switched-off sky shows.
 inline constexpr glm::vec3 kSkyboxDisabledRadiance{ 0.0F, 0.0F, 0.5F };
-
-// The decode an eR8G8B8A8Srgb sample applies.
-inline auto srgbChannelToLinear(uint8_t encoded) -> float
-{
-    const float value = static_cast<float>(encoded) / 255.0F;
-    return value <= 0.04045F ? value / 12.92F : std::pow((value + 0.055F) / 1.055F, 2.4F);
-}
 
 // aces.slang's aces_tonemap, the display value post gives a radiance.
 inline auto acesTonemap(float radiance) -> float

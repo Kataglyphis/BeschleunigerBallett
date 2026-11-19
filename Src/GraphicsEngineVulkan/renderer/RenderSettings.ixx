@@ -34,6 +34,15 @@ inline void applyRendererFeedback(RenderSettings &settings, const RendererFeedba
         std::fill(std::begin(settings.scene.model_position), std::end(settings.scene.model_position), 0.0F);
         std::fill(std::begin(settings.scene.model_rotation), std::end(settings.scene.model_rotation), 0.0F);
     }
+    // The radiance stays the editor's: glTF gives lux, and the renderer has no exposure to turn them into radiance.
+    if (feedback.publishedSun.has_value()) {
+        std::copy(feedback.publishedSun->direction.begin(),
+          feedback.publishedSun->direction.end(),
+          std::begin(settings.scene.directional_light_direction));
+        std::copy(feedback.publishedSun->color.begin(),
+          feedback.publishedSun->color.end(),
+          std::begin(settings.scene.directional_light_color));
+    }
 }
 
 }// namespace Kataglyphis

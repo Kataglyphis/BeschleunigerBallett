@@ -91,9 +91,9 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         }
     }
 
-    // Memory safety, not validation: the upload copies the first face's layerSize bytes out of every face.
+    // The upload copies the first face's layerSize bytes out of every face, into a cube that must be square.
     if (!cubemapFacesConsistent(face_widths, face_heights)) {
-        spdlog::error("Skybox faces have inconsistent or degenerate dimensions; all six faces must match.");
+        spdlog::error("Skybox faces are not six equal squares; drawing the analytic sky.");
         for (size_t j = 0; j < 6; j++) { stbi_image_free(face_data[j]); }
         loadAnalyticSky(commandPool);
         return;
@@ -107,6 +107,20 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     std::array<const unsigned char *, 6> faces = {
         face_data[0], face_data[1], face_data[2], face_data[3], face_data[4], face_data[5]
     };
+    // A face past maxImageDimensionCube is invalid usage that aborts the engine, so it is halved until it fits.
+    FittedCubemap fitted;
+    const uint32_t face_limit = device->getMaxImageDimensionCube();
+    if (static_cast<uint32_t>(width) > face_limit) {
+        fitted = fitCubemapFacesToLimit(faces, static_cast<uint32_t>(width), face_limit);
+        spdlog::warn("SkyBox: {} px faces exceed the device's {}-texel cube side; uploaded at {} px.",
+          width,
+          face_limit,
+          fitted.size);
+        width = static_cast<int>(fitted.size);
+        height = width;
+        const std::size_t layer = static_cast<std::size_t>(fitted.size) * fitted.size * 4U;
+        for (std::size_t i = 0; i < faces.size(); ++i) { faces[i] = fitted.texels.data() + i * layer; }
+    }
     // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before post gamma-encodes.
     const bool uploaded =
       uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);

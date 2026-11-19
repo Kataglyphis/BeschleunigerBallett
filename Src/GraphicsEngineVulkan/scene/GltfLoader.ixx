@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -70,7 +71,7 @@ class GltfLoader
 
     /// The glTF sampler (wrap modes + filters) each entry of getTextureImages()
     /// was authored with, index-parallel with it. Two textures sharing one
-    /// image but naming different samplers get distinct slots (see parseCpu's
+    /// image but sampling it differently get distinct slots (see parseCpu's
     /// dedup key), so this stays index-parallel rather than needing its own
     /// lookup.
     const std::vector<GltfSamplerDesc> &getTextureSamplerDescs() const { return textureSamplerDescs; }
@@ -90,8 +91,11 @@ class GltfLoader
     // the tests assert on.
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
-    /// The KHR_lights_punctual lights of every visited node, posed by its world transform.
+    /// The KHR_lights_punctual lights of every visited node, posed by its world transform, without the Sun.
     const std::vector<PunctualLight> &getPunctualLights() const { return punctualLights; }
+
+    /// The first directional light, with a unit direction: the editor adopts it as its Sun instead of shading it.
+    const std::optional<PunctualLight> &getSun() const { return sun; }
 
   private:
     void clearParsed();
@@ -116,6 +120,7 @@ class GltfLoader
     // One slice per glTF primitive; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
     std::vector<PunctualLight> punctualLights;
+    std::optional<PunctualLight> sun;
 };
 
 }// namespace Kataglyphis

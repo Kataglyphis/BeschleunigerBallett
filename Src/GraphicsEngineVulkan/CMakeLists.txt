@@ -99,7 +99,6 @@ target_link_libraries(
          glm
          tinyobjloader
          vma
-         ktx
          # enable compiler warnings
          myproject_warnings
          # enable sanitizers
@@ -107,8 +106,7 @@ target_link_libraries(
          # spdlog/nlohmann_json/GSL need to be PUBLIC because Main.cpp and test files use them
          GSL
          spdlog::spdlog
-         nlohmann_json::nlohmann_json
-         tomlplusplus_modules)
+         nlohmann_json::nlohmann_json)
 
 # The bridge's generated headers must exist before module scanning.
 add_dependencies(VulkanEngineCore oxidant_bridge)

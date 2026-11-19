@@ -5,6 +5,9 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 
+#include <cmath>
+#include <limits>
+
 #include "shared/frontend/WindowInputState.hpp"
 
 import kataglyphis.shared.frontend.frame_input;
@@ -14,6 +17,7 @@ namespace {
 using Kataglyphis::Frontend::clamp_frame_delta;
 using Kataglyphis::Frontend::consume_axis_delta;
 using Kataglyphis::Frontend::cursor_input_mode_for;
+using Kataglyphis::Frontend::frame_delta;
 using Kataglyphis::Frontend::handle_focus_lost;
 using Kataglyphis::Frontend::handle_key_callback;
 using Kataglyphis::Frontend::handle_mouse_button_callback;
@@ -42,6 +46,34 @@ TEST(FrameInputUnit, NegativeDeltasBecomeZero)
 {
     // A clock adjustment must not run time backwards for dt consumers.
     EXPECT_FLOAT_EQ(clamp_frame_delta(-0.25F), 0.0F);
+}
+
+TEST(FrameInputUnit, ANaNDeltaBecomesZero)
+{
+    // NaN fails `< 0` and `> max` alike, so it passed through and turned every cascade matrix into NaN.
+    EXPECT_EQ(clamp_frame_delta(std::numeric_limits<float>::quiet_NaN()), 0.0F);
+    EXPECT_EQ(clamp_frame_delta(-std::numeric_limits<float>::infinity()), 0.0F);
+    EXPECT_FLOAT_EQ(clamp_frame_delta(std::numeric_limits<float>::infinity()), 0.1F);
+}
+
+TEST(FrameInputUnit, TwelveDaysOfUptimeStillGiveEqualFrameDeltas)
+{
+    // At 2^20 s a float clock steps in 0.125 s, so 144 Hz frames came out as 0 or 0.125 s.
+    constexpr double kUptime = 1048576.0;
+    constexpr double kFrame = 1.0 / 144.0;
+    double last = kUptime;
+    for (int frame = 1; frame <= 32; ++frame) {
+        EXPECT_NEAR(frame_delta(kUptime + frame * kFrame, last), kFrame, 1e-6) << "frame " << frame;
+    }
+    EXPECT_DOUBLE_EQ(last, kUptime + 32 * kFrame);
+}
+
+TEST(FrameInputUnit, ANonFiniteClockReadingIsDroppedNotKept)
+{
+    double last = 10.0;
+    EXPECT_EQ(frame_delta(std::numeric_limits<double>::quiet_NaN(), last), 0.0F);
+    EXPECT_EQ(last, 10.0) << "a NaN timestamp would make every later delta NaN";
+    EXPECT_NEAR(frame_delta(10.016, last), 0.016F, 1e-6F);
 }
 
 TEST(WindowInputUnit, KeyPressAndReleaseTrackTheArray)

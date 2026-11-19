@@ -33,7 +33,7 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
-            sampledAlpha *= textures[textureId].SampleLevel(textureSamplers[textureId], base_color_uv(texCoords, material), 0.0).a;
+            sampledAlpha *= textures[NonUniformResourceIndex(textureId)].SampleLevel(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(texCoords, material), 0.0).a;
         }
         if (material.alphaTextureID >= 0)
         {

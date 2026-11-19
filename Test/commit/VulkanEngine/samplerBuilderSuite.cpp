@@ -7,6 +7,7 @@
 
 import kataglyphis.vulkan.sampler_builder;
 
+using Kataglyphis::anisotropyAllowed;
 using Kataglyphis::buildSamplerCreateInfo;
 using Kataglyphis::findSampler;
 using Kataglyphis::GltfSamplerDesc;
@@ -208,4 +209,46 @@ TEST(SamplerBuilderUnit, NearestFilteringDropsAnisotropy)
     GltfSamplerDesc mipNearest{};
     mipNearest.mipmapMode = vk::SamplerMipmapMode::eNearest;
     EXPECT_TRUE(usesNearestFiltering(mipNearest));
+}
+
+TEST(SamplerBuilderUnit, AMipmaplessSamplerReadsTheBaseLevelOnly)
+{
+    // glTF's LINEAR min filter: a nearest mip with the LOD in [0, 0.25] stays on level 0 under the min filter.
+    GltfSamplerDesc linear{};
+    linear.mipmaps = false;
+    const vk::SamplerCreateInfo info =
+      buildSamplerCreateInfo(linear, 9.0F, VK_FALSE, 1.0F, vk::BorderColor::eFloatOpaqueBlack);
+    EXPECT_EQ(info.minFilter, vk::Filter::eLinear);
+    EXPECT_EQ(info.magFilter, vk::Filter::eLinear);
+    EXPECT_EQ(info.mipmapMode, vk::SamplerMipmapMode::eNearest);
+    EXPECT_FLOAT_EQ(info.minLod, 0.0F);
+    EXPECT_FLOAT_EQ(info.maxLod, 0.25F);
+
+    const vk::SamplerCreateInfo mipmapped =
+      buildSamplerCreateInfo(GltfSamplerDesc{}, 9.0F, VK_FALSE, 1.0F, vk::BorderColor::eFloatOpaqueBlack);
+    EXPECT_EQ(mipmapped.mipmapMode, vk::SamplerMipmapMode::eLinear);
+    EXPECT_FLOAT_EQ(mipmapped.maxLod, 9.0F) << "a mipmapped sampler keeps the whole chain";
+}
+
+TEST(SamplerBuilderUnit, OnlyALinearMipmappedSamplerGetsAnisotropy)
+{
+    EXPECT_TRUE(anisotropyAllowed(GltfSamplerDesc{}));
+
+    GltfSamplerDesc mipmapless{};
+    mipmapless.mipmaps = false;
+    EXPECT_FALSE(anisotropyAllowed(mipmapless)) << "glTF's LINEAR is plain bilinear on level 0, as in Rust";
+
+    GltfSamplerDesc minNearest{};
+    minNearest.minFilter = vk::Filter::eNearest;
+    EXPECT_FALSE(anisotropyAllowed(minNearest));
+}
+
+TEST(SamplerBuilderUnit, SamplerDedupSeparatesAMipmaplessSampler)
+{
+    GltfSamplerDesc mipmapless{};
+    mipmapless.mipmaps = false;
+    const std::array<SamplerKey, 1> created{ SamplerKey{ 3U, GltfSamplerDesc{} } };
+
+    EXPECT_EQ(findSampler(created, SamplerKey{ 3U, GltfSamplerDesc{} }), 0U);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 3U, mipmapless }), std::nullopt);
 }

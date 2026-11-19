@@ -10,11 +10,13 @@ including shared entry points where the two renderers' passes coincide.
 compile commands, output directories, staleness rules and fast iteration. On
 the Rust side its combined WGSL emit replaces the crates' hand-written WGSL;
 their `include_str!` calls are unchanged and now read Slang-emitted text.
-`histogram.wgsl` is the one deliberate holdout (WGSL fallback policy below).
+`histogram.wgsl` is the one hand-written WGSL file left
+([`shader-build-pipeline.md`](shader-build-pipeline.md) says why).
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
-shared `aces`, `brdf`, `noise`, `fullscreen`, `sky_model` and
-`volumetric_clouds` modules. This repo
+ten shared modules under `shaders/common/`: `aces`, `brdf`, `fullscreen`,
+`noise`, `path_estimator`, `punctual_light`, `punctual_shadow`, `shadow_pcf`,
+`sky_model` and `volumetric_clouds`. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
 Vulkan-specific material modules stay in `Resources/ShadersSlang/`. OxidANT
 can compile and check its generated WGSL without a superproject checkout.
@@ -42,8 +44,8 @@ the C++ side and emit one target.
 **WGSL fallback policy:** a shared shader that Slang cannot express for the
 WGSL target at all (not merely emit) gets hand-written WGSL and **no** Slang
 source, rather than a Slang source nothing on the C++ side consumes that would
-still have to be kept in sync. `histogram.wgsl` is the one case today
-(rationale in [`shader-build-pipeline.md`](shader-build-pipeline.md)).
+still have to be kept in sync. `histogram.wgsl` is the one hand-written file today, though
+Slang can now express it ([`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Architecture: Slang-native, not `#include`
 
@@ -51,13 +53,12 @@ Slang is module- and entry-point-centric: a no-entry-point math module cannot
 be emitted to GLSL/WGSL text, and imported functions are name-mangled in the
 emit, so sharing goes through Slang's module system, not textual `#include`:
 
-- **Shared math** lives under `third_party/OxidANT/shaders/common/`. Five
-  (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`,
-  `volumetric_clouds.slang`) are imported on both targets, so both renderers
-  share them. The rest are shared within one
-  target: all but `sky_model.slang` and `punctual_shadow.slang` on the C++/SPIR-V side, across its raster,
-  deferred, shadow-map, ray tracing and path tracing paths. The
-  shared-module-targets table below is the exact, gated mapping.
+- **Shared math** lives under `third_party/OxidANT/shaders/common/`. Eight of
+  its ten modules are imported on both targets, so both renderers share them;
+  `sky_model.slang` and `punctual_shadow.slang` are WebGPU's alone. The C++-only modules sit under
+  `Resources/ShadersSlang/common/`, shared across the raster, deferred,
+  shadow-map, ray tracing and path tracing paths. The shared-module-targets
+  table below is the exact, gated mapping.
 - **Entry points** `import` the math modules and compile to the target(s)
   their renderer needs. Slang links modules internally, so mangling is a
   non-issue.
@@ -127,10 +128,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   `world_up_is_screen_up` (OxidANT `tests/headless.rs`) pin it.
 - `common/material_fetch.slang` — the `objectDescription` binding and the
   `fetch_object_description`/`fetch_material` lookups on it. Spirv only: the
-  raster (`rasterizer.slang`, `deferred.slang`, `shadow_map.slang`) and
+  raster (`rasterizer.slang`, `deferred.slang`, `shadow_map.slang`),
   closest-hit/any-hit ray tracing (`raytrace.rchit.slang`,
-  `raytrace.rahit.slang`) entry points. `path_tracing.slang` declares its own
-  `objectDescription` binding, so it cannot import this module.
+  `raytrace.rahit.slang`) and path tracing (`path_tracing.slang`) entry points.
 - `common/material_rules.slang` — the binding-free glTF material rules on the
   fetched `ObjMaterial`: `material_roughness`, `material_metallic_roughness`
   (glTF SS3.9.2 G=roughness/B=metallic channel swizzle) and `alpha_masked_out`
@@ -204,9 +204,10 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   cloud `vec4`s, the axis-aligned box test, density, the light's optical
   depth (`light_optical_depth`), the sun's multiple-scattering octaves, the
   sky ambient (`CloudAmbient`) and `march_clouds`, which stops at the scene
-  depth (`cloud_scene_distance`) and steps a long path more often. The C++
-  engine calls its seven-argument overload, lit by the analytic sky
-  (`cloud_ambient_analytic_sky`). The noise comes in through the `ICloudNoise`
+  depth (`cloud_scene_distance`) and steps a long path more often. Every
+  caller passes the ambient its host averaged from the sky it draws (C++:
+  `compute/clouds.slang`, from the `SceneUBO`'s
+  `cloudAmbientTop`/`cloudAmbientBottom`). The noise comes in through the `ICloudNoise`
   interface, which Slang specializes per caller: the C++ `compute/clouds.slang`
   passes its combined `Sampler3D`, OxidANT's `clouds/cloud_march.slang` a
   texture plus a sampler. Both. [`clouds.md`](clouds.md) owns the behaviour.
@@ -215,9 +216,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   approximation (`hemisphere_irradiance`), shared by `sky/sky.slang` (the
   Rust/WebGPU background), `forward/forward_lighting.slang` (the analytic IBL
   fallback, whose reflections and irradiance must agree with the background)
-  the WebGPU tracer's miss shading (`tracer/trace_shading.slang`) and the
-  clouds' analytic sky ambient (`volumetric_clouds.slang`), which makes it
-  `both`: the C++ clouds read its gradient constants.
+  and the WebGPU tracer's miss shading (`tracer/trace_shading.slang`), so
+  `wgsl` alone; the C++ engine's analytic sky (`scene/sky_box/AnalyticSky.hpp`)
+  copies its three gradient colours, which `BuildIntegrity.AnalyticSkyMatchesOxidantsSkyModel` pins.
   There is deliberately no combined `sky_radiance`: each caller takes its
   light direction/intensity from a different uniform block, so each keeps a
   thin local wrapper over `sky_gradient` + `sun_disk`. `tests/sky_constants.rs`
@@ -318,14 +319,14 @@ imports.
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
 | `common/shadow_pcf.slang` | both |
-| `common/sky_model.slang` | both |
+| `common/sky_model.slang` | wgsl |
 | `common/skybox_radiance.slang` | spirv |
 | `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->
 
 **Status:** all C++ shaders are on Slang SPIR-V (all 8 loading sites), and all
-Rust shaders on Slang-emitted WGSL except `histogram.wgsl` (WGSL fallback
-policy above). The migration is complete.
+Rust shaders on Slang-emitted WGSL except `histogram.wgsl`, still hand-written
+though Slang can now express it.
 
 ## Known glTF loader divergences (not shader-shared, but the two renderers must stay honest about it)
 
@@ -341,7 +342,7 @@ and `Vertex`.
 | Per-slot `KHR_texture_transform` | the flat material gives base-colour, normal, metallic-roughness and emissive each their own transform (`uv_transform_row0`/`_row1`, `normal_uv_transform_row0`/`_row1`, `metallic_roughness_uv_transform_row0`/`_row1`, `emissive_uv_transform_row0`/`_row1`); no occlusion slot, since occlusion textures are not read (previous row) | the same four slots plus `occlusion_uv_transform` | Parity wherever C++ has a texture to transform; the only gap is the occlusion gap above, not a `KHR_texture_transform` bug. |
 | `alphaMode` `BLEND` | the flat model sets `ObjMaterial::alphaBlend` and `MeshRange::alphaBlended`; forward and deferred skip the mesh, then draw it last, farthest first by its bounds centre's distance to the eye, src-alpha blended with depth test on and writes off (deferred shades it forward after the lighting pass); the tracers render it opaque | `AlphaMode::Blend` drives the same sorted pass (the `alpha_blend` primitive flag and its distance sort), forward and deferred; the tracer carries `ALPHA_BLEND` but shades it opaque too | Parity in raster. Neither renderer sorts within a mesh, so a self-overlapping BLEND mesh composites in index order. |
 | Roughness default when `Pr` is unauthored (OBJ path) | `ObjLoader` treats an absent (or `0.0`) `Pr` as unauthored and leaves `ObjMaterial::roughness` at its sentinel, so `material_roughness()` derives it from `shininess`/`Ns` | the OBJ→glTF converter (`obj_to_gltf`) emits `roughnessFactor` from `Ns` via the same `sqrt(2/(Ns+2))` curve, clamped `[0.045, 1.0]`, when `Pr` is absent | Parity: both paths derive the same roughness from the `.mtl`'s `Ns` when `Pr` is unauthored; `material_roughness()` (`material_rules.slang`) is the shared reference both sides implement. |
-| `map_d` (OBJ per-texel opacity map) | `ObjLoader::loadTexturesAndMaterials` reads `map_d` into `ObjMaterial::alphaTextureID` as a glTF `MASK` cut-out at the conventional `alphaCutoff = 0.5`, honoured in `rasterizer.slang`, `deferred.slang`, `shadow_map.slang` and `common/alpha_test.slang` | `obj_to_gltf` reads only the scalar `d`/`Tr` directives into a per-material alpha and emits `alphaMode: BLEND` when it is below `1.0` (`alphaMode` `BLEND` row above); it has no code path for a *textured* opacity map, so a `map_d` material converts with neither a cut-out nor per-texel alpha | Real gap: `obj_to_gltf` would need to emit a `baseColorTexture.a` channel (or a dedicated occlusion-style slot) from `map_d` to match the C++ side. |
+| `map_d` (OBJ per-texel opacity map) | `ObjLoader::loadTexturesAndMaterials` reads `map_d` into `ObjMaterial::alphaTextureID` as a glTF `MASK` cut-out at the conventional `alphaCutoff = 0.5`, honoured in `rasterizer.slang`, `deferred.slang`, `shadow_map.slang` and `common/alpha_test.slang` | the in-memory GLB the native app opens an OBJ through (`app/obj_glb.rs`, `apply_masks`) composites the mask's red channel into the base colour's alpha and emits `alphaMode: MASK` at the same 0.5 cutoff; `obj_to_gltf::convert_file`'s glTF file output has no composited image, warns and draws the material solid | Parity in the app. Only a converted file loses the cut-out, since glTF has no opacity slot to write `map_d` into without a composited image. |
 
 ## Which C++ shading path reads which `ObjMaterial` field
 

@@ -111,11 +111,11 @@ that fixed them is in `.git-blame-ignore-revs`.
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 235 -->
+<!-- format-drift-denominator: 242 -->
 
-**0 of 235** own sources under `Src/` and `Test/` differ from `.clang-format`
-(0 of 239 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
-2026-11-18), since the sweep in commit
+**0 of 242** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 243 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
+2026-11-19), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM
 commit `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin`
 in `:latest`, the version `:winamd64` ships as `C:\llvm-patched`) over the 217

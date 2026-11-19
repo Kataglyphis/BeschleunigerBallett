@@ -5,9 +5,9 @@ module;
 #include "common/ImageBarrierHelper.hpp"
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
+#include "scene/TextureFit.hpp"
 #include "spdlog/spdlog.h"
 #include <algorithm>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -119,9 +119,26 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
 {
     if (width == 0 || height == 0 || rgba == nullptr) { return false; }
 
+    // Past maxImageDimension2D vmaCreateImage fails and vkCheck aborts, so the upload starts at the first level that fits.
+    FittedRgba8 fitted;
+    const uint32_t side_limit = device->getMaxImageDimension2D();
+    if (static_cast<uint32_t>(std::max(width, height)) > side_limit) {
+        fitted = fitRgba8ToLimit(rgba, static_cast<uint32_t>(width), static_cast<uint32_t>(height), side_limit, srgb);
+        spdlog::warn("Texture {}x{} exceeds the device's {}-texel side; uploaded at {}x{}.",
+          width,
+          height,
+          side_limit,
+          fitted.width,
+          fitted.height);
+        width = static_cast<int>(fitted.width);
+        height = static_cast<int>(fitted.height);
+        size = fitted.texels.size();
+        rgba = fitted.texels.data();
+    }
+
     // Color texels are sRGB-encoded and must decode to linear at sample time; normal maps are already linear, so UNORM.
     const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
-    mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+    mip_levels = mipLevelCount(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
         vk::FormatFeatureFlags optimal_tiling_features =
           device->getPhysicalDevice().getFormatProperties(texture_format).optimalTilingFeatures;

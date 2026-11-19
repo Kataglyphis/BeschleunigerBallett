@@ -5,6 +5,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <glm/geometric.hpp>
@@ -15,9 +16,11 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+import kataglyphis.shared.util.utf8_path;
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.punctual_light;
 import kataglyphis.vulkan.vertex;
@@ -31,6 +34,8 @@ std::string test_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/
 std::string test_textured_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf"); }
 
 std::string test_punctual_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/point_light.gltf"); }
+
+std::string test_directional_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/directional_light.gltf"); }
 
 }// namespace
 
@@ -621,9 +626,58 @@ TEST(GltfParseUnit, ReadsSamplerWrapAndFilterFromTheDocument)
     EXPECT_EQ(desc.mipmapMode, vk::SamplerMipmapMode::eLinear);
 }
 
+TEST(GltfParseUnit, MipmaplessMinFiltersReadTheBaseLevelOnly)
+{
+    // NEAREST (9728) and LINEAR (9729) are glTF's mipmap-less min filters; 9985 (LINEAR_MIPMAP_NEAREST) and none mip.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 1 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 2 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 3 } } }
+      ],
+      "textures": [ { "source": 0, "sampler": 0 }, { "source": 0, "sampler": 1 }, { "source": 0, "sampler": 2 },
+                    { "source": 0, "sampler": 3 } ],
+      "samplers": [ { "minFilter": 9729 }, { "minFilter": 9728 }, { "minFilter": 9985 }, { "magFilter": 9729 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_mipmapless_min_filters.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    const auto &descs = loader.getTextureSamplerDescs();
+    ASSERT_EQ(descs.size(), 4U) << "one slot per (image, sampler)";
+    EXPECT_FALSE(descs[0].mipmaps) << "LINEAR minification sampled the mip chain";
+    EXPECT_EQ(descs[0].minFilter, vk::Filter::eLinear);
+    EXPECT_FALSE(descs[1].mipmaps) << "NEAREST minification sampled the mip chain";
+    EXPECT_EQ(descs[1].minFilter, vk::Filter::eNearest);
+    EXPECT_TRUE(descs[2].mipmaps);
+    EXPECT_EQ(descs[2].mipmapMode, vk::SamplerMipmapMode::eNearest);
+    EXPECT_TRUE(descs[3].mipmaps) << "an unset min filter is glTF's trilinear default";
+}
+
 TEST(GltfParseUnit, OneImageWithTwoSamplersGetsTwoSlots)
 {
-    // The dedup key is (image, sampler), so a different sampler must not collapse onto one slot.
+    // The dedup key is (image, sampler settings, srgb), so different settings must not collapse onto one slot.
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [
@@ -667,6 +721,51 @@ TEST(GltfParseUnit, OneImageWithTwoSamplersGetsTwoSlots)
     EXPECT_EQ(loader.getTextureSamplerDescs()[0].addressModeU, vk::SamplerAddressMode::eRepeat);
     EXPECT_EQ(loader.getTextureSamplerDescs()[1].addressModeU, vk::SamplerAddressMode::eClampToEdge);
     EXPECT_EQ(loader.getTextureSamplerDescs()[1].magFilter, vk::Filter::eNearest);
+}
+
+// OxidANT's equal_samplers_share_a_slot_whatever_their_index: keyed on the sampler index, one image took four slots.
+TEST(GltfParseUnit, EqualSamplersShareATextureSlotWhateverTheirIndex)
+{
+    // Two clamping sampler objects are one sampler; no sampler and an empty one are both glTF's default.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } }, "emissiveTexture": { "index": 1 } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 2 } }, "emissiveTexture": { "index": 3 } }
+      ],
+      "textures": [ { "source": 0, "sampler": 0 }, { "source": 0, "sampler": 1 }, { "source": 0 },
+                    { "source": 0, "sampler": 2 } ],
+      "samplers": [ { "wrapS": 33071 }, { "wrapS": 33071 }, {} ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_equal_samplers.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "one slot per distinct sampler setting, not per sampler object";
+    ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].emissiveTextureID, 0) << "the second clamping sampler is the first";
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 1);
+    EXPECT_EQ(loader.getMaterials()[1].emissiveTextureID, 1) << "an empty sampler is no sampler";
+    EXPECT_EQ(loader.getTextureSamplerDescs()[0].addressModeU, vk::SamplerAddressMode::eClampToEdge);
+    EXPECT_EQ(loader.getTextureSamplerDescs()[1].addressModeU, vk::SamplerAddressMode::eRepeat);
 }
 
 TEST(GltfParseUnit, BaseColorFactorSurvivesATexturedMaterial)
@@ -1847,6 +1946,68 @@ TEST(GltfParseUnit, ReparsingTheSameLoaderDoesNotAccumulateMeshRanges)
       << "the last range must still end exactly at the flat index array's end";
 }
 
+// Each primitive on a shared accessor copied all of it: every mesh got the whole model's vertices, BLAS and bounds.
+TEST(GltfParseUnit, PrimitivesSharingAnAccessorEachKeepOnlyTheCornersTheyDraw)
+{
+    // One 1000-vertex POSITION and NORMAL accessor; the two primitives draw corners 0, 1, 10 and 987, 997, 998.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_gltf_shared_accessor";
+    std::filesystem::create_directories(dir);
+    {
+        std::ofstream bin(dir / "shared.bin", std::ios::binary);
+        const auto put = [&bin](auto value) { bin.write(reinterpret_cast<const char *>(&value), sizeof(value)); };
+        for (std::uint32_t i = 0; i < 1000U; ++i) {
+            put(static_cast<float>(i % 10U));
+            put(static_cast<float>((i / 10U) % 10U));
+            put(static_cast<float>(i / 100U));
+        }
+        for (int i = 0; i < 1000; ++i) {
+            put(0.0F);
+            put(0.0F);
+            put(1.0F);
+        }
+        for (const std::uint32_t corner : { 0U, 1U, 10U, 987U, 997U, 998U }) { put(corner); }
+    }
+    writeFile(dir / "shared.gltf", R"GLTF({
+      "asset": { "version": "2.0" },
+      "scene": 0,
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0, "NORMAL": 1 }, "indices": 2 },
+                                    { "attributes": { "POSITION": 0, "NORMAL": 1 }, "indices": 3 } ] } ],
+      "accessors": [
+        { "bufferView": 0, "componentType": 5126, "count": 1000, "type": "VEC3", "min": [0,0,0], "max": [9,9,9] },
+        { "bufferView": 1, "componentType": 5126, "count": 1000, "type": "VEC3" },
+        { "bufferView": 2, "componentType": 5125, "count": 3, "type": "SCALAR" },
+        { "bufferView": 2, "byteOffset": 12, "componentType": 5125, "count": 3, "type": "SCALAR" }
+      ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 12000 }, { "buffer": 0, "byteOffset": 12000, "byteLength": 12000 },
+                       { "buffer": 0, "byteOffset": 24000, "byteLength": 24 } ],
+      "buffers": [ { "byteLength": 24024, "uri": "shared.bin" } ]
+    })GLTF");
+
+    Kataglyphis::GltfLoader loader;
+    const bool parsed = loader.parseCpu((dir / "shared.gltf").string());
+    std::filesystem::remove_all(dir);
+    ASSERT_TRUE(parsed);
+
+    ASSERT_EQ(loader.getMeshRanges().size(), 2U);
+    EXPECT_EQ(loader.getVertices().size(), 6U) << "each primitive holds the whole 1000-vertex accessor";
+    const std::vector<std::vector<glm::vec3>> drawn = { { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 } },
+        { { 7, 8, 9 }, { 7, 9, 9 }, { 8, 9, 9 } } };
+    for (std::size_t mesh = 0; mesh < 2U; ++mesh) {
+        const auto &range = loader.getMeshRanges()[mesh];
+        EXPECT_EQ(range.vertexCount, 3U) << "mesh " << mesh << " carries vertices it never draws";
+        ASSERT_EQ(range.indexCount, 3U) << "mesh " << mesh;
+        for (std::size_t corner = 0; corner < 3U; ++corner) {
+            const unsigned int index = loader.getIndices()[range.indexStart + corner];
+            ASSERT_GE(index, range.vertexBase) << "mesh " << mesh << " corner " << corner;
+            ASSERT_LT(index, range.vertexBase + range.vertexCount) << "mesh " << mesh << " corner " << corner;
+            EXPECT_EQ(loader.getVertices()[index].position, drawn[mesh][corner])
+              << "mesh " << mesh << " corner " << corner;
+        }
+    }
+}
+
 TEST(GltfParseUnit, ReadsColor0VertexColours)
 {
     // The corners are red/green/blue/white via COLOR_0; a hardcoded white would pass none.
@@ -2421,4 +2582,71 @@ TEST(GltfParseUnit, PackedLightsFollowTheModelMatrixAndCarryTheirCount)
     EXPECT_EQ(rows[4].x, 0.8F);
 
     EXPECT_EQ(Kataglyphis::packPunctualLights({}).size(), 1U) << "an empty scene keeps its count row";
+}
+
+// The Colosseum's 4098 lx sun was shaded as a second, unshadowed punctual light on top of the editor's own.
+TEST(GltfParseUnit, TheFirstDirectionalLightIsTheSunNotAPunctualLight)
+{
+    if (!std::filesystem::exists(test_directional_gltf())) { GTEST_SKIP() << "test gltf not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_directional_gltf()));
+    ASSERT_TRUE(loader.getSun().has_value()) << "the directional light did not become the Sun";
+    const Kataglyphis::PunctualLight &sun = *loader.getSun();
+    EXPECT_EQ(sun.kind, Kataglyphis::PunctualLightKind::Directional);
+    // The node turns -Z onto (0.6, -0.48, 0.64) and scales it by 3; the Sun keeps the unit direction.
+    EXPECT_NEAR(sun.direction.x, 0.6F, 1e-4F);
+    EXPECT_NEAR(sun.direction.y, -0.48F, 1e-4F);
+    EXPECT_NEAR(sun.direction.z, 0.64F, 1e-4F);
+    EXPECT_NEAR(sun.color.r, 1.0F, 1e-5F);
+    EXPECT_NEAR(sun.color.g, 0.7F, 1e-5F);
+    EXPECT_NEAR(sun.color.b, 0.4F, 1e-5F);
+
+    ASSERT_EQ(loader.getPunctualLights().size(), 1U) << "the Sun must leave the punctual lights";
+    EXPECT_EQ(loader.getPunctualLights()[0].kind, Kataglyphis::PunctualLightKind::Point);
+    const std::vector<Kataglyphis::PlacedPunctualLights> placed{ { loader.getPunctualLights(), glm::mat4(1.0F) } };
+    const std::vector<glm::vec4> rows = Kataglyphis::packPunctualLights(placed);
+    ASSERT_EQ(rows[0].x, 1.0F);
+    for (std::size_t row = 1; row < rows.size(); row += Kataglyphis::PUNCTUAL_LIGHT_ROWS) {
+        EXPECT_NE(rows[row].w, 3.0F) << "a directional light reached the packed punctual-light rows";
+    }
+
+    // The worker's parse reaches the uploading loader, and a reused loader forgets the last file's Sun.
+    Kataglyphis::GltfLoader uploader;
+    uploader.adoptParsed(std::move(loader));
+    ASSERT_TRUE(uploader.getSun().has_value()) << "adoptParsed dropped the Sun";
+    EXPECT_NEAR(uploader.getSun()->direction.y, -0.48F, 1e-4F);
+    ASSERT_TRUE(uploader.parseCpu(test_punctual_gltf()));
+    EXPECT_FALSE(uploader.getSun().has_value()) << "a file without a directional light has no Sun";
+}
+
+TEST(GltfParseUnit, Utf8PathBytesAreTheUtf8OfThePath)
+{
+    const std::vector<std::uint8_t> bytes =
+      Kataglyphis::Shared::utf8PathBytes(std::filesystem::path(u8"m/\u00fcber.glb"));
+    const std::vector<std::uint8_t> expected{ 'm', '/', 0xC3, 0xBC, 'b', 'e', 'r', '.', 'g', 'l', 'b' };
+    EXPECT_EQ(bytes, expected);
+}
+
+// A Windows std::string path is ANSI, so an umlaut anywhere in the checkout failed every glTF load in the bridge.
+TEST(GltfParseUnit, ParsesAModelUnderADirectoryWithAnUmlaut)
+{
+    if (!std::filesystem::exists(test_gltf())) { GTEST_SKIP() << "test glb not present"; }
+
+    std::error_code error;
+    const std::filesystem::path dir =
+      std::filesystem::temp_directory_path(error) / std::filesystem::path(u8"kat_gltf_\u00fcber");
+    ASSERT_FALSE(error) << error.message();
+    std::filesystem::create_directories(dir, error);
+    ASSERT_FALSE(error) << error.message();
+    const std::filesystem::path copy = dir / "cube.glb";
+    std::filesystem::copy_file(test_gltf(), copy, std::filesystem::copy_options::overwrite_existing, error);
+    ASSERT_FALSE(error) << error.message();
+
+    Kataglyphis::GltfLoader loader;
+    // The engine's callers hand parseCpu a path's string(), the ANSI code page on Windows.
+    const bool parsed = loader.parseCpu(copy.string());
+    std::filesystem::remove_all(dir, error);
+    ASSERT_TRUE(parsed) << "the loader could not open a model under a directory named with an umlaut";
+    EXPECT_GE(loader.getVertices().size(), 8U);
 }

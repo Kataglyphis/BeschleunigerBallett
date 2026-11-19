@@ -318,56 +318,7 @@ void BM_ComputeTangents(benchmark::State &state)
 }
 BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);
 
-// Flat normals: BM_ComputeTangents' per-primitive shape and fixture, so all three compare directly.
-
-void BM_ComputeFlatNormals(benchmark::State &state)
-{
-    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
-    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
-
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
-    std::vector<std::size_t> firstIndices;
-    std::vector<std::size_t> vertexCountSoFar;
-    std::vector<std::size_t> indexCountSoFar;
-    vertices.reserve(primitiveCount * 4);
-    indices.reserve(primitiveCount * 6);
-    firstIndices.reserve(primitiveCount);
-    vertexCountSoFar.reserve(primitiveCount);
-    indexCountSoFar.reserve(primitiveCount);
-
-    for (std::size_t p = 0; p < primitiveCount; ++p) {
-        const auto base = static_cast<unsigned int>(vertices.size());
-        const float ox = static_cast<float>(p) * 2.0F;
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
-
-        firstIndices.push_back(indices.size());
-        indices.push_back(base + 0);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-        indices.push_back(base + 0);
-        indices.push_back(base + 2);
-        indices.push_back(base + 3);
-
-        vertexCountSoFar.push_back(vertices.size());
-        indexCountSoFar.push_back(indices.size());
-    }
-
-    for (auto _ : state) {
-        for (std::size_t p = 0; p < primitiveCount; ++p) {
-            vertex::computeFlatNormals(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
-              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
-              firstIndices[p]);
-        }
-        benchmark::DoNotOptimize(vertices.data());
-    }
-}
-BENCHMARK(BM_ComputeFlatNormals)->Arg(1)->Arg(64)->Arg(512);
-
-// Zeroed normals make it fill corners instead of measuring the early-out.
+// BM_ComputeTangents' per-primitive shape and fixture, so the two compare; zeroed normals make it fill corners.
 void BM_FillMissingFlatNormals(benchmark::State &state)
 {
     const auto primitiveCount = static_cast<std::size_t>(state.range(0));

@@ -23,6 +23,8 @@ if [[ "${1:-}" == "--virtual-display" ]]; then
   # Both default off and hide a class each: a load op after another pass's store, a shader's descriptor accesses.
   export VK_KHRONOS_VALIDATION_SYNCVAL_LOAD_OP_AFTER_STORE_OP_VALIDATION=1
   export VK_KHRONOS_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC=1
+  # The GPU suites run for real here, so GpuTestGuard.hpp fails a GPU test that would skip (OxidANT's variable).
+  export KATAGLYPHIS_REQUIRE_GPU=1
   # -noreset: a golden's GLFW probe disconnects, and a window opened while Xvfb resets found no display.
   xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" bash "${BASH_SOURCE[0]}" "$@"
   exit 0

@@ -147,7 +147,7 @@ Testing/
 *.mkv
 *.webm
 
-# Scoped to Resources/: the vendored third_party/KTX corpus tracks its own .exr/.hdr/.dds/.tga.
+# Heavy image formats under Resources/: a texture in one belongs in an AssetANT archive, not in every clone.
 Resources/**/*.tif
 Resources/**/*.tiff
 Resources/**/*.exr

@@ -2,6 +2,7 @@ module;
 
 #include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -48,6 +49,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     textureSrgb = std::move(other.textureSrgb);
     meshRanges = std::move(other.meshRanges);
     punctualLights = std::move(other.punctualLights);
+    sun = other.sun;
 }
 
 std::shared_ptr<Model> GltfLoader::uploadParsed()
@@ -69,6 +71,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     // One mesh per glTF primitive; each shares the full materials array (materialIndex keeps original indices).
     addMeshesForRanges(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
     model->setPunctualLights(punctualLights);
+    model->setSun(sun);
     return model;
 }
 
@@ -83,6 +86,7 @@ void GltfLoader::clearParsed()
     textureSrgb.clear();
     meshRanges.clear();
     punctualLights.clear();
+    sun.reset();
 }
 
 bool GltfLoader::parseCpu(const std::string &modelFile)

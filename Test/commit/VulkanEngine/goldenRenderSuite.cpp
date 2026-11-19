@@ -4,6 +4,7 @@
 #include "EngineLoadWait.hpp"
 #include "GltfVariant.hpp"
 #include "GoldenMetrics.hpp"
+#include "GpuTestGuard.hpp"
 #include "ScopedEnvVar.hpp"
 #include "common/GuiModelTransform.hpp"
 #include "common/ImageBarrierHelper.hpp"
@@ -86,6 +87,7 @@ using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
 using Kataglyphis::Test::GoldenMetrics::SKY_SILHOUETTE_STEP;
 using Kataglyphis::Test::GoldenMetrics::SkySilhouette;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
+using Kataglyphis::Test::GoldenMetrics::white_directional_albedo;
 
 constexpr int WINDOW_WIDTH = 1200;
 constexpr int WINDOW_HEIGHT = 768;
@@ -94,14 +96,7 @@ constexpr int WARMUP_FRAMES = 5;
 // Frames rendered after a settings change before capturing it.
 constexpr int SETTLE_FRAMES = 3;
 
-bool glfw_reports_vulkan_support()
-{
-    if (glfwInit() == 0) { return false; }
-    const bool supports_vulkan = glfwVulkanSupported() != 0;
-    glfwTerminate();
-    return supports_vulkan;
-}
-
+using Kataglyphis::TestSupport::frameCaptureAvailable;
 using Kataglyphis::TestSupport::GltfVariant;
 using Kataglyphis::TestSupport::ScopedEnvVar;
 
@@ -282,6 +277,8 @@ constexpr const char *EMISSIVE_STRENGTH_CARD_MODEL = "Models/GltfTest/emissive_s
 constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf";
 // A grey plane under a red point light (x -1.2) and a green spot light (x 1.5) pointing down; OxidANT's fixture.
 constexpr const char *PUNCTUAL_LIGHTS_MODEL = "Models/GltfTest/point_light.gltf";
+// That plane under a 4098 lx directional light, the Colosseum's sun, on a turned and scaled node, and the red light.
+constexpr const char *DIRECTIONAL_LIGHT_MODEL = "Models/GltfTest/directional_light.gltf";
 // A card with a normal texture and nothing else, the base for a normal-map control.
 constexpr const char *NORMAL_MAP_CARD_MODEL = "Models/GltfTest/uv_transform_normal_only_card.gltf";
 // A unit cube, metallic 0: a dielectric the library lists, so the editor's reload can pick it.
@@ -421,39 +418,6 @@ void dump_cloud_frame(const std::string &name, const std::vector<uint8_t> &rgba,
       static_cast<int>(w) * 4);
 }
 
-// brdf.slang's brdf_sampled (a bounce's BRDF) for a white albedo over the hemisphere, uniform in angle for narrow lobes.
-double white_directional_albedo(double mu, double roughness, double metallic)
-{
-    constexpr double PI = 3.14159265358979323846;
-    constexpr int STEPS = 320;
-    const double alpha = roughness * roughness;
-    const double a2 = alpha * alpha;
-    const double k = alpha / 2.0;
-    const double f0 = 0.04 + 0.96 * metallic;
-    const auto smith = [k](double cosine) { return cosine / std::max(cosine * (1.0 - k) + k, 1e-6); };
-    const glm::dvec3 v(std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, mu);
-    const double n_dot_v = std::max(mu, 1e-4);
-    double sum = 0.0;
-    for (int i = 0; i < STEPS; ++i) {
-        const double theta = (static_cast<double>(i) + 0.5) / STEPS * PI * 0.5;
-        const double n_dot_l = std::cos(theta);
-        for (int j = 0; j < STEPS; ++j) {
-            const double phi = (static_cast<double>(j) + 0.5) / STEPS * 2.0 * PI;
-            const glm::dvec3 l(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), n_dot_l);
-            const glm::dvec3 h = glm::normalize(v + l);
-            const double n_dot_h = std::max(h.z, 0.0);
-            const double d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
-            const double ndf = a2 / std::max(PI * d * d, 1e-6);
-            const double fresnel = f0 + (1.0 - f0) * std::pow(std::clamp(1.0 - glm::dot(h, v), 0.0, 1.0), 5.0);
-            const double specular =
-              ndf * smith(n_dot_v) * smith(n_dot_l) * fresnel / std::max(4.0 * n_dot_v * n_dot_l, 1e-6);
-            const double diffuse = (1.0 - fresnel) * (1.0 - metallic) / PI;
-            sum += (diffuse + specular) * n_dot_l * std::sin(theta);
-        }
-    }
-    return sum * (PI * 0.5 / STEPS) * (2.0 * PI / STEPS);
-}
-
 // Mean red, green or blue radiance of an RGBA float capture over a square around (cx, cy).
 double mean_hdr_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
 {
@@ -503,19 +467,6 @@ double mean_luminance_in_square(const std::vector<uint8_t> &rgba, uint32_t w, ui
     }
     return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
-
-#define SKIP_WITHOUT_GPU()                                                                                            \
-    do {                                                                                                              \
-        if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; } \
-    } while (false)
-
-// Vulkan support does not imply a surface that allows copying out of a swapchain image.
-#define SKIP_WITHOUT_FRAME_CAPTURE(harness)                                                      \
-    do {                                                                                         \
-        if (!(harness).supportsFrameCapture()) {                                                 \
-            GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable."; \
-        }                                                                                        \
-    } while (false)
 
 }// namespace
 
@@ -2464,7 +2415,7 @@ std::vector<uint8_t> render_punctual_scene(const std::string &model,
 {
     ScopedModelOverride scene(model.c_str());
     EngineHarness harness;
-    if (!harness.supportsFrameCapture()) {
+    if (!frameCaptureAvailable(harness)) {
         skipped = true;
         return {};
     }
@@ -2555,6 +2506,84 @@ TEST(GoldenRender, PunctualLightsPoolOnThePlaneWhenPathTraced)
 {
     SKIP_WITHOUT_GPU();
     expect_punctual_pools(PunctualMode::PathTracing);
+}
+
+namespace {
+
+// The Sun directional_light.gltf names: its node's -Z and its light's colour.
+constexpr std::array<float, 3> kFixtureSunDirection{ 0.6F, -0.48F, 0.64F };
+constexpr std::array<float, 3> kFixtureSunColor{ 1.0F, 0.7F, 0.4F };
+
+struct SunScene
+{
+    std::vector<uint8_t> frame;
+    GUISceneSharedVars after;
+    bool skipped = false;
+};
+
+// A forward frame of `model` framed on its plane, and the editor's scene settings once it drew.
+SunScene render_sun_scene(const std::string &model, bool setTheFixtureSunByHand)
+{
+    SunScene result;
+    ScopedModelOverride scene(model.c_str());
+    EngineHarness harness;
+    if (!frameCaptureAvailable(harness)) {
+        result.skipped = true;
+        return result;
+    }
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 7.0F));
+    harness.camera->set_orientation(-90.0F, -40.0F);
+    if (setTheFixtureSunByHand) {
+        auto &vars = harness.settings.scene;
+        std::copy(
+          kFixtureSunDirection.begin(), kFixtureSunDirection.end(), std::begin(vars.directional_light_direction));
+        std::copy(kFixtureSunColor.begin(), kFixtureSunColor.end(), std::begin(vars.directional_light_color));
+    }
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+    uint32_t width = 0;
+    uint32_t height = 0;
+    result.frame = harness.capture_frame(width, height);
+    EXPECT_FALSE(harness.renderer->hasDeviceLost());
+    result.after = harness.settings.scene;
+    return result;
+}
+
+}// namespace
+
+// Shaded as a punctual light, the Colosseum's 4098 lx sun added an unattenuated second sun that drew the frame white.
+TEST(GoldenRender, AGltfDirectionalLightBecomesTheSunInsteadOfAPunctualLight)
+{
+    SKIP_WITHOUT_GPU();
+    const auto sunless = write_gltf_variant(DIRECTIONAL_LIGHT_MODEL,
+      "kataglyphis_sunless.gltf",
+      [](nlohmann::json &gltf) { gltf["nodes"][1].erase("extensions"); });
+    ASSERT_TRUE(sunless.has_value()) << "could not write the sunless twin of " << DIRECTIONAL_LIGHT_MODEL;
+
+    const SunScene adopted = render_sun_scene(DIRECTIONAL_LIGHT_MODEL, false);
+    if (adopted.skipped) { GTEST_SKIP() << "frame capture is unsupported here"; }
+    for (std::size_t axis = 0; axis < 3U; ++axis) {
+        EXPECT_NEAR(adopted.after.directional_light_direction[axis], kFixtureSunDirection[axis], 1e-4F)
+          << "the editor's Sun did not take the file's direction, axis " << axis;
+        EXPECT_NEAR(adopted.after.directional_light_color[axis], kFixtureSunColor[axis], 1e-5F)
+          << "the editor's Sun did not take the file's colour, channel " << axis;
+    }
+    EXPECT_FLOAT_EQ(adopted.after.directional_light_radiance, GUISceneSharedVars{}.directional_light_radiance)
+      << "the file's lux replaced the editor's radiance";
+
+    // The twin draws no light of its own; the editor's Sun, set to the file's by hand, must light it alike.
+    const SunScene reference = render_sun_scene(sunless->string(), true);
+    ASSERT_FALSE(adopted.frame.empty());
+    ASSERT_EQ(adopted.frame.size(), reference.frame.size());
+    const size_t pixels = adopted.frame.size() / 4U;
+    size_t differing = 0;
+    for (size_t pixel = 0; pixel < pixels; ++pixel) {
+        if (channel_delta(adopted.frame, reference.frame, pixel) > 8) { ++differing; }
+    }
+    GTEST_LOG_(INFO) << "file Sun against the hand-set one: " << differing << " of " << pixels
+                     << " pixels differ by more than 8";
+    EXPECT_LT(differing, pixels / 1000U)
+      << "the file's directional light still reaches the frame as a light of its own, or its Sun was not adopted";
 }
 
 namespace {
@@ -3757,6 +3786,121 @@ TEST(GoldenRender, EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode)
                                              << ": KHR_texture_transform's texCoord 1 does not move the emissive "
                                                 "slot onto the second UV set";
     }
+}
+
+// Standard deviation of the mean of red, green and blue over a square of an RGBA float capture around (cx, cy).
+static double hdr_stddev_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    const double mean = mean_hdr_in_square(rgba, w, cx, cy, half);
+    double sum = 0.0;
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+            const double value = static_cast<double>(rgba[base] + rgba[base + 1U] + rgba[base + 2U]) / 3.0;
+            sum += (value - mean) * (value - mean);
+            ++count;
+        }
+    }
+    return count > 0U ? std::sqrt(sum / static_cast<double>(count)) : 0.0;
+}
+
+// glTF's LINEAR min filter reads level 0 alone, so a far, fine checkerboard aliases where a mipmapped one is grey.
+TEST(GoldenRender, AMipmaplessMinFilterSamplesOnlyTheBaseLevel)
+{
+    SKIP_WITHOUT_GPU();
+
+    // Unlit, so a pixel is its texel; 64 tiles of the 8x8 checkerboard put 512 texels across each 1-unit card.
+    const auto checker = [](int texture) {
+        nlohmann::json texture_info;
+        texture_info["index"] = texture;
+        texture_info["extensions"]["KHR_texture_transform"] = { { "scale", { 64.0, 64.0 } } };
+        nlohmann::json material;
+        material["pbrMetallicRoughness"] = { { "baseColorTexture", texture_info } };
+        material["doubleSided"] = true;
+        material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+        return material;
+    };
+    // Left: LINEAR (9729), glTF's mipmap-less min filter; right: LINEAR_MIPMAP_LINEAR (9987), the control.
+    constexpr std::array<float, 2> CARD_X = { -0.6F, 0.6F };
+    const auto scene = write_gltf_variant(UV_TRANSFORM_MODEL, "kataglyphis_mipmapless_checker.gltf", [&](auto &gltf) {
+        make_card_scene(gltf,
+          { checker(0), checker(1) },
+          { { 0, { { "translation", { CARD_X[0], 0.0F, 0.0F } } } },
+            { 1, { { "translation", { CARD_X[1], 0.0F, 0.0F } } } } });
+        gltf["samplers"] = nlohmann::json::array(
+          { { { "magFilter", 9729 }, { "minFilter", 9729 } }, { { "magFilter", 9729 }, { "minFilter", 9987 } } });
+        gltf["textures"] =
+          nlohmann::json::array({ { { "source", 0 }, { "sampler", 0 } }, { { "source", 0 }, { "sampler", 1 } } });
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_texture_transform", "KHR_materials_unlit" });
+    });
+    ASSERT_TRUE(scene.has_value()) << "could not write the checkerboard cards";
+
+    ScopedModelOverride cards(scene->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    harness.settings.scene.shadows_enabled = false;
+    // About 4.4 texels a pixel: the mipmapped card samples levels 2 and 3, which are flat grey.
+    constexpr float DISTANCE = 8.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, DISTANCE));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    for (const RasterizationMode mode : { RasterizationMode::Forward, RasterizationMode::Deferred }) {
+        renderer_vars.rasterizationMode = mode;
+        const char *mode_name = mode == RasterizationMode::Forward ? "forward" : "deferred";
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        ASSERT_FALSE(radiance.empty());
+
+        std::array<double, 2> spread{};
+        for (size_t card = 0; card < CARD_X.size(); ++card) {
+            const uint32_t x = card_column(CARD_X[card], DISTANCE, width, height);
+            spread[card] = hdr_stddev_in_square(radiance, width, x, height / 2U, 24U);
+            GTEST_LOG_(INFO) << mode_name << " card " << card << ": mean "
+                             << mean_hdr_in_square(radiance, width, x, height / 2U, 24U) << ", spread " << spread[card];
+        }
+        EXPECT_LT(spread[1], 0.03) << mode_name << ": the mipmapped control is not flat grey - check the framing";
+        EXPECT_GT(spread[0], 0.08) << mode_name
+                                   << ": the LINEAR min filter averaged the far checkerboard to grey, so it sampled "
+                                      "the mip chain glTF's mipmap-less filter must not";
+    }
+}
+
+// F5 swaps the path-tracing kernel for another estimator, so its samples must not average into the old mean.
+TEST(GoldenRender, ShaderHotReloadRestartsThePathTracedMean)
+{
+    SKIP_WITHOUT_GPU();
+
+    // A lone card at 1 spp keeps the traced frames cheap; nothing here reads a pixel.
+    ScopedModelOverride card(EMISSIVE_CARD_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+    auto &renderer_vars = harness.settings.renderer;
+    renderer_vars.pathTracing = true;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_TRUE(harness.feedback.tracingReady) << "no TLAS after the warm-up, so nothing was path traced";
+    const unsigned int before = harness.feedback.pathTracingAccumulatedFrames;
+    ASSERT_GE(before, 3U) << "the running mean did not accumulate across the warm-up frames";
+
+    renderer_vars.shader_hot_reload_triggered = true;
+    harness.render_frame();
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost after the shader reload.";
+    EXPECT_FALSE(renderer_vars.shader_hot_reload_triggered) << "the reload request was not spent";
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedFrames, 1U)
+      << "the reloaded kernel's first frame was averaged into the old kernel's " << before << "-frame mean";
+
+    harness.render_frame();
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedFrames, 2U) << "the restarted mean does not accumulate";
 }
 
 // RT/PT see only the acceleration structure, so addModel must rebuild it or the model is invisible to them.

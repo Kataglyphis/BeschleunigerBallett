@@ -1,6 +1,7 @@
 module;
 #include <glm/glm.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -54,6 +55,9 @@ class Model
     /// The document's KHR_lights_punctual lights in model space; `model` places them like the meshes.
     const std::vector<PunctualLight> &getPunctualLights() const { return punctualLights; }
     void setPunctualLights(std::vector<PunctualLight> lights) { punctualLights = std::move(lights); }
+    /// The document's first directional light, which the editor adopts as its Sun; none for an OBJ.
+    const std::optional<PunctualLight> &getSun() const { return sun; }
+    void setSun(const std::optional<PunctualLight> &newSun) { sun = newSun; }
     void addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc = {});
 
     ~Model();
@@ -68,6 +72,7 @@ class Model
     std::vector<Mesh> meshes;
     glm::mat4 model{};
     std::vector<PunctualLight> punctualLights;
+    std::optional<PunctualLight> sun;
 
     std::vector<Texture> modelTextures;
     std::vector<vk::Sampler> modelTextureSamplers;

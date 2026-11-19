@@ -4,6 +4,8 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,12 +15,14 @@ module;
 
 #include "spdlog/spdlog.h"
 
-#include "oxidant_bridge/lib.h"
+#include "oxidant_bridge/gltf.h"
 
 module kataglyphis.vulkan.gltf_loader;
 
+import kataglyphis.shared.util.utf8_path;
 import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.obj_material;
+import kataglyphis.vulkan.oxidant_diagnostics;
 import kataglyphis.vulkan.punctual_light;
 import kataglyphis.vulkan.sampler_builder;
 import kataglyphis.vulkan.vertex;
@@ -26,7 +30,7 @@ import kataglyphis.vulkan.vertex;
 namespace Kataglyphis {
 
 namespace {
-    namespace ox = kataglyphis::oxidant;
+    namespace ox = kataglyphis::oxidant::gltf;
 
     // The bridge's vertex is copied into Vertex byte for byte, so the two layouts must agree field by field.
     static_assert(sizeof(ox::GltfVertex) == sizeof(Vertex));
@@ -83,7 +87,6 @@ namespace {
         }
     }
 
-    // A bare NEAREST or LINEAR minification still samples the mip chain.
     GltfSamplerDesc toSamplerDesc(const ox::GltfSampler &sampler)
     {
         GltfSamplerDesc desc{};
@@ -92,6 +95,7 @@ namespace {
         desc.magFilter = sampler.mag_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
         desc.minFilter = sampler.min_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
         desc.mipmapMode = sampler.mip_nearest ? vk::SamplerMipmapMode::eNearest : vk::SamplerMipmapMode::eLinear;
+        desc.mipmaps = sampler.mipmaps;
         return desc;
     }
 
@@ -124,8 +128,9 @@ namespace {
 
 bool GltfLoader::parseWithRust(const std::string &modelFile)
 {
-    const auto *pathBytes = reinterpret_cast<const std::uint8_t *>(modelFile.data());
-    const ox::GltfModel model = ox::load_gltf_flat(rust::Slice<const std::uint8_t>(pathBytes, modelFile.size()));
+    const std::vector<std::uint8_t> path = Shared::utf8PathBytes(std::filesystem::path(modelFile));
+    const ox::GltfModel model = ox::load_gltf_flat(rust::Slice<const std::uint8_t>(path.data(), path.size()));
+    logOxidantRecords();
     if (!model.ok) {
         spdlog::warn("GltfLoader (Rust): {}", std::string(model.error));
         return false;
@@ -143,6 +148,7 @@ bool GltfLoader::parseWithRust(const std::string &modelFile)
     }
     for (const ox::GltfMeshRange &range : model.mesh_ranges) { meshRanges.push_back(toMeshRange(range)); }
     for (const ox::GltfLight &light : model.lights) { punctualLights.push_back(toPunctualLight(light)); }
+    if (model.has_sun) { sun = toPunctualLight(model.sun); }
     return !vertices.empty();
 }
 

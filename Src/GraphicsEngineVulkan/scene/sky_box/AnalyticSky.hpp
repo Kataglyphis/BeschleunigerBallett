@@ -9,6 +9,7 @@
 
 #include <glm/glm.hpp>
 
+#include "common/SrgbConversion.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 
 namespace Kataglyphis {
@@ -48,13 +49,6 @@ inline auto cubemapTexelDirection(std::size_t face, uint32_t column, uint32_t ro
     default:
         return { -s, -t, -1.0F };
     }
-}
-
-inline auto linearToSrgbByte(float linear) -> unsigned char
-{
-    const float v = std::clamp(linear, 0.0F, 1.0F);
-    const float encoded = v <= 0.0031308F ? v * 12.92F : 1.055F * std::pow(v, 1.0F / 2.4F) - 0.055F;
-    return static_cast<unsigned char>(std::lround(encoded * 255.0F));
 }
 
 // Six RGBA8 sRGB faces back to back: the sky pass is untonemapped, so each texel is the tonemapped gradient post would show.

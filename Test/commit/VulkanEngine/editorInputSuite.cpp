@@ -2,6 +2,7 @@
 
 #include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
+#include "GpuTestGuard.hpp"
 #include "ImGuiInputDriver.hpp"
 #include "ScopedEnvVar.hpp"
 #include <gtest/gtest.h>
@@ -25,14 +26,6 @@ namespace {
 using Kataglyphis::TestSupport::activeChildWindow;
 using Kataglyphis::TestSupport::ImGuiInputDriver;
 using Kataglyphis::TestSupport::ScopedEnvVar;
-
-bool glfw_reports_vulkan_support()
-{
-    if (glfwInit() == 0) { return false; }
-    const bool supports_vulkan = glfwVulkanSupported() != 0;
-    glfwTerminate();
-    return supports_vulkan;
-}
 
 // Nothing loads, so frames stay cheap and no library row is the loaded one, which a click could not pick.
 constexpr const char *MISSING_MODEL = "Models/ShadowTest/no_such_model.obj";
@@ -119,7 +112,7 @@ bool shows_the_whole_image(const Kataglyphis::VulkanRendererInternals::FrontendS
 // A load stalls the GPU, so a click only picks a library row; Enter on the clicked row then loads it.
 TEST(Integration, LibraryClickPicksARowAndEnterLoadsIt)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;
@@ -160,7 +153,7 @@ TEST(Integration, LibraryClickPicksARowAndEnterLoadsIt)
 // The row's tooltip promises that a double-click loads it.
 TEST(Integration, LibraryDoubleClickLoadsTheRow)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;
@@ -188,7 +181,7 @@ TEST(Integration, LibraryDoubleClickLoadsTheRow)
 // Clicking an outliner row opens its inspector tab; the Renderer tab's culling switch then reaches the renderer.
 TEST(Integration, OutlinerRendererRowOpensTheTabWhoseSwitchTogglesCulling)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;
@@ -224,7 +217,7 @@ TEST(Integration, OutlinerRendererRowOpensTheTabWhoseSwitchTogglesCulling)
 // View > Inspector closes the dock, which hands the scene its width; any outliner row brings the inspector back.
 TEST(Integration, ViewMenuClosesTheInspectorAndAnOutlinerRowReopensIt)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;
@@ -268,7 +261,7 @@ TEST(Integration, ViewMenuClosesTheInspectorAndAnOutlinerRowReopensIt)
 // The eye is a button inside the Skybox row, so the row's own selectable must not take its press.
 TEST(Integration, OutlinerEyeTogglesTheSkybox)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;
@@ -297,7 +290,7 @@ TEST(Integration, OutlinerEyeTogglesTheSkybox)
 // F1 hides the editor, which gives the scene the whole image, and brings it back, as the status bar says.
 TEST(Integration, F1HidesAndRestoresTheEditor)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     EditorSession session;
     auto &engine = session.engine;

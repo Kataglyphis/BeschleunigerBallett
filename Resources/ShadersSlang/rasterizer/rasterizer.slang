@@ -52,7 +52,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.texCoords, material));
+        float4 baseSample = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material));
         sampledAlpha *= baseSample.a;
         albedo = base_color(material, baseSample.xyz);
     }

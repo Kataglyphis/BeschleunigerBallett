@@ -56,6 +56,9 @@ class VulkanDevice
     { return device_properties.limits.maxPerStageDescriptorSampledImages; };
     uint32_t getMaxPerStageDescriptorSamplers() const
     { return device_properties.limits.maxPerStageDescriptorSamplers; };
+    // VkPhysicalDeviceLimits::maxImageDimension2D/Cube: a texture or skybox face past them is halved until it fits.
+    uint32_t getMaxImageDimension2D() const { return device_properties.limits.maxImageDimension2D; };
+    uint32_t getMaxImageDimensionCube() const { return device_properties.limits.maxImageDimensionCube; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
     // Minimum alignment for allocations backing buffers whose device address

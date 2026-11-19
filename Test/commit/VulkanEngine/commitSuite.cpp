@@ -1,4 +1,5 @@
 #include "EngineFrame.hpp"
+#include "GpuTestGuard.hpp"
 #include <gtest/gtest.h>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -16,26 +17,12 @@
 #include <stdexcept>
 #include <vector>
 
-namespace {
-
-bool glfw_reports_vulkan_support()
-{
-    if (glfwInit() == 0) { return false; }
-
-    const bool supports_vulkan = glfwVulkanSupported() != 0;
-    glfwTerminate();
-    return supports_vulkan;
-}
-
-}// namespace
-
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.window;
-
 
 // Demonstrate some basic assertions.
 TEST(HelloTestCommit, BasicAssertions)
@@ -51,7 +38,7 @@ TEST(Integration, VulkanEngine)
 {
     EXPECT_EQ(7 * 6, 42);
 
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     int window_width = 1200;
     int window_height = 768;

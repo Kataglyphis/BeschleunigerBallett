@@ -1,5 +1,6 @@
 #include "EngineFrame.hpp"
 #include "EngineLoadWait.hpp"
+#include "GpuTestGuard.hpp"
 #include "ScopedEnvVar.hpp"
 #include <gtest/gtest.h>
 #include <imgui.h>
@@ -25,14 +26,6 @@ import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.window;
 
 namespace {
-
-bool glfw_reports_vulkan_support()
-{
-    if (glfwInit() == 0) { return false; }
-    const bool supports_vulkan = glfwVulkanSupported() != 0;
-    glfwTerminate();
-    return supports_vulkan;
-}
 
 using Kataglyphis::TestSupport::ScopedEnvVar;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::drawnRenderMode;
@@ -99,7 +92,7 @@ void run_frames(EditorEngine &engine, int frame_count, const std::string &mode_l
 
 TEST(Integration, RenderModesSelectableInGui)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     constexpr int frames_per_mode = 3;
 
@@ -183,7 +176,7 @@ TEST(RenderModeUnit, SubmitLogNamesTheDrawnMode)
 // Picked while the scene holds nothing to trace, ray tracing must show raster and wait; a model then makes it draw.
 TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     const ScopedEnvVar missing("KATAGLYPHIS_MODEL_OVERRIDE", MISSING_MODEL);
     EditorEngine engine;
@@ -223,7 +216,7 @@ TEST(Integration, EditorShowsRasterUntilTheSceneCanBeTraced)
 // The switch shows Raster while a tracing pick waits for a TLAS; a press on that Raster segment must drop the pick.
 TEST(Integration, RasterSegmentCancelsAPendingTracingPick)
 {
-    if (!glfw_reports_vulkan_support()) { GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system."; }
+    SKIP_WITHOUT_GPU();
 
     const ScopedEnvVar missing("KATAGLYPHIS_MODEL_OVERRIDE", MISSING_MODEL);
     EditorEngine engine;

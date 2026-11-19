@@ -55,6 +55,11 @@ auto Kataglyphis::buildSamplerCreateInfo(const GltfSamplerDesc &desc,
     sampler_create_info.maxAnisotropy = maxAnisotropy;
     sampler_create_info.compareEnable = compareEnable;
     sampler_create_info.compareOp = compareOp;
+    // Vulkan's form of GL's mipmap-less min filter; a maxLod of 0 would select the magnification filter instead.
+    if (!desc.mipmaps) {
+        sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        sampler_create_info.maxLod = 0.25F;
+    }
 
     return sampler_create_info;
 }
@@ -65,9 +70,12 @@ auto Kataglyphis::usesNearestFiltering(const GltfSamplerDesc &desc) -> bool
            || desc.mipmapMode == vk::SamplerMipmapMode::eNearest;
 }
 
+auto Kataglyphis::anisotropyAllowed(const GltfSamplerDesc &desc) -> bool
+{ return desc.mipmaps && !usesNearestFiltering(desc); }
+
 auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key) -> std::optional<std::size_t>
 {
-    // find_if, not find: works around microsoft/STL#6294 (find static_asserts on a 24-byte struct with defaulted ==).
+    // find_if, not find: works around microsoft/STL#6294 (find static_asserts on a defaulted-== struct of this size).
     const auto it =
       std::ranges::find_if(createdSamplers, [&key](const SamplerKey &candidate) { return candidate == key; });
     if (it == createdSamplers.end()) { return std::nullopt; }

@@ -290,4 +290,75 @@ inline double post_display_level(double linear)
     return srgb * 255.0;
 }
 
+// brdf.slang's MIN_ROUGHNESS and its NDF denominator guard; BuildIntegrity.FurnaceOracleUsesBrdfSlangsConstants pins both.
+inline constexpr double kBrdfMinRoughness = 0.045;
+inline constexpr double kBrdfNdfDenominatorGuard = 1e-20;
+
+// brdf.slang's distribution_ggx, floor and guard included.
+inline double ggx_distribution(double n_dot_h, double roughness)
+{
+    constexpr double PI = 3.14159265358979323846;
+    const double floored = std::max(roughness, kBrdfMinRoughness);
+    const double a2 = floored * floored * floored * floored;
+    const double d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+    return a2 / (PI * std::max(d * d, kBrdfNdfDenominatorGuard));
+}
+
+// brdf.slang's brdf_sampled for a white albedo; a grid uniform in angle missed every GGX lobe narrower than its step.
+inline double white_directional_albedo(double mu, double roughness, double metallic)
+{
+    constexpr double PI = 3.14159265358979323846;
+    constexpr int STEPS = 320;
+    // Rows outnumber columns: where the horizon cuts a rough lobe, the error follows the row height (2048x128: < 1e-4).
+    constexpr int CDF_ROWS = 2048;
+    constexpr int AZIMUTH_COLUMNS = 128;
+    // The cells follow the floored lobe distribution_ggx evaluates; smith_k_sampled takes the unfloored roughness.
+    const double floored = std::max(roughness, kBrdfMinRoughness);
+    const double a2 = floored * floored * floored * floored;
+    const double k = roughness * roughness / 2.0;
+    const double f0 = 0.04 + 0.96 * metallic;
+    const auto smith = [k](double cosine) { return cosine / std::max(cosine * (1.0 - k) + k, 1e-6); };
+    const glm::dvec3 v(std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, mu);
+    const double n_dot_v = std::max(mu, 1e-4);
+    const auto fresnel = [f0, &v](const glm::dvec3 &h) {
+        return f0 + (1.0 - f0) * std::pow(std::clamp(1.0 - glm::dot(h, v), 0.0, 1.0), 5.0);
+    };
+
+    double diffuse = 0.0;
+    for (int i = 0; i < STEPS; ++i) {
+        const double theta = (static_cast<double>(i) + 0.5) / STEPS * PI * 0.5;
+        const double n_dot_l = std::cos(theta);
+        for (int j = 0; j < STEPS; ++j) {
+            const double phi = (static_cast<double>(j) + 0.5) / STEPS * 2.0 * PI;
+            const glm::dvec3 l(std::sin(theta) * std::cos(phi), std::sin(theta) * std::sin(phi), n_dot_l);
+            const double lambert = (1.0 - fresnel(glm::normalize(v + l))) * (1.0 - metallic) / PI;
+            diffuse += lambert * n_dot_l * std::sin(theta);
+        }
+    }
+    diffuse *= (PI * 0.5 / STEPS) * (2.0 * PI / STEPS);
+
+    // Each cell holds the same share of the unguarded D(h) n.h, and dl = 4 (v.h) dh: it weighs f n.l 4 (v.h) / (D n.h).
+    double specular = 0.0;
+    for (int i = 0; i < CDF_ROWS; ++i) {
+        const double xi = (static_cast<double>(i) + 0.5) / CDF_ROWS;
+        const double n_dot_h = std::sqrt((1.0 - xi) / (1.0 + (a2 - 1.0) * xi));
+        const double sin_h = std::sqrt(std::max(0.0, 1.0 - n_dot_h * n_dot_h));
+        const double d = n_dot_h * n_dot_h * (a2 - 1.0) + 1.0;
+        const double density = a2 / (PI * d * d) * n_dot_h;
+        const double ndf = ggx_distribution(n_dot_h, roughness);
+        for (int j = 0; j < AZIMUTH_COLUMNS; ++j) {
+            const double phi = (static_cast<double>(j) + 0.5) / AZIMUTH_COLUMNS * 2.0 * PI;
+            const glm::dvec3 h(sin_h * std::cos(phi), sin_h * std::sin(phi), n_dot_h);
+            const double v_dot_h = glm::dot(v, h);
+            const double n_dot_l = 2.0 * v_dot_h * n_dot_h - v.z;
+            if (v_dot_h <= 0.0 || n_dot_l <= 0.0) { continue; }
+            const double f =
+              ndf * smith(n_dot_v) * smith(n_dot_l) * fresnel(h) / std::max(4.0 * n_dot_v * n_dot_l, 1e-6);
+            specular += f * n_dot_l * 4.0 * v_dot_h / density;
+        }
+    }
+    specular /= static_cast<double>(CDF_ROWS) * AZIMUTH_COLUMNS;
+    return diffuse + specular;
+}
+
 }// namespace Kataglyphis::Test::GoldenMetrics

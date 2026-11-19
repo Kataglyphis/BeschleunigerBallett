@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <limits>
 
 #include <glm/glm.hpp>
 
@@ -40,4 +41,16 @@ TEST(LightDirectionUnit, DefaultGuiDirectionNormalizesWithoutFlippingSign)
     EXPECT_LT(result.x, 0.0F);
     EXPECT_LT(result.y, 0.0F);
     EXPECT_LT(result.z, 0.0F);
+}
+
+TEST(LightDirectionUnit, NonFiniteDirectionsReturnTheFallback)
+{
+    constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+    constexpr float kInf = std::numeric_limits<float>::infinity();
+    // cascades.rs's normalize_or falls back the same way; a NaN light turns every cascade matrix into NaN.
+    for (const glm::vec3 raw :
+      { glm::vec3(kNaN, -1.0F, 0.0F), glm::vec3(0.0F, kInf, 0.0F), glm::vec3(-kInf, 1.0F, 2.0F) }) {
+        EXPECT_EQ(normalizedLightDirection(raw), glm::vec3(0.0F, -1.0F, 0.0F))
+          << "(" << raw.x << ", " << raw.y << ", " << raw.z << ")";
+    }
 }

@@ -48,6 +48,14 @@ TEST(SkyBoxUnit, RejectsADegenerateFirstFace)
     EXPECT_FALSE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
 
+TEST(SkyBoxUnit, RejectsSixEqualNonSquareFaces)
+{
+    // A cube-compatible image must be square (VUID-VkImageCreateInfo-imageType-00954); Rust refuses these too.
+    const int widths[6] = { 128, 128, 128, 128, 128, 128 };
+    const int heights[6] = { 64, 64, 64, 64, 64, 64 };
+    EXPECT_FALSE(Kataglyphis::cubemapFacesConsistent(widths, heights));
+}
+
 TEST(SkyBoxUnit, AcceptsAllLargeEqualFaces)
 {
     const int widths[6] = { 128, 128, 128, 128, 128, 128 };
@@ -164,6 +172,33 @@ TEST(SkyBoxUnit, ALargeCubemapIsAveragedOverAtMost64TexelsPerEdge)
     const auto ambient = cubemap.ambient();
     EXPECT_FLOAT_EQ(ambient.top.x, radianceOf(100));
     EXPECT_FLOAT_EQ(ambient.bottom.x, radianceOf(100));
+}
+
+TEST(SkyBoxUnit, FacesPastTheCubeLimitAreHalvedUntilTheyFit)
+{
+    // maxImageDimensionCube bounds a face; a larger one was invalid usage that aborted the engine.
+    SyntheticCubemap cubemap(8, 8, 100);
+    cubemap.set(2, 0, 0, 255);
+    const std::array<const unsigned char *, 6> faces{ cubemap.storage[0].data(),
+        cubemap.storage[1].data(),
+        cubemap.storage[2].data(),
+        cubemap.storage[3].data(),
+        cubemap.storage[4].data(),
+        cubemap.storage[5].data() };
+
+    const Kataglyphis::FittedCubemap fitted = Kataglyphis::fitCubemapFacesToLimit(faces, 8, 4);
+    EXPECT_EQ(fitted.size, 4U);
+    EXPECT_EQ(fitted.halvings, 1U);
+    ASSERT_EQ(fitted.texels.size(), 6U * 4U * 4U * 4U);
+    // +Y's first texel averages the bright one with three greys in linear space, as the sRGB format samples them.
+    const unsigned char *plus_y = fitted.texels.data() + 2U * 4U * 4U * 4U;
+    const float linear = (Kataglyphis::srgbChannelToLinear(255) + 3.0F * Kataglyphis::srgbChannelToLinear(100)) / 4.0F;
+    EXPECT_EQ(plus_y[0], Kataglyphis::linearToSrgbByte(linear));
+    EXPECT_EQ(fitted.texels[0], 100) << "the other faces stay their grey";
+
+    const Kataglyphis::FittedCubemap kept = Kataglyphis::fitCubemapFacesToLimit(faces, 8, 8);
+    EXPECT_EQ(kept.size, 8U);
+    EXPECT_EQ(kept.halvings, 0U);
 }
 
 TEST(SkyBoxUnit, TheDisabledSkyLightsTheCloudsWithItsUntonemappedNavy)

@@ -362,6 +362,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // This link carries every features11/12/13 and ray-tracing bit to vkCreateDevice; without it they vanish silently.
     features2.pNext = &features11;
     features2.features.samplerAnisotropy = available_features2.features.samplerAnisotropy;
+    // The material texture arrays are indexed by a variable slot, which Vulkan allows only with this feature on.
+    features2.features.shaderSampledImageArrayDynamicIndexing =
+      available_features2.features.shaderSampledImageArrayDynamicIndexing;
     features2.features.shaderInt64 = available_features2.features.shaderInt64;
     features2.features.geometryShader = available_features2.features.geometryShader;
     features2.features.fragmentStoresAndAtomics = available_features2.features.fragmentStoresAndAtomics;
@@ -401,6 +404,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         + ", runtimeDescriptorArray=" + (available_features12.runtimeDescriptorArray == VK_TRUE ? "true" : "false")
         + ", sampledImageArrayNonUniformIndexing="
         + (available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE ? "true" : "false")
+        + ", sampledImageArrayDynamicIndexing="
+        + (available_features2.features.shaderSampledImageArrayDynamicIndexing == VK_TRUE ? "true" : "false")
         + ", robustBufferAccess=" + (available_features2.features.robustBufferAccess == VK_TRUE ? "true" : "false"));
 
     for (const char *extensionName : device_extensions_for_raytracing) {

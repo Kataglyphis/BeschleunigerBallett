@@ -75,7 +75,7 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
-            float alpha = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.fragUV, material)).a;
+            float alpha = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.fragUV, material)).a;
             if (alpha_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
         }
         else

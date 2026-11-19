@@ -6,6 +6,7 @@ import normal_map;
 
 // Ray tracing callers must use the `_lod0` helpers. See docs/source/shader-sharing.md § What is wired today.
 
+// Indexed only through NonUniformResourceIndex: triangles of one draw, rays and bounces each pick their own slot.
 [vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 [vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 
@@ -13,49 +14,49 @@ import normal_map;
 float sample_alpha_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[alphaTexId].SampleLevel(textureSamplers[alphaTexId], alpha_uv(texCoords, material), 0.0).r;
+    return textures[NonUniformResourceIndex(alphaTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(alphaTexId)], alpha_uv(texCoords, material), 0.0).r;
 }
 
 float sample_alpha(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[alphaTexId].Sample(textureSamplers[alphaTexId], alpha_uv(texCoords, material)).r;
+    return textures[NonUniformResourceIndex(alphaTexId)].Sample(textureSamplers[NonUniformResourceIndex(alphaTexId)], alpha_uv(texCoords, material)).r;
 }
 
 float3 sample_normal_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-    return textures[normalTexId].SampleLevel(textureSamplers[normalTexId], normal_uv(texCoords, material), 0.0).xyz;
+    return textures[NonUniformResourceIndex(normalTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(normalTexId)], normal_uv(texCoords, material), 0.0).xyz;
 }
 
 float3 sample_normal(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-    return textures[normalTexId].Sample(textureSamplers[normalTexId], normal_uv(texCoords, material)).xyz;
+    return textures[NonUniformResourceIndex(normalTexId)].Sample(textureSamplers[NonUniformResourceIndex(normalTexId)], normal_uv(texCoords, material)).xyz;
 }
 
 float4 sample_metallic_roughness_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-    return textures[metallicRoughnessTexId].SampleLevel(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material), 0.0);
+    return textures[NonUniformResourceIndex(metallicRoughnessTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material), 0.0);
 }
 
 float4 sample_metallic_roughness(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-    return textures[metallicRoughnessTexId].Sample(textureSamplers[metallicRoughnessTexId], metallic_roughness_uv(texCoords, material));
+    return textures[NonUniformResourceIndex(metallicRoughnessTexId)].Sample(textureSamplers[NonUniformResourceIndex(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material));
 }
 
 float3 sample_emissive_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-    return textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], emissive_uv(texCoords, material), 0.0).xyz;
+    return textures[NonUniformResourceIndex(emissiveTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(emissiveTexId)], emissive_uv(texCoords, material), 0.0).xyz;
 }
 
 float3 sample_emissive(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-    return textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], emissive_uv(texCoords, material)).xyz;
+    return textures[NonUniformResourceIndex(emissiveTexId)].Sample(textureSamplers[NonUniformResourceIndex(emissiveTexId)], emissive_uv(texCoords, material)).xyz;
 }
 
 float3 resolved_emission_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)

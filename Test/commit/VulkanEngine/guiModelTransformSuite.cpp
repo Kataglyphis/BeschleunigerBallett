@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <limits>
 #include <span>
 
 #include "common/GuiModelTransform.hpp"
@@ -64,4 +66,24 @@ TEST(GuiModelTransformUnit, RotationIsAppliedZThenYThenX)
     expected = glm::rotate(expected, glm::radians(rotation[0]), glm::vec3(1.0f, 0.0f, 0.0f));
 
     expect_mat4_near(result, expected);
+}
+
+TEST(GuiModelTransformUnit, ANonFiniteFieldCountsAsZero)
+{
+    // Rust's ModelTransform::matrix does the same; one NaN would place every vertex of the model at NaN.
+    constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+    constexpr float kInf = std::numeric_limits<float>::infinity();
+    constexpr std::array<float, 3> position{ kNaN, 2.0f, kInf };
+    constexpr std::array<float, 3> rotation{ 30.0f, -kInf, kNaN };
+    constexpr std::array<float, 3> finite_position{ 0.0f, 2.0f, 0.0f };
+    constexpr std::array<float, 3> finite_rotation{ 30.0f, 0.0f, 0.0f };
+
+    const glm::mat4 result =
+      makeGuiModelTransform(std::span<const float, 3>(position), std::span<const float, 3>(rotation));
+
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) { ASSERT_TRUE(std::isfinite(result[col][row])) << col << "," << row; }
+    }
+    expect_mat4_near(result,
+      makeGuiModelTransform(std::span<const float, 3>(finite_position), std::span<const float, 3>(finite_rotation)));
 }

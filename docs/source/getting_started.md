@@ -6,7 +6,10 @@
 - CMake 4.1 or newer
 - a Vulkan SDK installation for Vulkan-enabled builds
 - Python plus the packages locked in `uv.lock` for the docs build (the formatting steps use ANTfrastructure's separate locked `cmake-format` project)
-- Rust and cargo: every build links OxidANT's cxx bridge through Corrosion
+- Rust and cargo: every build links OxidANT's cxx bridge through Corrosion, `--locked` to OxidANT's
+  `Cargo.lock`, and every build but Debug with OxidANT's `bridge` cargo profile (release, but a panic
+  unwinds into an error value); Corrosion runs a `cxxbridge` on `PATH` at that lock's `cxx` version,
+  or else builds exactly that version into the build tree on the first build
 - network access for the first configure, which downloads the default scenes (see below)
 
 ## Clone the Repository

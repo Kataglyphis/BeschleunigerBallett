@@ -36,6 +36,9 @@ struct GltfSamplerDesc
     vk::Filter magFilter{ vk::Filter::eLinear };
     vk::Filter minFilter{ vk::Filter::eLinear };
     vk::SamplerMipmapMode mipmapMode{ vk::SamplerMipmapMode::eLinear };
+    /// False for glTF's bare NEAREST and LINEAR minification, which read level 0 only: the sampler then clamps its
+    /// LOD to [0, 0.25] with a nearest mip, whatever maxLod it is given.
+    bool mipmaps{ true };
 
     bool operator==(const GltfSamplerDesc &) const = default;
 };
@@ -57,6 +60,9 @@ auto buildSamplerCreateInfo(const GltfSamplerDesc &desc,
 // nearest-filtered assets are exactly the ones whose blocky look the author
 // chose deliberately - so anisotropy must not silently apply anyway.
 auto usesNearestFiltering(const GltfSamplerDesc &desc) -> bool;
+
+// Anisotropy only for a linear, mipmapped sampler, as Rust's anisotropy_for: a mipmap-less one is plain level 0.
+auto anisotropyAllowed(const GltfSamplerDesc &desc) -> bool;
 
 // Key a created sampler is reusable under: mip level AND glTF sampler
 // description must both match, since two textures with the same mip count

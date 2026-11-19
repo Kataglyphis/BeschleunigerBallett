@@ -29,6 +29,7 @@
 #include <utility>
 #include <vector>
 
+#include "GoldenMetrics.hpp"
 #include "ObjectDescription.hpp"
 #include "RepoFiles.hpp"
 #include "common/SceneUboMarshal.hpp"
@@ -1645,6 +1646,122 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
     }
 }
 
+// KATAGLYPHIS_REQUIRE_GPU reaches a GPU test only through GpuTestGuard.hpp; a probe of its own would skip silently.
+TEST(BuildIntegrity, EveryGpuTestGuardsThroughTheSharedHeader)
+{
+    const fs::path tests_dir = repoRoot() / "Test" / "commit" / "VulkanEngine";
+    static const std::regex kGpuTest(R"(^TEST\((GoldenRender|Integration),\s*(\w+)\))");
+    static const std::string kProbe = std::string("glfwVulkan") + "Supported(";
+    static const std::string kCaptureQuery = std::string("supportsFrame") + "Capture()";
+    std::vector<std::string> unguarded;
+    std::vector<std::string> own_probes;
+    std::vector<std::string> own_capture_checks;
+    std::size_t checked = 0;
+    std::error_code error;
+    for (fs::directory_iterator it(tests_dir, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (path.extension() != ".cpp" && path.extension() != ".hpp") { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        const std::string name = path.filename().string();
+        if (name != "GpuTestGuard.hpp" && std::any_of(lines->begin(), lines->end(), [](const std::string &line) {
+                return line.find(kProbe) != std::string::npos;
+            })) {
+            own_probes.push_back(name);
+        }
+        for (std::size_t index = 0; name != "GpuTestGuard.hpp" && index < lines->size(); ++index) {
+            const std::string &line = (*lines)[index];
+            // A harness may define the query; asking it outside the header skips past KATAGLYPHIS_REQUIRE_GPU.
+            if (line.find(kCaptureQuery) != std::string::npos
+                && line.find("bool " + kCaptureQuery) == std::string::npos) {
+                own_capture_checks.push_back(name + ":" + std::to_string(index + 1));
+            }
+        }
+        for (std::size_t index = 0; index < lines->size(); ++index) {
+            std::smatch match;
+            if (!std::regex_search((*lines)[index], match, kGpuTest)) { continue; }
+            ++checked;
+            bool guarded = false;
+            for (std::size_t body = index + 1; body < lines->size() && !(*lines)[body].starts_with("TEST("); ++body) {
+                if ((*lines)[body].find("SKIP_WITHOUT_GPU();") != std::string::npos) {
+                    guarded = true;
+                    break;
+                }
+            }
+            if (!guarded) { unguarded.push_back(match[1].str() + "." + match[2].str() + " in " + name); }
+        }
+    }
+
+    EXPECT_GT(checked, 0U) << "found no TEST(GoldenRender|Integration, ...) under " << tests_dir.string();
+    EXPECT_TRUE(unguarded.empty()) << unguarded.size()
+                                   << " GPU test(s) do not start with GpuTestGuard.hpp's SKIP_WITHOUT_GPU():"
+                                   << joinViolations(unguarded);
+    EXPECT_TRUE(own_probes.empty()) << "file(s) probe GLFW for Vulkan themselves, past KATAGLYPHIS_REQUIRE_GPU:"
+                                    << joinViolations(own_probes);
+    EXPECT_TRUE(own_capture_checks.empty()) << "line(s) ask a harness for frame capture themselves; "
+                                               "SKIP_WITHOUT_FRAME_CAPTURE, or frameCaptureAvailable in a "
+                                               "helper, fails them under KATAGLYPHIS_REQUIRE_GPU:"
+                                            << joinViolations(own_capture_checks);
+}
+
+namespace {
+
+// Whether the last line in [begin, end) naming KATAGLYPHIS_REQUIRE_GPU exports it as 1, unindented when `top_level`.
+bool requires_gpu_before(const std::vector<std::string> &lines, std::size_t begin, std::size_t end, bool top_level)
+{
+    for (std::size_t index = std::min(end, lines.size()); index > begin; --index) {
+        const std::string &line = lines[index - 1];
+        const std::size_t start = line.find_first_not_of(" \t");
+        if (start == std::string::npos || line[start] == '#') { continue; }
+        if (line.find("KATAGLYPHIS_REQUIRE_GPU") == std::string::npos) { continue; }
+        return line.compare(start, std::string::npos, "export KATAGLYPHIS_REQUIRE_GPU=1") == 0
+               && (!top_level || start == 0);
+    }
+    return false;
+}
+
+// The first line at or after `from` that is not a comment and contains `needle`.
+std::optional<std::size_t>
+  first_shell_line_with(const std::vector<std::string> &lines, std::size_t from, std::string_view needle)
+{
+    for (std::size_t index = from; index < lines.size(); ++index) {
+        const std::size_t start = lines[index].find_first_not_of(" \t");
+        if (start != std::string::npos && lines[index][start] != '#'
+            && lines[index].find(needle) != std::string::npos) {
+            return index;
+        }
+    }
+    return std::nullopt;
+}
+
+}// namespace
+
+// The GPU suites skip on a broken Xvfb unless the run exports KATAGLYPHIS_REQUIRE_GPU, and ctest counts a skip as a pass.
+TEST(BuildIntegrity, LinuxGpuRunsRequireTheGpuBeforeTheirVirtualDisplay)
+{
+    const fs::path scripts_dir = repoRoot() / "scripts" / "linux";
+
+    const fs::path ctest_path = scripts_dir / "run-ctest.sh";
+    const auto ctest = readFileLines(ctest_path);
+    ASSERT_TRUE(ctest.has_value()) << "could not open " << ctest_path.string();
+    const auto branch = first_shell_line_with(*ctest, 0, R"(== "--virtual-display" ]])");
+    ASSERT_TRUE(branch.has_value()) << ctest_path.string() << " has no --virtual-display branch";
+    const auto ctest_display = first_shell_line_with(*ctest, *branch, "xvfb-run");
+    ASSERT_TRUE(ctest_display.has_value()) << ctest_path.string() << "'s --virtual-display branch runs no xvfb-run";
+    EXPECT_TRUE(requires_gpu_before(*ctest, *branch + 1, *ctest_display, false))
+      << ctest_path.string() << "'s --virtual-display branch must export KATAGLYPHIS_REQUIRE_GPU=1 before its xvfb-run";
+
+    const fs::path riscv_path = scripts_dir / "run-riscv64-tests.sh";
+    const auto riscv = readFileLines(riscv_path);
+    ASSERT_TRUE(riscv.has_value()) << "could not open " << riscv_path.string();
+    const auto riscv_display = first_shell_line_with(*riscv, 0, "xvfb-run");
+    ASSERT_TRUE(riscv_display.has_value()) << riscv_path.string() << " runs its GPU shard under no xvfb-run";
+    // Unindented: the shard run is the script's top-level flow, which an export inside a branch would not reach.
+    EXPECT_TRUE(requires_gpu_before(*riscv, 0, *riscv_display, true))
+      << riscv_path.string() << " must export KATAGLYPHIS_REQUIRE_GPU=1 at top level before the GPU shard's xvfb-run";
+}
+
 // Fuzz targets have no negative filter, so one missing from the Windows lane's array silently never runs.
 TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 {
@@ -2991,6 +3108,95 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
 
     EXPECT_TRUE(violations.empty()) << violations.size()
                                     << " texture-slot sampling ownership violation(s):" << joinViolations(violations);
+}
+
+// Triangles, hits and bounces pick their own slot; without NonUniform that is undefined (VUID-RuntimeSpirv-NonUniform-06274).
+TEST(BuildIntegrity, EveryMaterialTextureIndexIsNonUniform)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::regex kIndex(R"(\b(textures|textureSamplers)\[([^\]]*)\])");
+    std::vector<std::string> violations;
+    std::size_t wrapped = 0;
+    std::error_code error;
+    for (const auto &shader_path : shaderSourceFiles(slang_root, error)) {
+        if (error) { break; }
+        // The Vulkan tree only: OxidANT's shared sources also emit WGSL, where slangc refuses NonUniformResourceIndex.
+        const fs::path relative = shader_path.lexically_normal().lexically_relative(slang_root.lexically_normal());
+        if (relative.empty() || *relative.begin() == ".." || *relative.begin() == "build") { continue; }
+        const std::string relative_path = relative.generic_string();
+        const auto lines = readFileLines(shader_path);
+        if (!lines) { continue; }
+        for (std::size_t index = 0; index < lines->size(); ++index) {
+            const std::string &line = (*lines)[index];
+            for (auto it = std::sregex_iterator(line.begin(), line.end(), kIndex); it != std::sregex_iterator(); ++it) {
+                const std::string subscript = (*it)[2].str();
+                if (subscript == "MAX_TEXTURE_COUNT") { continue; }
+                if (subscript.starts_with("NonUniformResourceIndex(")) {
+                    ++wrapped;
+                    continue;
+                }
+                violations.push_back(relative_path + ":" + std::to_string(index + 1) + ": " + (*it)[0].str());
+            }
+        }
+    }
+
+    // Control: the 14 sample sites index both arrays, so a renamed array cannot pass this by matching nothing.
+    EXPECT_GE(wrapped, 28U) << "found only " << wrapped << " NonUniformResourceIndex-wrapped texture indices";
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " textures[]/textureSamplers[] index(es) without NonUniformResourceIndex:"
+                                    << joinViolations(violations);
+}
+
+// Indexing a sampled-image array by a variable is valid only with shaderSampledImageArrayDynamicIndexing enabled.
+TEST(BuildIntegrity, TheDeviceRequestsSampledImageArrayDynamicIndexing)
+{
+    const fs::path device_path = repoRoot() / "Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp";
+    const auto text = readFileText(device_path);
+    ASSERT_TRUE(text.has_value()) << "could not open " << device_path.string();
+    static const std::regex kRequest(
+      R"(features2\.features\.shaderSampledImageArrayDynamicIndexing\s*=\s*available_features2\.features\.shaderSampledImageArrayDynamicIndexing)");
+    EXPECT_TRUE(std::regex_search(*text, kRequest))
+      << device_path.string()
+      << " no longer enables shaderSampledImageArrayDynamicIndexing where the device offers it, though every material "
+         "texture is sampled through a variable index";
+}
+
+// TextureLoadUnit and SkyBoxUnit test the fit helpers alone; past the limit only these calls keep vkCheck from aborting.
+TEST(BuildIntegrity, OversizedTexturesAreFittedBeforeTheirImageIsCreated)
+{
+    struct UploadSite
+    {
+        const char *file;
+        const char *function;
+        std::vector<std::string> inOrder;
+    };
+    const std::array<UploadSite, 2> sites{ {
+      { "Src/GraphicsEngineVulkan/scene/Texture.cpp",
+        "Kataglyphis::Texture::uploadRgba",
+        { "getMaxImageDimension2D()", "fitRgba8ToLimit(", "mipLevelCount(", "createImage(" } },
+      { "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
+        "SkyBox::loadCubeMap",
+        { "getMaxImageDimensionCube()", "fitCubemapFacesToLimit(", "uploadCubeMapFaces(" } },
+    } };
+    for (const UploadSite &site : sites) {
+        const fs::path path = repoRoot() / site.file;
+        const auto text = readFileText(path);
+        ASSERT_TRUE(text.has_value()) << "could not open " << path.string();
+        const auto span = function_body_span(*text, site.function);
+        ASSERT_TRUE(span.has_value()) << path.string() << " no longer defines " << site.function;
+        const std::string body = text->substr(span->first, span->second - span->first);
+        std::size_t previous = 0;
+        for (const std::string &needle : site.inOrder) {
+            const std::size_t at = body.find(needle);
+            ASSERT_NE(at, std::string::npos) << site.function << " no longer calls " << needle;
+            EXPECT_GE(at, previous)
+              << site.function << " reaches " << needle
+              << " out of order: read the device limit, fit to it, then size and create the image";
+            previous = at;
+        }
+    }
 }
 
 // Row members only inside their accessors and structs: direct use can pair one slot's row0 with another's row1.
@@ -4556,12 +4762,6 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
 
 }// namespace
 
-// The scan follows names, so a callee of an overload the WGSL entry never calls reads as reachable: {source, callee}.
-const std::vector<std::pair<std::string, std::string>> kWgslCalleesOfAnUncalledOverload{
-    // Only march_clouds' seven-argument overload calls it, and neither renderer calls that overload any more.
-    { "clouds/cloud_march.slang", "cloud_ambient_analytic_sky" },
-};
-
 // The CI backstop mtimes cannot be: each reachable function must appear in the WGSL, helpers as `fn <name>_<digits>(`.
 TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 {
@@ -4577,7 +4777,6 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
                                      << slang_root.string() << " - the definition scan itself is broken";
 
     std::vector<std::string> violations;
-    std::vector<bool> overload_exemption_used(kWgslCalleesOfAnUncalledOverload.size(), false);
     int checked_destinations = 0;
     int forward_reachable_count = 0;
     // A module beside its importer (forward/, tracer/) must reach the scan too, not only common/.
@@ -4607,14 +4806,6 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
         }
 
         for (const auto &name : reachable_names) {
-            const auto exemption = std::find(kWgslCalleesOfAnUncalledOverload.begin(),
-              kWgslCalleesOfAnUncalledOverload.end(),
-              std::pair<std::string, std::string>{ mapping.slang_source, name });
-            if (exemption != kWgslCalleesOfAnUncalledOverload.end()) {
-                overload_exemption_used[static_cast<std::size_t>(
-                  exemption - kWgslCalleesOfAnUncalledOverload.begin())] = true;
-                continue;
-            }
             const std::regex pattern("fn " + name + "(_[0-9]+)?\\(");
             if (!std::regex_search(dest_text, pattern)) {
                 violations.push_back(mapping.slang_source + " -> " + fs::relative(dest, repo_root).string()
@@ -4642,12 +4833,6 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
       << " Slang function(s) reachable from a wgslMap source's own entry point(s) are missing from the "
          "checked-in WGSL that source generates: "
       << joinViolations(violations);
-    for (std::size_t idx = 0; idx < kWgslCalleesOfAnUncalledOverload.size(); ++idx) {
-        EXPECT_TRUE(overload_exemption_used[idx])
-          << kWgslCalleesOfAnUncalledOverload[idx].first << " no longer reaches "
-          << kWgslCalleesOfAnUncalledOverload[idx].second
-          << " by name - delete its kWgslCalleesOfAnUncalledOverload row";
-    }
 }
 
 namespace {
@@ -6825,6 +7010,25 @@ TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
           << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from "
           << radiance_path.string();
     }
+}
+
+// The furnace goldens grade against a C++ copy of brdf.slang, whose floor and guard once drifted from the shader's.
+TEST(BuildIntegrity, FurnaceOracleUsesBrdfSlangsConstants)
+{
+    const fs::path brdf_path = sharedSlangRoot() / "common" / "brdf.slang";
+    const auto contents = readFileText(brdf_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << brdf_path.string() << " - is the OxidANT submodule checked out?";
+    std::smatch floor;
+    ASSERT_TRUE(std::regex_search(*contents, floor, std::regex(R"(MIN_ROUGHNESS\s*=\s*([0-9.]+)\s*;)")))
+      << brdf_path.string() << " no longer defines MIN_ROUGHNESS as a literal";
+    EXPECT_DOUBLE_EQ(std::stod(floor[1].str()), Kataglyphis::Test::GoldenMetrics::kBrdfMinRoughness)
+      << "GoldenMetrics.hpp's kBrdfMinRoughness differs from " << brdf_path.string();
+    std::smatch guard;
+    ASSERT_TRUE(std::regex_search(
+      *contents, guard, std::regex(R"(max\(\s*denom\s*\*\s*denom\s*,\s*([0-9.]+(?:[eE][-+]?[0-9]+)?)\s*\))")))
+      << brdf_path.string() << " no longer guards distribution_ggx's denom * denom with a literal";
+    EXPECT_DOUBLE_EQ(std::stod(guard[1].str()), Kataglyphis::Test::GoldenMetrics::kBrdfNdfDenominatorGuard)
+      << "GoldenMetrics.hpp's kBrdfNdfDenominatorGuard differs from " << brdf_path.string();
 }
 
 // The sky a missing skybox bakes is OxidANT's procedural one: AnalyticSky.hpp copies sky_model.slang's three colours.
@@ -10388,6 +10592,7 @@ TEST(BuildIntegrity, EveryRendererFeedbackFieldReachesTheEditor)
 {
     const std::map<std::string, std::string> kExempt{
         { "publishedModelIndex", "applyRendererFeedback moves the editor's selection to it; nothing displays it" },
+        { "publishedSun", "applyRendererFeedback writes it into the editor's Sun, which the Sun inspector shows" },
     };
     expect_every_member_has_a_gui_control("RendererFeedback",
       "Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx",
@@ -10691,4 +10896,167 @@ TEST(BuildIntegrity, ViolationListsGoThroughTheSharedJoiner)
 
     EXPECT_TRUE(violations.empty()) << violations.size()
                                     << " hand-rolled join loop(s) found, budget is 0: " << joinViolations(violations);
+}
+
+namespace {
+
+// OxidANT's bridge files: the cxx_bridge crate's src/*.rs that open a `#[cxx::bridge(` module.
+std::set<std::string> oxidant_bridge_files(const fs::path &bridge_src)
+{
+    std::set<std::string> files;
+    std::error_code error;
+    for (fs::directory_iterator it(bridge_src, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".rs") { continue; }
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        const bool bridges = std::any_of(
+          lines->begin(), lines->end(), [](const std::string &line) { return line.starts_with("#[cxx::bridge("); });
+        if (bridges) { files.insert(it->path().filename().string()); }
+    }
+    return files;
+}
+
+// The FILES of Src/CMakeLists.txt's corrosion_add_cxxbridge call; nullopt without one.
+std::optional<std::set<std::string>> cxxbridge_files_in_cmake(const std::string &cmake_text)
+{
+    static const std::regex kCall(R"(corrosion_add_cxxbridge\(([^)]*)\))");
+    std::smatch call;
+    if (!std::regex_search(cmake_text, call, kCall)) { return std::nullopt; }
+    std::istringstream words(call[1].str());
+    std::set<std::string> files;
+    bool in_files = false;
+    for (std::string word; words >> word;) {
+        if (in_files) { files.insert(word); }
+        in_files = in_files || word == "FILES";
+    }
+    return files;
+}
+
+}// namespace
+
+// Corrosion generates a header per listed file, so a bridge file left out has no C++ half to call or link.
+TEST(BuildIntegrity, CxxbridgeFilesAreExactlyOxidantsBridgeFiles)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path bridge_src = repo_root / "third_party" / "OxidANT" / "crates" / "cxx_bridge" / "src";
+    if (!sourceExists(bridge_src)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+
+    const fs::path cmake_path = repo_root / "Src" / "CMakeLists.txt";
+    const auto cmake_text = readFileText(cmake_path);
+    ASSERT_TRUE(cmake_text.has_value()) << "could not read " << cmake_path.string();
+    const auto listed = cxxbridge_files_in_cmake(*cmake_text);
+    ASSERT_TRUE(listed.has_value()) << cmake_path.string() << " has no corrosion_add_cxxbridge call";
+
+    const std::set<std::string> declared = oxidant_bridge_files(bridge_src);
+    ASSERT_GE(declared.size(), 2U) << "found only " << declared.size() << " bridge file(s) under "
+                                   << bridge_src.string() << " - the scan broke";
+    EXPECT_EQ(*listed, declared)
+      << "corrosion_add_cxxbridge's FILES must name each OxidANT bridge file, and only those";
+}
+
+// OxidANT's release profile aborts on a panic, so guarded() caught none and a loader panic ended a Release engine.
+TEST(BuildIntegrity, NonDebugBuildsLinkTheBridgeWithAPanicThatUnwinds)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path cargo_path = repo_root / "third_party" / "OxidANT" / "Cargo.toml";
+    if (!sourceExists(cargo_path)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+
+    const auto cargo = readFileText(cargo_path);
+    ASSERT_TRUE(cargo.has_value()) << "could not read " << cargo_path.string();
+    static const std::regex kBridgeProfile(R"((^|\n)\[profile\.bridge\]\s*\n([^\[]*))");
+    std::smatch table;
+    ASSERT_TRUE(std::regex_search(*cargo, table, kBridgeProfile)) << cargo_path.string() << " has no [profile.bridge]";
+    const std::string keys = table[2].str();
+    EXPECT_TRUE(std::regex_search(keys, std::regex(R"((^|\n)\s*inherits\s*=\s*"release")")))
+      << "[profile.bridge] must inherit the release profile";
+    EXPECT_TRUE(std::regex_search(keys, std::regex(R"((^|\n)\s*panic\s*=\s*"unwind")")))
+      << "[profile.bridge] must unwind, or guarded()'s catch_unwind catches nothing";
+
+    const fs::path cmake_path = repo_root / "Src" / "CMakeLists.txt";
+    const auto cmake_text = readFileText(cmake_path);
+    ASSERT_TRUE(cmake_text.has_value()) << "could not read " << cmake_path.string();
+    static const std::regex kSelection(
+      R"(set_property\(\s*TARGET\s+kataglyphis_cxx_bridge\s+PROPERTY\s+)"
+      R"(INTERFACE_CORROSION_CARGO_PROFILE\s+"?\$<\$<NOT:\$<CONFIG:Debug>>:bridge>"?\s*\))");
+    EXPECT_TRUE(std::regex_search(*cmake_text, kSelection))
+      << cmake_path.string() << " must select OxidANT's bridge profile for every configuration but Debug";
+}
+
+// A generated bridge header in a module interface or header would rebuild every importer on each bridge edit.
+TEST(BuildIntegrity, BridgeHeadersAreIncludedFromCppFilesOnly)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::regex kBridgeInclude(R"((^|\n)\s*#\s*include\s*[<"]oxidant_bridge/)");
+    std::vector<std::string> violations;
+    std::size_t cpp_includers = 0;
+    std::error_code error;
+    for (const fs::path &root : { repo_root / "Src", repo_root / "Test" }) {
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            const auto extension = path.extension();
+            if (!it->is_regular_file(error)
+                || (extension != ".cpp" && extension != ".ixx" && extension != ".hpp" && extension != ".h")) {
+                continue;
+            }
+            const auto text = readFileText(path);
+            if (!text || !std::regex_search(*text, kBridgeInclude)) { continue; }
+            if (extension == ".cpp") {
+                ++cpp_includers;
+            } else {
+                violations.push_back(fs::relative(path, repo_root).generic_string());
+            }
+        }
+    }
+
+    EXPECT_GE(cpp_includers, 2U) << "found only " << cpp_includers << " .cpp file(s) including oxidant_bridge/ headers"
+                                 << " - the scan broke";
+    EXPECT_TRUE(violations.empty()) << "include oxidant_bridge/ headers from .cpp files only:"
+                                    << joinViolations(violations);
+}
+
+// GCC 16 redefines the standard library when a textual include follows an import that brought it (Main.cpp did).
+TEST(BuildIntegrity, NoTranslationUnitIncludesAHeaderAfterAnImport)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::regex kImport(R"(^import\s+[\w.:]+\s*;)");
+    static const std::regex kModuleDeclaration(R"(^(export\s+)?module(\s+[\w.:]+)?\s*;)");
+    std::vector<std::string> late_includes;
+    std::size_t importers = 0;
+    std::error_code error;
+    for (const fs::path &root : { repo_root / "Src", repo_root / "Test" }) {
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
+            const auto lines = readFileLines(it->path());
+            // A module unit keeps its includes in the global module fragment, before any import.
+            if (!lines || std::any_of(lines->begin(), lines->end(), [](const std::string &line) {
+                    return std::regex_search(line, kModuleDeclaration);
+                })) {
+                continue;
+            }
+            bool imported = false;
+            for (std::size_t index = 0; index < lines->size(); ++index) {
+                const std::string &line = (*lines)[index];
+                if (std::regex_search(line, kImport)) {
+                    importers += imported ? 0U : 1U;
+                    imported = true;
+                } else if (imported && line.starts_with("#include")) {
+                    late_includes.push_back(
+                      fs::relative(it->path(), repo_root).generic_string() + ":" + std::to_string(index + 1));
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(importers, 10U) << "found only " << importers << " .cpp file(s) that import a module - the scan broke";
+    EXPECT_TRUE(late_includes.empty()) << "move these #includes above the file's first import, or the gcc job fails:"
+                                       << joinViolations(late_includes);
 }

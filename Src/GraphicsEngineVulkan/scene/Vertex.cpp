@@ -13,23 +13,6 @@ module kataglyphis.vulkan.vertex;
 namespace vertex {
 
 // The loaders validate indices; an out-of-range one here is an unchecked out-of-bounds write.
-void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
-{
-    for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
-        Vertex &v0 = vertices[indices[i + 0]];
-        Vertex &v1 = vertices[indices[i + 1]];
-        Vertex &v2 = vertices[indices[i + 2]];
-
-        const glm::vec3 faceNormal = glm::cross(v1.position - v0.position, v2.position - v0.position);
-        // Zero-area triangle: keep the old normal instead of normalizing a zero vector to NaN.
-        if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
-        const glm::vec3 n = glm::normalize(faceNormal);
-        v0.normal = n;
-        v1.normal = n;
-        v2.normal = n;
-    }
-}
-
 void fillMissingFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
 {
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
@@ -38,6 +21,7 @@ void fillMissingFlatNormals(std::span<Vertex> vertices, std::span<const unsigned
         Vertex &v2 = vertices[indices[i + 2]];
 
         const glm::vec3 faceNormal = glm::cross(v1.position - v0.position, v2.position - v0.position);
+        // Zero-area triangle: keep the old normal instead of normalizing a zero vector to NaN.
         if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
         const glm::vec3 n = glm::normalize(faceNormal);
         if (glm::dot(v0.normal, v0.normal) <= 1e-12F) { v0.normal = n; }

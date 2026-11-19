@@ -43,6 +43,40 @@ No P0 item is open.
   `linux-riscv64.yml` with `gpu-tests`) and, on the RX 9070 XT, the golden suites plus
   `Invoke-SyncValidation.ps1`. The cloud and glossy-material goldens are the ones to watch.
 
+The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
+checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
+work into wgpu-free Rust crates, never per-mesh or per-draw calls; share GPU work as dual-target
+Slang in OxidANT, each renderer keeping its own host pass; a bridged function returns errors as values,
+takes UTF-8 paths and runs inside `guarded()`.
+
+- [ ] `C++` **Draw the C++ sky into the HDR scene target with OxidANT's `sky.slang`** (L, plan C2).
+  The sky goes untonemapped into the swapchain at stage 400, and post rebuilds sky radiance by
+  inverting ACES and un-premultiplying BLEND; that blocks exposure, bloom, another tonemapper and HDR
+  output. Give `sky/sky.slang` an `SV_VulkanVertexID` entry, fill its uniforms from C++ (GlobalUBO has no
+  `inv_view_proj`) and draw it at depth 1 with LessOrEqual into the RGBA16F offscreen: forward between
+  the opaque and BLEND draws, deferred into the final target, ray-traced frames where `tracedDepth` is 1,
+  never over path-traced frames. Keep `AnalyticSky.hpp`'s bake and mode 1's per-pixel `untonemapped()`.
+  Delete the swapchain sky pass, BB's `skybox.slang`, post's sky rebuild and its ACES inverse. Barriers
+  change: sync validation in CI, then the RX 9070 XT goldens.
+- [ ] `C++` **FXAA for the C++ raster** (M, plan C3). It has no anti-aliasing at all. Compile only
+  OxidANT's `fxaa.slang` `fs_main` to SPIR-V with BB's `SV_VulkanVertexID` fullscreen vertex; post renders
+  into a new UNORM LDR intermediate, and a final stage runs FXAA into the swapchain, then ImGui. Off,
+  Raster or Always, default Always (forward has no MSAA). The harness pins it off except in an
+  edge-gradient golden and its negative control.
+- [ ] `Shared` **Multi-scatter GGX energy compensation in `brdf.slang`** (L, plan N1). The furnace
+  oracles measure the loss: a white metal returns 0.671 at roughness 0.7, a white dielectric exceeds 1
+  at grazing angles. Add Turquin's compensation and replace (1 - F) with (1 - E_spec(mu)), keeping
+  (1 - metallic). Take E_ss from a small table baked by one shared Slang entry from `brdf.slang`'s own
+  functions, or from a fit whose maximum error is measured with the goldens' quadrature; Karis'
+  approximation is off by -32 % to +30 %. OxidANT's `ibl_ambient` changes with it. Done when both
+  renderers' furnace tests hold within 0.01 of 1 at every roughness and angle.
+- [ ] `Shared` **Run the shared Slang test kernels on both targets against one vector file** (L, plan
+  X3). The dual-target guards only prove that the code compiles. Turn them into kernels that write
+  every public function's outputs, keep inputs, f64 references and tolerances in OxidANT's
+  `shaders/tests/vectors/`, and check them from a Rust runner (wgpu on lavapipe) and a C++ GPU-suite
+  runner (llvmpipe, lavapipe). Only `brdf_test`, `noise_test` and `path_estimator_test` are dual-target
+  today; BB's two move into OxidANT. Every later shared module adds its kernel and vectors.
+
 ### P2: medium
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
@@ -55,9 +89,256 @@ No P0 item is open.
   `docs/source/gpu-golden-testing.md`, with the `excluded=3` count and the `--gtest_filter` line
   `buildIntegritySuite.cpp` pins in it.
 
+Bridge foundations:
+
+- [ ] `Rust` **Create `kataglyphis_render_core` with its first consumer, the settings drift test** (M,
+  plan I1 and B10 step 1). A wgpu-free OxidANT crate (glam, bytemuck, kataglyphis_assets, no features)
+  that `cxx_bridge` may link and `webgpu_renderer` re-exports. Move only what this consumer needs: the
+  plain settings data, ranges and `sanitize` out of `clouds.rs` and `shadow_settings.rs`. Bridge
+  `default_scene_settings`, `setting_ranges` and `sanitize`, and add a commit-suite test comparing them
+  field by field with `GUISceneSharedVars{}` and the GUI's ranges. Every later module moves in the change
+  that consumes it. Name the crate in OxidANT's AGENTS.md, `docs/crates.md`, the licence policy and the
+  coverage floors.
+- [ ] `CI` **Gate the bridge's crate graph** (S, plan X4). Give the hub's `stage-cargo-licenses.py` a
+  forbidden-package list (wgpu, naga, winit, egui, tokio, gstreamer, ort) and a package budget measured
+  today (55 runtime crates), add `#![forbid(unsafe_code)]` and the clippy denies for unwrap, expect and
+  panic outside tests to `kataglyphis_assets` (rewrite `ktx2_zstd.rs:63`).
+- [ ] `C++` **Upload the bridge's arrays without a second copy** (M, plan I13). `GltfLoaderRust.cpp`
+  copies every array again, about 0.5 GB for the Colosseum, and holds both copies at the peak. Keep the
+  bridge result behind a pimpl, upload from `std::span` over `data()`/`size()` and feed encoded images to
+  `Texture::createFromMemory` from the `rust::Vec`. Measure `BM_GltfLoaderParseCpu_Colosseum`,
+  `BM_UploadCpuHalf` and peak RSS before and after.
+- [ ] `C++` **One glTF fixture set in kataglyphis_assets, with a C++ round trip over all of it** (M,
+  plan X5). Move `webgpu_renderer/tests/assets` to `assets/tests/assets`, delete BB's three byte-identical
+  copies in `Resources/Models/GltfTest`, and add a parameterised `GltfParseUnit` round trip over every
+  fixture (morphs, skins, Basis, cameras, unlit, alpha) that checks the mapping into Mesh, MeshRange and
+  ObjMaterial. Parser-behaviour twins then live in Rust only. Paths go through `resolveModelPath`;
+  update the arm64 staging list and its Pester fixture.
+- [ ] `C++` **Cross-renderer parity entries and shared frustum vectors** (M, plan I5). `parity_*` bridge
+  entries for the viewport remap, the lens and the model transform, asserted against the C++ functions;
+  one JSON file of frustum verdicts (visible, caster) read by `frustumSuite.cpp` and a Rust test. A
+  hit-identity test against the Rust tracer waits until OBJ goes through Rust.
+- [ ] `C++` **One GPU-timing taxonomy for both renderers** (S, plan I5). Time Forward,
+  GBuffer+DeferredLighting, RayTrace and PathTrace as separate scopes inside Main, use one 32-sample window
+  and `writeTimestamp2`, and update `gpu-timing-budgets.json` and `Compare-RendererTimings`' pass list.
+- [ ] `CI` **The rest of "a skip is not a pass"** (S, plan X2). Since 2026-11-19 `KATAGLYPHIS_REQUIRE_GPU`
+  turns `SKIP_WITHOUT_GPU` into a failure under `run-ctest.sh --virtual-display` and in the riscv64 GPU
+  shards. Still counted as passes: the hardware-RT `GTEST_SKIP`s on llvmpipe, which need a reusable
+  `--fail-on-skipped REGEX` in the hub's `ctest-run.sh` (ctest's Skipped, not the two Disabled goldens),
+  and the Rust renderer tests, once `run-cargo-tests.sh` exports the variable: that step has no Xvfb and the
+  hub's `cargo_test.sh` runs `cargo test --all`, so check the crate selection first.
+
+Loader:
+
+- [ ] `Assets` **Bake glTF default morph weights in `flat.rs`** (S, plan B2). `cube_morph.gltf` has weight
+  1.0 and no animation: Rust draws it morphed, C++ neutral. Blend with `node.weights()` or `mesh.weights()`
+  through the existing `blend_morph_targets` before baking world space; a `flat.rs` position test and a
+  `GltfParseUnit` twin.
+- [b] `Assets` **Bake the skin's rest pose in `flat.rs`** (M, plan B2; **waits for the owner's rule** for
+  unweighted vertices of a skinned node: Rust applies the node transform, `flat.rs` and
+  `GltfParseUnit.SkinnedNodeTransformIsIgnored` keep identity). Moves `joint_matrices`, `skin_vertex` and
+  `Pose` from the tracer into kataglyphis_assets.
+- [b] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6; **waits for the OBJ rules** under
+  Owner decisions). Move `obj_to_gltf` and `obj_glb` into assets, relax the parser to tinyobjloader's
+  tolerance, dispatch `.obj` in the bridge by extension and fold `ObjLoader` into `GltfLoader`, the cgltf
+  way (switch, field-by-field diff suite over the fixtures and scenes, flip, delete). Deletes ObjLoader,
+  tinyobjloader's 13,865-line header and its submodule, `computeTangents`, `fillMissingFlatNormals`,
+  `vertexTangentSuite`, `obj_parsing_fuzz_test` and `BM_ObjParse_*`. Pass through texture bytes stb can
+  read instead of re-encoding them; keep parse time against `BM_ObjLoaderParseCpu_Suzanne`.
+- [b] `Assets` **Texture ingest in Rust** (L, plan B5; **after the zero-copy upload**). Step 1: prefer
+  `KHR_texture_basisu` sources and deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with
+  `Texture::createFromLevels` in C++ (basisu-only glTFs draw untextured in C++ today). Step 2: PNG and
+  JPEG through the image crate with the shared `generate_mips`, which takes the Colosseum's 69-image
+  decode off the render thread; measure the peak first, the RGBA8 chains likely exceed 1 GB, or stream
+  per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new work.
+- [b] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9; **waits for
+  render_core and the start-pose decision**). Cameras, the active one and `asset.copyright` in FlatModel;
+  a bridged `frame_scene` returns eye, yaw and pitch in the C++ convention (yaw + 180, -pitch), clip
+  planes, fly speed and shadow distance. Shows the credit with an `ATTRIBUTION.txt` fallback, or Sponza
+  shows none. `framing.rs` must first lose its ties to `OrbitCamera` and `fly.rs` (winit).
+
+Shaders:
+
+- [ ] `Shared` **Shared Slang leaf modules** (M, plan I8). In OxidANT `shaders/common`, each with a SPIR-V
+  guard row: `hdr_safe` with the bit-test NaN check and one `HDR_MAX` (delete BB's same-named file in the
+  same pin bump, or it shadows the shared one), `aces_tonemap_inverse` in `aces.slang`, the trace
+  constants (TMIN, TMAX, the surface offset), `fullscreen_ndc_to_uv`, one PI and one minimum roughness;
+  the CPU copies in `clouds.rs` in the same sweep. Keep `noise.slang`: its dual-target import test is
+  protected by AGENTS.md.
+- [b] `Shared` **`camera_ray.slang` for the seven camera-ray copies** (S, plan I8; **waits for the
+  ray-origin decision**). Needs `inv_projection` and `inv_view`, or an `inv_view_proj` in the C++
+  GlobalUBO.
+- [b] `Shared` **Single-source constants and complete layout gates** (M, plan I7; after the leaf
+  modules). `static const int` lines in a file under `Resources/ShadersSlang/common` that C++ includes
+  (not the reverse: the C++ header sits outside every `-I` root); `limits.slang` in OxidANT; a naga layout
+  table over the ~20 unchecked Rust Pod structs; ArrayStride, struct size and `cloudAmbientTop/Bottom` in
+  the C++ SPIR-V contract.
+- [ ] `Shared` **Make OxidANT's WGSL-only passes target-neutral, and probe workgroup atomics** (S, plan
+  I12). `ssao.slang` and `gpu_cull.slang` hard-code WebGPU's ndc-to-uv; `ibl.slang` has its own fullscreen
+  triangle, which mirrors faces and the LUT on Vulkan. Then port `histogram.wgsl` to Slang: slangc
+  2026.17 emits `Atomic<uint>` for both its storage and its workgroup atomics (checked 2026-11-19;
+  `InterlockedAdd` fails), not yet run through wgpu. SPIR-V rows for each pass come with the C++ change
+  that binds it.
+- [b] `Shared` **Shared material Slang** (L, plan I9; after the leaf modules; **waits for the metallic
+  clamp and MASK encoding decisions**). Normal mapping with the BC5 z rebuild, the texture transform and
+  `gltf_material.slang`; each exists three times today. The C++ push constants shrink from 116 to 68 bytes.
+- [b] `Shared` **Shared shadow and lighting Slang** (L, plan I10; after the leaf modules; **waits for the
+  cascade-retry and G-buffer-packing decisions**). Dual-target punctual shadows, `cascade_visibility`,
+  `surface_lighting`, `gbuffer.slang` and the cloud upsample.
+- [b] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; **waits for six
+  decisions**: furnace NEE, camera miss, bounce miss, ray origin, call sites, depth ray).
+  `trace_path<S: ITracedScene>` in OxidANT, C++ over RayQuery, Rust over `bvh_traverse`; BB's
+  `traced_hit.slang` folds the hit fetch of rchit and the path tracer and the three MASK candidate loops.
+
+C++ catches up:
+
+- [ ] `C++` **An analytic ambient term with an Ambient slider** (S-M, plan C4 stage 1). C++ shades
+  `brdf_direct`, shadows, punctual lights and emission only, so shadowed ground gets no sky light. Port
+  Rust's environment-free path (hemisphere irradiance plus a roughness-blended sky reflection) into a
+  shared Slang function used by forward, deferred and rchit.
+- [b] `C++` **IBL and the occlusion map for C++** (L, plan C4 stages 2-3; **waits for the IBL-source and
+  G-buffer-packing decisions**). Rust bakes its IBL from the procedural panorama, not the drawn cube; both
+  renderers take one source.
+- [b] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; after the HDR sky; **waits for the
+  AO-scope decision**). Exposure as Rust's two-float storage buffer, bloom from OxidANT's shader, SSAO on
+  the ambient term, auto exposure once the histogram is Slang.
+- [ ] `C++` **One set of C++ scene targets** (M-L, plan C6 step 1). One set per swapchain image, and both
+  raster paths always allocated, cost 116 B/px (about 229 MiB at 1080p); afterwards 12 B/px forward or
+  32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
+- [b] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2; after one set of targets and
+  render_core). Every pass reads the swapchain extent today and must take a scene extent instead.
+- [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
+  device thread onto the `AsyncModelParse` worker and batch texture uploads through a staging ring; route
+  the editor reload through the worker and keep the old scene until the new one lands (a failed reload
+  empties the scene today); keep the TLAS with `eAllowUpdate` and update it in the frame's command buffer
+  instead of `waitIdle` plus a rebuild on every transform change, resetting the path-traced mean
+  explicitly. `addModel` stays synchronous for its 33 golden callers.
+- [ ] `C++` **Tile the path-tracer dispatch; furnace, sample count and restart in the editor** (M, plan
+  C8). Port Rust's `plan()`: at most 4 M path segments per dispatch in 256 px tiles and sample chunks, the
+  mean counting samples, the seed from the absolute sample index. At the GUI maxima one dispatch can hold
+  about 2,000 rays per pixel against Windows' 2 s TDR.
+- [ ] `C++` **Editor parity: F12 screenshot, model argument, drop, fly speed, sky label** (M, plan C9).
+  An offscreen F12 capture into `screenshots/`, an absl positional model argument, `glfwSetDropCallback`
+  through the asynchronous load, a fly-speed slider, and the Skybox subtitle reading Procedural when
+  `skyIsAnalytic()`.
+- [ ] `C++` **Device-loss breadcrumbs and `VK_EXT_device_fault`** (M, plan C10). Markers at the debug-label
+  scopes (the path tracer records inside `main`), `vkCmdWriteBufferMarker2AMD` or NV checkpoints where
+  present, the fault query after a loss; feature-gated, best effort.
+- [ ] `C++` **Name Vulkan objects and keep debug labels without the validation layer** (S, plan X8).
+  Enable `VK_EXT_debug_utils` whenever the instance lists it, so the existing labels reach Profile and
+  Release captures; a `nameObject` helper on the per-pass targets and pipelines. Naming every object is a
+  later M.
+- [ ] `CI` **GPU-assisted validation for buffer-device-address reads** (M, plan X6). `robustBufferAccess`
+  is off and every shader reads materials through raw BDA. A weekly GPU-AV subset on Linux llvmpipe and an
+  `Invoke-SyncValidation.ps1` switch; scan the log for GPU-AV VUIDs.
+- [ ] `CI` **Compare the two renderers' frames in Linux CI** (M, plan X1). Move the frame metrics into
+  `GoldenMetrics.hpp` with tests (one bucket rule; the PowerShell copy uses Rec. 601, the goldens Rec.
+  709), render Dinosaurs with `headless_render` on llvmpipe in the `static-analysis` job and grade it
+  structurally. Keep `Compare-RendererPixels.ps1`'s modes, thresholds and exit codes.
+- [b] `C++` **Apply the decided cross-renderer rules** (L, plan C11; **waits for the BLEND-shadow,
+  ray-origin and miss-sky decisions**). The shared `cascade_visibility` with the coarser-cascade retry
+  (C++ counts a missed cascade as lit), then each decided rule in both renderers with a golden on each side.
+- [b] `C++` **4x MSAA on the forward path** (L, plan C3 step 2; after FXAA). PipelineBuilder hard-codes one
+  sample; a depth resolve for the clouds.
+
+New in both:
+
+- [b] `Shared` **A tonemapper choice and dither** (M, plan N2; after the HDR sky, in both renderers). Narkowicz
+  ACES, Khronos PBR Neutral and AgX selected by a uniform; dither in the encoded domain. Both renderers
+  invert ACES for the LDR cube today, and AgX has no closed-form inverse.
+- [b] `Shared` **Path-traced reference mode, firefly clamp and .hdr export** (L, plan N7; after the
+  shared integrator). A target sample count with a resolve-only path in C++, `clamp_sample` off by default,
+  a Radiance `.hdr` encoder in a wgpu-free crate returning bytes, EXR natively.
+- [b] `Shared` **Debug views, wireframe, debug lines and a GPU memory panel** (L, plan N5; after the leaf
+  modules). Material and G-buffer channels from a shared `debug_view.slang`, wireframe as a line list over
+  an edge index buffer, `vmaGetHeapBudgets` with `VK_EXT_memory_budget`.
+- [b] `Shared` **Cloud shadows** (M-L, plan N3; after the shared shadow Slang and integrator). Bake
+  T = exp(-light_optical_depth) into a light-space map covering the cloud box's projection; raster, RT and
+  both path tracers read the same map.
+- [ ] `Assets` **KHR_mesh_quantization** (S-M, plan N4). gltfpack output fails in both renderers. Accept the
+  integer formats in `accessor_check.rs` and read them with a reader that honours `normalized`; C++
+  needs no change.
+- [ ] `Assets` **EXT_meshopt_compression** (M-L, plan N4). A pure-Rust decoder, fuzzed through
+  `load_flat`'s proptest, with a licence row; then Colosseum-web can be republished through gltfpack.
+- [b] `Shared` **A view file shared by both renderers** (L, plan N6; after the settings schema and the
+  framing). serde types bridged as `view_to_json`/`view_from_json`, `--view` in both applications and the
+  golden dump; it unblocks a per-pixel renderer comparison.
+- [b] `Shared` **Better path-tracer sampling** (XL in seven parts, plan N8; after the shared integrator).
+  Power-weighted light picks (S), emitter NEE with MIS (L), environment importance sampling (M-L),
+  Sobol or blue noise (M), ray cones (M), a thin lens (S), stochastic BLEND (S-M). One GPU-free alias-table
+  builder in kataglyphis_assets that survives NaN and zero-sum weights.
+
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `Assets` **Load options instead of an environment read inside the shared loader** (S, plan X14).
+  `KATAGLYPHIS_MIKKTSPACE_TANGENTS` changes C++ geometry from inside `gltf_loader.rs`. A `GltfLoadOptions`
+  shared struct, `load_gltf_flat_with`, the old names as default wrappers; the read moves to each
+  application's start.
+- [ ] `C++` **Editor parity, part 2: adapter by name, orbit and wheel zoom, one key table** (M, plan C9).
+  `--adapter` or `KATAGLYPHIS_ADAPTER` by name substring with the list in the Renderer tab; orbit and
+  zoom with Rust's constants; one table drives the handlers and the key panel.
+- [ ] `CI` **A parity ledger of the GPU tests** (M, plan X18). `Test/parity-ledger.json` maps each of the
+  95 C++ GPU tests to its Rust twin or a reason; BuildIntegrity fails on an unmapped test or a stale row.
+- [ ] `Shared` **Rotate the photo sky with the sun's azimuth** (M, plan X19), off by default until the owner
+  picks one. The three C++ cube lookups (with post's cloud composite) take a yaw; Rust needs only a flag
+  in `sky.slang`.
+- [b] `Assets` **Skybox faces and the cloud ambient from Rust** (M, plan B4; after render_core). One
+  face decode and average for both renderers; the navy gate needs a new form.
+- [b] `C++` **Fit the cascades in Rust** (M, plan B7; after render_core and the parity entries). The
+  first per-frame bridge call (about 1 µs, no allocation); brings Rust's near plane at the nearest caster
+  to devices without depthClamp, where C++ loses tall casters' shadows.
+- [b] `C++` **Spot-light face masks** (M, plan B8; **measure the cube cost on a GPU host first**). One
+  `cone_face_mask` in Rust; Rust skips faces, C++ needs per-mask pipelines or an `SV_ViewID` cull.
+- [b] `Shared` **Keep punctual shadow cubes whose light and casters did not change** (L, plan X10;
+  **measure first**). A fingerprint per slot; C++ tracks the layout per slot instead of discarding the
+  whole cube array every frame.
+- [b] `C++` **LOD chains at load time from Rust's QEM** (L, plan B11; per-level material ids first).
+  Harden `qem.rs` (`remap[i]` panics on bad indices), return each level's error, pick the level by
+  screen-space error at draw time; shadows and BLAS keep full detail.
+- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; **waits for the decision on
+  FlatModel as a baked snapshot**). Extract the animator from `ForwardRenderer` into a wgpu-free crate
+  first; skinning in shared Slang, a compute pre-skin with a BLAS update for the traced modes.
+- [b] `C++` **GPU occlusion culling, then multi-draw indirect** (L + L, plan C12; **waits for the Hi-Z
+  versus queries decision**). GPU frustum culling alone gains nothing over the exact CPU cull.
+- [b] `C++` **Tiled punctual lights from the bridged tile grid** (M, plan C13; after render_core and the
+  shared lighting Slang).
+- [b] `C++` **The ray-traced mode as a ray-query kernel; a compute-BVH fallback** (L + L, plan C14;
+  **waits for the decision on keeping the RT pipeline**). Step 1 loses the RT-pipeline versus ray-query
+  A/B that localised the device loss; step 2 only after a no-RT device runs the raster path at all.
+- [b] `C++` **Runtime-sized texture descriptor arrays** (L, plan C15; **waits for the Raspberry Pi 5
+  decision and a host run**). `PARTIALLY_BOUND` with a capacity from the device limits; the fixed 128
+  slots stay as the fallback. Since 2026-11-19 every material module wraps its index in
+  `NonUniformResourceIndex` and so declares `SampledImageArrayNonUniformIndexing`: on a device without
+  `shaderSampledImageArrayNonUniformIndexing` (v3dv) that is a validation error at module creation, where
+  the indexing was silently undefined before. The Pi decision settles that device too.
+- [b] `Shared` **HDR output and a grading LUT** (L, plan N2; after the tonemapper choice).
+- [b] `Shared` **PCSS with an angular sun, cascade blending, contact shadows** (plan N3; after one shared
+  cascade selection; contact shadows need a forward depth prepass).
+- [b] `C++` **glTF instancing** (L, plan N4). A BLAS per instanced range, TLAS instances, instanced draws.
+- [b] `Shared` **Preferences, camera bookmarks and flythroughs** (M + L, plan N6; after the view file).
+- [b] `Shared` **Temporal anti-aliasing, upscaling, specular anti-aliasing** (XL, plan N9; after FXAA and
+  render scale).
+- [b] `Shared` **KHR_materials extensions** (XL, plan N10; after the shared material Slang, N1 and the
+  texture ingest). ior and specular first.
+- [b] `Shared` **Editor scene tools: outline, GPU picking, light and material inspectors, gizmo, undo**
+  (XL, plan N11; after the settings schema and the framing).
+- [b] `Shared` **Hillaire atmosphere with aerial perspective and height fog** (L, plan N12; **waits for
+  the default-sky decision**).
+- [b] `Shared` **A shared SVGF denoiser** (L, plan N13; after the shared integrator and the reference mode).
+- [b] `Shared` **Ray-traced shadows and AO in the deferred raster path** (L, plan N14; after the TLAS
+  update and SVGF).
+- [b] `Shared` **GTAO with bent normals; SSR with Hi-Z pyramids** (L + L, plan N15; after the C++ ambient
+  and IBL; the pyramid waits for the Hi-Z decision).
+- [b] `Shared` **GPU particles** (XL, plan N16; parked behind the P2 work). The Rust half first, as the
+  roadmap's compute-playground row.
+- [b] `Shared` **Reversed-Z for the camera; photometric light units with an EV100 camera** (L + L, plan
+  N17; **two owner decisions**).
+- [b] `Shared` **Coverage-preserving MASK mips** (M, plan X11; after the texture ingest).
+- [b] `Shared` **A VSync choice with one default in both renderers** (S, plan X15; **the owner picks the
+  default**).
+- [b] `Assets` **The full Rust settings schema as cxx shared structs** (L, plan B10; when the view file
+  needs it).
 
 ---
 
@@ -69,6 +350,23 @@ committed to.
 - **No standing omni shadow allocation.** `pointShadowMap` went as dead allocation; the
   punctual-light cubes that replaced it (2026-11-17, `PunctualShadowMaps`) allocate only for a
   scene's shadowed point and spot lights and keep a 1x1 placeholder otherwise. Keep it that way.
+- **Panics come back through the bridge in every build** (2026-11-18). OxidANT's `bridge` cargo profile
+  (release with `panic = "unwind"`) serves BB's non-Debug configurations, so `guarded()` turns a panic
+  into an error there too.
+- **C++ adopts a glTF's first directional light as the Sun** (2026-11-18), as Rust does: direction and
+  colour from the file, the intensity stays the GUI's.
+- **The vendored KTX tree, toml++ and the configure-time `cargo install` of cxxbridge are gone**
+  (2026-11-18), as dead dependencies.
+
+Still open from the 2026-11-18 plan, each blocking the entries that name it: the Sun default (C++
+radiance 10 and white against Rust 5 and warm white with ambient 0.35), the cloud wind range (±50
+against ±100), BLEND shadow casting, what a path-traced camera miss shows, the traced ray origin
+(eye or near plane), Rust's G-buffer packing for C++, the shared OBJ rules (d < 1, map_Ke without Ke,
+the default colour, roughness without Ns, the mesh split, strict or tolerant parsing, GIF/PSD/PIC/PNM),
+the IBL source, AO on ambient only, framing in place of the start poses, the shader-reload scope, the
+rule for unweighted vertices of skinned nodes, FlatModel as a baked snapshot, Rust's LOD default, the RT
+pipeline as a showcase, the Raspberry Pi 5 fallback, Hi-Z against queries, the default sky, reversed-Z,
+photometric units, the VSync default and the photo sky's yaw default.
 
 ## Rust renderer ideas (OxidANT)
 
@@ -88,10 +386,6 @@ committed to.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
   `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
-
-- **[P3] Cheaper punctual-light cubes.** Every shadowed point or spot light redraws all six
-  faces every frame. A spot light needs only the faces its cone reaches, and a cube whose light
-  and casters did not move could keep last frame's depth; measure on a GPU host first.
 
 ## Recurring validation runs
 

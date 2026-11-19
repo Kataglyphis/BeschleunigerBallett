@@ -126,6 +126,13 @@ struct GUIRendererSharedVars
     int pathTracingMaxBounces = 8;
 };
 
+/// A loaded glTF's first directional light: the unit direction its light travels and its linear colour.
+struct PublishedSun
+{
+    std::array<float, 3> direction{ 0.0F, -1.0F, 0.0F };
+    std::array<float, 3> color{ 1.0F, 1.0F, 1.0F };
+};
+
 /// What the renderer reports back for the editor to show, copied out of each per-frame call.
 struct RendererFeedback
 {
@@ -148,6 +155,12 @@ struct RendererFeedback
 
     /// Set by the update a load landed in: the library row now showing, -1 when the library does not list it.
     std::optional<int> publishedModelIndex;
+
+    /// Set with publishedModelIndex when the loaded model has a Sun, which becomes the editor's: OxidANT's rule.
+    std::optional<PublishedSun> publishedSun;
+
+    /// Frames in the path tracer's running mean after the last frame it traced; a restart begins at 1.
+    unsigned int pathTracingAccumulatedFrames = 0;
 };
 
 // 0 raster, 1 ray traced, 2 path traced: the one rule the renderer draws by and the editor shows.

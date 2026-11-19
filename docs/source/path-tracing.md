@@ -99,10 +99,11 @@ estimators is biased).
   0.901 now. Until 2026-11 the kernel had no specular lobe, so a metal only
   lost its diffuse share and a glTF material at the default `metallicFactor`
   1 rendered black.
-- **Next-event estimation**: one shadow ray per bounce toward the GUI
-  directional light; an unoccluded hit adds
-  `throughput * brdf_direct(n, v, l, ..., dirLight.color.rgb * dirLight.color.w)`,
-  what forward shades for that hit before its cascaded shadow. NEE is the only
+- **Next-event estimation**: two shadow rays per bounce, one toward the GUI
+  directional light and one toward a punctual light picked uniformly from
+  `punctual_light_count()`, its radiance times that count so the estimate stays
+  unbiased; an unoccluded light adds `throughput * brdf_direct(n, v, l, ..., radiance)`,
+  what forward shades for that hit before its shadows. NEE is the only
   connection to the GUI light; before it, the mode's sole light source was an
   accidental radiance-1 "white furnace" on miss.
 - **Bounce**: the RNG, the per-pixel seed, Russian roulette and the bounce

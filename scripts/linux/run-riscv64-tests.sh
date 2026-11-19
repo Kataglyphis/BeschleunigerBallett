@@ -112,6 +112,8 @@ test -f "${GPU_SHIM_DIR}/libkata_fp16_helpers.so" || { err "[gpu] the shim did n
 # The full path-traced histories outrun 300 min on a slow runner; docs/source/gpu-golden-testing.md § The riscv64 light variant.
 export KATAGLYPHIS_PT_GOLDEN_VARIANT="${KATAGLYPHIS_PT_GOLDEN_VARIANT:-light}"
 info "[gpu] path-traced goldens: KATAGLYPHIS_PT_GOLDEN_VARIANT=${KATAGLYPHIS_PT_GOLDEN_VARIANT}"
+# A GPU test that would skip fails instead (Test/commit/VulkanEngine/GpuTestGuard.hpp), so a broken Xvfb cannot pass.
+export KATAGLYPHIS_REQUIRE_GPU=1
 # --no-tests=error: a shard whose filter matches nothing must fail, not pass empty; -V keeps a passing test's log, variant line included.
 xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" \
   env LD_PRELOAD="${GPU_SHIM_DIR}/libkata_fp16_helpers.so" \

@@ -12,6 +12,5 @@ vulkan-memory-allocator/LICENSE.txt=third_party/VULKAN_MEMORY_ALLOCATOR/LICENSE.
 spdlog/LICENSE=third_party/SPDLOG/LICENSE
 fmt/fmt.license.rst=third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst
 nlohmann-json/LICENSE.MIT=third_party/NLOHMANN_JSON/LICENSE.MIT
-tomlplusplus/LICENSE=third_party/tomlplusplus/LICENSE
 kloofendal_43d_clear_puresky/CC0-1.0.txt=licenses/CC0-1.0.txt
 kloofendal_43d_clear_puresky/kloofendal_43d_clear_puresky.NOTICE=licenses/kloofendal_43d_clear_puresky.NOTICE

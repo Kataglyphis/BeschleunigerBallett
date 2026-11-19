@@ -100,21 +100,6 @@ function(_myproject_configure_windows_antlr_target target)
   target_compile_options("${target}" PRIVATE /FIchrono)
 endfunction()
 
-function(_myproject_find_or_install_cxxbridge out_var)
-  find_program(_myproject_cxxbridge cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  if(NOT _myproject_cxxbridge OR _myproject_cxxbridge MATCHES "-NOTFOUND$")
-    message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
-    find_program(_myproject_cargo cargo PATHS "$ENV{HOME}/.cargo/bin/")
-    if(NOT _myproject_cargo OR _myproject_cargo MATCHES "-NOTFOUND$")
-      message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
-    endif()
-    execute_process(COMMAND ${_myproject_cargo} install cxxbridge-cmd)
-    find_program(_myproject_cxxbridge cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  endif()
-
-  set(${out_var} "${_myproject_cxxbridge}" PARENT_SCOPE)
-endfunction()
-
 function(_myproject_resolve_kompute_vulkan_version out_var)
   if(DEFINED Vulkan_VERSION)
     set(_myproject_kompute_vulkan_version "${Vulkan_VERSION}")
@@ -389,7 +374,6 @@ _myproject_add_system_interface_library(stb STB)
 _myproject_add_system_interface_library(imgui IMGUI IMGUI/backends)
 _myproject_add_system_interface_library(glm GLM)
 _myproject_add_system_interface_library(vma VULKAN_MEMORY_ALLOCATOR/include)
-_myproject_add_system_interface_library(ktx KTX/include KTX/other_include/KHR)
 
 add_subdirectory(GLFW)
 
@@ -398,9 +382,6 @@ _myproject_force_cache_bool(SPDLOG_NO_EXCEPTIONS ON "Disable SPDLOG exceptions (
 add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
-
-_myproject_force_cache_bool(TOMLPLUSPLUS_BUILD_MODULES ON "Enable tomlplusplus C++ module support")
-add_subdirectory(tomlplusplus)
 
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
 # with this trick IMGUI will be excluded from time consuming static code analysis
@@ -431,8 +412,6 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
   GIT_TAG c4786e7ae2d5ade784aca29448df362c874ed04e)
 FetchContent_MakeAvailable(Corrosion)
-
-_myproject_find_or_install_cxxbridge(CXXBRIDGE)
 
 option(KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND
        "Build the Kompute playground and its kompute dependency (exceptions enabled; not part of the engine)" OFF)

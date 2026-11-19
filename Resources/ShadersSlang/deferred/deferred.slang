@@ -53,7 +53,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        texColor = textures[textureId].Sample(textureSamplers[textureId], base_color_uv(In.texCoords, material));
+        texColor = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material));
         if (alpha_masked_out(material, texColor.a * In.fragmentColor.a * alphaTexSample)) discard;
         texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }

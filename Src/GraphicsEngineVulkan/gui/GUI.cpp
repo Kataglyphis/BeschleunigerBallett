@@ -34,6 +34,7 @@ import kataglyphis.shared.imgui.style;
 import kataglyphis.shared.imgui.widgets;
 
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.oxidant_diagnostics;
 import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.window;
 import kataglyphis.vulkan.scene_config;
@@ -105,6 +106,7 @@ struct GUI::StudioState
     std::size_t frameTimeCount = 0;
 
     std::string deviceName;
+    std::string oxidantVersion;
     std::uint32_t apiVersion = 0;
     bool cpuDevice = false;
     ImGuiTextFilter modelFilter;
@@ -1313,6 +1315,15 @@ void GUI::renderRenderInspector()
         studioSlider("##samples_per_pixel", &guiRendererSharedVars.pathTracingSamplesPerPixel, 1, 64);
         studioPropertyLabel("Max bounces", "Segments per path; a change restarts the accumulation");
         studioSlider("##max_bounces", &guiRendererSharedVars.pathTracingMaxBounces, 1, 16);
+        studioPropertyLabel("Accumulated", "Samples per pixel in the running mean");
+        std::array<char, 32> accumulated{};
+        std::snprintf(accumulated.data(),
+          accumulated.size(),
+          "%llu samples",
+          static_cast<unsigned long long>(rendererFeedback.pathTracingAccumulatedFrames)
+            * static_cast<unsigned long long>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)));
+        ImGui::AlignTextToFramePadding();
+        mutedText(accumulated.data());
         endStudioProperties();
     }
     studioEndDisabled();
@@ -1536,6 +1547,7 @@ void GUI::renderFloatingWindows()
             ImGui::TextUnformatted(value);
         };
         about_row("Version", PROJECT_VERSION);
+        about_row("OxidANT", studio->oxidantVersion.c_str());
         about_row("Build", kBuildType);
         about_row("GPU", studio->deviceName.c_str());
         about_row("API", api.data());
@@ -1586,6 +1598,7 @@ void GUI::create_gui_context(Window *frontend_window,
 
     const vk::PhysicalDeviceProperties properties = device->getPhysicalDevice().getProperties();
     studio->deviceName = std::string(properties.deviceName.data());
+    studio->oxidantVersion = Kataglyphis::oxidantVersion();
     studio->apiVersion = properties.apiVersion;
     studio->cpuDevice = properties.deviceType == vk::PhysicalDeviceType::eCpu;
 

@@ -28,14 +28,25 @@ back-to-back on the calling (device-owning) thread.
 ### The glTF parser
 
 `GltfLoader::parseCpu` is OxidANT's loader, the one the WebGPU renderer uses,
-called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge`, flattened
-by `crates/assets/src/flat.rs`) and copied into the arrays by
+called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge/src/gltf.rs`,
+flattened by `crates/assets/src/flat.rs`) and copied into the arrays by
 `GltfLoaderRust.cpp`. It bakes world space, reverses a mirrored node's winding,
 gives a primitive without `NORMAL` one vertex per corner with its face's
-normal, and hands textures over as the file's encoded bytes, deduped on
-`(image, sampler, srgb)`. It takes a texture's core `source` only, so a
-`KHR_texture_basisu`-only texture gets no slot (stb reads no KTX2), and a panic
-or error comes back as a failed parse, never an exception.
+normal, keeps only the vertices a primitive's indices use, and hands textures
+over as the file's encoded bytes, deduped on `(image, sampler settings, srgb)`.
+It takes a texture's core `source` only, so a `KHR_texture_basisu`-only texture
+gets no slot (stb reads no KTX2). The document, its buffers and its images must
+be regular files, the buffers and images inside the document's directory.
+
+An error, or a panic in any build, comes back as a failed parse, never an
+exception or an abort: every bridged call runs inside OxidANT's `guarded()`,
+and the non-Debug builds link the bridge with OxidANT's `bridge` cargo profile
+(`Src/CMakeLists.txt`), release with `panic = "unwind"`, since the release
+profile's abort let a loader panic end the engine. The path crosses as UTF-8
+(`Shared::utf8PathBytes`): a Windows `std::string` is ANSI, which the bridge
+rejects. The loader's warnings come back as values too: right after the call,
+on the thread that made it (the parse worker), `logOxidantRecords` drains
+OxidANT's `take_log_records()` into spdlog.
 
 It walks a single scene, not every node in the document: the default scene if
 the document names one, else the first of `scenes` (`walk_nodes` in
@@ -56,6 +67,11 @@ The same walk reads each visited node's `KHR_lights_punctual` light, mesh or no 
 node's world transform (the Rust loader's `read_light`). The lights ride
 on the `Model`, so `adoptParsed` moves them with the geometry, and the renderer places them by the
 model's matrix when it packs the punctual-light buffer.
+
+The first directional light is the Sun instead, both renderers' rule (OxidANT's `CpuScene::take_sun`):
+it leaves the lights, rides on the `Model` as `getSun()`, and the load's `RendererFeedback::publishedSun`
+hands its direction and colour to the editor's Sun in `applyRendererFeedback`. The radiance stays the
+editor's, since glTF gives lux. A direction its node scales to nothing is no Sun and no light either.
 
 ## The async parse/upload split
 
@@ -173,14 +189,14 @@ field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 | `emission` | `emissiveFactor`, scaled by `KHR_materials_emissive_strength` when present (`1.0` otherwise) | `Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `shininess` | — (pinned to `1.0`, the OBJ-only fallback `material_roughness()` falls back to; `roughness_factor` is not read here) | `Ns` | `material_rules.slang`'s `material_roughness()`, OBJ materials only |
 | `dissolve` | `baseColorFactor.a` | `d` | `material_rules.slang`'s `alpha_masked_out()` and, for BLEND, `blend_coverage()` |
-| `textureID` | dedup'd slot into `textureImages` (`flat.rs`'s `Slots`, keyed on `(image, sampler, srgb)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on `(resolved texture path, bool srgb)`) | all five entry points, via `texture_offset + material.textureID` (see below) |
+| `textureID` | dedup'd slot into `textureImages` (`flat.rs`'s `Slots`, keyed on `(image, sampler settings, srgb)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on `(resolved texture path, bool srgb)`) | all five entry points, via `texture_offset + material.textureID` (see below) |
 | `sampler` (not an `ObjMaterial` field — tracked separately, index-parallel with `textureImages`, via `GltfLoader::getTextureSamplerDescs()`) | `textures[].sampler`'s wrap modes and mag/min/mipmap filters, mapped to `GltfSamplerDesc` (`vulkan_base/SamplerBuilder.ixx`) | — (OBJ has no sampler concept; every OBJ texture keeps the repeat/linear/linear default) | `Model::addSampler`, when building the texture's `vk::Sampler` |
 | `srgb` (not an `ObjMaterial` field — tracked separately, index-parallel with `textures`/`textureImages`, via `ObjLoader::getTextureSrgbFlags()`/`GltfLoader::getTextureSrgbFlags()`) | `true` for base-colour/emissive views, `false` for the normal and metallic-roughness views | `true` for `map_Kd`/`map_Ke`, `false` for `norm`/`map_Bump`/`map_d` | `Texture::createFromMemory`/`createFromFile`, selecting `eR8G8B8A8Srgb` vs. `eR8G8B8A8Unorm` |
 | `alphaCutoff` | `material.alpha_cutoff` when `alphaMode == MASK`, else `-1` | — | `material_rules.slang`'s `alpha_masked_out()`, `shadow_map.slang` |
 | `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture (the extension is per-slot — see the normal/metallic-roughness/emissive row pairs below for the other three); identity rows if the extension is absent on this slot | — | `base_color.slang`'s `base_color_uv()` |
 | `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]`; glTF's default `1` without the block and for the no-material fallback | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`), `path_tracing.slang` (`f0` and `brdf_direct`, for NEE and the sampled lobes) |
 | `roughness` | `pbrMetallicRoughness.roughnessFactor`, clamped `[0,1]`; glTF's default `1` without the block and for the no-material fallback, so a glTF material never reaches the `-1` ("unauthored") sentinel | — | `material_rules.slang`'s `material_roughness()` |
-| `emissiveTextureID` | dedup'd slot into `textureImages` (same `Slots` key as `textureID` — an emissive view naming the same `(image, sampler)` pair as the base-colour view lands on the same slot); `-1` if the material has no `emissiveTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=true)`); `-1` if the material has no `map_Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
+| `emissiveTextureID` | dedup'd slot into `textureImages` (same `Slots` key as `textureID` — an emissive view with the same image and sampler settings as the base-colour view lands on the same slot); `-1` if the material has no `emissiveTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=true)`); `-1` if the material has no `map_Ke` | all four shading paths, via `common/emission.slang`'s `material_emission()` |
 | `normalTextureID` | dedup'd slot into `textureImages` (same `Slots` key as `textureID`/`emissiveTextureID`); `-1` if the material has no `normalTexture` | dedup'd slot into `textures` (same `pathSlot` map as `textureID`, keyed `(resolved path, srgb=false)`); `norm` preferred over `map_Bump`/`map_bump`/`bump` when both are present; `-1` if the material has neither directive | all four shading paths, via `common/normal_map.slang`'s `apply_normal_map()`, using `Vertex::tangent` for the TBN basis |
 | `normalScale` | `normalTexture.scale`; `1.0` if the material has no `normalTexture` | the winning normal-directive's own `-bm` option (`norm`'s if present, else `map_Bump`/`map_bump`/`bump`'s); `1.0` if neither directive is present | `common/normal_map.slang`'s `apply_normal_map()` |
 | `metallicRoughnessTextureID` | dedup'd slot into `textureImages` (same `Slots` key as `textureID`/`emissiveTextureID`/`normalTextureID`), uploaded linear; `-1` if the material has no `pbrMetallicRoughness` block or no `metallicRoughnessTexture` | — | `material_rules.slang`'s `material_metallic_roughness()` in all four shading paths; `path_tracing.slang` uses the metallic (`.x`) half only, having no roughness term |
@@ -202,14 +218,15 @@ array bound at `TEXTURES_BINDING`/`SAMPLER_BINDING`, sized by
 `const int MAX_TEXTURE_COUNT = 128;`. Both loaders economise against that
 budget:
 
-- **glTF dedup by image, sampler and colour space** —
+- **glTF dedup by image, sampler settings and colour space** —
   OxidANT's `flat.rs` (`Slots`) keys each slot on the triple
-  `(image, sampler, srgb)`, not the material
+  `(image, sampler settings, srgb)`, not the material
   or the texture slot (base-colour vs. emissive vs. normal). One
   decode+upload per triple, however many materials or texture slots reference
   it: a material whose base-colour and emissive views name the same PNG shares
-  one slot (`textureID == emissiveTextureID`). Two textures that share an image
-  but name different samplers, or need different colour spaces, still get
+  one slot (`textureID == emissiveTextureID`), and so do two equal sampler
+  objects. Two textures that share an image but sample it differently, or need
+  different colour spaces, still get
   distinct slots; collapsing them would make the second texture's wrap/filter
   settings unobservable, or upload one of the two through the wrong
   `VkFormat`. A base-colour/normal pair sharing one image therefore gets
@@ -253,8 +270,8 @@ in `ObjLoader::loadVertices`) and fill missing normals, differently: the glTF
 loader gives a primitive without a `NORMAL` accessor one vertex per triangle
 corner with its face's normal; `ObjLoader::loadVertices` calls
 `scene/Vertex`'s `fillMissingFlatNormals`, which fills only corners left at a zero
-normal (a file with no `vn` at all behaves like `computeFlatNormals`; one with
-`vn` on only some faces keeps those).
+normal (a file with no `vn` at all gets every corner its face's normal; one
+with `vn` on only some faces keeps those).
 
 ## `map_Kd` texture path resolution
 
@@ -303,6 +320,6 @@ Where:
   assert this at parse level, and `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp`
   unit-tests `sliceMeshRange` directly.
 - Each mesh currently shares the full `materials` array (its `materialIndex`
-  holds the original indices). Trimming to a per-mesh material subset is an
-  optional optimisation tracked in the backlog; the slice loop is already
-  shared in `sliceMeshRange`, so that trim edits one place for both loaders.
+  holds the original indices). Trimming to a per-mesh material subset would be
+  an optional optimisation, which no backlog entry tracks; the slice loop is
+  already shared in `sliceMeshRange`, so that trim edits one place for both loaders.

@@ -5,17 +5,22 @@ corrosion_import_crate(
   CRATE_TYPES
   staticlib
   CRATES
-  kataglyphis_cxx_bridge)
+  kataglyphis_cxx_bridge
+  LOCKED)
 
 include(CorrosionToolchain)
 kataglyphis_configure_corrosion_target(kataglyphis_cxx_bridge ADDRESS_SANITIZER ${myproject_ENABLE_SANITIZER_ADDRESS})
+# OxidANT's release profile aborts on a panic, where guarded() must catch it: Debug keeps dev, which unwinds too.
+set_property(TARGET kataglyphis_cxx_bridge PROPERTY INTERFACE_CORROSION_CARGO_PROFILE $<$<NOT:$<CONFIG:Debug>>:bridge>)
 
+# One file per bridged area, each its own header (oxidant_bridge/<area>.h); BuildIntegrity holds the list to the crate.
 corrosion_add_cxxbridge(
   oxidant_bridge
   CRATE
   kataglyphis_cxx_bridge
   FILES
-  lib.rs)
+  gltf.rs
+  diagnostics.rs)
 
 add_subdirectory(GraphicsEngineVulkan)
 # Off by default: kompute's headers throw, so the playground cannot use the no-exceptions options.

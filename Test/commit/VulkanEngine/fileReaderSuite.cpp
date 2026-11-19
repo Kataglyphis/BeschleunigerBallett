@@ -9,6 +9,8 @@
 #include <gtest/gtest.h>
 #include <vulkan/vulkan.hpp>
 
+#include "scene/TextureFit.hpp"
+
 import kataglyphis.shared.util.file_reader;
 import kataglyphis.shared.util.resource_paths;
 import kataglyphis.vulkan.texture;
@@ -241,6 +243,51 @@ TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
+}
+
+// Past maxImageDimension2D vmaCreateImage failed and vkCheck aborted; uploadRgba now starts at the first level that fits.
+TEST(TextureLoadUnit, AnOversizedTextureIsHalvedUntilItFitsTheDeviceLimit)
+{
+    const std::vector<unsigned char> grey(8U * 4U * 4U, 200);
+    const Kataglyphis::FittedRgba8 fitted = Kataglyphis::fitRgba8ToLimit(grey.data(), 8, 4, 2, false);
+    EXPECT_EQ(fitted.width, 2U);
+    EXPECT_EQ(fitted.height, 1U);
+    EXPECT_EQ(fitted.halvings, 2U);
+    ASSERT_EQ(fitted.texels.size(), 2U * 1U * 4U);
+    for (const unsigned char texel : fitted.texels) { EXPECT_EQ(texel, 200); }
+    EXPECT_EQ(Kataglyphis::mipLevelCount(fitted.width, fitted.height), 2U) << "the mips must follow the fitted extent";
+    EXPECT_EQ(Kataglyphis::mipLevelCount(8, 4), 4U);
+
+    // An odd side drops its last row or column, as a mip chain does: 5x3 is 2x1 one level down.
+    const std::vector<unsigned char> odd(5U * 3U * 4U, 10);
+    const Kataglyphis::FittedRgba8 odd_fitted = Kataglyphis::fitRgba8ToLimit(odd.data(), 5, 3, 2, true);
+    EXPECT_EQ(odd_fitted.width, 2U);
+    EXPECT_EQ(odd_fitted.height, 1U);
+    EXPECT_EQ(odd_fitted.halvings, 1U);
+}
+
+TEST(TextureLoadUnit, ATextureWithinTheDeviceLimitKeepsItsTexels)
+{
+    std::vector<unsigned char> rgba(4U * 4U * 4U);
+    for (size_t i = 0; i < rgba.size(); ++i) { rgba[i] = static_cast<unsigned char>(i); }
+    const Kataglyphis::FittedRgba8 fitted = Kataglyphis::fitRgba8ToLimit(rgba.data(), 4, 4, 4, true);
+    EXPECT_EQ(fitted.halvings, 0U);
+    EXPECT_EQ(fitted.width, 4U);
+    EXPECT_EQ(fitted.height, 4U);
+    EXPECT_EQ(fitted.texels, rgba);
+}
+
+TEST(TextureLoadUnit, HalvingAveragesSrgbColourInLinearSpace)
+{
+    // Black and white: linear 0.5 encodes to 188, where a byte average gives 128; Rust's generate_mips does the same.
+    const std::vector<unsigned char> rgba = { 0, 0, 0, 0, 255, 255, 255, 255 };
+    const Kataglyphis::FittedRgba8 srgb = Kataglyphis::halveRgba8(rgba.data(), 2, 1, true);
+    ASSERT_EQ(srgb.texels.size(), 4U);
+    EXPECT_EQ(srgb.texels[0], 188);
+    EXPECT_EQ(srgb.texels[2], 188);
+    EXPECT_EQ(srgb.texels[3], 128) << "alpha is linear in an sRGB texture too";
+    const Kataglyphis::FittedRgba8 unorm = Kataglyphis::halveRgba8(rgba.data(), 2, 1, false);
+    EXPECT_EQ(unorm.texels[0], 128);
 }
 
 // A scratch tree pins the Resources/ walk independent of the real repo layout.

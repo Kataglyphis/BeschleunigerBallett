@@ -142,6 +142,12 @@ class Scene
     /// Resources/ like the model library; empty while nothing has loaded or
     /// after a failed reload. Additional models leave it alone.
     [[nodiscard]] const std::string &getLoadedModelPath() const { return loadedModelPath; }
+    /// The primary model's Sun, its glTF's first directional light; none for an OBJ or while nothing has loaded.
+    [[nodiscard]] std::optional<PunctualLight> getLoadedModelSun() const
+    {
+        const Model *model = loadedModelPath.empty() ? nullptr : findModel(0);
+        return model != nullptr ? model->getSun() : std::nullopt;
+    }
     std::vector<std::shared_ptr<Model>> const &get_model_list() const { return model_list; };
 
     /// Every model's punctual lights placed by its matrix, packed for the punctual-light buffer.

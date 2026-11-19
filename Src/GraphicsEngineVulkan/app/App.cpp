@@ -34,7 +34,7 @@ auto Kataglyphis::App::run() -> int
     int const window_height = 900;
 
     float delta_time = 0.0F;
-    float last_time = 0.0F;
+    double last_time = 0.0;
 
     std::unique_ptr<Kataglyphis::Frontend::Window> const window =
       std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height, true);

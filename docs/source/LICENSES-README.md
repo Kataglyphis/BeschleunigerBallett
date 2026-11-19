@@ -1,6 +1,6 @@
 # Licences of the open-source dependencies
 
-The open-source dependencies this repository uses, with their licences. The list was checked against `git submodule status`, `third_party/CMakeLists.txt` (FetchContent), the vendored sources under `third_party/` and `third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`. Every licence entry comes from the cited licence file, read on disk, or from the `license` field of the Cargo metadata, not from assumptions. For legally binding terms, the cited licence file itself is authoritative.
+The open-source dependencies this repository uses, with their licences. The list was checked against `git submodule status`, `third_party/CMakeLists.txt` (FetchContent) and `third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`; nothing under `third_party/` is vendored. Every licence entry comes from the cited licence file, read on disk, or from the `license` field of the Cargo metadata, not from assumptions. For legally binding terms, the cited licence file itself is authoritative.
 
 Created in the repository on request. Verification history:
 
@@ -22,6 +22,8 @@ Created in the repository on request. Verification history:
 - **2026-11-16 (late night)**: OxidANT moved to `ae01294`. `LICENSE` is unchanged. `Cargo.lock` replaces `ruzstd` 0.7.3 with 0.9.1 (MIT, its own `LICENSE`; RUSTSEC-2026-0344), now a direct dependency of the renderer, while `basisu` loses its `zstd` feature. The wasm demo's staged texts follow the version; the C++ bridge still does not depend on the renderer, so the packaged crate texts are unchanged.
 - **2026-11-16 (night)**: OxidANT moved to `04f7a0e`. `LICENSE`, `Cargo.lock` and every `Cargo.toml` are unchanged across the range, so the staged crate texts are unchanged.
 - **2026-11-16 (evening)**: OxidANT moved to `216b0a1`. `LICENSE`, `Cargo.lock` and every `Cargo.toml` are unchanged across the range (`git diff` empty), so the staged crate texts of the bridge and the wasm demo are unchanged.
+- **2026-11-19**: the vendored KTX-Software tree (`third_party/KTX`, linked as headers that no source included) and the tomlplusplus submodule (linked, imported by nothing) went as dead dependencies (owner decision 2026-11-18). `licenses/third-party-licenses.txt` drops toml++'s `LICENSE`, which every package shipped; KTX shipped no text.
+- **2026-11-19 (later)**: OxidANT moved to `398021a`: the bridge as a file per area with its `bridge` cargo profile, the shared Sun rule, loader fixes and the WebGPU ray tracer's punctual lights. `LICENSE` and the license policy are unchanged across the range (`git diff` empty). `Cargo.lock` swaps `chrono` for `jiff` (RUSTSEC-2026-0543) in crates the bridge does not use, and gives the bridge `log`, already in its graph through `kataglyphis_assets`, and the dev-dependency `tempfile`. The hub stager, run in the CI image at both ends of the range, stages the bridge's same 129-130 crates on every target. The docs site's wasm demo grows from 261 to 264: the renderer already reached `jiff` and `jiff-core` through `env_logger`, and the stager's workspace-wide resolve gives that `jiff` `kataglyphis_core`'s default features, which add `jiff-static`, `jiff-tzdb` and `jiff-tzdb-platform` (each `Unlicense OR MIT`, with its own `COPYING` and `LICENSE-MIT`).
 
 ## What every package ships
 
@@ -45,8 +47,7 @@ font's name table names, copied unchanged; `licenses/imgui-fonts.NOTICE` records
 font's copyright, its license and the source and SHA-256 of every text. The Sponza scene's
 texts sit beside the model. The skybox, AssetANT's `kloofendal_43d_clear_puresky` (Greg Zaal, Poly Haven, CC0 1.0),
 carries its `ATTRIBUTION.txt` and `LICENSES/` in `Resources/Textures/Skybox/kloofendal_43d_clear_puresky`, and
-`licenses/CC0-1.0.txt` and `licenses/kloofendal_43d_clear_puresky.NOTICE` (the same files) go under `share/licenses/` too. KTX is linked as headers only and no source includes one, so it
-ships no text. Not covered yet: the GCC runtime and glibc copy that the Linux packages carry
+`licenses/CC0-1.0.txt` and `licenses/kloofendal_43d_clear_puresky.NOTICE` (the same files) go under `share/licenses/` too. Not covered yet: the GCC runtime and glibc copy that the Linux packages carry
 for older hosts; that belongs to ANTfrastructure's closure helpers. For the MSVC runtime DLLs,
 every Windows package (ZIP, MSI, NSIS, the portable bundle and the MSIX staged from it) carries
 `licenses/msvc-runtime/Redist.txt` and `README.txt` at the install root beside `bin/`, not under
@@ -70,34 +71,6 @@ them; the wording is the hub's draft
 | spdlog | https://github.com/gabime/spdlog | v1.17.0-66-g6d9805df | MIT; contains a bundled {fmt} (MIT) | `third_party/SPDLOG/LICENSE`; `third_party/SPDLOG/include/spdlog/fmt/bundled/fmt.license.rst` |
 | google/fuzztest | https://github.com/google/fuzztest | fcde2c27 (main, 2026-11-13) | Apache-2.0; an additional Lucent notice for `fuzztest/internal/domains/rune.*` | `third_party/FUZZTEST/LICENSE` |
 | kompute (only the optional playground, `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND`) | https://github.com/KomputeProject/kompute | v0.9.0-99-g267e019 | Apache-2.0 | `third_party/KOMPUTE/LICENSE` |
-| tomlplusplus | https://github.com/marzer/tomlplusplus | v3.4.0-88-gcfd7159 | MIT | `third_party/tomlplusplus/LICENSE` |
-
-## Vendored sources (no submodule)
-
-| Project | URL | Licence (per file headers) | File(s) checked |
-|---|---|---|---|
-| KTX (KTX-Software, partly vendored: `include/`, `lib/`, `other_include/`) | https://github.com/KhronosGroup/KTX-Software | Apache-2.0 (SPDX header in `include/ktx.h` and in 98 files under `lib/`) | `third_party/KTX/include/ktx.h` |
-
-KTX-Software's full `LICENSE.md` is **not** vendored
-(`third_party/KTX/LICENSE.md` does not exist), so the third-party components
-embedded under `third_party/KTX/lib/` were verified one by one on disk, from a
-vendored licence file or from the source file's own licence header:
-
-| Component | Licence | File checked (each under `third_party/KTX/lib/`) |
-|---|---|---|
-| basisu (encoder + transcoder) | Apache-2.0 (Copyright Binomial LLC) | `basisu/LICENSE` (full Apache-2.0 text); licence header in `basisu/encoder/basisu_enc.cpp` and `basisu/transcoder/basisu_transcoder.cpp`. The REUSE texts `basisu/LICENSES/{Apache-2.0,BSD,Zlib}.txt` cover the subcomponents. |
-| zstd (bundled in basisu) | BSD-3-Clause; the file header also offers GPLv2 ("You may select, at your option, one of the above-listed licenses") | `basisu/zstd/LICENSE` (BSD text, Copyright Facebook, Inc.); header of `basisu/zstd/zstd.c` |
-| LodePNG | zlib licence text (Copyright 2005-2019 Lode Vandevenne) | licence header in `basisu/encoder/lodepng.h` |
-| jpgd | Public domain (Rich Geldreich) | licence header in `basisu/encoder/jpgd.h` |
-| stb_image / stb_image_write | Dual: MIT ("ALTERNATIVE A") or public domain/Unlicense ("ALTERNATIVE B"), your choice | licence block at the end of `astc-encoder/Source/stb_image.h` and `astc-encoder/Source/stb_image_write.h` |
-| tinyexr | BSD-3-Clause (Copyright 2014-2019 Syoyo Fujita and contributors) | licence header in `astc-encoder/Source/tinyexr.h` |
-| etcdec.cxx | **No OSI licence**: "Ericsson Texture Compression Codec Software License Agreement", a non-exclusive, non-transferable, free, perpetual, worldwide single licence with its own terms | licence header in `etcdec.cxx` |
-| astc-encoder (Arm) | Apache-2.0 | SPDX header `// SPDX-License-Identifier: Apache-2.0` in `astc-encoder/Source/astcenc.h`. The `LICENSE.txt` that `astc-encoder/README.md` refers to is not vendored. |
-| dfdutils (Khronos) | Apache-2.0; individual files taken from MIT projects are MIT | `dfdutils/LICENSE.adoc`; full texts in `dfdutils/LICENSES/{Apache-2.0,MIT}.txt` |
-
-`etcdec.cxx` is the only component in the whole tree that is not under an
-OSI-approved licence. For redistribution, the wording of the SLA in its file
-header is authoritative.
 
 ## Build-time dependencies via FetchContent (`third_party/CMakeLists.txt`, not checked in)
 
@@ -118,7 +91,7 @@ which file was actually read.
 
 | Project | URL | Pin | Licence | Source checked |
 |---|---|---|---|---|
-| OxidANT | https://github.com/Kataglyphis/OxidANT | 4417f31 (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
+| OxidANT | https://github.com/Kataglyphis/OxidANT | 398021a (develop) | MIT (`LICENSE`, Copyright (c) 2025 Kataglyphis; `license = "MIT"` in `[workspace.package]`) | `third_party/OxidANT/LICENSE` + `third_party/OxidANT/Cargo.toml` |
 | ANTfrastructure | https://github.com/Kataglyphis/ANTfrastructure | 2c81ef49 (develop) | MIT per `LICENSE` (Copyright (c) 2024 Jonas Heinle); all 589 of its own files with an SPDX header carry `SPDX-License-Identifier: MIT`; OCI label `org.opencontainers.image.licenses="MIT"` in the three image definitions that set one (`linux/Dockerfile.torch`, `windows/Dockerfile`, `windows/Dockerfile.torch`) | `third_party/ANTfrastructure/LICENSE` + SPDX headers + OCI labels |
 
 ## Rust crate dependencies (`third_party/OxidANT/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
@@ -245,10 +218,8 @@ Resolved on 2026-08-02:
 - `anyhow`, `log` and `bytemuck`, verified for the **exact** lock version
   instead of a neighbouring cached one; their licence expressions did not
   change.
-- The embedded third-party parts in `third_party/KTX/lib/`, verified one by
-  one from the files on disk (table under "Vendored sources").
 
 ## Notes
 
-- Removed since the state of 2026-03-26: **glad** (no `third_party/glad` submodule any more, no glad or OpenGL loader references under `Src/`) and **KTX as a submodule** (now partly vendored, see above).
+- Removed since the state of 2026-03-26: **glad** (no `third_party/glad` submodule any more, no glad or OpenGL loader references under `Src/`), **KTX** (a submodule, then partly vendored under `third_party/KTX`, gone on 2026-11-19) and **tomlplusplus** (2026-11-19).
 - Kompute is built only with `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON` (a demo, not part of the engine, in no package). Since 2026-10-06 only the Linux CI job `clang-tests` does that, and it also starts the playground; Kompute then fetches fmt 11.0.0 through FetchContent.

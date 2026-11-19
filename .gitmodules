@@ -51,7 +51,3 @@
 	path = third_party/OxidANT
 	url = https://github.com/Kataglyphis/OxidANT.git
 	branch = develop
-[submodule "third_party/tomlplusplus"]
-	path = third_party/tomlplusplus
-	url = https://github.com/marzer/tomlplusplus.git
-	branch = master

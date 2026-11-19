@@ -273,6 +273,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
 {
     frameSettings = settings;
     output.publishedModelIndex.reset();
+    output.publishedSun.reset();
     const GUISceneSharedVars &sceneSettings = settings.scene;
 
     // Polled first, so the rest of the frame sees a model on the frame it arrives.
@@ -306,6 +307,13 @@ void Kataglyphis::VulkanRenderer::publishLoadedModel()
     output.publishedModelIndex =
       sceneConfig::modelIndexOf(sceneConfig::getAvailableModelPaths(), scene->getLoadedModelPath());
     output.loadedModelPath = scene->getLoadedModelPath();
+    // The Sun is a glTF's first directional light, which no longer reaches the punctual-light rows.
+    output.publishedSun.reset();
+    if (const auto sun = scene->getLoadedModelSun(); sun.has_value()) {
+        output.publishedSun = Kataglyphis::VulkanRendererInternals::FrontendShared::PublishedSun{
+            { sun->direction.x, sun->direction.y, sun->direction.z }, { sun->color.r, sun->color.g, sun->color.b }
+        };
+    }
 }
 
 auto Kataglyphis::VulkanRenderer::cloudDepthSourceForThisFrame() const -> CloudDepthSource
@@ -520,6 +528,8 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
                 raytracingDescriptors.getLayout() };
             raytracingStage.shaderHotReload(layouts);
             pathTracing.shaderHotReload(layouts);
+            // A reloaded kernel is another estimator: averaging its samples into the old mean biases it.
+            pathTracingAccumulatedFrames = 0;
         }
     };
 
@@ -1296,6 +1306,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
           clouds_enabled,
           frameSettings.scene.skybox_enabled);
         ++pathTracingAccumulatedFrames;
+        output.pathTracingAccumulatedFrames = pathTracingAccumulatedFrames;
     }
 }
 

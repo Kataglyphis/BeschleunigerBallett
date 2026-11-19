@@ -1,13 +1,16 @@
 #pragma once
 
+#include <cmath>
+
 #include <glm/glm.hpp>
 
 namespace Kataglyphis {
 
-// The GUI can drag the light direction to zero, which would normalize to NaN; fall back to straight down.
+// A zero, inf or NaN direction would be NaN in every shader; straight down instead, as cascades.rs's normalize_or.
 inline auto normalizedLightDirection(glm::vec3 raw) -> glm::vec3
 {
-    if (glm::length(raw) < 1e-6F) { raw = glm::vec3(0.0F, -1.0F, 0.0F); }
+    const float length = glm::length(raw);
+    if (!std::isfinite(length) || length < 1e-6F) { raw = glm::vec3(0.0F, -1.0F, 0.0F); }
     return glm::normalize(raw);
 }
 
