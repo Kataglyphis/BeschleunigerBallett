@@ -184,9 +184,10 @@ Shaders:
   2026.17 emits `Atomic<uint>` for both its storage and its workgroup atomics (checked 2026-11-19;
   `InterlockedAdd` fails), not yet run through wgpu. SPIR-V rows for each pass come with the C++ change
   that binds it.
-- [b] `Shared` **Shared material Slang** (L, plan I9; after the leaf modules; **waits for the metallic
-  clamp and MASK encoding decisions**). Normal mapping with the BC5 z rebuild, the texture transform and
-  `gltf_material.slang`; each exists three times today. The C++ push constants shrink from 116 to 68 bytes.
+- [b] `Shared` **Shared material Slang** (L, plan I9; after the leaf modules). Owner 2026-11-19: metallic is
+  clamped to [0, 1] and MASK is an explicit alpha-mode flag plus cutoff, both as Rust does. Normal mapping
+  with the BC5 z rebuild, the texture transform and `gltf_material.slang`; each exists three times today. The
+  C++ push constants shrink from 116 to 68 bytes.
 - [b] `Shared` **Shared shadow and lighting Slang** (L, plan I10; after the leaf modules). C++ takes Rust's
   G-buffer packing (owner 2026-11-19); the cascade retry comes with C11. Dual-target punctual shadows,
   `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
@@ -388,9 +389,12 @@ committed to.
     non-uniform indexing); the RT pipeline stays; occlusion culling uses a Hi-Z pyramid; the Hillaire
     atmosphere is a third sky mode.
 
-  - Later rules: the OBJ reader takes Rust's material rules; textures decode as PNG, JPEG, BMP, TGA, GIF,
-    PNM and HDR; C++ gets glTF animation through one Rust animator; both glTF loaders confine images and
-    buffers to the glTF file's folder.
+  - Later rules: the shared material Slang clamps metallic and flags MASK as Rust does; the OBJ reader takes
+    Rust's material rules; textures decode as PNG, JPEG, BMP, TGA, GIF, PNM and HDR; C++ gets glTF animation
+    through one Rust animator; both glTF loaders confine images and buffers to the glTF file's folder.
+
+- **1.6.0 ships after the plan's Phase 2** (2026-11-19): `bump-version.sh 1.6.0`, its CHANGELOG section, then
+  develop goes to main once every lane is green.
 
 No decision of the 2026-11-18 plan is open.
 
