@@ -139,21 +139,22 @@ Loader:
   `GltfParseUnit.SkinnedNodeTransformIsIgnored` keep identity and the Rust renderer stops applying it to
   unweighted vertices. Moves `joint_matrices`, `skin_vertex` and `Pose` from the tracer into kataglyphis_assets.
 - [ ] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6). Tolerant like tinyobjloader (a bad line
-  is skipped and reported) with one mesh per `usemtl` group (owner 2026-11-19); the flip waits for the owner's
-  detail rules (d < 1, map_Ke without Ke, the default colour, roughness without Ns, GIF/PSD/PIC/PNM), asked
-  with the diff suite's measured differences. Move `obj_to_gltf` and `obj_glb` into assets, relax the parser
-  to tinyobjloader's tolerance, dispatch `.obj` in the bridge by extension and fold `ObjLoader` into
-  `GltfLoader`, the cgltf way (switch, field-by-field diff suite over the fixtures and scenes, flip, delete).
-  Deletes ObjLoader, tinyobjloader's 13,865-line header and its submodule, `computeTangents`,
-  `fillMissingFlatNormals`, `vertexTangentSuite`, `obj_parsing_fuzz_test` and `BM_ObjParse_*`. Pass through
-  texture bytes stb can read instead of re-encoding them; keep parse time against
-  `BM_ObjLoaderParseCpu_Suzanne`.
+  is skipped and reported) with one mesh per `usemtl` group, and Rust's material rules (owner 2026-11-19): d
+  below 1 or Tr above 0 is BLEND, map_Ke without Ke glows at factor 1, no Kd is white 1.0, no Pr and no Ns is
+  roughness 1.0. No shipped scene changes (all have d 1, Kd and Ns, none map_Ke). Move `obj_to_gltf` and
+  `obj_glb` into assets, relax the parser to tinyobjloader's tolerance, dispatch `.obj` in the bridge by
+  extension and fold `ObjLoader` into `GltfLoader`, the cgltf way (switch, field-by-field diff suite over the
+  fixtures and scenes, flip, delete). Deletes ObjLoader, tinyobjloader's 13,865-line header and its submodule,
+  `computeTangents`, `fillMissingFlatNormals`, `vertexTangentSuite`, `obj_parsing_fuzz_test` and
+  `BM_ObjParse_*`. Pass through texture bytes stb can read instead of re-encoding them; keep parse time
+  against `BM_ObjLoaderParseCpu_Suzanne`.
 - [b] `Assets` **Texture ingest in Rust** (L, plan B5; **after the zero-copy upload**). Step 1: prefer
   `KHR_texture_basisu` sources and deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with
   `Texture::createFromLevels` in C++ (basisu-only glTFs draw untextured in C++ today). Step 2: PNG and
   JPEG through the image crate with the shared `generate_mips`, which takes the Colosseum's 69-image
   decode off the render thread; measure the peak first, the RGBA8 chains likely exceed 1 GB, or stream
-  per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new work.
+  per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new work. Formats (owner 2026-11-19): PNG, JPEG,
+  BMP and TGA plus GIF, PNM and HDR through the image crate's features; PSD and PIC go with stb.
 - [b] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9; **after
   render_core**). Frame only a scene with its own glTF camera or one whose fixed pose would need a too large
   far plane; the other scenes keep their poses (owner 2026-11-19). Cameras, the active one and
@@ -308,8 +309,9 @@ New in both:
 - [b] `C++` **LOD chains at load time from Rust's QEM** (L, plan B11; per-level material ids first).
   Harden `qem.rs` (`remap[i]` panics on bad indices), return each level's error, pick the level by
   screen-space error at draw time; shadows and BLAS keep full detail.
-- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; **waits for the decision on
-  FlatModel as a baked snapshot**). Extract the animator from `ForwardRenderer` into a wgpu-free crate
+- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; after the skin's rest pose and
+  render_core). Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked
+  snapshot. Extract the animator from `ForwardRenderer` into a wgpu-free crate
   first; skinning in shared Slang, a compute pre-skin with a BLAS update for the traced modes.
 - [ ] `C++` **GPU occlusion culling, then multi-draw indirect** (L + L, plan C12). A Hi-Z pyramid
   (R32Float over single-mip storage views), not occlusion queries (owner 2026-11-19; the Rust roadmap's
@@ -386,8 +388,11 @@ committed to.
     non-uniform indexing); the RT pipeline stays; occlusion culling uses a Hi-Z pyramid; the Hillaire
     atmosphere is a third sky mode.
 
-Still open, each asked when its entry starts: FlatModel as a baked snapshot (B12) and the OBJ detail rules
-(d < 1, map_Ke without Ke, the default colour, roughness without Ns, GIF/PSD/PIC/PNM; B6).
+  - Later rules: the OBJ reader takes Rust's material rules; textures decode as PNG, JPEG, BMP, TGA, GIF,
+    PNM and HDR; C++ gets glTF animation through one Rust animator; both glTF loaders confine images and
+    buffers to the glTF file's folder.
+
+No decision of the 2026-11-18 plan is open.
 
 ## Rust renderer ideas (OxidANT)
 
