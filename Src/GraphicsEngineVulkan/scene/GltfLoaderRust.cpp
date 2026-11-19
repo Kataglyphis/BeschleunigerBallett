@@ -127,10 +127,11 @@ namespace {
             range.double_sided,
             range.alpha_blended };
     }
-}// namespace
 
-struct GltfLoader::BridgeModel
-{ ox::GltfModel model; };
+    // What GltfLoader::bridge keeps alive, local to this file so the module interface names no bridge type.
+    struct BridgeModel
+    { ox::GltfModel model; };
+}// namespace
 
 bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptions &options)
 {

@@ -382,7 +382,7 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   gone; the tests read OxidANT's. `cube_textured.gltf` stays, because the editor library lists it and two
   goldens reload it through the library; `BuildIntegrity.GltfTestHoldsNoCopyOfOxidantsFixturesButTheLibrarysCheckerCube`
   keeps it byte-identical and refuses any other copy.
-- `GltfLoader` keeps OxidANT's `GltfModel` behind a pimpl (`BridgeModel`, `GltfLoaderRust.cpp`) and uploads from
+- `GltfLoader` keeps OxidANT's `GltfModel` alive through an untyped `std::shared_ptr` and uploads from
   views of it instead of a second copy (plan I13): `getVertices()`, `getIndices()` and `getMaterialIndices()` are
   `std::span`s over the bridge's `rust::Vec`s, `getTextureImages()` spans over the encoded images, which
   `Texture::createFromMemory` reads in place, and `addMeshesForRangesInPlace` stages each primitive straight from

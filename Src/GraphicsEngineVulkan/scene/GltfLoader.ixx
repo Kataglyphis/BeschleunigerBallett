@@ -125,10 +125,8 @@ class GltfLoader
     std::shared_ptr<VulkanDevice> device;
     vk::CommandPool command_pool;
 
-    // The bridge's result, defined in GltfLoaderRust.cpp: no module interface may include a bridge header.
-    struct BridgeModel;
-    // Shared, so its deleter needs no complete BridgeModel here; the views below point into it.
-    std::shared_ptr<const BridgeModel> bridge;
+    // OxidANT's result, which the views below point into; untyped, as no module interface may include a bridge header.
+    std::shared_ptr<const void> bridge;
 
     std::span<const Vertex> vertices;
     std::span<const unsigned int> indices;

@@ -30,7 +30,7 @@ back-to-back on the calling (device-owning) thread.
 `GltfLoader::parseCpu` is OxidANT's loader, the one the WebGPU renderer uses,
 called over the cxx bridge (`load_gltf_flat` in `crates/cxx_bridge/src/gltf.rs`,
 flattened by `crates/assets/src/flat.rs`). `GltfLoaderRust.cpp` keeps the
-returned `GltfModel` behind `GltfLoader`'s `BridgeModel` pimpl and views its
+returned `GltfModel` alive through an untyped `std::shared_ptr` and views its
 vertices, indices, material ids and encoded images in place (`std::span` over
 `data()`/`size()`; `GltfVertex` and `Vertex` agree field by field): nothing is
 copied before the staging buffer, which for `Colosseum-gltf` was about 0.5 GB
