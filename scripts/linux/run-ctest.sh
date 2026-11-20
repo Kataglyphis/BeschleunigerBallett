@@ -25,6 +25,10 @@ if [[ "${1:-}" == "--virtual-display" ]]; then
   export VK_KHRONOS_VALIDATION_SYNCVAL_SHADER_ACCESSES_HEURISTIC=1
   # The GPU suites run for real here, so GpuTestGuard.hpp fails a GPU test that would skip (OxidANT's variable).
   export KATAGLYPHIS_REQUIRE_GPU=1
+  # Only lavapipe, unless a GPU run names its ICD: on runner image 20261116 another ICD found a DRM node and leaked.
+  if [[ -z "${VK_ICD_FILENAMES:-}${VK_DRIVER_FILES:-}${VK_LOADER_DRIVERS_SELECT:-}" ]]; then
+    export VK_LOADER_DRIVERS_SELECT='*lvp*'
+  fi
   # ctest's own Skipped too: every GPU test runs on llvmpipe (none of 96 skipped, 2026-11-19), so a skip is a bug.
   skipped_fails=(--fail-on-skipped '^(GoldenRender|Integration)\.')
   # -noreset: a golden's GLFW probe disconnects, and a window opened while Xvfb resets found no display.

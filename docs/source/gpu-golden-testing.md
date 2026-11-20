@@ -59,13 +59,17 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   (`BACKLOG.md`, golden-render cases on the arm64 device). Mesa main replaced the radix sort with a merge sort
   (`ebcfbe60`, 2026-08-22), so the hub drops its `ENV` once the image's Mesa carries that. The
   Windows lavapipe run (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
-- **ASan builds carry two driver leak suppressions.** `glfwInit()` on X11 leaks libX11's locale
-  state, which failed every GPU test in an ASan build, so `commitTestSuite` carries its own
-  LeakSanitizer suppressions (`Test/commit/VulkanEngine/lsanSuppressions.cpp`). The second,
-  `setup_loader_term_phys_devs`, covers what a Vulkan driver allocates once while the loader enumerates
-  devices: on GitHub's `ubuntu-26.04` runner image 20261116.202.1 (the same container image as the run
-  before) the x64 clang job's GPU tests reported such a block, in a `pthread_once` of a driver the loader had
-  already unloaded, and the driver threads it holds (release run 44753690114, 80 tests).
+- **The llvmpipe run loads lavapipe only, and ASan builds carry two driver leak suppressions.**
+  `run-ctest.sh --virtual-display` sets `VK_LOADER_DRIVERS_SELECT='*lvp*'` unless the caller names an ICD
+  (`VK_ICD_FILENAMES`, `VK_DRIVER_FILES` or the variable itself, as the NVIDIA recipe below does). On GitHub's
+  `ubuntu-26.04` runner image 20261116.202.1 another of the image's ICDs found a DRM node (Mesa's PowerVR ICD
+  stopped warning that it found none) and left a block and its threads' memory behind while the loader
+  enumerated devices; LeakSanitizer then failed every x64 clang GPU test (runs 44753690114, 44761639606,
+  44770349057), with the container image of the green run before. `glfwInit()` on X11 leaks libX11's locale
+  state, which failed every GPU test in an ASan build, so `commitTestSuite` carries its own LeakSanitizer
+  suppressions (`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `libX11.so`, and
+  `setup_loader_term_phys_devs` for the direct block; the threads' blocks it holds are reported as indirect
+  leaks all the same, which the ICD selection removes at the source.
 - **A software rasterizer is not the RX 9070 XT.** A pass on llvmpipe is a strong behavioural
   signal, not a substitute for the host loop below after a render/device change.
 

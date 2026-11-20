@@ -188,10 +188,12 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
 
 ### Fixed
 
-- The ASan GPU suites suppress what a Vulkan driver leaks once while the loader enumerates devices
-  (`leak:setup_loader_term_phys_devs` in `lsanSuppressions.cpp`): on GitHub's `ubuntu-26.04` runner image
-  20261116.202.1 every x64 clang GPU test failed on such a block in a driver the loader had already unloaded
-  (runs 44753690114 and 44761639606, the same container image as the green run before).
+- The llvmpipe GPU run loads lavapipe only: `run-ctest.sh --virtual-display` sets
+  `VK_LOADER_DRIVERS_SELECT='*lvp*'` unless the caller names an ICD. On GitHub's `ubuntu-26.04` runner image
+  20261116.202.1 another ICD found a DRM node and leaked a block and its threads' memory while the loader
+  enumerated devices, which failed every x64 clang GPU test under LeakSanitizer (runs 44753690114,
+  44761639606, 44770349057). `lsanSuppressions.cpp` also names the loader frame
+  (`leak:setup_loader_term_phys_devs`) for the direct block.
 - The cgltf `GltfLoader` gives a primitive without `NORMAL` a vertex per triangle corner, as glTF's flat
   normals need; a corner shared by two faces kept only the last face's normal. Normals and generated tangents are
   now finished in the mesh's space and then baked, as the Rust loader does, and a zero or non-finite authored

@@ -355,9 +355,10 @@ New in both:
   CON281**). GCC 16.2 crashed on two `std::span<const unsigned int>` data members (f7e9c7fc keeps a pointer
   and a count). Restore the span members once the image's GCC compiles them, checked first under a 4 GB
   cgroup.
-- [b] `CI` **Drop the `setup_loader_term_phys_devs` leak suppression** (S; **waits for ANTfrastructure
-  CON284**). Added in ef6503a3 for runner image 20261116.202.1; drop it if selecting only lavapipe ends the
-  driver's one-time leak, with the x64 clang GPU job as the check.
+- [ ] `CI` **Drop the `setup_loader_term_phys_devs` leak suppression if nothing uses it** (S). Since
+  2026-11-20 the llvmpipe run loads lavapipe only (`VK_LOADER_DRIVERS_SELECT`), which should keep the leaking
+  ICD out; when an x64 clang GPU job's "Suppressions used" lists only `libX11.so`, drop the second entry from
+  `lsanSuppressions.cpp` and its sentence in `gpu-golden-testing.md`.
 
 ---
 
