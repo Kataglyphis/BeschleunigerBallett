@@ -347,6 +347,17 @@ New in both:
   (owner 2026-11-19), as Rust and the browser; C++ moves from Mailbox, and the goldens keep pinning it off.
 - [b] `Assets` **The full Rust settings schema as cxx shared structs** (L, plan B10; when the view file
   needs it).
+- [ ] `C++` **Why the deferred G-buffer pass costs about 0.5 s a frame on llvmpipe** (S). In
+  `GoldenRender.GpuTimingSplitsMainIntoTheScopeThatDrew` (Debug, sync validation, aarch64 WSL, 2026-11-19)
+  GBuffer took 510-635 ms against about 8 ms for Forward on Dinosaurs, and DeferredLighting 11-107 ms. Find
+  the cause before a host profile budgets the deferred passes; it may be llvmpipe alone.
+- [b] `C++` **`GltfLoader`'s index views back to `std::span` members** (S; **waits for ANTfrastructure
+  CON281**). GCC 16.2 crashed on two `std::span<const unsigned int>` data members (f7e9c7fc keeps a pointer
+  and a count). Restore the span members once the image's GCC compiles them, checked first under a 4 GB
+  cgroup.
+- [b] `CI` **Drop the `setup_loader_term_phys_devs` leak suppression** (S; **waits for ANTfrastructure
+  CON284**). Added in ef6503a3 for runner image 20261116.202.1; drop it if selecting only lavapipe ends the
+  driver's one-time leak, with the x64 clang GPU job as the check.
 
 ---
 
@@ -424,7 +435,9 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up is ope
   RX 9070 XT host the file is named for.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
-  `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
+  `clangcl-profile` suite on the host and add an entry by the rule the existing one records. Re-derive the
+  llvmpipe profile in one session too: its Forward budget (15.3 ms, 2026-11-19) is above Main's 13.6 ms,
+  which Forward is nested in.
 
 ## Recurring validation runs
 
