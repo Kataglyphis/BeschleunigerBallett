@@ -200,7 +200,10 @@ C++ catches up:
 - [ ] `Shared` **One set of defaults: the Sun, the wind and F5** (S, plan I6; with or after the ambient term).
   Owner 2026-11-19: Rust's Sun (radiance 5, warm white, ambient 0.35) in both, so the C++ goldens are
   recalibrated; the cloud wind range is ±100 in both (C++ allows ±50); F5 reloads shaders in every native
-  build of both renderers. Rust's LOD stays off by default until QEM is measured on the Colosseum.
+  build of both renderers. Rust's LOD stays off by default until QEM is measured on the Colosseum. Owner
+  2026-11-20: the bridged Sun gets its ranges and a `sanitize` here, and one direction convention (Rust stores
+  the direction towards the Sun, the C++ editor the direction the light travels); until then
+  `sceneSettingsDriftSuite.cpp` compares the direction negated.
 - [b] `C++` **IBL and the occlusion map for C++** (L, plan C4 stages 2-3; after the analytic ambient term).
   Owner 2026-11-19: both renderers bake the IBL from the drawn skybox (Rust follows with OxidANT's IBL
   entry), and C++ takes Rust's G-buffer packing (occlusion in albedo.a, unlit in metallic's sign).
@@ -398,8 +401,14 @@ committed to.
     the C++ engine read it, the Rust tools and tests load with the defaults.
   - `Resources/Models/GltfTest/cube_textured.gltf` stays: two path-tracing goldens reload it through the
     editor library, and `GltfFixtureRoundTrip` keeps it byte-identical to OxidANT's copy.
+- **The review's follow-up rules** (2026-11-20):
+  - The renderers' cloud packing keeps only the clamps that protect the shader; only the editor and the
+    bridged `sanitize` hold the editor ranges, so a test or a view file may still ask for a density above 1.
+  - NaN and ±inf fall back to the field's default everywhere, the shadow strength included (0.65, not 1.0).
+  - Every empty frame, zero width or zero height, has aspect 1 in both renderers.
+  - The Sun's ranges, `sanitize` and direction convention come with "One set of defaults".
 
-No decision of the 2026-11-18 plan or of its Phase 2 is open.
+No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up is open.
 
 ## Rust renderer ideas (OxidANT)
 
