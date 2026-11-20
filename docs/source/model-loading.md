@@ -46,8 +46,9 @@ What a load asks beyond the file is a `GltfLoadOptions` (`mikktspaceTangents`
 today), which `parseCpu`, `loadModel`, `AsyncModelParse::start` and `Scene`
 hand to `load_gltf_flat_with`; each field's zero is the loader's default. The
 loader reads no environment: `App::run` turns `KATAGLYPHIS_MIKKTSPACE_TANGENTS`
-into the options once, through `gltfLoadOptionsFromEnvironment`, and tests ask
-through the options. The fixtures both renderers load are OxidANT's
+into the options once, through `gltfLoadOptionsFromEnvironment` (any non-empty
+value; empty counts as unset, as in OxidANT's viewer), and tests ask through the
+options. The fixtures both renderers load are OxidANT's
 `crates/assets/tests/assets`; `GltfFixtureRoundTrip.*` checks each one's
 mapping into `Vertex`, `MeshRange` and `ObjMaterial`.
 

@@ -2,9 +2,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include <glm/glm.hpp>
 
@@ -18,6 +20,24 @@ import kataglyphis.vulkan.gui_scene_shared_vars;
 namespace {
 
 namespace ox = kataglyphis::oxidant::settings;
+
+glm::vec3 vec3Of(const float (&values)[3]) { return { values[0], values[1], values[2] }; }
+
+glm::vec3 vec3Of(const std::array<float, 3> &values) { return { values[0], values[1], values[2] }; }
+
+// Every float of the CLOUDS section set to `value`; the step counts and switches keep their defaults.
+ox::SceneSettings cloudFloatsAt(float value)
+{
+    ox::SceneSettings settings = ox::default_scene_settings();
+    settings.clouds.density = value;
+    settings.clouds.coverage = value;
+    settings.clouds.pillowness = value;
+    settings.clouds.cirrus = value;
+    settings.clouds.scale = { value, value, value };
+    settings.clouds.offset = { value, value, value };
+    settings.clouds.wind = { value, value, value };
+    return settings;
+}
 
 }// namespace
 
@@ -87,7 +107,7 @@ TEST(SceneSettingsDrift, RangesMatchTheEditorsBounds)
     expectRange(rust.shadows.split_lambda, kMinUnitSetting, kMaxUnitSetting, "split lambda");
 }
 
-// Only what both clamp is compared; NaN differs (Rust's max takes the floor, std::max keeps NaN), an open decision.
+// Finite values inside the editor's upper bounds: the engine's floors keep a NaN and anything above them.
 TEST(SceneSettingsDrift, SanitizeClampsWhatTheEngineClamps)
 {
     for (const int steps : { -5, 0, 3, 4, 77, 128, 129, 100000 }) {
@@ -103,9 +123,10 @@ TEST(SceneSettingsDrift, SanitizeClampsWhatTheEngineClamps)
     for (const float value : { -3.0F, 0.0F, 1e-4F, 1e-3F, 0.5F, 630.0F }) {
         ox::SceneSettings settings = ox::default_scene_settings();
         settings.clouds.scale = { value, 3.15F, value };
-        settings.clouds.density = value;
+        settings.clouds.density = std::min(value, kMaxCloudDensityMultiplier);
         const ox::SceneSettings sanitized = ox::sanitize(settings);
-        const glm::vec4 clamped = Kataglyphis::clampCloudMeshScale(glm::vec3(value, 3.15F, value), value);
+        const glm::vec4 clamped =
+          Kataglyphis::clampCloudMeshScale(glm::vec3(value, 3.15F, value), settings.clouds.density);
         EXPECT_EQ(sanitized.clouds.scale[0], clamped.x) << value;
         EXPECT_EQ(sanitized.clouds.scale[1], clamped.y) << value;
         EXPECT_EQ(sanitized.clouds.scale[2], clamped.z) << value;
@@ -126,22 +147,71 @@ TEST(SceneSettingsDrift, SanitizeClampsWhatTheEngineClamps)
     }
 }
 
-// Not bridged: the C++ Sun moves with its ambient term (BACKLOG "One set of defaults"), then compare it here.
+// OxidANT's sanitize holds every field to the editor's bounds and puts a NaN or inf back to the editor's default.
+TEST(SceneSettingsDrift, SanitizeHoldsEveryFloatToTheEditorsBoundsAndANonFiniteOneToItsDefault)
+{
+    const GUISceneSharedVars defaults{};
+    for (const float bad : { std::numeric_limits<float>::quiet_NaN(),
+           std::numeric_limits<float>::infinity(),
+           -std::numeric_limits<float>::infinity() }) {
+        const ox::CloudSettings clouds = ox::sanitize(cloudFloatsAt(bad)).clouds;
+        EXPECT_EQ(clouds.density, defaults.cloud_density_multiplier) << bad;
+        EXPECT_EQ(clouds.coverage, defaults.cloud_coverage_threshold) << bad;
+        EXPECT_EQ(clouds.pillowness, defaults.cloud_pillowness) << bad;
+        EXPECT_EQ(clouds.cirrus, defaults.cloud_cirrus_effect) << bad;
+        EXPECT_EQ(vec3Of(clouds.scale), vec3Of(defaults.cloud_mesh_scale)) << bad;
+        EXPECT_EQ(vec3Of(clouds.offset), vec3Of(defaults.cloud_mesh_offset)) << bad;
+        EXPECT_EQ(vec3Of(clouds.wind), vec3Of(defaults.cloud_wind)) << bad;
+
+        ox::SceneSettings shadows = ox::default_scene_settings();
+        shadows.shadows.strength = bad;
+        shadows.shadows.distance = bad;
+        shadows.shadows.split_lambda = bad;
+        const ox::ShadowSettings sane = ox::sanitize(shadows).shadows;
+        EXPECT_EQ(sane.strength, defaults.cascaded_shadow_intensity) << bad;
+        EXPECT_EQ(sane.distance, defaults.shadow_distance) << bad;
+        EXPECT_EQ(sane.split_lambda, defaults.cascade_split_lambda) << bad;
+    }
+
+    const ox::CloudSettings low = ox::sanitize(cloudFloatsAt(-1e6F)).clouds;
+    EXPECT_EQ(low.density, Kataglyphis::kMinCloudDensityMultiplier);
+    EXPECT_EQ(low.coverage, kMinUnitSetting);
+    EXPECT_EQ(low.pillowness, kMinUnitSetting);
+    EXPECT_EQ(low.cirrus, kMinUnitSetting);
+    EXPECT_EQ(vec3Of(low.scale), glm::vec3(Kataglyphis::kMinCloudMeshExtent));
+    EXPECT_EQ(vec3Of(low.offset), glm::vec3(kMinCloudMeshOffset));
+    EXPECT_EQ(vec3Of(low.wind), glm::vec3(-kMaxCloudWindSpeed));
+
+    const ox::CloudSettings high = ox::sanitize(cloudFloatsAt(1e6F)).clouds;
+    EXPECT_EQ(high.density, kMaxCloudDensityMultiplier);
+    EXPECT_EQ(high.coverage, kMaxUnitSetting);
+    EXPECT_EQ(high.pillowness, kMaxUnitSetting);
+    EXPECT_EQ(high.cirrus, kMaxUnitSetting);
+    EXPECT_EQ(vec3Of(high.scale), glm::vec3(kMaxCloudMeshExtent));
+    EXPECT_EQ(vec3Of(high.offset), glm::vec3(kMaxCloudMeshOffset));
+    EXPECT_EQ(vec3Of(high.wind), glm::vec3(kMaxCloudWindSpeed));
+}
+
+// The C++ Sun moves to OxidANT's with its ambient term (BACKLOG "One set of defaults"); until then they differ.
 TEST(SceneSettingsDrift, TheSunIsTheNamedDifferenceUntilOneSetOfDefaults)
 {
     const GUISceneSharedVars defaults{};
+    const ox::SunSettings rust = ox::default_scene_settings().sun;
     constexpr const char *kWhy =
       "the C++ Sun differs from OxidANT's until BACKLOG.md \"One set of defaults: the Sun, "
-      "the wind and F5\"; once that lands, compare it with OxidANT's here";
+      "the wind and F5\"; once that lands, expect the two equal here";
     EXPECT_EQ(defaults.directional_light_radiance, 10.0F) << kWhy;
-    EXPECT_EQ(
-      glm::vec3(
-        defaults.directional_light_color[0], defaults.directional_light_color[1], defaults.directional_light_color[2]),
-      glm::vec3(1.0F))
-      << kWhy;
-    EXPECT_EQ(glm::vec3(defaults.directional_light_direction[0],
-                defaults.directional_light_direction[1],
-                defaults.directional_light_direction[2]),
-      glm::vec3(-0.55F, -1.0F, -0.35F))
-      << kWhy;
+    EXPECT_EQ(vec3Of(defaults.directional_light_color), glm::vec3(1.0F)) << kWhy;
+    EXPECT_EQ(vec3Of(defaults.directional_light_direction), glm::vec3(-0.55F, -1.0F, -0.35F)) << kWhy;
+
+    // The owner's Sun for both renderers; the C++ engine has no ambient term to hold the 0.35 yet.
+    EXPECT_EQ(rust.radiance, 5.0F);
+    EXPECT_EQ(rust.ambient, 0.35F);
+    EXPECT_EQ(vec3Of(rust.color), glm::vec3(1.0F, 0.97F, 0.92F));
+
+    EXPECT_NE(defaults.directional_light_radiance, rust.radiance) << kWhy;
+    EXPECT_NE(vec3Of(defaults.directional_light_color), vec3Of(rust.color)) << kWhy;
+    // C++ stores the way the light travels, OxidANT the way towards the Sun.
+    const glm::vec3 cppTowardsSun = -glm::normalize(vec3Of(defaults.directional_light_direction));
+    EXPECT_GT(glm::distance(cppTowardsSun, glm::normalize(vec3Of(rust.direction))), 1e-3F) << kWhy;
 }

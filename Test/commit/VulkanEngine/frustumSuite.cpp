@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <string>
 
 #include <nlohmann/json.hpp>
@@ -287,6 +288,16 @@ glm::vec3 json_vec3(const nlohmann::json &value)
 // The view-projection a shared frustum entry names: right-handed look-at, clip depth 0..1 as the engine builds it.
 glm::mat4 shared_view_projection(const nlohmann::json &frustum)
 {
+    if (frustum["kind"] == "matrix") {
+        // Rows as written; glm's constructor takes columns.
+        const nlohmann::json &rows = frustum["rows"];
+        const auto row = [&rows](int index) {
+            const nlohmann::json &values = rows[static_cast<std::size_t>(index)];
+            return glm::vec4(
+              values[0].get<float>(), values[1].get<float>(), values[2].get<float>(), values[3].get<float>());
+        };
+        return glm::transpose(glm::mat4(row(0), row(1), row(2), row(3)));
+    }
     const glm::mat4 view =
       glm::lookAt(json_vec3(frustum["eye"]), json_vec3(frustum["target"]), json_vec3(frustum["up"]));
     if (frustum["kind"] == "orthographic") {
@@ -317,7 +328,7 @@ TEST(FrustumUnit, ReachesEverySharedVerdictOxidantsFrustumReaches)
     const nlohmann::json vectors = nlohmann::json::parse(*text, nullptr, /*allow_exceptions=*/false);
     ASSERT_FALSE(vectors.is_discarded()) << path.string() << " is not valid JSON";
     ASSERT_TRUE(vectors.contains("frusta") && vectors.contains("cases") && vectors["cases"].is_array());
-    ASSERT_GE(vectors["cases"].size(), 20U) << "the shared file lost its cases";
+    ASSERT_GE(vectors["cases"].size(), 30U) << "the shared file lost its cases";
 
     for (const auto &entry : vectors["cases"]) {
         const std::string name = entry["name"].get<std::string>();

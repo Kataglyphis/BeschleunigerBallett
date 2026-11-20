@@ -41,6 +41,7 @@ using Kataglyphis::ViewportFraction;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
 
 static_assert(viewportAspectRatio(1920, 0, ViewportFraction{}) == 1.0F, "a zero-height extent must not divide by zero");
+static_assert(viewportAspectRatio(0, 1080, ViewportFraction{}) == 1.0F, "a zero-width extent is empty too");
 static_assert(clampCloudMeshScale(glm::vec3(0.0F), 0.0F).x >= kMinCloudMeshExtent
                 && clampCloudMeshScale(glm::vec3(0.0F), 0.0F).w >= kMinCloudDensityMultiplier,
   "an all-zero cloud mesh scale/density must not survive the clamp");
@@ -50,6 +51,7 @@ namespace {
 TEST(SceneUboMarshalUnit, ZeroHeightExtentDoesNotDivideByZero)
 {
     EXPECT_FLOAT_EQ(viewportAspectRatio(1920, 0, ViewportFraction{}), 1.0F);
+    EXPECT_FLOAT_EQ(viewportAspectRatio(0, 1080, ViewportFraction{}), 1.0F) << "a zero width, as OxidANT's lens";
     EXPECT_FLOAT_EQ(viewportAspectRatio(1920, 1080, ViewportFraction{}), 1920.0F / 1080.0F);
 }
 

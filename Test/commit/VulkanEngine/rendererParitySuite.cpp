@@ -52,6 +52,13 @@ void expectNear(const glm::mat4 &cpp, const glm::mat4 &rust, const std::string &
     }
 }
 
+// What the Rust renderer hands its lens: width over height in floats, infinite or NaN for a zero height.
+float frameAspect(std::uint32_t width, std::uint32_t height)
+{
+    if (height > 0) { return static_cast<float>(width) / static_cast<float>(height); }
+    return width > 0 ? kInf : kNaN;
+}
+
 struct RectCase
 {
     std::string name;
@@ -95,7 +102,13 @@ TEST(RendererParity, LensMatchesOxidantsWithRowOneNegated)
     };
     constexpr float kNear = 0.1F;
     for (const float fov : { 20.0F, 45.0F, 110.0F }) {
-        for (const Frame frame : { Frame{ 1600, 900 }, Frame{ 1920, 1080 }, Frame{ 900, 1600 } }) {
+        // An empty frame (a minimized window) has aspect 1 in both renderers, whichever side is zero.
+        for (const Frame frame : { Frame{ 1600, 900 },
+               Frame{ 1920, 1080 },
+               Frame{ 900, 1600 },
+               Frame{ 1600, 0 },
+               Frame{ 0, 768 },
+               Frame{ 0, 0 } }) {
             for (const float far : { 150.0F, 4000.0F }) {
                 for (const RectCase &input : rectCases()) {
                     const Kataglyphis::ViewportFraction rect =
@@ -106,7 +119,7 @@ TEST(RendererParity, LensMatchesOxidantsWithRowOneNegated)
                       * Kataglyphis::makeVulkanProjection(
                         fov, Kataglyphis::viewportAspectRatio(frame.width, frame.height, rect), kNear, far);
                     const px::Lens lens{ .fov_y_deg = fov,
-                        .frame_aspect = static_cast<float>(frame.width) / static_cast<float>(frame.height),
+                        .frame_aspect = frameAspect(frame.width, frame.height),
                         .near_plane = kNear,
                         .far_plane = far,
                         .viewport = input.rect };

@@ -93,13 +93,6 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Bridge foundations:
 
-- [ ] `Shared` **Apply the bridge review's rules of 2026-11-19** (S-M, plan I5 and B10). The rules are under
-  Owner decisions. Rust's `Frustum` and `draw_cull.slang` take the C++ culling rules, and the three cases go
-  into `frustum_verdicts.json`; `CloudSettings::sanitized` clamps every field to its range with NaN
-  fallbacks, and `sceneSettingsDriftSuite.cpp` checks NaN too; the Sun joins `default_scene_settings()`
-  and the drift suite compares it as a named difference; Rust's lens takes aspect 1 for a zero-height
-  frame, and the parity suite adds that case; both renderers read an empty
-  `KATAGLYPHIS_MIKKTSPACE_TANGENTS` as unset. Each with a negative control.
 - [ ] `C++` **Parser-behaviour twins in Rust only** (S, plan X5's remainder). `gltfParseSuite.cpp` still
   tests behaviour of OxidANT's parser that `kataglyphis_assets` tests too. Pair each such case with its
   Rust twin, delete the C++ copy and keep the cases that check the mapping into Mesh, MeshRange and
@@ -115,6 +108,10 @@ Bridge foundations:
   sky, which C++ times as Sky; Rust's ShadowCascades includes the punctual cube faces, which C++ times
   as PunctualShadows; Rust times TraceResolve on its own and has no Main. Split Rust's scopes the C++
   way, so `Compare-RendererTimings.ps1` compares like with like.
+- [ ] `C++` **A non-finite shadow distance or split lambda takes its default in the cascade math** (S). Owner
+  2026-11-20: NaN and ±inf fall back to a field's default everywhere; the bridged `sanitize` does so since
+  2026-11-20, but `CascadedShadowMapMath.cpp` turns a NaN distance into the far plane instead of 60 and passes
+  a NaN split lambda through `std::clamp`. A `cascadedShadowMapSuite` case per field, with a negative control.
 - [ ] `C++` **`MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels** (S). It counts meshes only
   and passed with the in-place upload's index re-base zeroed; only
   `BlendCardsCompositeInDepthOrderFromBothSides` caught that mutant. Check that the left quad draws red

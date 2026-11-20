@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -300,6 +301,12 @@ TEST(GltfParseUnit, TheMikkTSpaceVariableReachesALoadOnlyThroughTheEngineStart)
     {
         const Kataglyphis::TestSupport::ScopedEnvVar unset("KATAGLYPHIS_MIKKTSPACE_TANGENTS", "");
         EXPECT_FALSE(Kataglyphis::gltfLoadOptionsFromEnvironment().mikktspaceTangents);
+#ifndef _WIN32
+        // Windows' _putenv_s removes a variable set to empty; POSIX keeps it, and empty must count as unset.
+        ASSERT_EQ(setenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS", "", 1), 0);
+        ASSERT_NE(std::getenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS"), nullptr);
+        EXPECT_FALSE(Kataglyphis::gltfLoadOptionsFromEnvironment().mikktspaceTangents) << "an empty value is unset";
+#endif
     }
     const Kataglyphis::TestSupport::ScopedEnvVar set("KATAGLYPHIS_MIKKTSPACE_TANGENTS", "1");
     EXPECT_TRUE(Kataglyphis::gltfLoadOptionsFromEnvironment().mikktspaceTangents);

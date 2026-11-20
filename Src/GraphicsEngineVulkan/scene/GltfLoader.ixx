@@ -33,7 +33,7 @@ struct GltfLoadOptions
     bool mikktspaceTangents = false;
 };
 
-/// `KATAGLYPHIS_MIKKTSPACE_TANGENTS` set means MikkTSpace; App::run reads it once at the engine's start, no loader does.
+/// `KATAGLYPHIS_MIKKTSPACE_TANGENTS` set and not empty means MikkTSpace; App::run reads it once, no loader does.
 GltfLoadOptions gltfLoadOptionsFromEnvironment();
 
 /// Loads `.gltf`/`.glb` geometry into the same flat CPU-side layout `ObjLoader`

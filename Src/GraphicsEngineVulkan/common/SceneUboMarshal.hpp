@@ -46,12 +46,12 @@ constexpr auto sanitizeViewportFraction(float x0, float y0, float x1, float y1) 
     return rect;
 }
 
-// 1 for an empty rect: a minimized or resizing window reports zero height, which would put NaN in the projection.
+// 1 for an empty rect, as OxidANT's lens: a minimized or resizing window reports a zero side, an infinite projection.
 constexpr auto viewportAspectRatio(uint32_t width, uint32_t height, ViewportFraction rect) -> float
 {
     const float rectWidth = static_cast<float>(width) * (rect.x1 - rect.x0);
     const float rectHeight = static_cast<float>(height) * (rect.y1 - rect.y0);
-    return (rectHeight > 0.0F) ? rectWidth / rectHeight : 1.0F;
+    return (rectWidth > 0.0F && rectHeight > 0.0F) ? rectWidth / rectHeight : 1.0F;
 }
 
 // Centres the camera on the rect; every pass still covers the whole image, the docks hide the rest.

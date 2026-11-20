@@ -45,8 +45,9 @@ GltfLoader &GltfLoader::operator=(GltfLoader &&other) noexcept
 
 GltfLoadOptions gltfLoadOptionsFromEnvironment()
 {
-    // Set at all, as OxidANT's load_options_from_env reads it: an empty value asks for MikkTSpace too.
-    return GltfLoadOptions{ .mikktspaceTangents = std::getenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS") != nullptr };
+    // Empty counts as unset, as for the engine's other knobs and OxidANT's load_options_from_env.
+    const char *value = std::getenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS");
+    return GltfLoadOptions{ .mikktspaceTangents = value != nullptr && *value != '\0' };
 }
 
 std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile, const GltfLoadOptions &options)

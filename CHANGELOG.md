@@ -12,6 +12,23 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Changed
+
+- The bridge review's rules (owner decisions 2026-11-19 and 2026-11-20), with OxidANT `a7c4ebe`: OxidANT's
+  frustum and draw cull take the engine's culling rules (an inverted or NaN box is visible, the planes are
+  normalised with the 1e-4 margin, a plane without a normal is skipped), and `frustum_verdicts.json` gains the cases
+  the two used to decide differently, 30 in all; `FrustumUnit.ReachesEverySharedVerdictOxidantsFrustumReaches` reads
+  its new `matrix` frusta. `sanitize` holds every cloud field to the editor's bounds and puts a NaN or infinite
+  cloud or shadow value back to its default (the shadow Strength became 1.0 before, not 0.65), which
+  `SceneSettingsDrift.SanitizeHoldsEveryFloatToTheEditorsBoundsAndANonFiniteOneToItsDefault` checks against
+  `GUISceneSharedVars{}`; both renderers' packing stays lenient, the step counts and the Scale and Density floors
+  alone, since goldens on both sides march Density above the editor's top of 1. `default_scene_settings()` carries
+  OxidANT's Sun, compared with the engine's as the named difference until BACKLOG "One set of defaults". An empty
+  frame has aspect 1 in both renderers: `viewportAspectRatio` returns 1 for a zero width too (it returned 0, an
+  infinite projection), and `RendererParity.LensMatchesOxidantsWithRowOneNegated` adds 1600x0, 0x768 and 0x0. An
+  empty `KATAGLYPHIS_MIKKTSPACE_TANGENTS` counts as unset in the engine, as in OxidANT's viewer; it turned
+  MikkTSpace on.
+
 ## [1.6.0] - 2026-11-20
 
 Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) now carries the original license texts of the shipped C/C++ libraries, Dear ImGui's fonts and the Rust crates the C++ bridge links, under `share/licenses/GraphicsEngine/`; the DEB gate and the MSIX check read them back.
