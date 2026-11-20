@@ -355,10 +355,6 @@ New in both:
   CON281**). GCC 16.2 crashed on two `std::span<const unsigned int>` data members (f7e9c7fc keeps a pointer
   and a count). Restore the span members once the image's GCC compiles them, checked first under a 4 GB
   cgroup.
-- [ ] `CI` **Drop the `setup_loader_term_phys_devs` leak suppression if nothing uses it** (S). Since
-  2026-11-20 the llvmpipe run loads lavapipe only (`VK_LOADER_DRIVERS_SELECT`), which should keep the leaking
-  ICD out; when an x64 clang GPU job's "Suppressions used" lists only `libX11.so`, drop the second entry from
-  `lsanSuppressions.cpp` and its sentence in `gpu-golden-testing.md`.
 
 ---
 
@@ -393,9 +389,6 @@ committed to.
   - Later rules: the shared material Slang clamps metallic and flags MASK as Rust does; the OBJ reader takes
     Rust's material rules; textures decode as PNG, JPEG, BMP, TGA, GIF, PNM and HDR; C++ gets glTF animation
     through one Rust animator; both glTF loaders confine images and buffers to the glTF file's folder.
-
-- **1.6.0 ships after the plan's Phase 2** (2026-11-19): `bump-version.sh 1.6.0`, its CHANGELOG section, then
-  develop goes to main once every lane is green.
 
 - **The bridge foundations' review rules** (2026-11-19, after Phase 2):
   - Frustum culling follows the C++ rules in both renderers and `draw_cull.slang`: an inverted or invalid box

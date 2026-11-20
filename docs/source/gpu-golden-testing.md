@@ -59,17 +59,17 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   (`BACKLOG.md`, golden-render cases on the arm64 device). Mesa main replaced the radix sort with a merge sort
   (`ebcfbe60`, 2026-08-22), so the hub drops its `ENV` once the image's Mesa carries that. The
   Windows lavapipe run (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
-- **The llvmpipe run loads lavapipe only, and ASan builds carry two driver leak suppressions.**
+- **The llvmpipe run loads lavapipe only, and ASan builds carry a libX11 leak suppression.**
   `run-ctest.sh --virtual-display` sets `VK_LOADER_DRIVERS_SELECT='*lvp*'` unless the caller names an ICD
   (`VK_ICD_FILENAMES`, `VK_DRIVER_FILES` or the variable itself, as the NVIDIA recipe below does). On GitHub's
   `ubuntu-26.04` runner image 20261116.202.1 another of the image's ICDs found a DRM node (Mesa's PowerVR ICD
   stopped warning that it found none) and left a block and its threads' memory behind while the loader
   enumerated devices; LeakSanitizer then failed every x64 clang GPU test (runs 44753690114, 44761639606,
-  44770349057), with the container image of the green run before. `glfwInit()` on X11 leaks libX11's locale
-  state, which failed every GPU test in an ASan build, so `commitTestSuite` carries its own LeakSanitizer
-  suppressions (`Test/commit/VulkanEngine/lsanSuppressions.cpp`): `libX11.so`, and
-  `setup_loader_term_phys_devs` for the direct block; the threads' blocks it holds are reported as indirect
-  leaks all the same, which the ICD selection removes at the source.
+  44770349057), with the container image of the green run before; with lavapipe alone run 44784592908 passed
+  899 of 899 there. A suppression of the loader frame (`setup_loader_term_phys_devs`) is no substitute: it
+  removed the direct block, and the threads' blocks it holds were still reported as indirect leaks.
+  `glfwInit()` on X11 leaks libX11's locale state, which failed every GPU test in an ASan build, so
+  `commitTestSuite` carries its own LeakSanitizer suppression (`Test/commit/VulkanEngine/lsanSuppressions.cpp`).
 - **A software rasterizer is not the RX 9070 XT.** A pass on llvmpipe is a strong behavioural
   signal, not a substitute for the host loop below after a render/device change.
 

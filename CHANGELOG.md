@@ -12,6 +12,12 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Removed
+
+- The loader-frame leak suppression of 1.6.0 (`leak:setup_loader_term_phys_devs` in `lsanSuppressions.cpp`): with the
+  llvmpipe run on lavapipe alone no GPU test uses it (run 44784592908 on runner image 20261116.202.1 listed only
+  `libX11.so` under "Suppressions used").
+
 ## [1.6.0] - 2026-11-20
 
 Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) now carries the original license texts of the shipped C/C++ libraries, Dear ImGui's fonts and the Rust crates the C++ bridge links, under `share/licenses/GraphicsEngine/`; the DEB gate and the MSIX check read them back.
