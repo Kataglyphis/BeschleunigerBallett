@@ -1,5 +1,6 @@
 module;
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
@@ -78,9 +79,9 @@ class GltfLoader
 
     /// The bridge's own arrays, valid while this loader holds the parse; nothing copies them before the upload.
     std::span<const Vertex> getVertices() const { return vertices; }
-    std::span<const unsigned int> getIndices() const { return indices; }
+    std::span<const unsigned int> getIndices() const { return { indices.data, indices.size }; }
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
-    std::span<const unsigned int> getMaterialIndices() const { return materialIndex; }
+    std::span<const unsigned int> getMaterialIndices() const { return { materialIndex.data, materialIndex.size }; }
     /// Encoded base-colour image bytes (PNG/JPG...), one entry per *distinct*
     /// image; materials sharing an image share a slot, indexed by that
     /// material's textureID. loadModel decodes and uploads them via
@@ -128,11 +129,18 @@ class GltfLoader
     // OxidANT's result, which the views below point into; untyped, as no module interface may include a bridge header.
     std::shared_ptr<const void> bridge;
 
+    // A pointer and a count: a std::span<const unsigned int> member crashed GCC 16.2 in GltfLoader.cpp (an ICE).
+    struct IndexView
+    {
+        const unsigned int *data = nullptr;
+        std::size_t size = 0;
+    };
+
     std::span<const Vertex> vertices;
-    std::span<const unsigned int> indices;
+    IndexView indices;
     std::vector<ObjMaterial> materials;
     // Per-face (per-triangle) material id, exactly like the OBJ path.
-    std::span<const unsigned int> materialIndex;
+    IndexView materialIndex;
     // One encoded image per textured material (see getTextureImages).
     std::vector<std::span<const unsigned char>> textureImages;
     // Index-parallel with textureImages; see getTextureSamplerDescs.

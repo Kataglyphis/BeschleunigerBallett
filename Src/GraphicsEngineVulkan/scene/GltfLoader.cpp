@@ -92,7 +92,8 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     ensureAtLeastOneTexture(*model, device, command_pool);
 
     // One mesh per glTF primitive; each shares the full materials array (materialIndex keeps original indices).
-    addMeshesForRangesInPlace(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
+    addMeshesForRangesInPlace(
+      *model, device, command_pool, vertices, getIndices(), getMaterialIndices(), materials, meshRanges);
     model->setPunctualLights(punctualLights);
     model->setSun(sun);
     return model;
