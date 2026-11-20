@@ -59,9 +59,13 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   (`BACKLOG.md`, golden-render cases on the arm64 device). Mesa main replaced the radix sort with a merge sort
   (`ebcfbe60`, 2026-08-22), so the hub drops its `ENV` once the image's Mesa carries that. The
   Windows lavapipe run (`Invoke-LavapipeTests.ps1`) uses its own Mesa and keeps the pin.
-- **ASan builds carry a libX11 leak suppression.** `glfwInit()` on X11 leaks libX11's locale
+- **ASan builds carry two driver leak suppressions.** `glfwInit()` on X11 leaks libX11's locale
   state, which failed every GPU test in an ASan build, so `commitTestSuite` carries its own
-  LeakSanitizer suppression (`Test/commit/VulkanEngine/lsanSuppressions.cpp`).
+  LeakSanitizer suppressions (`Test/commit/VulkanEngine/lsanSuppressions.cpp`). The second,
+  `setup_loader_term_phys_devs`, covers what a Vulkan driver allocates once while the loader enumerates
+  devices: on GitHub's `ubuntu-26.04` runner image 20261116.202.1 (the same container image as the run
+  before) the x64 clang job's GPU tests reported such a block, in a `pthread_once` of a driver the loader had
+  already unloaded, and the driver threads it holds (release run 44753690114, 80 tests).
 - **A software rasterizer is not the RX 9070 XT.** A pass on llvmpipe is a strong behavioural
   signal, not a substitute for the host loop below after a render/device change.
 
