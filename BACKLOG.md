@@ -79,7 +79,33 @@ takes UTF-8 paths and runs inside `guarded()`.
   runner (llvmpipe, lavapipe). Only `brdf_test`, `noise_test` and `path_estimator_test` are dual-target
   today; BB's two move into OxidANT. Every later shared module adds its kernel and vectors.
 
+- [ ] `CI` **The Windows binaries lack the CFG bit** (S). They are compiled with CFG, but the hub's
+  `cmake/Hardening.cmake` never passes `/guard:cf` to the linker: none of the 13 lld-link lines of job 136406090876
+  carries it. Hub CON290 fixes the flags; then move the hub pin and read GUARD_CF with `llvm-readobj` from
+  `GraphicsEngine.exe` in a `[ci windows]` run. Found by the C++ comparison of 2026-11-21 (owner decisions D1 to D12,
+  as recommended).
+
 ### P2: medium
+
+- [ ] `CI` **The hub gates BB does not call yet** (S). From the C++ comparison of 2026-11-21: `security-audit.yml`
+  (osv-scanner, cargo-audit, cargo-deny; green in all 50 of AccelerANTgine's recent runs), lint-gates' `agents-drift`
+  and `sha-pin` (0 tag-pinned actions today), the quality-report step (skipped in run 44784593082),
+  `retry-disk-refusal`, and `core.hooksPath` on the Pi's clone so its pre-push checks run.
+- [ ] `CI` **A develop run finishes instead of being cancelled** (S, owner D9 2026-11-21). 27 of the last 50 x64 runs
+  were cancelled by newer pushes, many after 70 to 92 minutes, and left their commits without a verdict; cancel in
+  progress only off develop. Not verified: whether six-job runs then queue against the account's limit of concurrent
+  jobs; if they do, push less often rather than cancel.
+- [ ] `C++` **cppcheck stops claiming to run, and the filesystem rule fires again** (S, owner D10 2026-11-21). cppcheck
+  is ON by default, but the image has no binary, so it is skipped without a word (jobs 135983570303, 135983570356):
+  the default goes. BuildIntegrity's exception-free filesystem rule cannot fire for `create_directories(` or
+  `directory_iterator(`, whose names contain "ec" (`buildIntegritySuite.cpp:7910-7913`); the hub's pattern-limits row
+  (CON295) replaces it.
+- [ ] `CI` **Linux linker hardening and the hub's newer gates** (S each). "Hardening Linker Flags:" is empty (job
+  135983570303, log 2886): hub CON294 adds PIE and `-z relro -z now` and an ELF gate. The SYNC-HAZARD scan moves onto
+  `ctest-run.sh --fail-on-log-pattern` (CON291), with `VUID-` added (0 in green job 136455950642); the staged runner's
+  exact skip list takes an empty list (CON292; 0 Windows skips in job 136436488204); warnings become errors in three
+  steps (CON295, owner D11: spdlog and nlohmann as SYSTEM includes, 124 and 12 warnings in job 135983570345, then a
+  ratchet, then the product targets). The Actions cache is over its quota (10.58 of 10 GB).
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
