@@ -37,7 +37,7 @@ the GitHub releases themselves.
   shows the photo (`untonemapped`), so the displayed sky is unchanged; a half-transparent card over the navy sky now
   holds red 0.5 and blue half the navy's radiance in the HDR target, where it held blue 0 at alpha 0.5. The `Sky`
   timed pass is gone: `Forward`, `DeferredLighting` and `RayTrace` include the sky, as the Rust renderer's do.
-- OxidANT pin to `d392a78`, on OxidANT develop: the C2 sky entry, the C3 FXAA docs, N1's
+- OxidANT pin to `cf83df5`, on OxidANT develop: the C2 sky entry, the C3 FXAA docs, N1's
   multiple-scattering GGX compensation, X3's vector kernels, and the Rust renderer's FXAA default moving to Always as
   here. Its review moved two more things in: `brdf.slang`'s Smith remaps floor the roughness at `MIN_ROUGHNESS` as the
   NDF does (a white metal at roughness 0 returned 1.21 of a uniform sky at n.v 0.01; every caller here clamps first,
