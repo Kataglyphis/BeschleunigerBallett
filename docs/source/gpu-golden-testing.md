@@ -7,7 +7,9 @@ changes that the CPU unit suites cannot cover.
 ## They skip without a GPU
 
 Each test starts with `SKIP_WITHOUT_GPU()` from `Test/commit/VulkanEngine/GpuTestGuard.hpp`, the one
-GLFW/Vulkan-runtime guard (`BuildIntegrity.EveryGpuTestGuardsThroughTheSharedHeader`). The headless
+GLFW/Vulkan-runtime guard (`BuildIntegrity.EveryGpuTestGuardsThroughTheSharedHeader`); a test on a
+compute device of its own, without GLFW, passes its open's failure to `SKIP_WITHOUT_HEADLESS_DEVICE`
+from the same header instead. The headless
 container build (`scripts/windows/Build-Windows-Container.ps1 -RunTests`) has no GPU, so they report
 **skipped**, not passed. A green container build proves the code *compiles and links* and the CPU
 suites pass; it does **not** prove a render/device refactor preserves behaviour. With
@@ -70,6 +72,9 @@ bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-ty
   removed the direct block, and the threads' blocks it holds were still reported as indirect leaks.
   `glfwInit()` on X11 leaks libX11's locale state, which failed every GPU test in an ASan build, so
   `commitTestSuite` carries its own LeakSanitizer suppression (`Test/commit/VulkanEngine/lsanSuppressions.cpp`).
+  A test that only probes, as `Integration.SharedSlangKernelsMeetTheirVectors` did until it took
+  `SKIP_WITHOUT_HEADLESS_DEVICE`, has libX11 unloaded by exit, so the same leak shows with no X11 frame;
+  a second line names `glfwInit` (2026-11-21) and stays for such a probe (owner decision 2026-11-21).
 - **A software rasterizer is not the RX 9070 XT.** A pass on llvmpipe is a strong behavioural
   signal, not a substitute for the host loop below after a render/device change.
 
@@ -147,7 +152,7 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | --- | --- | --- | --- | --- | --- |
 | `PathTracedMaskCardShowsItsCutout` | 60 → 24 | 0.355; 0.350 since 2026-11-16 (aarch64 llvmpipe) | 0.354-0.356; 0.352 (one stream) | 0.15-0.49 | alpha test ignored: 0.631; 0.628 since 2026-11-16, fails |
 | `AddedModelAppearsInPathTracing` | 60 → 24 | 0.016 before, 0.403 after; at steps of 48 levels since 2026-11-16, 0.0010 before, 0.201 after | 0.051-0.055 before, 0.417-0.421 after; 0.0016 before, 0.200 after (one stream) | 0.15; 0.1 since 2026-11-16 | AS not rebuilt: 0.071 after; 0.0019 since 2026-11-16, fails |
-| `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of `E(mu)`, rig (roughness 0.8) 0.9823, 1.0 within ±0.1 (2026-11-16, aarch64 llvmpipe, one stream) | card within 0.001, rig 0.9823, 0.9995 (one stream) | card 0.01, rig 0.977-0.988, 0.98 | albedo 0.99: rig 0.9715, fails; albedo 1.01: rig 0.9933, fails |
+| `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of 1, rig (roughness 0.5) 0.9997, 1.0 within ±0.1 (2026-11-21, aarch64 llvmpipe, one stream) | card within 0.0009 of 1, rig 0.9996, 0.9996 (one stream) | card 0.01 of 1, rig 0.994-1.005, 0.98 | albedo 0.99: rig 0.9889, fails; albedo 1.01: rig 1.0106, fails |
 | `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
@@ -187,12 +192,14 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   sky marks them) against the displayed zenith, horizon and ground of OxidANT's gradient. On aarch64
   llvmpipe: 254288 sky pixels, 0 dark, 0 outside the anchors' 92..210, 133..215, 128..221, blue minus
   red 13.5. Negative control: the old black faces fail all three assertions (254288 dark).
-- **The furnace rig moved to roughness 0.8 on 2026-11-16**, when a bounce took the sampled
-  Smith remap (`docs/source/path-tracing.md`): at 0.5 the BRDF's own `E(mu)` passes 1 at grazing
-  angles and the rig's mean rose to 1.019. At 0.8 `E(mu)` stays in 0.981-0.997, so the mean is
-  capped below 1 again; its bounds sit halfway between the measured 0.9823 and a furnace albedo
-  of 0.99 (0.9715) or 1.01 (0.9933), so a 1 % gain or loss per bounce fails either way. Measured
-  on one stream only; the four extra streams are not re-run.
+- **The furnace rig moved to roughness 0.8 on 2026-11-16 and back to 0.5 on 2026-11-21.** With
+  the sampled Smith remap (`docs/source/path-tracing.md`) the single-scatter BRDF's own `E(mu)`
+  passed 1 at grazing angles at 0.5 and the rig's mean rose to 1.019; at 0.8 `E(mu)` stayed in
+  0.981-0.997, which capped the mean below 1 (0.9823, bounds 0.977-0.988). Since `brdf.slang`'s
+  multiple-scattering gain (plan N1) a white surface returns 1 at every roughness and angle, so the
+  rig is back at 0.5 (owner decision 2026-11-21). Its bounds sit halfway between the measured 0.9997 (both
+  variants) and a furnace albedo of 0.99 (0.9889) or 1.01 (1.0106): 0.994-1.005, so a 1 % gain or loss
+  per bounce fails either way. Measured on one stream only; the four extra streams are not re-run.
 - **The anti-aliasing golden reads one edge: the slab's top against the sky** (owner decision
   2026-10-12), at y 56 of the 1200x768 frame. `sky_silhouette` (`GoldenMetrics.hpp`) walks each
   column of the panel-free crop down from the sky to its first step of more than 20 levels, so
@@ -282,6 +289,25 @@ cargo test -p kataglyphis_webgpu_renderer
 
 A clean run has zero `SKIP: no GPU` lines in the output.
 
+## Shared Slang kernels against one vector file
+
+`Integration.SharedSlangKernelsMeetTheirVectors` (`sharedShaderVectorsSuite.cpp`, plan X3, 2026-11-21) is
+the C++ half of OxidANT's vector kernels (OxidANT `docs/shaders.md` § Vector kernels). For every
+`third_party/OxidANT/shaders/tests/vectors/*.json` it loads its kernel's SPIR-V from
+`Resources/ShadersSlang/build/spirv/tests/`, dispatches it once per case on a compute device of its own
+(no surface, no validation layer), and checks every component against its f64 reference within
+`abs + rel * |ref|`; an integer must match, and a word past the last case must stay unwritten. One
+failure per module lists each miss by case, output and component. A new vector file needs no edit
+here; fewer than three files fail the test (an unstaged OxidANT tree). It dispatches one invocation per
+case, so a kernel whose SPIR-V `LocalSize` is not 1x1x1 fails before its dispatch; a fence timeout
+waits for the device before anything is destroyed, and a short or unmapped read-back fails. On aarch64
+llvmpipe (2026-11-21): brdf 21 cases, noise 16, path_estimator 20, the closest passing component at
+0.071, 0.075 and 0.024 of its tolerance. Controls: `brdf.slang`'s `multiscatter_gain` returning 1 fails 244
+brdf and 52 path_estimator components, its diffuse back on `1 - F` 129 and 41, the counts OxidANT's
+model predicts; one edited noise reference fails exactly `inside a cell: snoise[0]`; a brdf kernel
+compiled with `numthreads(2, 1, 1)` fails as `declares 2x1x1` before its dispatch. Without a device
+it fails under `KATAGLYPHIS_REQUIRE_GPU` and skips otherwise.
+
 ## The verification loop for render/device changes
 
 The canonical per-unit verification pattern; `AGENTS.md` and `docs/source/cpp-renderer-improvements.md`
@@ -305,7 +331,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=87 runnable=85 integration=12 total=97 excluded=3 -->
+<!-- golden-counts: defined=89 runnable=87 integration=13 total=100 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -336,13 +362,20 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   measure the wrong thing, and whole-frame or centre-crop means have measured, at various times:
   the FPS-counter digits, SSAO, the caster's own body, and nothing at all. Prefer luminance-delta
   oracles over absolute-colour thresholds.
+- **The harness pins FXAA off** (`GUIRendererSharedVars::fxaaMode`, 2026-11-21): the goldens
+  grade pixels FXAA would move, edges above all. `FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone`
+  turns it on: a white card turned 20 degrees over the navy sky must blend more than 30 % of the
+  unfiltered frame's edge pixels between card and sky (fewer than 1 % without FXAA, the control;
+  2452 of 3868 measured with it, 0 without), move no pixel farther than two pixels from every edge
+  (0 of 895412), filter a raster frame the same in Raster and Always, and leave a ray-traced frame
+  alone in Raster. The integration suites keep the default, Always.
 - **For a radiance bound, read the HDR target.** `EngineHarness::capture_hdr_frame` arms
   `VulkanRenderer::requestHdrCapture`, which copies the RGBA16F target post just read, as linear
   floats. ACES squeezes everything above about 1 into the last few 8-bit levels, so a ratio or an
   energy bound measured on the tonemapped frame is weak or vacuous there:
-  `PathTracingPassesTheWhiteMetalFurnaceTest` compares radiance to `E(mu)` within 0.03,
-  `PathTracingPassesTheWhiteFurnaceTest` a dielectric's within 0.01 and the rig's mean to
-  0.977-0.988, `PathTracingFloorsAZeroRoughnessTexel` two cards within 3 %,
+  `PathTracingPassesTheWhiteMetalFurnaceTest` and `PathTracingPassesTheWhiteFurnaceTest` compare a
+  white card's radiance to 1 within 0.01 and the rig's mean to 0.994-1.005,
+  `PathTracingFloorsAZeroRoughnessTexel` two cards within 3 %,
   `PathTracingHonorsTheUntexturedMetallicFactor` a metal to its dielectric twin, and
   `HdrTargetStaysBelowTheHalfFloatMaximum` every texel to the fp16-safe 65000. That last one is
   the only way to see the overflow on lavapipe, which rounds radiance past 65504 to 65504 rather
@@ -390,12 +423,15 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   any shadow or non-ground pixel must not darken by 3+ levels; below 1 % passes, 0 of 375144
   measured.
 - **`PostEncodesEachHdrTexelThroughAcesAndSrgb`**: at a tenth of the default sun and at the
-  default, more than 99.9 % of the opaque texels must sit within 2 levels of ACES then sRGB of
-  their HDR value (100 %, worst 0 measured), texels near 0.18 must average level 141, and the two
-  frames must hold at least 1000 green texels below 0.05 and above 1.0 and 100 near 0.18, so the
-  toe, middle and shoulder are all checked. Sky texels (alpha 0) are blended over the sky pass
-  and left out. The C++ post has no exposure or bloom stage to test; those are the Rust
-  renderer's.
+  default, every HDR texel must be opaque (the sky is in the HDR target since 2026-11-21) and
+  more than 99.9 % of them must sit within 2 levels of ACES then sRGB of their HDR value, texels
+  near 0.18 must average level 141, and the two frames must hold at least 1000 green texels
+  below 0.05 and above 1.0 and 100 near 0.18, so the toe, middle and shoulder are all checked.
+  The C++ post has no exposure or bloom stage to test; those are the Rust renderer's.
+- **`SkyFillsTheHdrTargetInEveryModeButPathTracing`**: on the shadow rig with the navy sky, the
+  forward, deferred and ray-traced HDR targets hold no transparent texel and more than 5000
+  texels at the navy's untonemapped radiance, which post shows as the navy; the path-traced
+  frame keeps its own camera-miss gradient (fewer than 100 navy texels).
 
 The controls, one-line edits each run on the three and reverted (`ShadowsDarkenSomePixels`, run
 beside them, failed only the first):
@@ -488,14 +524,16 @@ validation on for its own harness, so it holds on any lane with validation layer
 (measured 2026-11-16, with the barriers removed: 0 hazards by default):
 
 - `syncval_load_op_after_store_op_validation`: a load op reading what another rendering
-  instance stored. Post's `eLoad` of the swapchain image after the sky pass is one; without
-  its barrier the setting reports `READ_AFTER_WRITE` at `vkCmdBeginRendering`.
+  instance stored. Until 2026-11-21 post's `eLoad` of the swapchain image after the sky pass
+  was one; without its barrier the setting reported `READ_AFTER_WRITE` at
+  `vkCmdBeginRendering`. Post now overwrites the swapchain image (`eDontCare`), and the
+  traced sky's `eLoad` of the ray-traced target follows a storage write.
 - `syncval_shader_accesses_heuristic`: shader reads and writes through descriptors. Post's
   read of the clouds' compute output is one; without its barrier the setting reports
   `READ_AFTER_WRITE` at post's `vkCmdDraw`.
 
 `run-ctest.sh --virtual-display` and `Invoke-LavapipeTests.ps1` turn both on, and
-`GoldenRender.CloudCompositeAndSkyLoadAreFreeOfSyncHazards` sets them for its own
+`GoldenRender.CloudCompositeAndTracedSkyAreFreeOfSyncHazards` sets them for its own
 harness. Raise `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT` when hunting: every hazard of one
 kind shares a message id, so ten load-op reports silence the shader-read ones behind them.
 

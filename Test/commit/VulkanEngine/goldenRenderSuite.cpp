@@ -69,6 +69,7 @@ import kataglyphis.vulkan.window;
 namespace {
 
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::Test::GoldenMetrics::Crop;
@@ -89,7 +90,8 @@ using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
 using Kataglyphis::Test::GoldenMetrics::SKY_SILHOUETTE_STEP;
 using Kataglyphis::Test::GoldenMetrics::SkySilhouette;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
-using Kataglyphis::Test::GoldenMetrics::white_directional_albedo;
+using Kataglyphis::Test::GoldenMetrics::kWhiteFurnaceAlbedo;
+using Kataglyphis::Test::GoldenMetrics::white_single_scatter_albedo;
 
 constexpr int WINDOW_WIDTH = 1200;
 constexpr int WINDOW_HEIGHT = 768;
@@ -150,6 +152,8 @@ struct EngineHarness
         frame_golden_view(*camera);
         // The goldens frame the whole image; the docked editor would shrink the scene into its viewport.
         gui->setOverlayVisible(false);
+        // The goldens grade pixels FXAA would move; FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone turns it on.
+        settings.renderer.fxaaMode = FxaaMode::Off;
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
         Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
@@ -381,7 +385,7 @@ int channel_delta(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, 
     return delta;
 }
 
-// skybox.slang's disabled sky, linear (0, 0, 0.5), as the UNORM swapchain stores it.
+// sky.slang's disabled sky, linear (0, 0, 0.5) on screen, as the UNORM swapchain stores it.
 bool is_disabled_sky(const std::vector<uint8_t> &rgba, size_t pixel)
 {
     const size_t base = pixel * 4U;
@@ -520,23 +524,22 @@ TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
     harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
     scene_vars.clouds_enabled = true;
-    // The default half-resolution march records the upsample between the march and the sky.
+    // The default half-resolution march records the upsample between the march and post; the sky draws in main.
     harness.render_frames(1);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "post" }));
 
     // A full-resolution march fills the full-size target itself.
     scene_vars.cloud_half_resolution = false;
     harness.render_frame();
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "sky", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "post" }));
 
     scene_vars.shadows_enabled = false;
     scene_vars.clouds_enabled = false;
     harness.render_frame();
-    EXPECT_EQ(
-      harness.renderer->renderStageRegistry().lastRecorded(), (std::vector<std::string>{ "main", "sky", "post" }));
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(), (std::vector<std::string>{ "main", "post" }));
 }
 
 // What the registry is for: a pass added from outside VulkanRenderer records, resizes and leaves again.
@@ -1473,7 +1476,7 @@ TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
         ASSERT_EQ(display.size(), static_cast<size_t>(width) * height * 4U);
         ASSERT_EQ(raw_hdr.size(), display.size() * 2U);
 
-        // Opaque texels only: post blends a sky texel (alpha 0) over the sky pass, outside the formula.
+        // Every texel, the sky's included: it is radiance in the HDR target like the scene, at alpha 1.
         size_t opaque = 0;
         size_t matching = 0;
         int worst_delta = 0;
@@ -1508,7 +1511,7 @@ TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
         const double match_fraction = opaque > 0U ? static_cast<double>(matching) / static_cast<double>(opaque) : 0.0;
         GTEST_LOG_(INFO) << opaque << " opaque texels, " << match_fraction * 100.0 << " % within 2 levels (worst "
                          << worst_delta << ")";
-        ASSERT_GT(opaque, 100000U) << "Too few opaque texels; the frame shows mostly sky.";
+        ASSERT_EQ(opaque, display.size() / 4U) << "Transparent HDR texels: the sky left part of the target unfilled.";
         EXPECT_GT(match_fraction, 0.999) << "Post's output is not ACES then sRGB of what it read.";
     }
 
@@ -1698,6 +1701,11 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
     }
 
     const glm::mat4 placement = panel_free_card_placement();
+    const auto dark_twin = write_gltf_variant(EMISSIVE_CARD_MODEL,
+      "kataglyphis_emissive_card_dark.gltf",
+      [](nlohmann::json &gltf) { gltf["materials"][0]["emissiveFactor"] = { 0.0, 0.0, 0.0 }; });
+    ASSERT_TRUE(dark_twin.has_value()) << "could not write the non-emissive twin of " << EMISSIVE_CARD_MODEL;
+    const std::string dark_twin_path = dark_twin->string();
 
     // One harness per card: addModel only adds, so a swap would measure both cards.
     const auto capture_card_mean = [&placement](const char *card_model, const char *label) {
@@ -1735,14 +1743,15 @@ TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
 
     const std::optional<double> emissive_mean = capture_card_mean(EMISSIVE_CARD_MODEL, "emissive");
     ASSERT_TRUE(emissive_mean.has_value());
-    const std::optional<double> metallic_mean = capture_card_mean(METALLIC_CARD_MODEL, "metallic");
-    ASSERT_TRUE(metallic_mean.has_value());
+    const std::optional<double> dark_mean = capture_card_mean(dark_twin_path.c_str(), "non-emissive twin");
+    ASSERT_TRUE(dark_mean.has_value());
 
-    GTEST_LOG_(INFO) << "card-region mean luminance: emissive " << *emissive_mean << ", metallic " << *metallic_mean;
+    GTEST_LOG_(INFO) << "card-region mean luminance: emissive " << *emissive_mean << ", non-emissive twin "
+                     << *dark_mean;
 
-    // RTX 2080, 2026-10-01: emissive 232 vs metallic 174, and 40 vs 174 with emission dropped from rasterizer.slang.
+    // The twin differs in emission alone; the metallic card, the control until 2026-11-21, brightened with N1's gain.
     constexpr double MARGIN = 10.0;
-    EXPECT_GT(*emissive_mean, *metallic_mean + MARGIN)
+    EXPECT_GT(*emissive_mean, *dark_mean + MARGIN)
       << "The emissive card's own region is not meaningfully brighter than the non-emissive control; "
          "material.emission is likely not reaching this shading path.";
 }
@@ -2064,10 +2073,12 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
       << "Timestamps are supported but no frame produced a valid sample: " << dump.dump(2);
 
     // These are bracketed every frame, so absence means broken accumulation, not a disabled feature.
-    for (const char *always_recorded : { "Main", "Forward", "Sky", "Post" }) {
+    for (const char *always_recorded : { "Main", "Forward", "Post" }) {
         EXPECT_TRUE(dump["passes"].contains(always_recorded))
           << "Pass '" << always_recorded << "' is recorded every frame but missing: " << dump.dump(2);
     }
+    // The sky draws inside Forward, as Rust's does, so no scope of its own times it.
+    EXPECT_FALSE(dump["passes"].contains("Sky")) << dump.dump(2);
     // A forward frame draws inside Main through Forward alone; the budget script sums only what nests nowhere.
     ASSERT_TRUE(dump.contains("nested_in") && dump["nested_in"].is_object()) << dump.dump(2);
     EXPECT_EQ(dump["nested_in"].value("Forward", ""), "Main") << dump.dump(2);
@@ -2425,9 +2436,9 @@ TEST(GoldenRender, PathTracingHonorsTheUntexturedMetallicFactor)
     GTEST_LOG_(INFO) << "path-traced card radiance: metallic 0.75 " << metallic_mean << ", dielectric "
                      << dielectric_mean;
 
-    // A quarter of the diffuse plus a rough GGX lobe at F0 near the albedo comes to about half the dielectric's.
+    // The gain returns most of the metal's rough lobe (0.82 of the dielectric); an unread metallicFactor gives 1.
     ASSERT_GT(dielectric_mean, 0.05) << "the dielectric card is unlit - check the placement";
-    EXPECT_LT(metallic_mean, 0.8 * dielectric_mean)
+    EXPECT_LT(metallic_mean, 0.9 * dielectric_mean)
       << "the untextured metallicFactor does not reach the path tracer: the metal shades like its dielectric twin";
 }
 
@@ -3679,34 +3690,154 @@ TEST(GoldenRender, BlendCardsCompositeInDepthOrderFromBothSides)
                                           "composite the sky through it";
         }
 
-        // Over the sky, post composites the tonemapped card at its coverage: half the opaque card's encoded red.
+        // Over the sky as over the grey: linear over the radiance sky.slang wrote, the navy it untonemaps.
         harness.camera->set_camera_position(glm::vec3(0.0F, 8.0F, 1.8F));
         harness.camera->set_orientation(-90.0F, 0.0F);
         harness.render_frames(SETTLE_FRAMES);
         uint32_t width = 0;
         uint32_t height = 0;
-        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
-        ASSERT_FALSE(frame.empty());
-        const auto encoded_at = [&](float world_x, size_t channel) {
-            const uint32_t x = card_column(world_x, 1.8F, width, height);
-            double sum = 0.0;
-            for (uint32_t y = height / 2U - 8U; y < height / 2U + 8U; ++y) {
-                for (uint32_t dx = x - 8U; dx < x + 8U; ++dx) {
-                    sum += frame[(static_cast<size_t>(y) * width + dx) * 4U + channel];
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(radiance.empty());
+        const uint32_t y = height / 2U;
+        const glm::dvec4 blend =
+          mean_hdr_rgba_in_square(radiance, width, card_column(-0.6F, 1.8F, width, height), y, 8U);
+        const glm::dvec4 opaque =
+          mean_hdr_rgba_in_square(radiance, width, card_column(0.6F, 1.8F, width, height), y, 8U);
+        const double navy = Kataglyphis::acesTonemapInverse(Kataglyphis::kSkyboxDisabledRadiance.z);
+        GTEST_LOG_(INFO) << mode_name << " over the sky: BLEND card (" << blend.r << ", " << blend.g << ", " << blend.b
+                         << ", " << blend.a << "), opaque card red " << opaque.r << ", sky blue " << navy;
+        constexpr double SKY_TOLERANCE = 0.03;
+        ASSERT_NEAR(opaque.r, 1.0, SKY_TOLERANCE)
+          << mode_name << ": the opaque red card is not in view - check the placement";
+        EXPECT_NEAR(blend.r, 0.5, SKY_TOLERANCE)
+          << mode_name << ": a half-transparent card over the sky is not half its red";
+        // Before the sky drew into the HDR target, the card blended over nothing here: blue 0 at alpha 0.5.
+        EXPECT_NEAR(blend.b, 0.5 * navy, SKY_TOLERANCE) << mode_name << ": the sky's radiance does not show through";
+        EXPECT_GT(blend.a, 0.99) << mode_name << ": the card over the sky is not opaque in the HDR target";
+    }
+}
+
+// FXAA after the tonemap: a slanted card's one-sample staircase gets blended steps, a flat region keeps its pixels.
+TEST(GoldenRender, FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone)
+{
+    SKIP_WITHOUT_GPU();
+
+    nlohmann::json white;
+    white["pbrMetallicRoughness"] = { { "baseColorFactor", { 1.0, 1.0, 1.0, 1.0 } } };
+    white["doubleSided"] = true;
+    white["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+    // Turned 20 degrees about the view axis, so every edge is a staircase of one-pixel steps.
+    const double half_turn = glm::radians(10.0);
+    const auto scene = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_fxaa_card.gltf", [&](auto &gltf) {
+        make_card_scene(
+          gltf, { white }, { { 0, { { "rotation", { 0.0, 0.0, std::sin(half_turn), std::cos(half_turn) } } } } });
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+    });
+    ASSERT_TRUE(scene.has_value()) << "could not write the slanted card";
+
+    ScopedModelOverride card(scene->string().c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = false;
+    // White on the flat navy: two colours, so every pixel between them is a blend FXAA made.
+    scene_vars.skybox_enabled = false;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 1.8F));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](FxaaMode mode) {
+        renderer_vars.fxaaMode = mode;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    const std::vector<uint8_t> off = capture(FxaaMode::Off);
+    const std::vector<std::string> off_stages = harness.renderer->renderStageRegistry().lastRecorded();
+    const std::vector<uint8_t> always = capture(FxaaMode::Always);
+    const std::vector<std::string> always_stages = harness.renderer->renderStageRegistry().lastRecorded();
+    const std::vector<uint8_t> raster = capture(FxaaMode::Raster);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(off.empty());
+    ASSERT_EQ(always.size(), off.size());
+    EXPECT_EQ(std::count(off_stages.begin(), off_stages.end(), "fxaa"), 0) << "FXAA off still recorded its stage";
+    ASSERT_GE(always_stages.size(), 2U);
+    EXPECT_EQ(always_stages[always_stages.size() - 2U], "post");
+    EXPECT_EQ(always_stages.back(), "fxaa") << "FXAA must be the last stage, after post";
+    EXPECT_EQ(raster, always) << "Raster mode must filter a raster frame as Always does";
+
+    // An edge pixel: a step of more than 4 levels to a 4-neighbour in the unfiltered frame.
+    const auto level = [&](const std::vector<uint8_t> &frame, uint32_t x, uint32_t y) {
+        return luminance_of(frame, static_cast<size_t>(y) * width + x);
+    };
+    std::vector<bool> edge(off.size() / 4U, false);
+    for (uint32_t y = 1; y + 1U < height; ++y) {
+        for (uint32_t x = 1; x + 1U < width; ++x) {
+            const double centre = level(off, x, y);
+            edge[static_cast<size_t>(y) * width + x] =
+              std::abs(centre - level(off, x + 1U, y)) > 4.0 || std::abs(centre - level(off, x - 1U, y)) > 4.0
+              || std::abs(centre - level(off, x, y + 1U)) > 4.0 || std::abs(centre - level(off, x, y - 1U)) > 4.0;
+        }
+    }
+    // The card and the sky are the only two colours; a blended step lies between them.
+    double card_level = 0.0;
+    double sky_level = 255.0;
+    for (size_t pixel = 0; pixel < edge.size(); ++pixel) {
+        card_level = std::max(card_level, luminance_of(off, pixel));
+        sky_level = std::min(sky_level, luminance_of(off, pixel));
+    }
+    const auto between = [&](const std::vector<uint8_t> &frame, size_t pixel) {
+        const double value = luminance_of(frame, pixel);
+        return value > sky_level + 10.0 && value < card_level - 10.0;
+    };
+    size_t edges = 0;
+    size_t off_blended = 0;
+    size_t fxaa_blended = 0;
+    size_t flat = 0;
+    size_t flat_moved = 0;
+    for (uint32_t y = 3; y + 3U < height; ++y) {
+        for (uint32_t x = 3; x + 3U < width; ++x) {
+            const size_t pixel = static_cast<size_t>(y) * width + x;
+            if (edge[pixel]) {
+                ++edges;
+                if (between(off, pixel)) { ++off_blended; }
+                if (between(always, pixel)) { ++fxaa_blended; }
+                continue;
+            }
+            bool near_edge = false;
+            for (int dy = -2; dy <= 2 && !near_edge; ++dy) {
+                for (int dx = -2; dx <= 2 && !near_edge; ++dx) {
+                    near_edge = edge[static_cast<size_t>(static_cast<int>(y) + dy) * width
+                                     + static_cast<size_t>(static_cast<int>(x) + dx)];
                 }
             }
-            return sum / 256.0;
-        };
-        const double blend_red = encoded_at(-0.6F, 0U);
-        const double blend_blue = encoded_at(-0.6F, 2U);
-        const double opaque_red = encoded_at(0.6F, 0U);
-        GTEST_LOG_(INFO) << mode_name << " over the sky: BLEND card (" << blend_red << ", -, " << blend_blue
-                         << "), opaque card red " << opaque_red;
-        ASSERT_GT(opaque_red, 150.0) << mode_name << ": the opaque red card is not in view - check the placement";
-        EXPECT_NEAR(blend_red, 0.5 * opaque_red, 3.0)
-          << mode_name << ": a half-transparent card over the sky is not composited at half its tonemapped colour";
-        // skybox.slang's disabled sky stores blue 188 (is_disabled_sky).
-        EXPECT_NEAR(blend_blue, 0.5 * 188.0, 3.0) << mode_name << ": the sky does not show through the card";
+            if (near_edge) { continue; }
+            ++flat;
+            if (channel_delta(off, always, pixel) > 1) { ++flat_moved; }
+        }
+    }
+    GTEST_LOG_(INFO) << "card " << card_level << ", sky " << sky_level << "; " << edges << " edge px: blended "
+                     << off_blended << " without FXAA, " << fxaa_blended << " with; " << flat_moved << " of " << flat
+                     << " flat px moved";
+    ASSERT_GT(edges, 1000U) << "the card shows too little edge - check the placement";
+    // The control: without FXAA the staircase has no step between card and sky to find.
+    EXPECT_LT(static_cast<double>(off_blended), 0.01 * static_cast<double>(edges))
+      << "the unfiltered frame already blends its edges, so the measure cannot see FXAA";
+    EXPECT_GT(static_cast<double>(fxaa_blended), 0.3 * static_cast<double>(edges))
+      << "FXAA did not soften the staircase";
+    EXPECT_EQ(flat_moved, 0U) << "FXAA moved pixels away from every edge";
+
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        // A traced frame is no raster frame: Raster leaves it as Off does.
+        renderer_vars.raytracing = true;
+        const std::vector<uint8_t> traced_off = capture(FxaaMode::Off);
+        const std::vector<uint8_t> traced_raster = capture(FxaaMode::Raster);
+        const std::vector<uint8_t> traced_always = capture(FxaaMode::Always);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        EXPECT_EQ(traced_raster, traced_off) << "Raster mode filtered a ray-traced frame";
+        EXPECT_NE(traced_always, traced_off) << "Always mode left a ray-traced frame's edges alone";
     }
 }
 
@@ -4071,8 +4202,8 @@ TEST(GoldenRender, DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards)
          "or a BLAS build's scratch write lost its barrier (DeferredRasterizer.cpp, ASManager.cpp)";
 }
 
-// Default sync validation misses both edges into post: the sky pass's stored image and the clouds' compute output.
-TEST(GoldenRender, CloudCompositeAndSkyLoadAreFreeOfSyncHazards)
+// Default sync validation misses both edges: the trace into the sky's blend, and the clouds' compute output into post.
+TEST(GoldenRender, CloudCompositeAndTracedSkyAreFreeOfSyncHazards)
 {
     SKIP_WITHOUT_GPU();
 
@@ -4084,10 +4215,15 @@ TEST(GoldenRender, CloudCompositeAndSkyLoadAreFreeOfSyncHazards)
     ScopedValidationErrorCounter validation_errors;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost compositing the clouds.";
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        harness.settings.renderer.raytracing = true;
+        harness.render_frames(SETTLE_FRAMES);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost filling the traced frame's sky.";
+    }
 
     EXPECT_EQ(validation_errors.errorCount(), 0)
-      << "synchronization validation logged an error - SYNC-HAZARD-READ-AFTER-WRITE if post lost its barrier after "
-         "the sky pass (PostStage.cpp) or after the clouds' dispatch (VulkanRenderer.cpp)";
+      << "synchronization validation logged an error - SYNC-HAZARD-READ-AFTER-WRITE if the traced sky lost its barrier "
+         "after the trace (SkyBox.cpp) or post after the clouds' dispatch (VulkanRenderer.cpp)";
 }
 
 namespace {
@@ -4496,6 +4632,25 @@ TEST(GoldenRender, TracedFramesSkipTheShadowPass)
     }
 }
 
+// A missed card shows the furnace sky's 1 too; one segment leaves a hit black (no light, no bounce).
+static double furnace_centre_after_one_segment(EngineHarness &harness, const glm::vec3 &position, float yaw)
+{
+    auto &renderer_vars = harness.settings.renderer;
+    const int bounces = renderer_vars.pathTracingMaxBounces;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.camera->set_camera_position(position);
+    harness.camera->set_orientation(yaw, 0.0F);
+    harness.render_frames(2);
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+    renderer_vars.pathTracingMaxBounces = bounces;
+    if (harness.renderer->hasDeviceLost() || radiance.empty()) { return -1.0; }
+    const double centre = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
+    GTEST_LOG_(INFO) << "one-segment placement frame at yaw " << yaw << ": centre " << centre << " of the sky's 1";
+    return centre;
+}
+
 // A white dielectric under a uniform sky of radiance 1, graded in linear radiance, where ACES hides a few percent.
 TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
 {
@@ -4506,7 +4661,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     const ScopedEnvVar furnace_metallic("KATAGLYPHIS_PT_FURNACE_METALLIC", "0");
     std::optional<ScopedEnvVar> furnace_roughness;
 
-    // A lone card returns E(mu) of the sky after one bounce: the first-bounce oracle for both lobes and their mixture.
+    // A lone card returns its albedo of the sky after one bounce, the first-bounce oracle for both lobes and their mixture.
     {
         ScopedModelOverride card(METALLIC_CARD_MODEL);
         EngineHarness harness;
@@ -4531,6 +4686,12 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
         };
         const std::array<View, 2> views = { View{ 1.0F, glm::vec3(0.0F, 0.0F, 2.0F), -90.0F },
             View{ 0.5F, glm::vec3(1.7320508F, 0.0F, 1.0F), -150.0F } };
+        for (const View &view : views) {
+            const double centre = furnace_centre_after_one_segment(harness, view.position, view.yaw);
+            ASSERT_GE(centre, 0.0) << "the placement frame failed at mu " << view.mu;
+            EXPECT_LT(centre, 0.01) << "the card does not cover the measured square at mu " << view.mu << ": " << centre
+                                    << " of the sky's 1 behind it";
+        }
         const int frames = path_traced_history(8, 4);
         // 0.25 narrows the GGX lobe until the 0.1 floor on its selection chance decides the mixture.
         for (const char *roughness : { "0.5", "0.25" }) {
@@ -4547,18 +4708,19 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
                 ASSERT_FALSE(radiance.empty());
 
                 const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
-                const double expected = white_directional_albedo(view.mu, std::strtod(roughness, nullptr), 0.0);
+                const double single = white_single_scatter_albedo(view.mu, std::strtod(roughness, nullptr), 0.0);
                 GTEST_LOG_(INFO) << "white dielectric card, roughness " << roughness << ", mu " << view.mu << ": "
-                                 << measured << " of a sky of 1, E(mu) = " << expected;
-                EXPECT_NEAR(measured, expected, 0.01)
-                  << "the lobe mixture's sampling weight is off: roughness " << roughness << ", mu " << view.mu;
+                                 << measured << " of a sky of 1 (single scattering " << single << ")";
+                EXPECT_NEAR(measured, kWhiteFurnaceAlbedo, 0.01)
+                  << "the lobe mixture or its energy compensation is off: roughness " << roughness << ", mu "
+                  << view.mu;
             }
         }
     }
 
-    // Many bounces compound a per-bounce error; at 0.8 E(mu) stays in 0.981-0.997, capping the mean below 1.
+    // Many bounces compound a per-bounce error, which bounds centred on the sky's 1 catch either way.
     furnace_roughness.reset();
-    furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.8");
+    furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", "0.5");
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     auto &renderer_vars = harness.settings.renderer;
@@ -4570,36 +4732,62 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     scene_vars.directional_light_radiance = 0.0F;
     renderer_vars.pathTracingMaxBounces = 16;
     harness.render_frames(WARMUP_FRAMES);
-    harness.render_frames(path_traced_history(80, 40));
 
+    constexpr double FURNACE_PIXEL_BAND = 0.1;
+    struct CropStats
+    {
+        double mean = 0.0;
+        double uniform_fraction = 0.0;
+        double dark_fraction = 0.0;
+    };
+    const auto crop_stats = [](const std::vector<float> &radiance, uint32_t width, uint32_t height) {
+        const uint32_t x0 = (width * 18U) / 25U;
+        const uint32_t x1 = (width * 49U) / 50U;
+        const uint32_t y0 = height / 20U;
+        const uint32_t y1 = (height * 19U) / 20U;
+        double sum = 0.0;
+        size_t within = 0;
+        size_t dark = 0;
+        size_t total = 0;
+        for (uint32_t y = y0; y < y1; ++y) {
+            for (uint32_t x = x0; x < x1; ++x) {
+                const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+                const double value = (radiance[base] + radiance[base + 1U] + radiance[base + 2U]) / 3.0;
+                sum += value;
+                if (std::abs(value - 1.0) <= FURNACE_PIXEL_BAND) { ++within; }
+                if (value < 0.5) { ++dark; }
+                ++total;
+            }
+        }
+        const auto share = [total](size_t count) { return static_cast<double>(count) / static_cast<double>(total); };
+        return CropStats{ sum / static_cast<double>(total), share(within), share(dark) };
+    };
+
+    // A missed rig reads the sky's 1 in the crop too, so one segment must show its geometry there (measured 0.748).
+    constexpr double FURNACE_RIG_MIN_COVERED = 0.5;
     uint32_t width = 0;
     uint32_t height = 0;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(2);
+    const std::vector<float> one_segment = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(one_segment.empty());
+    const double covered = crop_stats(one_segment, width, height).dark_fraction;
+    GTEST_LOG_(INFO) << "furnace rig crop covered by geometry after one segment: " << covered;
+    EXPECT_GT(covered, FURNACE_RIG_MIN_COVERED) << "the rig's geometry is not in the crop the furnace grades";
+
+    renderer_vars.pathTracingMaxBounces = 16;
+    harness.render_frames(path_traced_history(80, 40));
     const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(radiance.empty());
 
-    // Measured 0.9823 in both variants; albedo 0.99 gives 0.9715 and 1.01 gives 0.9933, each past its bound.
-    constexpr double FURNACE_PIXEL_BAND = 0.1;
-    constexpr double FURNACE_RIG_MEAN_MIN = 0.977;
-    constexpr double FURNACE_RIG_MEAN_MAX = 0.988;
-    const uint32_t x0 = (width * 18U) / 25U;
-    const uint32_t x1 = (width * 49U) / 50U;
-    const uint32_t y0 = height / 20U;
-    const uint32_t y1 = (height * 19U) / 20U;
-    double sum = 0.0;
-    size_t within = 0;
-    size_t total = 0;
-    for (uint32_t y = y0; y < y1; ++y) {
-        for (uint32_t x = x0; x < x1; ++x) {
-            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
-            const double value = (radiance[base] + radiance[base + 1U] + radiance[base + 2U]) / 3.0;
-            sum += value;
-            if (std::abs(value - 1.0) <= FURNACE_PIXEL_BAND) { ++within; }
-            ++total;
-        }
-    }
-    const double mean = sum / static_cast<double>(total);
-    const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
+    // Measured 0.9997 in both variants; albedo 0.99 gives 0.9889 and 1.01 gives 1.0106, each past its bound.
+    constexpr double FURNACE_RIG_MEAN_MIN = 0.994;
+    constexpr double FURNACE_RIG_MEAN_MAX = 1.005;
+    const CropStats graded = crop_stats(radiance, width, height);
+    const double mean = graded.mean;
+    const double uniform_fraction = graded.uniform_fraction;
     GTEST_LOG_(INFO) << "furnace rig crop mean radiance: " << mean << " (sky 1), fraction within +-"
                      << FURNACE_PIXEL_BAND << ": " << uniform_fraction;
 
@@ -4609,7 +4797,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
                                          "class is biased.";
 }
 
-// A white metal reflects through its GGX lobe alone, so in a uniform sky it must return E(mu) of that sky, no more.
+// A white metal reflects through its GGX lobe alone; with the multiple-scattering gain it returns the whole sky.
 TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
 {
     SKIP_WITHOUT_GPU();
@@ -4617,7 +4805,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
     const ScopedEnvVar furnace("KATAGLYPHIS_PT_FURNACE", "1.0");
     const ScopedEnvVar furnace_metallic("KATAGLYPHIS_PT_FURNACE_METALLIC", "1");
     std::optional<ScopedEnvVar> furnace_roughness;
-    // A lone card: every reflected ray reaches the sky, so a pixel's radiance is exactly E(mu) times its radiance.
+    // A lone card: every reflected ray reaches the sky, so a pixel's radiance is the lobe's albedo times the sky's.
     ScopedModelOverride card(METALLIC_CARD_MODEL);
     EngineHarness harness;
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
@@ -4642,7 +4830,14 @@ TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
     // Two units from the card's centre, head-on and at 60 degrees; the measured square spans a few degrees.
     const std::array<View, 2> views = { View{ 1.0F, glm::vec3(0.0F, 0.0F, 2.0F), -90.0F },
         View{ 0.5F, glm::vec3(1.7320508F, 0.0F, 1.0F), -150.0F } };
-    for (const char *roughness : { "0.3", "0.7" }) {
+    for (const View &view : views) {
+        const double centre = furnace_centre_after_one_segment(harness, view.position, view.yaw);
+        ASSERT_GE(centre, 0.0) << "the placement frame failed at mu " << view.mu;
+        EXPECT_LT(centre, 0.01) << "the card does not cover the measured square at mu " << view.mu << ": " << centre
+                                << " of the sky's 1 behind it";
+    }
+    // At roughness 1 a single scatter returns 0.307 of the sky head-on, so the gain triples it.
+    for (const char *roughness : { "0.3", "0.7", "1.0" }) {
         furnace_roughness.reset();
         furnace_roughness.emplace("KATAGLYPHIS_PT_FURNACE_ROUGHNESS", roughness);
         for (const View &view : views) {
@@ -4657,13 +4852,11 @@ TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
             ASSERT_FALSE(radiance.empty());
 
             const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
-            const double expected = white_directional_albedo(view.mu, std::strtod(roughness, nullptr), 1.0);
+            const double single = white_single_scatter_albedo(view.mu, std::strtod(roughness, nullptr), 1.0);
             GTEST_LOG_(INFO) << "white metal, roughness " << roughness << ", mu " << view.mu << ": " << measured
-                             << " of a sky of 1, E(mu) = " << expected;
-            // Single scattering only: a microfacet lobe keeps E(mu) <= 1, and the estimator must reproduce it.
-            EXPECT_LE(expected, 1.0);
-            EXPECT_NEAR(measured, expected, 0.03)
-              << "the GGX lobe's sampling weight is off: roughness " << roughness << ", mu " << view.mu;
+                             << " of a sky of 1 (single scattering " << single << ")";
+            EXPECT_NEAR(measured, kWhiteFurnaceAlbedo, 0.01)
+              << "the GGX lobe's sampling weight or its gain is off: roughness " << roughness << ", mu " << view.mu;
         }
     }
 }
@@ -4791,7 +4984,7 @@ TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
     const glm::dvec3 navy = traced_mirror(false);
     const glm::dvec3 cubemap = traced_mirror(true);
 
-    // The sky the raster draws where the mirror points: the sky pass stores the cube map's sRGB, untonemapped.
+    // The sky the raster draws where the mirror points: sky.slang untonemaps the cube map, so post shows its sRGB.
     harness.useForwardRaster();
     harness.camera->set_orientation(90.0F, 0.0F);
     harness.render_frames(SETTLE_FRAMES);
@@ -5099,6 +5292,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     r.pathTracingSamplesPerPixel = 64;
     r.pathTracingMaxBounces = 16;
     r.frustum_culling_enabled = false;
+    r.fxaaMode = FxaaMode::Always;
     s.skybox_enabled = true;
     s.directional_light_radiance = 50.0F;
     s.shadows_enabled = true;
@@ -5138,6 +5332,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         r.frustum_culling_enabled = rng.ub();
         r.pathTracingSamplesPerPixel = rng.ui(1, 64);
         r.pathTracingMaxBounces = rng.ui(1, 16);
+        r.fxaaMode = static_cast<FxaaMode>(rng.ui(0, 2));
 
         s.skybox_enabled = rng.ub();
         s.directional_light_radiance = rng.uf(0.0F, 50.0F);
@@ -5398,15 +5593,15 @@ TEST(GoldenRender, CloudOffsetMovesTheCloudVolume)
     ASSERT_GT(static_cast<double>(right_box.changed), 0.005 * pixels) << "the box at x=+6 drew no clouds";
     EXPECT_LT(left_box.centroid_x, 0.4 * width) << "the box at x=-6 does not show left of the view axis";
     EXPECT_GT(right_box.centroid_x, 0.6 * width) << "the box at x=+6 does not show right of the view axis";
-    // Each box leaves the far half alone, the sky included: there post's HDR sky must reproduce the sky pass.
+    // Each box leaves the far half alone, the sky included: cloud-free, post must show the clouds-off frame.
     EXPECT_LT(static_cast<double>(left_box.changed_per_half[1]), 0.001 * half_pixels)
       << "the box at x=-6 changed the right half, outside its 3-unit extent";
     EXPECT_LT(static_cast<double>(right_box.changed_per_half[0]), 0.001 * half_pixels)
       << "the box at x=+6 changed the left half, outside its 3-unit extent";
     EXPECT_LT(static_cast<double>(left_box.drifted_per_half[1]), 0.002 * half_pixels)
-      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: the sky's inverse tonemap is off";
+      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: post's composite is off";
     EXPECT_LT(static_cast<double>(right_box.drifted_per_half[0]), 0.002 * half_pixels)
-      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: the sky's inverse tonemap is off";
+      << "with clouds on, cloud-free pixels drifted from the clouds-off frame: post's composite is off";
 }
 
 // A wall in front of the box hides it: a box behind the rig's slab shows around the slab, never on it.
@@ -5807,7 +6002,7 @@ TEST(GoldenRender, WithoutSkyboxFacesTheSkyIsTheAnalyticGradient)
     dump_cloud_frame("analytic-sky-navy", navy, width, height);
     dump_cloud_frame("analytic-sky", sky, width, height);
 
-    // Every gradient colour lies between its three anchors, channel by channel, as the sky pass shows them.
+    // Every gradient colour lies between its three anchors, channel by channel, as post shows them.
     std::array<int, 3> lowest{ 255, 255, 255 };
     std::array<int, 3> highest{ 0, 0, 0 };
     for (const glm::vec3 &anchor :
@@ -5843,6 +6038,76 @@ TEST(GoldenRender, WithoutSkyboxFacesTheSkyIsTheAnalyticGradient)
     EXPECT_LT(static_cast<double>(outside), 0.01 * static_cast<double>(sky_pixels))
       << "the sky is not OxidANT's zenith-horizon-ground gradient";
     EXPECT_GT(blue_minus_red, 10.0) << "the analytic sky is not blue overhead";
+}
+
+// The sky is radiance in the HDR target in every raster and ray-traced frame; a path-traced frame keeps its own miss.
+TEST(GoldenRender, SkyFillsTheHdrTargetInEveryModeButPathTracing)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    // One known radiance: sky.slang untonemaps the navy, so post shows (0, 0, 0.5) again.
+    scene_vars.skybox_enabled = false;
+    scene_vars.clouds_enabled = false;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+    const float navy = Kataglyphis::acesTonemapInverse(Kataglyphis::kSkyboxDisabledRadiance.z);
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_EQ(radiance.size(), frame.size()) << mode.name;
+
+        size_t transparent = 0;
+        size_t sky_texels = 0;
+        size_t sky_shown = 0;
+        for (size_t pixel = 0; pixel < frame.size() / 4U; ++pixel) {
+            const float *texel = &radiance[pixel * 4U];
+            if (texel[3] < 0.999F) { ++transparent; }
+            if (std::abs(texel[0]) > 0.01F || std::abs(texel[1]) > 0.01F || std::abs(texel[2] - navy) > 0.01F) {
+                continue;
+            }
+            ++sky_texels;
+            if (is_disabled_sky(frame, pixel)) { ++sky_shown; }
+        }
+        GTEST_LOG_(INFO) << mode.name << ": " << transparent << " transparent HDR texels, " << sky_texels
+                         << " at the navy's radiance " << navy << ", " << sky_shown << " of them shown as the navy";
+        if (mode.pathTracing) {
+            // Its camera rays that miss see the soft gradient, which has red; the sky drawn over it would be navy.
+            EXPECT_LT(sky_texels, 100U) << mode.name << ": the sky drew over the path tracer's frame";
+            continue;
+        }
+        // Before the sky drew into the HDR target, every sky texel here was alpha 0 and post blended over a sky pass.
+        EXPECT_EQ(transparent, 0U) << mode.name << ": the sky left part of the HDR target unfilled";
+        EXPECT_GT(sky_texels, 5000U) << mode.name << ": the HDR target holds no sky radiance - check the framing";
+        EXPECT_GT(static_cast<double>(sky_shown), 0.99 * static_cast<double>(sky_texels))
+          << mode.name << ": post does not show the sky's radiance as the navy";
+    }
 }
 
 // The wind moves the noise by velocity times time; time 0 and a whole number of periods must not move it at all.
@@ -5938,7 +6203,7 @@ TEST(GoldenRender, HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch)
         const std::vector<uint8_t> full = capture(true, false);
         const std::vector<uint8_t> half = capture(true, true);
         EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-          (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "sky", "post" }))
+          (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "post" }))
           << name;
         // The half target and its descriptors follow a swapchain recreation.
         harness.renderer->recreateSwapChain();

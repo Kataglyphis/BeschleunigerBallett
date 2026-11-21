@@ -12,11 +12,82 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Added
+
+- FXAA for the C++ renderer (plan C3): post renders into a UNORM LDR intermediate per swapchain image, and a final
+  `fxaa` stage runs OxidANT's `fxaa.slang` `fs_main` (behind post's `SV_VulkanVertexID` vertex) into the swapchain
+  image, then the GUI. The Renderer inspector's FXAA control picks Off, Raster (the forward and deferred frames) or
+  Always, the default, since forward has no MSAA. The `Fxaa` timed pass is the Rust renderer's name; it holds the GUI
+  while it runs. The golden harness pins FXAA off; `GoldenRender.FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone`
+  turns it on.
+- `Integration.SharedSlangKernelsMeetTheirVectors` (`sharedShaderVectorsSuite.cpp`, plan X3): every vector file in
+  OxidANT's `shaders/tests/vectors/` runs its kernel's SPIR-V once per case on a headless Vulkan compute device and
+  checks each component against its f64 reference and tolerance; a miss names module, case and component. It loops
+  over the files, so OxidANT's next module needs no edit here. OxidANT's `shader_vectors.rs` checks the WGSL of the
+  same kernels against the same files. `lsanSuppressions.cpp` also names `glfwInit`: a test that only probes GLFW, as
+  this one first did, finds libX11 unloaded by exit, so its known leak shows without an X11 frame.
+
+### Changed
+
+- The C++ sky goes into the HDR scene target (plan C2): OxidANT's `sky/sky.slang`, through its new `vs_vulkan_main`,
+  draws at depth 1 under LessOrEqual, forward between the opaque and BLEND draws, deferred after its lighting pass, and
+  in a ray-traced frame wherever the primary ray missed (alpha 0, where `tracedDepth` is 1); a path-traced frame keeps
+  its own camera miss. Post tonemaps the sky with the scene, a BLEND surface composites over it in linear HDR, and post
+  overwrites the swapchain image instead of blending over a sky pass. The cube map enters as the radiance whose ACES
+  shows the photo (`untonemapped`), so the displayed sky is unchanged; a half-transparent card over the navy sky now
+  holds red 0.5 and blue half the navy's radiance in the HDR target, where it held blue 0 at alpha 0.5. The `Sky`
+  timed pass is gone: `Forward`, `DeferredLighting` and `RayTrace` include the sky, as the Rust renderer's do.
+- OxidANT pin to `d392a78`, on OxidANT develop: the C2 sky entry, the C3 FXAA docs, N1's
+  multiple-scattering GGX compensation, X3's vector kernels, and the Rust renderer's FXAA default moving to Always as
+  here. Its review moved two more things in: `brdf.slang`'s Smith remaps floor the roughness at `MIN_ROUGHNESS` as the
+  NDF does (a white metal at roughness 0 returned 1.21 of a uniform sky at n.v 0.01; every caller here clamps first,
+  so no frame changes), and OxidANT's manifest builds the sky's and FXAA's SPIR-V entries this engine draws, so this
+  manifest drops its three rows for them and compiles them through the import. `GoldenMetrics.hpp`'s quadrature
+  floors its remap the same way.
+- The furnace goldens prove what they look at: their checks expect the sky's 1, which a card the rays miss shows too.
+  Each card view of `PathTracingPassesTheWhiteFurnaceTest` and `PathTracingPassesTheWhiteMetalFurnaceTest` first
+  path-traces one segment, where a hit stays black (no light, no bounce) and a miss shows the sky, and its centre
+  square must stay below 0.01; the rig's crop must be at least half covered by geometry there (measured 0.748). With
+  the card or the rig out of view the controls fail and the old checks pass.
+- `Integration.SharedSlangKernelsMeetTheirVectors` opens its compute device without probing GLFW, through
+  `GpuTestGuard.hpp`'s new `SKIP_WITHOUT_HEADLESS_DEVICE`, which
+  `BuildIntegrity.EveryGpuTestGuardsThroughTheSharedHeader` accepts beside `SKIP_WITHOUT_GPU`. It fails a kernel whose
+  SPIR-V `LocalSize` is not 1x1x1 before dispatching one invocation per case, waits for the device after a fence
+  timeout before destroying anything, and fails a short or unmapped read-back.
+- `gpu-timing-budgets.json`'s `Post` budget follows its own rule, 1.5 times the slowest run: 5.7 ms (was 5.6).
+- Every BRDF of the C++ engine compensates the GGX lobe's lost multiple scattering (plan N1, OxidANT's `brdf.slang`):
+  the specular term gains `1 + f0 (1 / E_ss - 1)` and the diffuse term takes `1 - E_spec(mu)` instead of `1 - F`, in
+  the forward, deferred, ray-traced, punctual and path-traced shading alike. A white surface in a uniform sky returns
+  that sky: the furnace goldens expect 1 within 0.01 where they expected the single-scatter albedo (0.671 for a white
+  metal at roughness 0.7 head-on), the metal adds roughness 1 (single scatter 0.307), and the path-traced furnace rig
+  goes back to roughness 0.5 (owner decision 2026-11-21) with bounds 0.994-1.005 (measured 0.9997; a furnace albedo of
+  0.99 or 1.01 gives 0.9889 or 1.0106). `GoldenMetrics.hpp`'s quadrature is `white_single_scatter_albedo` and only
+  logged. `EmissiveMaterialBrightensTheFrame` compares the emissive card with its own twin without emission (the
+  metallic card it used brightened to 226 against the emissive 233), and `PathTracingHonorsTheUntexturedMetallicFactor`
+  bounds the metal at 0.9 of its dielectric twin instead of 0.8 (measured 0.824; an unread metallicFactor gives 1).
+  `Compare-RendererTimings.ps1`'s note on the Rust FXAA default follows the pin.
+
 ### Removed
 
+- `Resources/ShadersSlang/tests/brdf_test.slang` and `noise_test.slang` and their manifest rows (plan X3): OxidANT's
+  vector kernels of the same names replace them, and this engine's build compiles them through the imported manifest.
+- `skybox.slang`, the swapchain sky pass and its `sky` stage, post's sky rebuild under the clouds and its ACES inverse,
+  and post's cube map and shared-set bindings.
 - The loader-frame leak suppression of 1.6.0 (`leak:setup_loader_term_phys_devs` in `lsanSuppressions.cpp`): with the
   llvmpipe run on lavapipe alone no GPU test uses it (run 44784592908 on runner image 20261116.202.1 listed only
   `libX11.so` under "Suppressions used").
+
+### Fixed
+
+- An FXAA stage without its descriptor set or pipeline left the swapchain image unwritten and the GUI undrawn: post
+  rendered into the intermediate, and FXAA returned early. `fxaaFilters` takes `FxaaStage::ready`, so post keeps the
+  swapchain image then; `RenderModeUnit.FxaaFiltersRasterFramesOrEveryFrame` holds both.
+- A double-click at frames slower than about 0.67 s (about 1.5 FPS): `Integration.LibraryDoubleClickLoadsTheRow`
+  failed in the weekly riscv64 `raster` shard (run 44852183781). The editor sets ImGui's `MouseDoubleClickTime` every
+  frame to 1.5 times the last two frames' time, since the down, up and down reach ImGui a frame each, but capped it at
+  2 s, which two QEMU frames outlast. `gui/DoubleClickWindow.hpp`'s `doubleClickWindow` drops the cap (still at least
+  0.3 s), and `DoubleClickWindowUnit.OutlastsTheTwoFramesBetweenThePressesAtAnyFrameRate` holds it. A test-side
+  widening cannot work: the editor rewrites the value before every `NewFrame`.
 
 ## [1.6.0] - 2026-11-20
 

@@ -39,7 +39,8 @@ gets the same guarantees. Change behaviour there, in both twins, and keep the
 
 Slang imports a module by filename basename. Keep local basenames distinct
 from OxidANT's shared modules: `compute/noise_volume.slang` produces the cloud
-volume, while `tests/noise_test.slang` imports OxidANT's `common/noise.slang`.
+volume, while OxidANT's `tests/noise_test.slang`, which this manifest compiles
+through its import, imports `common/noise.slang`.
 If the local file is called `noise.slang`, the include path selects it first
 and compilation reports `E30015 undefined identifier` for the shared
 `snoise` and `fbm` functions. The manifest compiles the test to both targets,

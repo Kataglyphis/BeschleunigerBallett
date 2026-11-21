@@ -9,9 +9,13 @@
 #include <vector>
 
 #include "ScopedEnvVar.hpp"
+#include "common/SceneUboMarshal.hpp"
 #include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
+#include "scene/sky_box/SkyUniforms.hpp"
+
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace {
 constexpr int kConstexprEqualFaces[6] = { 64, 64, 64, 64, 64, 64 };
@@ -118,7 +122,7 @@ TEST(SkyBoxUnit, AUniformCubemapLightsBothHemispheresWithItsUntonemappedRadiance
 {
     const auto ambient = SyntheticCubemap(4, 4, 128).ambient();
     const float expected = radianceOf(128);
-    // The sky pass is untonemapped, so the radiance is what ACES maps back onto the decoded texel.
+    // sky.slang untonemaps the photo sky, so the radiance is what ACES maps back onto the decoded texel.
     const float aces = (expected * (2.51F * expected + 0.03F)) / (expected * (2.43F * expected + 0.59F) + 0.14F);
     EXPECT_NEAR(aces, Kataglyphis::srgbChannelToLinear(128), 1e-5F);
     EXPECT_GT(std::abs(expected - Kataglyphis::srgbChannelToLinear(128)), 0.01F);
@@ -215,7 +219,7 @@ TEST(SkyBoxUnit, TheDisabledSkyLightsTheCloudsWithItsUntonemappedNavy)
 
 namespace {
 
-// The texel of a baked face, decoded back to the display value the sky pass shows.
+// The texel of a baked face, decoded back to the display value the drawn sky shows.
 glm::vec3 analyticTexel(const std::vector<unsigned char> &faces, size_t face, uint32_t column, uint32_t row)
 {
     const uint32_t size = Kataglyphis::kAnalyticSkyFaceSize;
@@ -274,4 +278,54 @@ TEST(SkyBoxUnit, TheAnalyticSkyGivesTheCloudsABlueTopAndADarkerBottom)
     EXPECT_GT(ambient.top.z, 0.2F);
     EXPECT_GT(ambient.bottom.x, 0.1F) << "the lower hemisphere is horizon and ground, not black";
     EXPECT_LT(ambient.bottom.z, ambient.top.z);
+}
+
+namespace {
+
+// sky.slang's fs_main: the world direction from the near to the far point through a clip-space pixel.
+glm::vec3 skyDirection(const Kataglyphis::SkyUniforms &uniforms, glm::vec2 ndc)
+{
+    const glm::vec4 near_point = uniforms.inv_view_proj * glm::vec4(ndc, 0.0F, 1.0F);
+    const glm::vec4 far_point = uniforms.inv_view_proj * glm::vec4(ndc, 1.0F, 1.0F);
+    return glm::normalize(glm::vec3(far_point) / far_point.w - glm::vec3(near_point) / near_point.w);
+}
+
+}// namespace
+
+// sky.slang draws the cube map above mode 0.5 and the navy above 1.5; C++ never asks for its procedural mode 0.
+TEST(SkyBoxUnit, SkyUniformsAskForTheCubeMapOrTheNavy)
+{
+    const glm::mat4 identity(1.0F);
+    const auto shown = Kataglyphis::makeSkyUniforms(identity, identity, glm::vec3(0.0F, -1.0F, 0.0F), 10.0F, true);
+    const auto hidden = Kataglyphis::makeSkyUniforms(identity, identity, glm::vec3(0.0F, -1.0F, 0.0F), 10.0F, false);
+    EXPECT_GT(shown.mode.x, 0.5F);
+    EXPECT_LE(shown.mode.x, 1.5F);
+    EXPECT_GT(hidden.mode.x, 1.5F);
+}
+
+// The Vulkan projection flips y, so a mismatched inverse would draw the sky upside down or behind the camera.
+TEST(SkyBoxUnit, SkyUniformsAimEachPixelAlongItsViewRay)
+{
+    const glm::vec3 eye(1.0F, 6.0F, 26.0F);
+    const glm::vec3 forward = glm::normalize(glm::vec3(0.3F, -0.17F, -1.0F));
+    const glm::mat4 view = glm::lookAt(eye, eye + forward, glm::vec3(0.0F, 1.0F, 0.0F));
+    const glm::mat4 projection = Kataglyphis::makeVulkanProjection(45.0F, 1200.0F / 768.0F, 0.1F, 150.0F);
+    const auto uniforms = Kataglyphis::makeSkyUniforms(projection, view, glm::vec3(0.0F, -1.0F, 0.0F), 10.0F, true);
+
+    const glm::vec3 centre = skyDirection(uniforms, glm::vec2(0.0F, 0.0F));
+    EXPECT_NEAR(glm::dot(centre, forward), 1.0F, 1e-4F);
+    // Clip y = -1 is the top row in Vulkan: it must look above the centre, as a camera's top row does.
+    EXPECT_GT(skyDirection(uniforms, glm::vec2(0.0F, -1.0F)).y, centre.y + 0.1F);
+    // Every pixel's ray stays in front of the camera, half the vertical field of view at most from its axis.
+    EXPECT_NEAR(
+      glm::degrees(std::acos(glm::dot(skyDirection(uniforms, glm::vec2(0.0F, 1.0F)), forward))), 22.5F, 0.01F);
+}
+
+TEST(SkyBoxUnit, SkyUniformsPointTheSunTowardsTheLight)
+{
+    const glm::mat4 identity(1.0F);
+    const glm::vec3 travel(-0.55F, -1.0F, -0.35F);
+    const auto uniforms = Kataglyphis::makeSkyUniforms(identity, identity, travel, 7.5F, true);
+    EXPECT_EQ(glm::vec3(uniforms.light_dir_intensity), -travel);
+    EXPECT_FLOAT_EQ(uniforms.light_dir_intensity.w, 7.5F);
 }

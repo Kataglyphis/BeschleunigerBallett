@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/FormatHelper.hpp"
+#include "common/FrameSubmitHelper.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderingHelper.hpp"
@@ -61,26 +62,26 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
   uint32_t image_index,
   std::span<const vk::DescriptorSet> descriptorSets,
   bool cloudsEnabled,
-  bool skyboxEnabled)
+  Kataglyphis::Texture *fxaaInput)
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(image_index);
+    Texture &target = fxaaInput != nullptr ? *fxaaInput : vulkanSwapChain->getSwapChainImage(image_index);
 
-    // Orders this pass's load against SkyBox's earlier write to the same swapchain image.
+    // UNDEFINED: post overwrites every pixel; the swapchain waits on the acquire, the intermediate on FXAA's read.
     Kataglyphis::recordImageBarrier(commandBuffer,
-      Kataglyphis::buildImageMemoryBarrier(swap_chain_image.getImage(),
+      Kataglyphis::buildImageMemoryBarrier(target.getImage(),
+        vk::ImageLayout::eUndefined,
         vk::ImageLayout::eColorAttachmentOptimal,
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-        vk::AccessFlagBits2::eColorAttachmentWrite,
+        fxaaInput != nullptr ? vk::PipelineStageFlagBits2::eFragmentShader : Kataglyphis::kSwapchainAcquireWaitStage,
+        vk::AccessFlagBits2::eNone,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite));
 
-    // eLoad, no clear value: the colour attachment keeps the skybox pass's output.
+    // eDontCare, no clear value: the fullscreen triangle writes every pixel before the GUI draws over it.
     const vk::RenderingAttachmentInfo color_attachment =
-      Kataglyphis::buildRenderingAttachmentInfo(swap_chain_image.getImageView(),
+      Kataglyphis::buildRenderingAttachmentInfo(target.getImageView(),
         vk::ImageLayout::eColorAttachmentOptimal,
-        vk::AttachmentLoadOp::eLoad,
+        vk::AttachmentLoadOp::eDontCare,
         vk::AttachmentStoreOp::eStore);
     commandBuffer.beginRendering(Kataglyphis::buildRenderingInfo(
       swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), nullptr));
@@ -89,7 +90,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
     PushConstantPost pc_post{};
     pc_post.clouds_enabled = cloudsEnabled ? 1u : 0u;
-    pc_post.skybox_enabled = skyboxEnabled ? 1u : 0u;
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
       0,
@@ -99,7 +99,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
     commandBuffer.draw(3, 1, 0, 0);
 
-    {
+    // The GUI goes over the last pass that writes the swapchain image, FXAA's while it filters.
+    if (fxaaInput == nullptr) {
         Kataglyphis::debug::ScopedCmdLabel const gui_label(commandBuffer, "gui", { 0.90F, 0.70F, 0.20F, 1.0F });
         ImGui::Render();
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
@@ -107,9 +108,22 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
     commandBuffer.endRendering();
 
+    if (fxaaInput != nullptr) {
+        // The consumer is fxaa.slang's fragment shader.
+        Kataglyphis::recordImageBarrier(commandBuffer,
+          Kataglyphis::buildImageMemoryBarrier(target.getImage(),
+            vk::ImageLayout::eColorAttachmentOptimal,
+            vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::AccessFlagBits2::eShaderSampledRead));
+        return;
+    }
+
     // Colour output as the destination, not none: a frame capture's barrier chains from it.
     Kataglyphis::recordImageBarrier(commandBuffer,
-      Kataglyphis::buildImageMemoryBarrier(swap_chain_image.getImage(),
+      Kataglyphis::buildImageMemoryBarrier(target.getImage(),
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::ePresentSrcKHR,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
@@ -178,7 +192,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     PipelineBuilder pipeline_builder;
     graphics_pipeline = pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
                           .setCullMode(vk::CullModeFlagBits::eNone)
-                          .setAlphaBlending(true)
                           .setDepthTest(false)
                           .setDepthWrite(false)
                           .setRenderingFormats({ vulkanSwapChain->getSwapChainFormat() })

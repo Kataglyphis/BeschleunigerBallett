@@ -122,7 +122,9 @@ estimators is biased).
   `distribution_ggx` floors roughness at `MIN_ROUGHNESS` 0.045 (the
   material floor) and guards its denominator at 1e-20; its old `1e-6` guard
   capped the lobe's peak below roughness 0.154, so a smooth surface reflected
-  only part of its light, here as in raster. The shading normal orients both lobes, and the face normal
+  only part of its light, here as in raster. Since 2026-11-21 the Smith
+  remaps floor it too, so below the floor the lobe's masking matches its gain.
+  The shading normal orients both lobes, and the face normal
   takes its place when it faces away from the viewer; a direction below it or
   below the triangle ends the path, which keeps a tilted normal map or vertex
   normal from leaking light through the surface. The sampled
@@ -136,7 +138,7 @@ estimators is biased).
   sees the sky the raster draws (owner decision 2026-11-16), as OxidANT's
   `bounce_sky` (`shaders/tracer/trace_shading.slang`) lights it: the
   skybox's cube map at LOD 0 while the skybox is on
-  (`skybox_radiance_lod0` in `common/skybox_radiance.slang`, the sky pass's
+  (`skybox_radiance_lod0` in `common/skybox_radiance.slang`, its sRGB
   decode), the disabled sky's navy otherwise, times 0.35. Rust scales by
   its ambient strength times its environment intensity; the C++ engine has
   neither setting, so the constant is their defaults (0.35 and 1). The cube
@@ -157,42 +159,42 @@ constants' `furnace_metallic` and `furnace_roughness`. All three are read via
 `getenv` once per `recordCommands` call, not cached, so several tests sharing
 one process each see their own setting.
 
-A microfacet lobe scatters once, so the surface returns its directional
-albedo `E(mu)` of the sky, not all of it; the estimator must reproduce that
-integral, for any geometry. `E(mu)` is `brdf_sampled` (a bounce's BRDF,
-`k = alpha / 2`) for a white albedo integrated over the hemisphere, computed
-by the golden itself (`white_directional_albedo`, a 320 x 320 quadrature
-uniform in angle), against what a lone card returns after one bounce,
-2026-11-16 on aarch64 llvmpipe (in brackets: `E(mu)` with the analytic remap
-the bounce used before):
+A single-scatter microfacet lobe returns only its directional albedo `E(mu)`
+of the sky: Schlick-GGX Smith masks at grazing angles, and at roughness 1 half
+the microfacets reflect below the horizon. Since 2026-11-21 (plan N1)
+OxidANT's `brdf.slang` adds back the light the lobe loses to multiple
+scattering (Turquin 2019): the specular term gains `1 + f0 (1 / E_ss - 1)`
+and the diffuse term takes `1 - E_spec(mu)` instead of `1 - F`, so a white
+surface returns the whole sky at every roughness and angle
+([`shader-sharing.md`](shader-sharing.md)). The goldens' quadrature,
+`white_single_scatter_albedo` (`GoldenMetrics.hpp`: `brdf_sampled`'s lobe in
+2048 x 128 cells of equal probability, a `1 - F` diffuse), is what OxidANT's
+fit of `E_ss` reproduces; the goldens only log it now. What a lone card
+returns after one bounce, 2026-11-21 on aarch64 llvmpipe:
 
-| Surface | Roughness | `mu` | `E(mu)` | Measured |
+| Surface | Roughness | `mu` | Single scatter | Measured |
 | --- | --- | --- | --- | --- |
-| metal | 0.3 | 1 | 0.9876 (0.976) | 0.9873 |
-| metal | 0.3 | 0.5 | 0.9012 (0.668) | 0.9009 |
-| metal | 0.7 | 1 | 0.6710 (0.638) | 0.6695 |
-| metal | 0.7 | 0.5 | 0.6123 (0.524) | 0.6112 |
-| dielectric | 0.5 | 1 | 0.9958 (0.9943) | 0.9954 |
-| dielectric | 0.5 | 0.5 | 1.0029 (0.9910) | 1.0025 |
-| dielectric | 0.25 | 1 | 0.9997 (0.9994) | 0.9999 |
-| dielectric | 0.25 | 0.5 | 1.0218 (1.0036) | 1.0216 |
+| metal | 0.3 | 1 | 0.9875 | 0.9997 |
+| metal | 0.3 | 0.5 | 0.9012 | 0.9998 |
+| metal | 0.7 | 1 | 0.6710 | 0.9978 |
+| metal | 0.7 | 0.5 | 0.6123 | 0.9982 |
+| metal | 1 | 1 | 0.3069 | 0.9978 |
+| metal | 1 | 0.5 | 0.4091 | 0.9974 |
+| dielectric | 0.5 | 1 | 0.9958 | 0.9996 |
+| dielectric | 0.5 | 0.5 | 1.0029 | 0.9996 |
+| dielectric | 0.25 | 1 | 0.9997 | 1.0002 |
+| dielectric | 0.25 | 0.5 | 1.0218 | 0.9996 |
 
-A metal's losses are the lobe's, not the estimator's: Schlick-GGX Smith
-still masks at grazing angles, and at roughness 1 half the microfacets
-reflect below the horizon. A white dielectric's diffuse takes what its
-Fresnel leaves, and the uncorrelated Smith with `k = alpha / 2` masks less
-than that leaves room for: at roughness 0.5 `E(mu)` passes 1 below `mu` 0.55
-(1.076 at 0.05), at 0.25 already at 0.5. At roughness 0.8 it stays in
-0.981-0.997 for every `mu`. The oracles, all in linear radiance from the HDR
-target: `GoldenRender.PathTracingPassesTheWhiteMetalFurnaceTest` (the metal
-rows, within 0.03) and `GoldenRender.PathTracingPassesTheWhiteFurnaceTest`
-(the dielectric rows within 0.01, then the dielectric at roughness 0.8 on the
-shadow rig, where 16 bounces compound any per-bounce error: its
-`E(mu) <= 1` caps the mean at the sky's 1). The rig ran at roughness 0.5
-until 2026-11-16; with the sampled remap its mean rose to 1.019, the
-model's own gain past 1 at grazing angles, which the cap no longer bounds.
-At 0.8 it measures 0.9823 and must stay in 0.977-0.988, which a furnace
-albedo of 0.99 (0.9715) or 1.01 (0.9933) leaves
+The oracles, all in linear radiance from the HDR target:
+`GoldenRender.PathTracingPassesTheWhiteMetalFurnaceTest` (the metal rows) and
+`GoldenRender.PathTracingPassesTheWhiteFurnaceTest` (the dielectric rows),
+each within 0.01 of 1, then the dielectric at roughness 0.5 on the shadow rig,
+where 16 bounces compound any per-bounce error. From 2026-11-16 to 2026-11-21
+the rig ran at roughness 0.8, where the single-scatter `E(mu)` stays below 1
+for every `mu` and so capped the mean; with the gain every
+roughness returns 1, and it is back at 0.5 (owner decision 2026-11-21).
+It measures 0.9997 and must stay in 0.994-1.005, which a furnace albedo of
+0.99 (0.9889) or 1.01 (1.0106) leaves
 ([`gpu-golden-testing.md`](gpu-golden-testing.md)).
 
 ## Temporal accumulation
@@ -247,19 +249,23 @@ dramatically.
 - `PathTracingHonorsTheUntexturedMetallicFactor` - `metallic_card.gltf`
   (metallicFactor 0.75, no metallic-roughness texture) beside its dielectric
   twin, mirrored about the view axis at 2 spp and 2 bounces, read as linear
-  radiance from the HDR target: the metal must return under 0.8 of the
-  dielectric. Measured 0.634 against 1.817; the texture-gated kernel lit both
-  alike (1.816).
+  radiance from the HDR target: the metal must return under 0.9 of the
+  dielectric. Measured 1.402 against 1.701 (0.824) since the multiple-scattering
+  gain gave the rough metal most of its lobe back (0.634 against 1.817 before,
+  under a bound of 0.8); a kernel that never reads the metallicFactor lights
+  both alike (1.700 against 1.701), as the texture-gated one did (1.816).
 - `RaytracedWorldFollowsTheModelTransform` - a GUI move must change the
   traced image: 0.397 vs exactly 0 on a stale TLAS.
 - `PathTracingPassesTheWhiteFurnaceTest` - a white dielectric on a lone card
-  must return `E(mu)` of a uniform sky within 0.01 (the dielectric rows
-  above), then the shadow rig at roughness 0.8 and 16 bounces must average
-  0.977-0.988 with over 98% of its pixels within ±0.1 of the sky's 1
-  (measured 0.9823, 99.998 % within; a furnace albedo of 0.99 gives 0.9715
-  and 1.01 gives 0.9933, both failing). The controls below were measured on
-  the rig at roughness 0.5 against the earlier bounds 0.98-1.002, each
-  failing: a mixture density
+  must return 1 of a uniform sky within 0.01 (the dielectric rows above),
+  then the shadow rig at roughness 0.5 and 16 bounces must average
+  0.994-1.005 with over 98% of its pixels within ±0.1 of the sky's 1
+  (measured 0.9997, 99.9995 % within; a furnace albedo of 0.99 gives 0.9889
+  and 1.01 gives 1.0106, both failing). With `brdf.slang`'s diffuse back on
+  `1 - F` the card at roughness 0.25, `mu` 0.5 returns 1.0218 and the rig
+  1.0198, both failing. The controls below were
+  measured on the rig at roughness 0.5 against the earlier bounds 0.98-1.002,
+  each failing: a mixture density
   that weights the lobes 50/50 instead of by the selection chance (card
   1.114-1.605, rig 1.280), one at 1.5 times the selection chance (card
   1.007-1.034, rig 1.084), a visible-normal density with `1 / (2 n.v)` for
@@ -267,10 +273,20 @@ dramatically.
   bounce (card 1.005-1.018, rig 1.011). Until 2026-11-15 the test graded the
   rig's tonemapped frame (mean 225.6-237.6, 98 % within ±6 of 231.6); its
   uniformity check caught the first three, but the 1.5 % gain passed at 232.0.
+  A card the rays miss shows the sky's 1 as well, so each view first renders
+  one segment (`pathTracingMaxBounces` 1: a hit stays black, a miss shows the
+  sky) and its centre square must stay below 0.01 (measured 0), and the rig's
+  crop must be at least half covered there (measured 0.748). Turned away from
+  the card the views read 1 there and fail, while the card checks read 1 and
+  pass; with the camera looking straight up the rig covers none of the crop.
 - `PathTracingPassesTheWhiteMetalFurnaceTest` - a white metal on a lone card
-  must return `E(mu)` of a uniform sky within 0.03 (the table above). With
-  the sampling density missing Smith's G1, roughness 0.7 at `mu` 0.5 returns
-  0.452 against 0.524, and fails.
+  at roughness 0.3, 0.7 and 1 must return 1 of a uniform sky within 0.01 (the
+  table above). With `multiscatter_gain` returning 1 the cards fall to their
+  single scatter (0.9873, 0.9009, 0.6695, 0.6112, 0.3062, 0.4081) and fail,
+  while the dielectric furnace still passes. With the sampling density
+  missing Smith's G1, roughness 0.7 at `mu` 0.5 returned 0.452 against the
+  single scatter's 0.524 (2026-11-16), and failed. The same one-segment frame
+  first proves the card under both views' centre square.
 - `PathTracingFloorsAZeroRoughnessTexel` - a white dielectric whose
   metallic-roughness texel has G = 0 beside one at the 0.045 floor, at 2 spp
   and 2 bounces: the two radiances must agree within 3%. Measured 1.4305

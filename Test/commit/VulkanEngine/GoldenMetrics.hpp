@@ -304,18 +304,21 @@ inline double ggx_distribution(double n_dot_h, double roughness)
     return a2 / (PI * std::max(d * d, kBrdfNdfDenominatorGuard));
 }
 
-// brdf.slang's brdf_sampled for a white albedo; a grid uniform in angle missed every GGX lobe narrower than its step.
-inline double white_directional_albedo(double mu, double roughness, double metallic)
+// What a white surface returns of a uniform sky: brdf.slang's multiple-scattering gain makes it the whole sky.
+inline constexpr double kWhiteFurnaceAlbedo = 1.0;
+
+// brdf_sampled's white albedo before brdf.slang's multiple-scattering gain; a uniform grid missed narrow GGX lobes.
+inline double white_single_scatter_albedo(double mu, double roughness, double metallic)
 {
     constexpr double PI = 3.14159265358979323846;
     constexpr int STEPS = 320;
     // Rows outnumber columns: where the horizon cuts a rough lobe, the error follows the row height (2048x128: < 1e-4).
     constexpr int CDF_ROWS = 2048;
     constexpr int AZIMUTH_COLUMNS = 128;
-    // The cells follow the floored lobe distribution_ggx evaluates; smith_k_sampled takes the unfloored roughness.
+    // The cells follow the floored lobe distribution_ggx evaluates; smith_k_sampled floors its roughness the same way.
     const double floored = std::max(roughness, kBrdfMinRoughness);
     const double a2 = floored * floored * floored * floored;
-    const double k = roughness * roughness / 2.0;
+    const double k = floored * floored / 2.0;
     const double f0 = 0.04 + 0.96 * metallic;
     const auto smith = [k](double cosine) { return cosine / std::max(cosine * (1.0 - k) + k, 1e-6); };
     const glm::dvec3 v(std::sqrt(std::max(0.0, 1.0 - mu * mu)), 0.0, mu);

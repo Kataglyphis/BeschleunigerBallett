@@ -9,6 +9,7 @@ module;
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include "scene/sky_box/SkyUniforms.hpp"
 #include "spdlog/spdlog.h"
 #include <optional>
 
@@ -131,9 +132,9 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     reinitShadowMapForCurrentSettings();
     reinitPunctualShadows();
 
-    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_post = { postDescriptors.getLayout(),
-        sharedRenderDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
+    fxaaStage.init(device, &vulkanSwapChain);
 
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorResources();
@@ -149,8 +150,14 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateUniforms(scene, camera, settings);
     updateAllDescriptorSets();
 
-    skyBox.init(device, graphics_command_pool.get());
-    skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainFormat());
+    skyBox.init(device, graphics_command_pool.get(), vulkanSwapChain.getNumberSwapChainImages());
+    // One raster sky pipeline serves both paths, so their depth buffers must share a format.
+    if (rasterizer.getDepthFormat() != deferredRasterizer.getDepthFormat()) {
+        spdlog::critical("The forward and deferred depth formats differ; the sky has one raster pipeline.");
+        std::abort();
+    }
+    skyBox.createGraphicsPipelines(
+      Kataglyphis::VulkanRendererInternals::Rasterizer::OFFSCREEN_FORMAT, rasterizer.getDepthFormat());
 
     registerBuiltInStages();
 
@@ -487,20 +494,20 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     };
     built_in[0].shaderHotReload = [this] { dirShadowMap.shaderHotReload(); };
 
-    built_in[6].name = "punctual_shadows";
-    built_in[6].order = RenderStageOrder::PunctualShadows;
-    built_in[6].timedPass = GpuTimedPass::PunctualShadows;
-    built_in[6].labelColor = std::array{ 0.75F, 0.45F, 0.15F, 1.0F };
+    built_in[5].name = "punctual_shadows";
+    built_in[5].order = RenderStageOrder::PunctualShadows;
+    built_in[5].timedPass = GpuTimedPass::PunctualShadows;
+    built_in[5].labelColor = std::array{ 0.75F, 0.45F, 0.15F, 1.0F };
     // Every frame while enabled: lights and casters can move; traced frames shadow the lights by rays.
-    built_in[6].enabled = [this](const RenderStageFrame &frame) {
+    built_in[5].enabled = [this](const RenderStageFrame &frame) {
         return frameSettings.scene.punctual_shadows_enabled && !frame.tracingOwnsFrame
                && punctualShadows.slotCount() > 0;
     };
-    built_in[6].record = [this](const RenderStageFrame &frame) { recordPunctualShadowStage(frame); };
-    built_in[6].recordSkipped = [this](const RenderStageFrame &frame) {
+    built_in[5].record = [this](const RenderStageFrame &frame) { recordPunctualShadowStage(frame); };
+    built_in[5].recordSkipped = [this](const RenderStageFrame &frame) {
         punctualShadows.recordSkippedPass(frame.commandBuffer);
     };
-    built_in[6].shaderHotReload = [this] { punctualShadows.shaderHotReload(); };
+    built_in[5].shaderHotReload = [this] { punctualShadows.shaderHotReload(); };
 
     built_in[1].name = "main";
     built_in[1].order = RenderStageOrder::Main;
@@ -523,6 +530,8 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
             sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
         };
         deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
+        // The sky draws inside the main stage's passes.
+        skyBox.shaderHotReload();
         if (device->supportsHardwareAcceleratedRRT()) {
             std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
                 raytracingDescriptors.getLayout() };
@@ -544,32 +553,36 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     };
     built_in[2].shaderHotReload = [this] { clouds.shaderHotReload(sharedRenderDescriptors.getLayout()); };
 
-    built_in[5].name = "cloud_upsample";
-    built_in[5].order = RenderStageOrder::CloudUpsample;
-    built_in[5].timedPass = GpuTimedPass::CloudUpsample;
-    built_in[5].labelColor = std::array{ 0.70F, 0.75F, 0.95F, 1.0F };
-    built_in[5].enabled = [this](const RenderStageFrame &) {
+    built_in[4].name = "cloud_upsample";
+    built_in[4].order = RenderStageOrder::CloudUpsample;
+    built_in[4].timedPass = GpuTimedPass::CloudUpsample;
+    built_in[4].labelColor = std::array{ 0.70F, 0.75F, 0.95F, 1.0F };
+    built_in[4].enabled = [this](const RenderStageFrame &) {
         return frameSettings.scene.clouds_enabled && frameSettings.scene.cloud_half_resolution;
     };
-    built_in[5].record = [this](const RenderStageFrame &frame) { recordCloudUpsampleStage(frame); };
+    built_in[4].record = [this](const RenderStageFrame &frame) { recordCloudUpsampleStage(frame); };
 
-    built_in[3].name = "sky";
-    built_in[3].order = RenderStageOrder::Sky;
-    built_in[3].timedPass = GpuTimedPass::Sky;
-    built_in[3].labelColor = std::array{ 0.30F, 0.70F, 0.90F, 1.0F };
-    built_in[3].record = [this](const RenderStageFrame &frame) { recordSkyStage(frame); };
-    built_in[3].shaderHotReload = [this] { skyBox.shaderHotReload(sharedRenderDescriptors.getLayout()); };
-
-    built_in[4].name = "post";
-    built_in[4].order = RenderStageOrder::Post;
-    built_in[4].timedPass = GpuTimedPass::Post;
-    built_in[4].labelColor = std::array{ 0.35F, 0.80F, 0.40F, 1.0F };
-    built_in[4].record = [this](const RenderStageFrame &frame) { recordPostStage(frame); };
-    built_in[4].shaderHotReload = [this] {
-        std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_post = { postDescriptors.getLayout(),
-            sharedRenderDescriptors.getLayout() };
+    built_in[3].name = "post";
+    built_in[3].order = RenderStageOrder::Post;
+    built_in[3].timedPass = GpuTimedPass::Post;
+    built_in[3].labelColor = std::array{ 0.35F, 0.80F, 0.40F, 1.0F };
+    built_in[3].record = [this](const RenderStageFrame &frame) { recordPostStage(frame); };
+    built_in[3].shaderHotReload = [this] {
+        std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
         postStage.shaderHotReload(descriptor_set_layouts_post);
     };
+
+    built_in[6].name = "fxaa";
+    built_in[6].order = RenderStageOrder::Fxaa;
+    built_in[6].timedPass = GpuTimedPass::Fxaa;
+    built_in[6].labelColor = std::array{ 0.55F, 0.85F, 0.55F, 1.0F };
+    built_in[6].enabled = [this](const RenderStageFrame &frame) { return fxaaFiltersFrame(frame); };
+    built_in[6].record = [this](const RenderStageFrame &frame) {
+        fxaaStage.recordCommands(frame.commandBuffer, frame.imageIndex);
+    };
+    // The intermediates follow the swapchain's extent and image count.
+    built_in[6].resize = [this](const RenderStageResize &) { fxaaStage.recreateFrameResources(); };
+    built_in[6].shaderHotReload = [this] { fxaaStage.shaderHotReload(); };
 
     for (RenderStage &stage : built_in) {
         if (renderStages.add(std::move(stage)) != RenderStageRegistry::AddResult::Added) {
@@ -841,6 +854,8 @@ void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
         raytracingDescriptors.cleanUp();
         createRaytracingDescriptorResources();
     }
+
+    skyBox.createFrameResources(vulkanSwapChain.getNumberSwapChainImages());
 }
 
 void Kataglyphis::VulkanRenderer::recreateSwapChain()
@@ -895,6 +910,12 @@ bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 
     std::memcpy(globalUBOMapped[image_index], &globalUBO, sizeof(VulkanRendererInternals::GlobalUBO));
     std::memcpy(sceneUBOMapped[image_index], &sceneUBO, sizeof(VulkanRendererInternals::SceneUBO));
+    skyBox.uploadUniforms(image_index,
+      makeSkyUniforms(globalUBO.projection,
+        globalUBO.view,
+        glm::vec3(sceneUBO.dirLight.direction),
+        sceneUBO.dirLight.color.w,
+        frameSettings.scene.skybox_enabled));
 
     if (lightMatricesNeedFullReseed) {
         // After a shadow re-init every image is stale; cascadeData is fresh here, as updateUniforms() already ran.
@@ -970,7 +991,7 @@ void Kataglyphis::VulkanRenderer::writeRaytracingDescriptorsForImage(uint32_t im
       image_index, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
     raytracingDescriptors.writeImage(
       image_index, TRACED_DEPTH_IMAGE_BINDING, tracedDepth.getImageView(), vk::ImageLayout::eGeneral);
-    // Uploaded once and left read-only, as the sky pass and post sample it; a TLAS exists only after skyBox.init().
+    // Uploaded once and left read-only, as the drawn sky samples it; a TLAS exists only after skyBox.init().
     if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
         raytracingDescriptors.writeImage(image_index,
           SKYBOX_CUBEMAP_BINDING,
@@ -1164,31 +1185,22 @@ void Kataglyphis::VulkanRenderer::recordCloudUpsampleStage(const RenderStageFram
       vk::AccessFlagBits2::eShaderSampledRead);
 }
 
-void Kataglyphis::VulkanRenderer::recordSkyStage(const RenderStageFrame &frame)
+bool Kataglyphis::VulkanRenderer::fxaaFiltersFrame(const RenderStageFrame &frame) const
 {
-    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = {
-        sharedRenderDescriptors.sets()[frame.imageIndex]
-    };
-    vk::CommandBuffer commandBuffer = frame.commandBuffer;
-    skyBox.recordCommands(commandBuffer,
-      frame.swapchainImage,
-      frame.swapchainImageView,
-      frame.extent,
-      rasterizer_descriptor_sets,
-      frameSettings.scene.skybox_enabled);
+    return Kataglyphis::VulkanRendererInternals::FrontendShared::fxaaFilters(
+      frameSettings.renderer.fxaaMode, frame.tracingOwnsFrame, fxaaStage.ready(frame.imageIndex));
 }
 
-// No swapchain barrier before it: PostStage orders its load after the sky and leaves the image presentable.
+// No swapchain barrier before it: PostStage takes the image from the acquire, or renders into FXAA's intermediate.
 void Kataglyphis::VulkanRenderer::recordPostStage(const RenderStageFrame &frame)
 {
-    const std::array<vk::DescriptorSet, 2> post_descriptor_sets = { postDescriptors.sets()[frame.imageIndex],
-        sharedRenderDescriptors.sets()[frame.imageIndex] };
+    const std::array<vk::DescriptorSet, 1> post_descriptor_sets = { postDescriptors.sets()[frame.imageIndex] };
     vk::CommandBuffer commandBuffer = frame.commandBuffer;
     postStage.recordCommands(commandBuffer,
       frame.imageIndex,
       post_descriptor_sets,
       frameSettings.scene.clouds_enabled,
-      frameSettings.scene.skybox_enabled);
+      fxaaFiltersFrame(frame) ? &fxaaStage.getIntermediate(frame.imageIndex) : nullptr);
 }
 
 void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuffer,
@@ -1198,19 +1210,28 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
 {
     using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
     const auto raster_mode = frameSettings.renderer.rasterizationMode;
+    // Inside either path's pass with its depth attached, so Forward and DeferredLighting time it as Rust's do.
+    const auto draw_sky = [this, image_index](
+                            vk::CommandBuffer passes) { skyBox.recordRasterDraw(passes, image_index); };
 
     if (raster_mode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::Forward, true);
-        rasterizer.recordCommands(
-          commandBuffer, image_index, scene, rasterizer_descriptor_sets, glm::vec3(sceneUBO.cam_pos), camera_frustum);
+        rasterizer.recordCommands(commandBuffer,
+          image_index,
+          scene,
+          rasterizer_descriptor_sets,
+          glm::vec3(sceneUBO.cam_pos),
+          camera_frustum,
+          draw_sky);
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::Forward, false);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
         const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index],
             gbufferDescriptors.sets()[image_index] };
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::GBuffer, true);
-        deferredRasterizer.recordCommands(commandBuffer,
+        deferredRasterizer.recordCommands(
+          commandBuffer,
           image_index,
           scene,
           deferred_sets,
@@ -1219,7 +1240,8 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
           [this](vk::CommandBuffer passes) {
               gpuTiming.writeTimestamp(passes, GpuTimedPass::GBuffer, false);
               gpuTiming.writeTimestamp(passes, GpuTimedPass::DeferredLighting, true);
-          });
+          },
+          draw_sky);
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::DeferredLighting, false);
     }
 
@@ -1270,6 +1292,12 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
         Texture &renderResult = activeOffscreenTexture(image_index);
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::RayTrace, true);
         raytracingStage.recordCommands(commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
+        // Where the primary ray missed, tracedDepth is 1 and the target's alpha 0: the sky fills those pixels.
+        skyBox.recordTracedDraw(commandBuffer,
+          image_index,
+          renderResult.getImage(),
+          renderResult.getImageView(),
+          vulkanSwapChain.getSwapChainExtent());
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::RayTrace, false);
     } else if (mode == 2) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
@@ -1359,8 +1387,7 @@ auto Kataglyphis::VulkanRenderer::create_surface() -> vk::SurfaceKHR
 void Kataglyphis::VulkanRenderer::create_post_descriptor_resources()
 {
     postDescriptors.addBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
+      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!postDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create post descriptor resources!");
@@ -1383,11 +1410,6 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
           clouds.getCloudOutputTexture()->getImageView(),
           vk::ImageLayout::eGeneral,
           clouds.getCloudOutputTexture()->getSampler());
-        // The constructor's first update runs before the skybox exists; its second, before any frame, writes this.
-        if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
-            postDescriptors.writeImage(
-              i, 2, cube_map->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, cube_map->getSampler());
-        }
     }
 }
 

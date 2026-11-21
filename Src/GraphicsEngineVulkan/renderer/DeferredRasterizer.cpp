@@ -221,18 +221,19 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
                          .build(device->getLogicalDevice(), lightingPipelineLayout, device->getPipelineCache());
 }
 
-unsigned int DeferredRasterizer::recordTransparentPass(vk::CommandBuffer &commandBuffer,
+unsigned int DeferredRasterizer::recordSkyAndTransparentPass(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
   Kataglyphis::Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const std::vector<BlendDraw> &blend_draws,
   const vk::Extent2D &extent,
-  vk::ImageAspectFlags depth_aspect)
+  vk::ImageAspectFlags depth_aspect,
+  const std::function<void(vk::CommandBuffer)> &drawSky)
 {
     const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
     const vk::Image depth_image = depthBufferImage->getImage();
 
-    // The lit colour is blended onto; the depth the lighting pass sampled goes back to an attachment for the test.
+    // The sky and BLEND go onto the lit colour; the depth the lighting pass sampled goes back to an attachment for the test.
     const std::array<vk::ImageMemoryBarrier2, 2> to_blend = {
         buildImageMemoryBarrier(offscreen_image,
           vk::ImageLayout::eColorAttachmentOptimal,
@@ -268,11 +269,16 @@ unsigned int DeferredRasterizer::recordTransparentPass(vk::CommandBuffer &comman
       extent, std::span<const vk::RenderingAttachmentInfo>(&colour_attachment, 1), &depth_attachment));
 
     setFullExtentViewportAndScissor(commandBuffer, extent);
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, transparentPipeline);
-    commandBuffer.bindDescriptorSets(
-      vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
-    const unsigned int drawn = recordBlendDraws(
-      commandBuffer, geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, scene, blend_draws, pushConstant);
+    // Where the lighting pass discarded, depth is still 1: there the sky fills in, under BLEND.
+    if (drawSky) { drawSky(commandBuffer); }
+    unsigned int drawn = 0;
+    if (!blend_draws.empty()) {
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, transparentPipeline);
+        commandBuffer.bindDescriptorSets(
+          vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
+        drawn = recordBlendDraws(
+          commandBuffer, geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, scene, blend_draws, pushConstant);
+    }
 
     commandBuffer.endRendering();
 
@@ -295,7 +301,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   std::span<const vk::DescriptorSet> descriptorSets,
   const glm::vec3 &eye,
   const std::optional<FrustumPlanes> &cameraFrustum,
-  const std::function<void(vk::CommandBuffer)> &afterGeometryPass)
+  const std::function<void(vk::CommandBuffer)> &afterGeometryPass,
+  const std::function<void(vk::CommandBuffer)> &drawSky)
 {
     // Both passes bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
     if (descriptorSets.empty()) {
@@ -432,10 +439,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     commandBuffer.endRendering();
 
     const std::vector<BlendDraw> blend_draws = collectBlendDraws(scene, cameraFrustum, eye);
-    if (!blend_draws.empty()) {
-        meshesDrawn += recordTransparentPass(
-          commandBuffer, image_index, scene, descriptorSets, blend_draws, swap_chain_extent, depth_aspect);
-    }
+    meshesDrawn += recordSkyAndTransparentPass(
+      commandBuffer, image_index, scene, descriptorSets, blend_draws, swap_chain_extent, depth_aspect, drawSky);
 
     // Post samples the lit result.
     recordImageBarrier(commandBuffer,

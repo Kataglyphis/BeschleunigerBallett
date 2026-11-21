@@ -1,6 +1,6 @@
 module;
-#include "shared/scene/ObjMaterial.hpp"
 #include <array>
+#include <cstring>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <memory>
@@ -12,7 +12,6 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include "common/FrameSubmitHelper.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderingHelper.hpp"
@@ -21,12 +20,11 @@ module;
 #include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
+#include "scene/sky_box/SkyUniforms.hpp"
 
 module kataglyphis.vulkan.sky_box;
 
-import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
-import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.command_buffer_manager;
@@ -37,14 +35,53 @@ namespace Kataglyphis {
 
 SkyBox::SkyBox() = default;
 
-void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPool commandPool)
+namespace {
+    // sky.slang's set 0: its uniforms, the cube map and a separate sampler, as the WebGPU layout has them.
+    constexpr uint32_t kSkyUniformsBinding = 0;
+    constexpr uint32_t kSkyCubeMapBinding = 1;
+    constexpr uint32_t kSkySamplerBinding = 2;
+}// namespace
+
+void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPool commandPool, uint32_t imageCount)
 {
     this->device = in_device;
 
-    createMesh(commandPool);
-    // Unconditional: createGraphicsPipeline() needs the layout even when the load below fails.
-    createDescriptorSetForCubeMap();
+    // First: the cube map load below writes into every image's set.
+    createFrameResources(imageCount);
     loadCubeMap(commandPool);
+}
+
+void SkyBox::createFrameResources(uint32_t imageCount)
+{
+    for (VulkanBuffer &buffer : uniformBuffers) { buffer.cleanUp(); }
+    uniformBuffers.clear();
+    descriptors.cleanUp();
+
+    descriptors
+      .addBinding(kSkyUniformsBinding, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(kSkyCubeMapBinding, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(kSkySamplerBinding, vk::DescriptorType::eSampler, 1, vk::ShaderStageFlagBits::eFragment);
+    if (!descriptors.create(device, imageCount)) {
+        spdlog::error("Failed to create sky descriptor resources!");
+        return;
+    }
+
+    uniformBuffers.resize(imageCount);
+    for (uint32_t i = 0; i < imageCount; ++i) {
+        uniformBuffers[i].create(device,
+          sizeof(SkyUniforms),
+          vk::BufferUsageFlagBits::eUniformBuffer,
+          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        descriptors.writeBuffer(i, kSkyUniformsBinding, uniformBuffers[i].getBuffer(), sizeof(SkyUniforms));
+    }
+    if (cubeMapTexture && cubeMapTexture->getImageView()) { writeCubeMapDescriptors(); }
+}
+
+void SkyBox::uploadUniforms(uint32_t imageIndex, const SkyUniforms &uniforms)
+{
+    // The renderer's first upload runs before init().
+    if (imageIndex >= uniformBuffers.size()) { return; }
+    std::memcpy(uniformBuffers[imageIndex].getMappedData(), &uniforms, sizeof(SkyUniforms));
 }
 
 void SkyBox::loadCubeMap(vk::CommandPool commandPool)
@@ -121,7 +158,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         const std::size_t layer = static_cast<std::size_t>(fitted.size) * fitted.size * 4U;
         for (std::size_t i = 0; i < faces.size(); ++i) { faces[i] = fitted.texels.data() + i * layer; }
     }
-    // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before post gamma-encodes.
+    // Uploaded as sRGB: the faces are sRGB-encoded PNGs and must decode to linear before sky.slang untonemaps them.
     const bool uploaded =
       uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
     if (uploaded) {
@@ -137,12 +174,12 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     }
 
     analyticSky = false;
-    updateDescriptorSetForCubeMap();
+    writeCubeMapDescriptors();
 }
 
 void SkyBox::loadAnalyticSky(vk::CommandPool commandPool)
 {
-    // OxidANT's procedural sky baked into faces, so the sky pass, post and the path tracer keep one cubemap path.
+    // OxidANT's procedural sky baked into faces, so the drawn sky, the cloud ambient and the path tracer share one cubemap.
     if (!cubeMapTexture) { cubeMapTexture = std::make_unique<Texture>(); }
     const std::vector<unsigned char> texels = analyticSkyFaces(kAnalyticSkyFaceSize);
     const std::size_t layer = static_cast<std::size_t>(kAnalyticSkyFaceSize) * kAnalyticSkyFaceSize * 4U;
@@ -158,7 +195,7 @@ void SkyBox::loadAnalyticSky(vk::CommandPool commandPool)
         spdlog::error("SkyBox: analytic sky upload failed; leaving the cubemap descriptor unwritten.");
         return;
     }
-    updateDescriptorSetForCubeMap();
+    writeCubeMapDescriptors();
 }
 
 bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool,
@@ -251,144 +288,120 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool,
     return true;
 }
 
-void SkyBox::createDescriptorSetForCubeMap()
+void SkyBox::writeCubeMapDescriptors()
 {
-    cubemapDescriptors.addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
-    if (!cubemapDescriptors.create(device, 1)) { spdlog::error("Failed to create skybox descriptor resources!"); }
+    for (uint32_t i = 0; i < descriptors.sets().size(); ++i) {
+        descriptors.writeImage(
+          i, kSkyCubeMapBinding, cubeMapTexture->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+        descriptors.writeImage(
+          i, kSkySamplerBinding, nullptr, vk::ImageLayout::eUndefined, cubeMapTexture->getSampler());
+    }
 }
 
-void SkyBox::updateDescriptorSetForCubeMap()
-{
-    cubemapDescriptors.writeImage(
-      0, 1, cubeMapTexture->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, cubeMapTexture->getSampler());
-}
-
-void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout, vk::Format in_color_format)
+void SkyBox::createGraphicsPipelines(vk::Format in_color_format, vk::Format in_depth_format)
 {
     colorFormat = in_color_format;
+    depthFormat = in_depth_format;
 
-    // Build-SlangShaders.ps1 emits this SPIR-V; the paths resolve from the repo root.
-    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
+    // OxidANT's sky.slang, emitted by Build-SlangShaders.ps1; the paths resolve from the repo root.
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/sky/";
+    ShaderStagePair stages{ device, slang_spv_dir + "sky.vs_vulkan_main.spv", slang_spv_dir + "sky.fs_main.spv" };
 
-    ShaderStagePair stages{ device, slang_spv_dir + "skybox.vs_main.spv", slang_spv_dir + "skybox.fs_main.spv" };
-
-    vk::VertexInputBindingDescription bindingDescription{};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(Vertex);
-    bindingDescription.inputRate = vk::VertexInputRate::eVertex;
-
-    const auto attributeDescriptions = vertex::getVertexInputAttributeDesc();
-
-    std::array<vk::DescriptorSetLayout, 2> combinedLayouts = { sharedLayout, cubemapDescriptors.getLayout() };
-
-    vk::PushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eFragment;
-    pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(uint32_t);
-    const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
-
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
-      buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
-
+    const std::array<vk::DescriptorSetLayout, 1> layouts = { descriptors.getLayout() };
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(layouts);
     pipelineLayout = vkCheck(
-      device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo), "Failed to create skybox pipeline layout!");
+      device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo), "Failed to create sky pipeline layout!");
 
-    PipelineBuilder pipelineBuilder;
-    graphicsPipeline =
-      pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
-        .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
-        .setCullMode(vk::CullModeFlagBits::eNone)
-        .setDepthTest(false)
-        .setDepthWrite(false)
-        .setDepthCompareOp(vk::CompareOp::eAlways)
-        .setRenderingFormats({ colorFormat })
-        .build(device->getLogicalDevice(),
-          pipelineLayout,
-          device->getPipelineCache(),
-          "Failed to create skybox graphics pipeline!");
+    // A fullscreen triangle from the vertex index: no vertex buffer.
+    rasterPipeline = PipelineBuilder()
+                       .setShaderStages({ stages.stages().begin(), stages.stages().end() })
+                       .setVertexInput({}, {})
+                       .setCullMode(vk::CullModeFlagBits::eNone)
+                       .setDepthWrite(false)
+                       .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
+                       .setRenderingFormats({ colorFormat }, depthFormat)
+                       .build(device->getLogicalDevice(),
+                         pipelineLayout,
+                         device->getPipelineCache(),
+                         "Failed to create the raster sky pipeline!");
+    // No depth to test: the traced target's alpha says where a primary ray hit.
+    tracedPipeline = PipelineBuilder()
+                       .setShaderStages({ stages.stages().begin(), stages.stages().end() })
+                       .setVertexInput({}, {})
+                       .setCullMode(vk::CullModeFlagBits::eNone)
+                       .setFillUncovered(true)
+                       .setDepthTest(false)
+                       .setDepthWrite(false)
+                       .setRenderingFormats({ colorFormat })
+                       .build(device->getLogicalDevice(),
+                         pipelineLayout,
+                         device->getPipelineCache(),
+                         "Failed to create the traced sky pipeline!");
 }
 
-void SkyBox::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
+void SkyBox::destroyTracedPipeline()
 {
-    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
-    createGraphicsPipeline(sharedLayout, colorFormat);
+    if (tracedPipeline) {
+        device->getLogicalDevice().destroyPipeline(tracedPipeline);
+        tracedPipeline = nullptr;
+    }
 }
 
-void SkyBox::createMesh(vk::CommandPool commandPool)
+void SkyBox::shaderHotReload()
 {
-    // Fullscreen quad indices
-    std::vector<unsigned int> indices = { 0, 1, 2, 2, 1, 3 };
-
-    // Fullscreen quad vertices with UVs
-    std::vector<Vertex> vertices = {
-        Vertex(glm::vec3(-1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 0.0F)),
-        Vertex(glm::vec3(1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 0.0F)),
-        Vertex(glm::vec3(-1.0F, 1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 1.0F)),
-        Vertex(glm::vec3(1.0F, 1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 1.0F))
-    };
-
-    std::vector<unsigned int> materialIndex = { 0 };
-    std::vector<ObjMaterial> materials = { ObjMaterial{} };
-    skyMesh = std::make_unique<Mesh>(device, commandPool, vertices, indices, materialIndex, materials);
+    destroyTracedPipeline();
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), rasterPipeline, pipelineLayout);
+    createGraphicsPipelines(colorFormat, depthFormat);
 }
 
-void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer,
+void SkyBox::recordDraw(vk::CommandBuffer commandBuffer, vk::Pipeline pipeline, uint32_t imageIndex) const
+{
+    if (!pipeline || imageIndex >= descriptors.sets().size()) {
+        spdlog::error("SkyBox: no pipeline or no descriptor set for image {}; the sky stays undrawn", imageIndex);
+        return;
+    }
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptors.sets()[imageIndex], 0, nullptr);
+    commandBuffer.draw(3, 1, 0, 0);
+}
+
+void SkyBox::recordRasterDraw(vk::CommandBuffer commandBuffer, uint32_t imageIndex) const
+{ recordDraw(commandBuffer, rasterPipeline, imageIndex); }
+
+void SkyBox::recordTracedDraw(vk::CommandBuffer commandBuffer,
+  uint32_t imageIndex,
   vk::Image target,
   vk::ImageView targetView,
-  vk::Extent2D extent,
-  std::span<const vk::DescriptorSet> descriptorSets,
-  bool skyboxEnabled)
+  vk::Extent2D extent) const
 {
-    if (!target || !targetView) {
-        spdlog::error("SkyBox::recordCommands called without a target image");
-        return;
-    }
-
-    if (descriptorSets.empty() || !graphicsPipeline || cubemapDescriptors.sets().empty()) {
-        spdlog::error("SkyBox::recordCommands called with an empty shared descriptor set span or an unready pipeline");
-        return;
-    }
-
-    spdlog::debug("SkyBox: enabled={}, indexCount={}", skyboxEnabled, skyMesh->getIndexCount());
-
-    // UNDEFINED: the clear overwrites it. The source stage is the submit's wait stage on the acquire semaphore.
+    // The fill reads each pixel's alpha, so the trace's storage write must reach the colour attachment read.
     recordImageBarrier(commandBuffer,
       buildImageMemoryBarrier(target,
-        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eGeneral,
         vk::ImageLayout::eColorAttachmentOptimal,
-        kSwapchainAcquireWaitStage,
-        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
+        vk::AccessFlagBits2::eShaderStorageWrite,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite));
 
-    // Left in eColorAttachmentOptimal, not presentable: the post stage loads this attachment next.
-    const vk::RenderingAttachmentInfo color_attachment = buildRenderingAttachmentInfo(targetView,
-      vk::ImageLayout::eColorAttachmentOptimal,
-      vk::AttachmentLoadOp::eClear,
-      vk::AttachmentStoreOp::eStore,
-      vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 1.0F } } });
+    const vk::RenderingAttachmentInfo color_attachment = buildRenderingAttachmentInfo(
+      targetView, vk::ImageLayout::eColorAttachmentOptimal, vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore);
     commandBuffer.beginRendering(
       buildRenderingInfo(extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), nullptr));
-
     setFullExtentViewportAndScissor(commandBuffer, extent);
-
-    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-
-    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = { descriptorSets[0], cubemapDescriptors.sets()[0] };
-    commandBuffer.bindDescriptorSets(
-      vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
-
-    uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
-    commandBuffer.pushConstants(
-      pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &skyboxEnabledVal);
-
-    const vk::Buffer vertex_buffer = skyMesh->getVertexBuffer();
-    const vk::DeviceSize offset = 0;
-    commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-    commandBuffer.bindIndexBuffer(skyMesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
-
-    commandBuffer.drawIndexed(skyMesh->getIndexCount(), 1, 0, 0, 0);
+    recordDraw(commandBuffer, tracedPipeline, imageIndex);
     commandBuffer.endRendering();
+
+    // The consumer is post.slang's fragment shader.
+    recordImageBarrier(commandBuffer,
+      buildImageMemoryBarrier(target,
+        vk::ImageLayout::eColorAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::AccessFlagBits2::eColorAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead));
 }
 
 void SkyBox::cleanUp()
@@ -396,10 +409,11 @@ void SkyBox::cleanUp()
     // Idempotent: the destructor calls it again as a safety net.
     if (!device) { return; }
 
-    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
-    cubemapDescriptors.cleanUp();
-    if (skyMesh) { skyMesh->cleanUp(); }
-    skyMesh.reset();
+    destroyTracedPipeline();
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), rasterPipeline, pipelineLayout);
+    descriptors.cleanUp();
+    for (VulkanBuffer &buffer : uniformBuffers) { buffer.cleanUp(); }
+    uniformBuffers.clear();
     if (cubeMapTexture) { cubeMapTexture->cleanUp(); }
     cubeMapTexture.reset();
 

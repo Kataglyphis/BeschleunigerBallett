@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Vulkan entries live here; wgslManifest imports OxidANT-owned WebGPU entries, maps and patches.",
+    "Vulkan entries live here; wgslManifest imports OxidANT's rows (its WebGPU entries, the SPIR-V of its sky, FXAA and vector kernels), maps and patches.",
     "Source lookup searches this tree, then the pinned third_party/OxidANT/shaders tree."
   ],
   "manifest": [
@@ -19,26 +19,6 @@
       "stage": "fragment",
       "targets": [
         "spirv"
-      ]
-    },
-    {
-      "_comment": "CI guard: verify the shared BRDF math emits to BOTH targets.",
-      "file": "tests/brdf_test.slang",
-      "entry": "brdf_test_main",
-      "stage": "compute",
-      "targets": [
-        "spirv",
-        "wgsl"
-      ]
-    },
-    {
-      "_comment": "CI guard: verify the shared noise math emits to BOTH targets.",
-      "file": "tests/noise_test.slang",
-      "entry": "noise_test_main",
-      "stage": "compute",
-      "targets": [
-        "spirv",
-        "wgsl"
       ]
     },
     {
@@ -87,23 +67,6 @@
       "file": "path_tracing/path_tracing.slang",
       "entry": "path_tracing_main",
       "stage": "compute",
-      "targets": [
-        "spirv"
-      ]
-    },
-    {
-      "_comment": "Skybox (cubemap, SPIR-V only).",
-      "file": "skybox/skybox.slang",
-      "entry": "vs_main",
-      "stage": "vertex",
-      "targets": [
-        "spirv"
-      ]
-    },
-    {
-      "file": "skybox/skybox.slang",
-      "entry": "fs_main",
-      "stage": "fragment",
       "targets": [
         "spirv"
       ]

@@ -35,6 +35,7 @@
 #include "RepoFiles.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "renderer/FxaaUniforms.hpp"
 #include "renderer/GlobalUBO.hpp"
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/SceneUBO.hpp"
@@ -45,6 +46,7 @@
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 #include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
+#include "scene/sky_box/SkyUniforms.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 #include "shared/scene/Vertex.hpp"
 
@@ -1006,7 +1008,6 @@ struct SpirvStructContract
     std::map<std::string, std::size_t> member_offsets;
 };
 
-// No PushConstantSkyBox_std430 entry: SkyBox pushes a bare uint32_t with no host struct to compare.
 std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
 {
     return {
@@ -1029,12 +1030,11 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "view", offsetof(GlobalUBO, view) },
             { "inv_projection", offsetof(GlobalUBO, inv_projection) },
             { "inv_view", offsetof(GlobalUBO, inv_view) } } },
-        // skybox.slang re-declares GlobalUBO's members under its own name: same host type, another emitted struct.
-        { "CameraUBO_std140",
-          { { "projection", offsetof(GlobalUBO, projection) },
-            { "view", offsetof(GlobalUBO, view) },
-            { "inv_projection", offsetof(GlobalUBO, inv_projection) },
-            { "inv_view", offsetof(GlobalUBO, inv_view) } } },
+        // OxidANT's sky.slang, which the C++ renderer fills from SkyUniforms.hpp.
+        { "SkyUniforms_std140",
+          { { "inv_view_proj", offsetof(Kataglyphis::SkyUniforms, inv_view_proj) },
+            { "light_dir_intensity", offsetof(Kataglyphis::SkyUniforms, light_dir_intensity) },
+            { "mode", offsetof(Kataglyphis::SkyUniforms, mode) } } },
         { "DirectionalLightData_std140",
           { { "direction", offsetof(DirectionalLightData, direction) },
             { "color", offsetof(DirectionalLightData, color) } } },
@@ -1091,9 +1091,10 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "furnace_roughness", offsetof(PushConstantPathTracing, furnace_roughness) },
             { "trace_cloud_depth", offsetof(PushConstantPathTracing, trace_cloud_depth) },
             { "skybox_enabled", offsetof(PushConstantPathTracing, skybox_enabled) } } },
-        { "PushConstantPost_std430",
-          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
-            { "skybox_enabled", offsetof(PushConstantPost, skybox_enabled) } } },
+        { "PushConstantPost_std430", { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } } },
+        // OxidANT's fxaa.slang, which FxaaStage fills from FxaaUniforms.hpp.
+        { "FxaaUniforms_std140",
+          { { "params", offsetof(Kataglyphis::VulkanRendererInternals::FxaaUniforms, params) } } },
         { "PushConstantRaytracing_std430", { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
         { "ShadowPushConstants_std430",
           // The host's cascadeIndex carries the shader's objectIndex (makeShadowPush); what must agree is the offset.
@@ -1541,10 +1542,11 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
 
     const auto referenced = collect_spirv_paths_referenced_by_sources(repo_root);
     // Catches a scanner that silently finds nothing; raise this floor when a pass is added, never lower it.
-    ASSERT_GE(referenced.size(), 19U)
+    ASSERT_GE(referenced.size(), 21U)
       << "collect_spirv_paths_referenced_by_sources found only " << referenced.size()
-      << " .spv reference(s) under Src/ - expected at least 19 from Rasterizer.cpp, DeferredRasterizer.cpp, "
-         "PostStage.cpp, SkyBox.cpp, CascadedShadowMap.cpp, Clouds.cpp, Raytracing.cpp and PathTracing.cpp. "
+      << " .spv reference(s) under Src/ - expected at least 21 from Rasterizer.cpp, DeferredRasterizer.cpp, "
+         "PostStage.cpp, FxaaStage.cpp, SkyBox.cpp, CascadedShadowMap.cpp, Clouds.cpp, Raytracing.cpp and "
+         "PathTracing.cpp. "
          "Did a source stop using a literal `.spv` string or the `slang_spv_dir` naming convention?";
 
     std::vector<std::string> missing;
@@ -1687,7 +1689,9 @@ TEST(BuildIntegrity, EveryGpuTestGuardsThroughTheSharedHeader)
             ++checked;
             bool guarded = false;
             for (std::size_t body = index + 1; body < lines->size() && !(*lines)[body].starts_with("TEST("); ++body) {
-                if ((*lines)[body].find("SKIP_WITHOUT_GPU();") != std::string::npos) {
+                const std::string &line = (*lines)[body];
+                if (line.find("SKIP_WITHOUT_GPU();") != std::string::npos
+                    || line.find("SKIP_WITHOUT_HEADLESS_DEVICE(") != std::string::npos) {
                     guarded = true;
                     break;
                 }
@@ -1698,7 +1702,8 @@ TEST(BuildIntegrity, EveryGpuTestGuardsThroughTheSharedHeader)
 
     EXPECT_GT(checked, 0U) << "found no TEST(GoldenRender|Integration, ...) under " << tests_dir.string();
     EXPECT_TRUE(unguarded.empty()) << unguarded.size()
-                                   << " GPU test(s) do not start with GpuTestGuard.hpp's SKIP_WITHOUT_GPU():"
+                                   << " GPU test(s) guard through neither SKIP_WITHOUT_GPU() nor "
+                                      "SKIP_WITHOUT_HEADLESS_DEVICE() from GpuTestGuard.hpp:"
                                    << joinViolations(unguarded);
     EXPECT_TRUE(own_probes.empty()) << "file(s) probe GLFW for Vulkan themselves, past KATAGLYPHIS_REQUIRE_GPU:"
                                     << joinViolations(own_probes);
@@ -3712,7 +3717,6 @@ const std::vector<SharedDescriptorBinding> kSharedDescriptorSetBindings = {
     { "path_tracing/path_tracing.slang", "accumulationImage" },
     { "path_tracing/path_tracing.slang", "tracedDepth" },
     { "path_tracing/path_tracing.slang", "skyboxCubemap" },
-    { "post/post.slang", "globalUBO" },
 };
 
 // Bindings must use the named constants, or a renumbering moves both headers while a shader literal stays behind.
@@ -6315,7 +6319,7 @@ std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(co
     const auto lines = readFileLines(doc_path);
     if (!lines) { return std::nullopt; }
 
-    static const std::regex kRowPattern(R"(\|\s*`([^`]+)`\s*\|\s*(spirv|wgsl)\s*\|)");
+    static const std::regex kRowPattern(R"(\|\s*`([^`]+)`\s*\|\s*(spirv|wgsl|both)\s*\|)");
 
     std::map<std::string, std::string> rows;
     bool in_block = false;
@@ -6408,7 +6412,7 @@ std::map<std::string, std::string> shared_module_target_truth(const fs::path &sl
     return result;
 }
 
-// Each source's documented target must match shader-manifest.json; dual-emit tests/ and hand-written histogram are out.
+// Each source's documented target (spirv, wgsl or both) must match the manifests; tests/ and histogram are out.
 TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
 {
     const fs::path repo_root = repoRoot();
@@ -6427,21 +6431,12 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
+    // An entry point both renderers compile, such as OxidANT's sky, reads "both".
     std::map<std::string, std::string> truth;
-    std::vector<std::string> ambiguous;
     for (const auto &[source, targets] : manifest->file_targets) {
         if (source.starts_with("tests/")) { continue; }
-        if (targets.size() != 1) {
-            ambiguous.push_back(source);
-            continue;
-        }
-        truth.emplace(source, *targets.begin());
+        truth.emplace(source, targets.size() > 1 ? "both" : *targets.begin());
     }
-    EXPECT_TRUE(ambiguous.empty())
-      << "shader-manifest.json has " << ambiguous.size() << " non-test file(s) compiled to BOTH spirv and wgsl - "
-      << doc_path.string()
-      << "'s shader-targets table has only two columns (spirv-only / wgsl-only) and needs a third list for:"
-      << joinViolations(ambiguous);
 
     std::vector<std::string> doc_only;
     std::vector<std::string> mismatched;
@@ -7093,22 +7088,48 @@ TEST(BuildIntegrity, CloudWindWrapsAtTheNoisePeriod)
     }
 }
 
-// CloudAmbient.hpp's navy feeds the cloud ambient with the sky off; it must be the navy the sky pass draws.
+// CloudAmbient.hpp's navy feeds the cloud ambient with the sky off; it must be the navy the sky and a bounce show.
 TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
 {
-    const fs::path radiance_path = slangRoot() / "common" / "skybox_radiance.slang";
-    const auto contents = readFileText(radiance_path);
-    ASSERT_TRUE(contents.has_value()) << "missing " << radiance_path.string();
-    std::smatch match;
-    ASSERT_TRUE(std::regex_search(*contents,
-      match,
-      std::regex(R"(SKYBOX_DISABLED_RADIANCE\s*=\s*float3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\))")))
-      << radiance_path.string() << " no longer defines SKYBOX_DISABLED_RADIANCE as a float3 literal";
-    for (int channel = 0; channel < 3; ++channel) {
-        EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), Kataglyphis::kSkyboxDisabledRadiance[channel])
-          << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from "
-          << radiance_path.string();
+    const std::array<std::pair<fs::path, const char *>, 2> sources = {
+        std::pair{ slangRoot() / "common" / "skybox_radiance.slang", "SKYBOX_DISABLED_RADIANCE" },
+        std::pair{ sharedSlangRoot() / "sky" / "sky.slang", "SKYBOX_DISABLED" },
+    };
+    for (const auto &[path, name] : sources) {
+        const auto contents = readFileText(path);
+        ASSERT_TRUE(contents.has_value()) << "missing " << path.string();
+        std::smatch match;
+        ASSERT_TRUE(std::regex_search(*contents,
+          match,
+          std::regex(std::string(name) + R"(\s*=\s*float3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\))")))
+          << path.string() << " no longer defines " << name << " as a float3 literal";
+        for (int channel = 0; channel < 3; ++channel) {
+            EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), Kataglyphis::kSkyboxDisabledRadiance[channel])
+              << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from " << path.string();
+        }
     }
+}
+
+// SkyUniforms.hpp's modes must land in the branches sky.slang takes for them.
+TEST(BuildIntegrity, SkyModesSelectTheCubeMapAndTheNavyInSkySlang)
+{
+    const fs::path sky_path = sharedSlangRoot() / "sky" / "sky.slang";
+    const auto contents = readFileText(sky_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << sky_path.string() << " - is the OxidANT submodule checked out?";
+    std::vector<float> thresholds;
+    static const std::regex kBranch(R"(if\s*\(\s*sky\.mode\.x\s*>\s*([0-9.]+)\s*\)\s*\n\s*return\s+([^;]*);)");
+    std::vector<std::string> returns;
+    for (std::sregex_iterator it(contents->begin(), contents->end(), kBranch), end; it != end; ++it) {
+        thresholds.push_back(std::stof((*it)[1].str()));
+        returns.push_back((*it)[2].str());
+    }
+    ASSERT_EQ(thresholds.size(), 2U) << sky_path.string() << " no longer branches twice on sky.mode.x";
+    // The higher threshold comes first and draws the navy; the lower one samples the cube map.
+    EXPECT_NE(returns[0].find("SKYBOX_DISABLED"), std::string::npos) << returns[0];
+    EXPECT_NE(returns[1].find("skyboxTex"), std::string::npos) << returns[1];
+    EXPECT_GT(Kataglyphis::kSkyModeSwitchedOff, thresholds[0]);
+    EXPECT_GT(Kataglyphis::kSkyModeCubeMap, thresholds[1]);
+    EXPECT_LE(Kataglyphis::kSkyModeCubeMap, thresholds[0]);
 }
 
 // The furnace goldens grade against a C++ copy of brdf.slang, whose floor and guard once drifted from the shader's.
@@ -7318,26 +7339,28 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
       << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }
 
-// Default sync validation sees neither edge: it skips load-after-store across rendering instances and shader reads.
+// Default sync validation sees neither edge: it skips the traced sky's storage-to-attachment hand-off and shader reads.
 TEST(BuildIntegrity, PostKeepsItsSkyAndCloudBarriers)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto post = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/PostStage.cpp");
-    ASSERT_TRUE(post.has_value()) << "could not open PostStage.cpp";
-    const std::size_t record = post->find("PostStage::recordCommands(");
-    ASSERT_NE(record, std::string::npos) << "PostStage::recordCommands not found";
-    const std::size_t begin_rendering = post->find("beginRendering(", record);
-    ASSERT_NE(begin_rendering, std::string::npos) << "PostStage::recordCommands begins no rendering";
-    const std::string before_load = post->substr(record, begin_rendering - record);
-    EXPECT_NE(before_load.find("buildImageMemoryBarrier("), std::string::npos)
-      << "PostStage loads the swapchain image the sky pass stored with no barrier in between (RAW across rendering "
-         "instances, which no implicit ordering covers)";
-    EXPECT_NE(before_load.find("vk::AccessFlagBits2::eColorAttachmentWrite"), std::string::npos)
-      << "the post pass's pre-load barrier must make the sky's colour-attachment write available";
+    // The traced sky reads the trace's alpha through its blend: RAW from a storage write to an attachment read.
+    const auto sky = readFileText(repo_root / "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp");
+    ASSERT_TRUE(sky.has_value()) << "could not open SkyBox.cpp";
+    const auto traced = function_body_span(*sky, "SkyBox::recordTracedDraw");
+    ASSERT_TRUE(traced.has_value()) << "SkyBox::recordTracedDraw not found";
+    const std::size_t begin_rendering = sky->find("beginRendering(", traced->first);
+    ASSERT_TRUE(begin_rendering != std::string::npos && begin_rendering < traced->second)
+      << "SkyBox::recordTracedDraw begins no rendering";
+    const std::string before_load = sky->substr(traced->first, begin_rendering - traced->first);
+    EXPECT_NE(before_load.find("vk::AccessFlagBits2::eShaderStorageWrite"), std::string::npos)
+      << "the traced sky's pre-load barrier must make the trace's storage write available";
     EXPECT_NE(before_load.find("vk::AccessFlagBits2::eColorAttachmentRead"), std::string::npos)
-      << "the post pass's pre-load barrier must make the sky's write visible to the load op's colour-attachment read";
+      << "the traced sky's pre-load barrier must make the trace visible to the load op and the blend's read";
+    const std::string after_draw = sky->substr(begin_rendering, traced->second - begin_rendering);
+    EXPECT_NE(after_draw.find("vk::ImageLayout::eShaderReadOnlyOptimal"), std::string::npos)
+      << "the traced sky must hand its target to post's fragment read";
 
     const auto renderer = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp");
     ASSERT_TRUE(renderer.has_value()) << "could not open VulkanRenderer.cpp";
@@ -7377,7 +7400,7 @@ TEST(BuildIntegrity, PostKeepsItsSkyAndCloudBarriers)
       << "the upsample-to-post barrier must name post's fragment shader as its consumer";
 }
 
-// The acquire wait and the sky's first barrier share one constant, and the signal covers the present transition.
+// The acquire wait and post's first barrier share one constant, and the signal covers the present transition.
 TEST(BuildIntegrity, FrameSubmitWaitsWhereTheSwapchainImageIsFirstUsed)
 {
     const fs::path repo_root = repoRoot();
@@ -7395,15 +7418,26 @@ TEST(BuildIntegrity, FrameSubmitWaitsWhereTheSwapchainImageIsFirstUsed)
     EXPECT_NE(renderer->find("Kataglyphis::kRenderFinishedSignalStage"), std::string::npos)
       << "the render-finished semaphore must be signalled at kRenderFinishedSignalStage";
 
-    const auto sky = readFileText(repo_root / "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp");
-    ASSERT_TRUE(sky.has_value()) << "could not open SkyBox.cpp";
-    const std::size_t record = sky->find("SkyBox::recordCommands(");
-    ASSERT_NE(record, std::string::npos) << "SkyBox::recordCommands not found";
-    const std::size_t begin_rendering = sky->find("beginRendering(", record);
-    ASSERT_NE(begin_rendering, std::string::npos) << "SkyBox::recordCommands begins no rendering";
-    EXPECT_NE(sky->substr(record, begin_rendering - record).find("kSwapchainAcquireWaitStage"), std::string::npos)
-      << "the sky's UNDEFINED transition of the swapchain image must take its source stage from the acquire wait, "
+    const auto post = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/PostStage.cpp");
+    ASSERT_TRUE(post.has_value()) << "could not open PostStage.cpp";
+    const std::size_t record = post->find("PostStage::recordCommands(");
+    ASSERT_NE(record, std::string::npos) << "PostStage::recordCommands not found";
+    const std::size_t begin_rendering = post->find("beginRendering(", record);
+    ASSERT_NE(begin_rendering, std::string::npos) << "PostStage::recordCommands begins no rendering";
+    EXPECT_NE(post->substr(record, begin_rendering - record).find("kSwapchainAcquireWaitStage"), std::string::npos)
+      << "post's UNDEFINED transition of the swapchain image must take its source stage from the acquire wait, "
          "or the transition can run before the presentation engine releases the image";
+
+    // While FXAA filters the frame, its stage is the swapchain image's first user instead.
+    const auto fxaa = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/FxaaStage.cpp");
+    ASSERT_TRUE(fxaa.has_value()) << "could not open FxaaStage.cpp";
+    const std::size_t fxaa_record = fxaa->find("FxaaStage::recordCommands(");
+    ASSERT_NE(fxaa_record, std::string::npos) << "FxaaStage::recordCommands not found";
+    const std::size_t fxaa_rendering = fxaa->find("beginRendering(", fxaa_record);
+    ASSERT_NE(fxaa_rendering, std::string::npos) << "FxaaStage::recordCommands begins no rendering";
+    EXPECT_NE(
+      fxaa->substr(fxaa_record, fxaa_rendering - fxaa_record).find("kSwapchainAcquireWaitStage"), std::string::npos)
+      << "FXAA's UNDEFINED transition of the swapchain image must take its source stage from the acquire wait";
 }
 
 // Edges no frame validates: the TLAS's instance read and a re-armed capture writing a buffer a running frame writes.
@@ -7441,9 +7475,10 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    static const std::array<const char *, 2> kFiles = {
+    static const std::array<const char *, 3> kFiles = {
         "Src/GraphicsEngineVulkan/renderer/PathTracing.cpp",
         "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
+        "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
     };
 
     // Sync2: (image, oldLayout, newLayout, srcStage, srcAccess, dstStage, dstAccess, ...), split at top-level commas.
@@ -7504,7 +7539,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
     }
 
     ASSERT_GT(gated_barriers_found, 0u) << "found zero image barriers transitioning to eShaderReadOnlyOptimal in "
-                                           "PathTracing.cpp/Raytracing.cpp - the scan itself is broken";
+                                           "PathTracing.cpp/Raytracing.cpp/SkyBox.cpp - the scan itself is broken";
 
     EXPECT_TRUE(violations.empty()) << joinViolations(violations);
 }
@@ -8757,9 +8792,10 @@ TEST(BuildIntegrity, NoPassUsesARenderPassFramebufferOrLegacyBarrier)
       << joinViolations(violations);
 
     // Control: the scan must see the passes it guards, or deleting every pass would pass it.
-    static const std::array<const char *, 5> kPassFiles = { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
+    static const std::array<const char *, 6> kPassFiles = { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
         "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp",
         "Src/GraphicsEngineVulkan/renderer/PostStage.cpp",
+        "Src/GraphicsEngineVulkan/renderer/FxaaStage.cpp",
         "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
         "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp" };
     for (const char *pass_file : kPassFiles) {
@@ -8768,14 +8804,15 @@ TEST(BuildIntegrity, NoPassUsesARenderPassFramebufferOrLegacyBarrier)
     }
 }
 
-// Nothing reads a Post or SkyBox depth attachment, so neither pass may render with one.
+// Post, FXAA and the traced sky test nothing against depth, so none may render with one; the raster sky is a draw.
 TEST(BuildIntegrity, PostAndSkyboxPassesRenderWithoutDepth)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    for (const char *relative_path :
-      { "Src/GraphicsEngineVulkan/renderer/PostStage.cpp", "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp" }) {
+    for (const char *relative_path : { "Src/GraphicsEngineVulkan/renderer/PostStage.cpp",
+           "Src/GraphicsEngineVulkan/renderer/FxaaStage.cpp",
+           "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp" }) {
         const auto contents_opt = readFileText(repo_root / relative_path);
         ASSERT_TRUE(contents_opt.has_value()) << "missing " << relative_path;
         const std::string &contents = *contents_opt;
@@ -9787,12 +9824,11 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
     static const std::regex kSrgbFormat(R"(vk::Format::e\w*Srgb)");
     EXPECT_FALSE(std::regex_search(*swapchain_choices_text, kSrgbFormat))
       << swapchain_choices_path.string()
-      << " now prefers an sRGB surface format - the shader-side linear_to_srgb encodes in post.slang and "
-         "skybox.slang become a double-encode and must be removed";
+      << " now prefers an sRGB surface format - the shader-side linear_to_srgb encode in post.slang "
+         "becomes a double-encode and must be removed";
 
     const fs::path slang_root = slangRoot();
-    const std::array<fs::path, 2> shaders = { slang_root / "post" / "post.slang",
-        slang_root / "skybox" / "skybox.slang" };
+    const std::array<fs::path, 1> shaders = { slang_root / "post" / "post.slang" };
 
     for (const fs::path &shader_path : shaders) {
         const auto source = readFileText(shader_path);
@@ -10536,8 +10572,8 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
       << joinViolations(unverified);
 }
 
-// The post pass loads its attachment, so a clear value is dead; fs_main samples noisyTxt exactly once.
-TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
+// Post overwrites every pixel, so a load or a clear is dead work; fs_main samples noisyTxt exactly once.
+TEST(BuildIntegrity, TheOverwritingPostPassNeitherLoadsNorClears)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
@@ -10547,20 +10583,19 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
     ASSERT_TRUE(post_stage_text_opt.has_value()) << "missing " << post_stage_path.string();
     const std::string &post_stage_text = *post_stage_text_opt;
 
-    EXPECT_NE(post_stage_text.find("vk::AttachmentLoadOp::eLoad"), std::string::npos)
+    EXPECT_NE(post_stage_text.find("vk::AttachmentLoadOp::eDontCare"), std::string::npos)
       << post_stage_path.string()
-      << " no longer declares its colour attachment with vk::AttachmentLoadOp::eLoad - this pass loads its "
-         "attachment, so a clear value can never be consumed; if that changed, this gate needs updating instead "
-         "of just deleting the assertion below";
+      << " no longer declares its colour attachment with vk::AttachmentLoadOp::eDontCare - the sky is in the HDR "
+         "target, so post's fullscreen triangle writes every pixel and nothing under it survives";
+    EXPECT_EQ(post_stage_text.find("vk::AttachmentLoadOp::eLoad"), std::string::npos)
+      << post_stage_path.string() << " loads the swapchain image, which nothing wrote before post";
     EXPECT_EQ(post_stage_text.find("ClearColorValue"), std::string::npos)
-      << post_stage_path.string()
-      << " builds a ClearColorValue for a pass whose attachment is eLoad - this pass loads its attachment, so a "
-         "clear value can never be consumed";
-    // buildRenderingAttachmentInfo defaults the clear value, so a loading attachment names none at all.
+      << post_stage_path.string() << " builds a ClearColorValue for a pass that overwrites every pixel";
+    // buildRenderingAttachmentInfo defaults the clear value, so an overwriting attachment names none at all.
     EXPECT_EQ(post_stage_text.find("vk::ClearValue"), std::string::npos)
-      << post_stage_path.string()
-      << " builds a vk::ClearValue for a pass whose attachment is eLoad - this pass loads its "
-         "attachment, so a clear value can never be consumed";
+      << post_stage_path.string() << " builds a vk::ClearValue for a pass that overwrites every pixel";
+    EXPECT_EQ(post_stage_text.find("setAlphaBlending(true)"), std::string::npos)
+      << post_stage_path.string() << " blends over a swapchain image whose contents are undefined";
 
     const fs::path post_slang_path = slangRoot() / "post" / "post.slang";
     const auto post_slang_text_opt = readFileText(post_slang_path);
@@ -11172,7 +11207,7 @@ TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
     ASSERT_GE(rust_names.size(), 10U) << "parsed only " << rust_names.size() << " Rust pass names - the scan broke";
 
     // The C++ renderer's own scopes; any other pass must carry the Rust renderer's name for the same work.
-    static const std::set<std::string> kCppOnly = { "Main", "Sky", "Post", "CloudUpsample", "PunctualShadows" };
+    static const std::set<std::string> kCppOnly = { "Main", "Post", "CloudUpsample", "PunctualShadows" };
     for (const char *name : FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES) {
         if (kCppOnly.contains(name)) {
             EXPECT_FALSE(rust_names.contains(name)) << name << " is a Rust pass too: drop it from kCppOnly";

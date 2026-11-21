@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -9,11 +10,25 @@ export module kataglyphis.vulkan.gui_renderer_shared_vars;
 export namespace Kataglyphis::VulkanRendererInternals::FrontendShared {
 enum class RasterizationMode { Forward, Deferred };
 
+// Which frames FXAA smooths after the tonemap: raster frames have no other anti-aliasing, traced ones may accumulate.
+enum class FxaaMode : std::uint8_t { Off, Raster, Always };
+
+// The editor's labels, in FxaaMode's order.
+inline constexpr std::array FXAA_MODE_LABELS = std::to_array<const char *>({ "Off", "Raster", "Always" });
+
+// A stage that cannot run (no set or pipeline) leaves the swapchain image to post, or nothing would write it.
+constexpr bool fxaaFilters(FxaaMode mode, bool tracedFrame, bool stageReady)
+{
+    if (mode == FxaaMode::Off || !stageReady) { return false; }
+    return mode == FxaaMode::Always || !tracedFrame;
+}
+
 // Passes bracketed by GPU timestamp pairs in VulkanRenderer::record_commands.
 // "Main" is forward/deferred rasterization or, in its place, the ray-/path-
 // tracing stage, and times the one of Forward, GBuffer + DeferredLighting,
-// RayTrace or PathTrace that drew inside it; "Post" includes the GUI draw
-// (ImGui renders inside the post render pass).
+// RayTrace or PathTrace that drew inside it, the sky included, as Rust's
+// scopes do. The GUI draws in the last pass that writes the swapchain image:
+// "Fxaa" while FXAA filters the frame, else "Post".
 enum class GpuTimedPass : int {
     Clouds = 0,
     ShadowCascades,
@@ -23,10 +38,10 @@ enum class GpuTimedPass : int {
     DeferredLighting,
     RayTrace,
     PathTrace,
-    Sky,
     Post,
     CloudUpsample,
     PunctualShadows,
+    Fxaa,
     Count
 };
 
@@ -42,10 +57,10 @@ inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
   "  Deferred lighting",
   "  Ray trace",
   "  Path trace",
-  "Sky",
-  "Post + GUI",
+  "Post (+ GUI)",
   "Clouds upsample",
   "Point/spot shadows",
+  "FXAA + GUI",
 });
 inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
@@ -63,10 +78,10 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "DeferredLighting",
   "RayTrace",
   "PathTrace",
-  "Sky",
   "Post",
   "CloudUpsample",
   "PunctualShadows",
+  "Fxaa",
 });
 
 // The pass whose scope encloses each one, Count for a top-level pass: a frame sum adds only the top level.
@@ -162,6 +177,9 @@ struct GUIRendererSharedVars
     /// (CascadedShadowMap::recordCommands), so the checkbox answers "is
     /// culling why this is missing" for shadows too.
     bool frustum_culling_enabled = true;
+
+    // Always by default: forward has no MSAA yet, so FXAA is the only anti-aliasing a raster frame gets.
+    FxaaMode fxaaMode = FxaaMode::Always;
 
     // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
     // with stale comments claiming 64/32); changing either mid-run resets the

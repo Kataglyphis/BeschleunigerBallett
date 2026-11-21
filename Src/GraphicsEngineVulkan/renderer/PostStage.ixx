@@ -9,6 +9,7 @@ export module kataglyphis.vulkan.post_stage;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.swapchain;
+import kataglyphis.vulkan.texture;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class PostStage
@@ -27,13 +28,14 @@ class PostStage
 
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
 
-    // Loads the skybox pass's output in the swapchain image, draws post and the GUI over it, leaves it presentable.
-    // descriptorSets: the post set, then the shared render set, whose GlobalUBO aims the sky under the clouds.
+    // Overwrites its target with the tonemapped scene. Without fxaaInput that is the swapchain image, taken from the
+    // acquire, with the GUI drawn over it and left presentable; with it, FXAA's intermediate, left for sampling.
+    // descriptorSets: the post set.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       std::span<const vk::DescriptorSet> descriptorSets,
       bool cloudsEnabled,
-      bool skyboxEnabled);
+      Kataglyphis::Texture *fxaaInput = nullptr);
     void cleanUp();
 
     ~PostStage();

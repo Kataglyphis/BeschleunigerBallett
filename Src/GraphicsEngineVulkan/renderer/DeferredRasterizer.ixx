@@ -39,6 +39,7 @@ class DeferredRasterizer
     vk::ImageView getGBufferAlbedo(uint32_t index) const { return gBufferAlbedos[index]->getImageView(); }
     vk::ImageView getGBufferMaterial(uint32_t index) const { return gBufferMaterials[index]->getImageView(); }
     vk::ImageView getDepthBufferImageView() const { return depthBufferImage->getImageView(); }
+    vk::Format getDepthFormat() const { return depth_format; }
 
     void setPushConstant(PushConstantRasterizer push_constant);
 
@@ -49,13 +50,15 @@ class DeferredRasterizer
     /// camera still casts into view, so culling casters by the camera frustum
     /// deletes shadows rather than saving work.
     /// `afterGeometryPass` runs between the G-buffer pass and the lighting pass, e.g. to stamp their GPU times.
+    /// `drawSky` records the sky into the lit target before BLEND, inside a pass with the G-buffer depth attached.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const glm::vec3 &eye,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt,
-      const std::function<void(vk::CommandBuffer)> &afterGeometryPass = {});
+      const std::function<void(vk::CommandBuffer)> &afterGeometryPass = {},
+      const std::function<void(vk::CommandBuffer)> &drawSky = {});
 
     /// Meshes drawn / considered by the most recent recordCommands call.
     /// Reset at the start of each call, so a frame that records nothing
@@ -120,13 +123,14 @@ class DeferredRasterizer
     void releaseFrameTextures();
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void destroyTransparentPipeline();
-    unsigned int recordTransparentPass(vk::CommandBuffer &commandBuffer,
+    unsigned int recordSkyAndTransparentPass(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const std::vector<BlendDraw> &blend_draws,
       const vk::Extent2D &extent,
-      vk::ImageAspectFlags depth_aspect);
+      vk::ImageAspectFlags depth_aspect,
+      const std::function<void(vk::CommandBuffer)> &drawSky);
     void createPushConstantRange();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

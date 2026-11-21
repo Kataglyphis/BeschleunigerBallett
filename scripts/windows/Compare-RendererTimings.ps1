@@ -63,13 +63,13 @@ function Get-ExpectedPassNames {
     return , $names
 }
 
-# Recorded only at half-resolution clouds, with a point or spot light, or in a deferred or traced frame.
-$CppOptionalPasses = @('CloudUpsample', 'PunctualShadows', 'GBuffer', 'DeferredLighting', 'RayTrace', 'PathTrace')
+# Recorded only at half-resolution clouds, with a point or spot light, in a deferred or traced frame, or with FXAA on.
+$CppOptionalPasses = @('CloudUpsample', 'PunctualShadows', 'GBuffer', 'DeferredLighting', 'RayTrace', 'PathTrace', 'Fxaa')
 if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
     $CppExpectedPasses = @($cppAllPasses | Where-Object { $_ -notin $CppOptionalPasses })
 }
-# dump_gpu_timings renders the forward path with clouds off and no tracer (FXAA defaults on for deferred only); DrawCull runs every raster frame.
+# dump_gpu_timings renders the forward path with clouds off and no tracer (FXAA on every frame since the 2026-11-21 pin, optional for older dumps); DrawCull runs every raster frame.
 $RustOptionalPasses = @('OcclusionCull', 'GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')
 if (-not $PSBoundParameters.ContainsKey('RustExpectedPasses')) {
     $rustAllPasses = Get-ExpectedPassNames -Engine Rust -Path $RustPassSourcePath

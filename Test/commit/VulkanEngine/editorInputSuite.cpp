@@ -5,6 +5,7 @@
 #include "GpuTestGuard.hpp"
 #include "ImGuiInputDriver.hpp"
 #include "ScopedEnvVar.hpp"
+#include "gui/DoubleClickWindow.hpp"
 #include <gtest/gtest.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -176,6 +177,16 @@ TEST(Integration, LibraryDoubleClickLoadsTheRow)
     EXPECT_EQ(engine.scene->getModelCount(), 1U) << "a double-click on the row did not load it";
     EXPECT_TRUE(engine.scene->getLoadedModelPath().ends_with("shadow_rig.obj"))
       << "the double-click loaded " << engine.scene->getLoadedModelPath();
+}
+
+// The window must outlast the two frames between the presses at any frame rate: riscv64's QEMU frames passed a 2 s cap.
+TEST(DoubleClickWindowUnit, OutlastsTheTwoFramesBetweenThePressesAtAnyFrameRate)
+{
+    using Kataglyphis::Frontend::doubleClickWindow;
+    EXPECT_FLOAT_EQ(doubleClickWindow(1.0F / 60.0F, 1.0F / 60.0F), 0.3F) << "at 60 FPS it is ImGui's default";
+    for (const float frame : { 0.05F, 0.4F, 1.0F, 2.5F, 8.0F }) {
+        EXPECT_GT(doubleClickWindow(frame, frame), 2.0F * frame) << "two frames of " << frame << " s";
+    }
 }
 
 // Clicking an outliner row opens its inspector tab; the Renderer tab's culling switch then reaches the renderer.

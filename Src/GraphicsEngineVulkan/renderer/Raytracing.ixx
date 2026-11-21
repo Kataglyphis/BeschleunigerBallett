@@ -29,6 +29,7 @@ class Raytracing
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
+    // Leaves renderImage in eGeneral, alpha 1 where a primary ray hit, for SkyBox::recordTracedDraw to fill the rest.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
       std::span<const vk::DescriptorSet> descriptorSets);

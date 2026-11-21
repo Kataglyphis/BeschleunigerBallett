@@ -16,7 +16,6 @@ inline constexpr const char *GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] =
     "Clouds",
     "ShadowCascades",
     "Main",
-    "Sky",
     "Post",
 };
 '@ | Set-Content -Path $script:cppFixturePath
@@ -28,7 +27,6 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "Clouds",
   "ShadowCascades",
   "Main",
-  "Sky",
   "Post",
 });
 '@ | Set-Content -Path $script:cppArrayFixturePath
@@ -107,18 +105,18 @@ impl TimedPass {
     $failed | Should Be $true
   }
 
-  It 'derives the five C++ pass names from GPU_TIMED_PASS_EXPORT_NAMES' {
+  It 'derives the four C++ pass names from GPU_TIMED_PASS_EXPORT_NAMES' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
   }
 
-  It 'derives the five C++ pass names from the std::array GPU_TIMED_PASS_EXPORT_NAMES form' {
+  It 'derives the four C++ pass names from the std::array GPU_TIMED_PASS_EXPORT_NAMES form' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppArrayFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
   }
 
   It 'derives Rust pass names that contain Tonemap and do not contain Post' {
@@ -146,23 +144,23 @@ impl TimedPass {
     ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap,DrawCull'
   }
 
-  It 'excludes the C++ CloudUpsample and PunctualShadows passes, which only some scenes record' {
+  It 'excludes the C++ CloudUpsample, PunctualShadows and Fxaa passes, which only some scenes record' {
     $fixture = Join-Path $script:tmpDir 'GUIRendererSharedVarsUpsample.ixx'
     @'
 inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
   "Clouds",
   "ShadowCascades",
   "Main",
-  "Sky",
   "Post",
   "CloudUpsample",
   "PunctualShadows",
+  "Fxaa",
 });
 '@ | Set-Content -Path $fixture
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
   }
 
   It 'requires the C++ Forward scope but not the deferred or traced ones, which a forward run never records' {
@@ -177,7 +175,6 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "DeferredLighting",
   "RayTrace",
   "PathTrace",
-  "Sky",
   "Post",
   "CloudUpsample",
   "PunctualShadows",
@@ -186,7 +183,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Forward,Sky,Post'
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Forward,Post'
   }
 
   It 'requires DrawCull, which every forward frame with draws records' {

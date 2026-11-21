@@ -4,7 +4,7 @@
 
 namespace Kataglyphis {
 
-// The swapchain image's first access is the sky pass's layout transition, whose source stage must be this one.
+// The source stage of the swapchain image's first transition: post's, or FxaaStage's while FXAA filters the frame.
 inline constexpr vk::PipelineStageFlags2 kSwapchainAcquireWaitStage =
   vk::PipelineStageFlagBits2::eColorAttachmentOutput;
 

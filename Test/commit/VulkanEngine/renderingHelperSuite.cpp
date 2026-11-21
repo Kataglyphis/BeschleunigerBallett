@@ -52,9 +52,21 @@ TEST(RenderingHelperUnit, ColorAttachmentCarriesItsClearValue)
     EXPECT_FLOAT_EQ(attachment.clearValue.color.float32[3], 1.0F);
 }
 
-TEST(RenderingHelperUnit, PostStageLoadsTheSkyInsteadOfClearing)
+TEST(RenderingHelperUnit, PostStageOverwritesInsteadOfLoadingOrClearing)
 {
-    // PostStage.cpp: eLoad keeps the skybox pass's output in the swapchain image.
+    // PostStage.cpp: the fullscreen triangle writes every swapchain pixel, so nothing is loaded or cleared.
+    const vk::RenderingAttachmentInfo attachment = buildRenderingAttachmentInfo(vk::ImageView{},
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AttachmentLoadOp::eDontCare,
+      vk::AttachmentStoreOp::eStore);
+
+    EXPECT_EQ(attachment.loadOp, vk::AttachmentLoadOp::eDontCare);
+    EXPECT_EQ(attachment.storeOp, vk::AttachmentStoreOp::eStore);
+}
+
+TEST(RenderingHelperUnit, TracedSkyLoadsTheTraceItFills)
+{
+    // SkyBox.cpp's traced draw: eLoad keeps the hits, whose alpha tells the blend where the sky goes.
     const vk::RenderingAttachmentInfo attachment = buildRenderingAttachmentInfo(vk::ImageView{},
       vk::ImageLayout::eColorAttachmentOptimal,
       vk::AttachmentLoadOp::eLoad,

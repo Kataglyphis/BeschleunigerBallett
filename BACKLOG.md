@@ -36,14 +36,15 @@ No P0 item is open.
 
 ### P1: high value
 
-- [b] `CI` **Prove the 2026-11-15 renderer integration on riscv64 and the RX 9070 XT** (S, **waits for
-  the Saturday shards and the host**). Both Windows lanes and both arm64 lanes passed it at 146919ad
-  (on-request run 43895022074: the clang-cl build, both lavapipe GPU suites, Pester, every arm64 job).
-  Still unrun: the riscv64 GPU shards (Saturday's schedule, or dispatch `linux-riscv64.yml` with
-  `gpu-tests`) and, on the RX 9070 XT, the golden suites plus `Invoke-SyncValidation.ps1`. The cloud and
-  glossy-material goldens are the ones to watch. Since 2026-11-19 also the GPU-timing goldens
-  (`writeTimestamp2` and the nested Forward, GBuffer, DeferredLighting, RayTrace and PathTrace scopes,
-  sync-validated on llvmpipe only) and the glTF and reload goldens over the in-place upload.
+- [b] `CI` **Prove the renderer on the RX 9070 XT** (S, **waits for the host**). The riscv64 GPU shards ran at
+  8216e01a (run 44852183781): 15 of 16 passed, and the raster shard's one failure,
+  `Integration.LibraryDoubleClickLoadsTheRow`, was the editor's 2 s cap on the double-click window, gone since
+  Phase 3. Both Windows lanes and both arm64 lanes run every release. Still unrun on the RX 9070 XT: the
+  golden suites plus `Invoke-SyncValidation.ps1`, above all the cloud and glossy-material goldens, the
+  GPU-timing goldens (`writeTimestamp2`, the nested scopes, sync-validated on llvmpipe only), the glTF and
+  reload goldens over the in-place upload, the sky drawn into the HDR target in every mode, FXAA, the furnace
+  and metallic goldens under multi-scatter GGX, and `Integration.SharedSlangKernelsMeetTheirVectors` (the
+  vector tolerances assume correctly rounded f32 sin and cos).
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -51,33 +52,6 @@ work into wgpu-free Rust crates, never per-mesh or per-draw calls; share GPU wor
 Slang in OxidANT, each renderer keeping its own host pass; a bridged function returns errors as values,
 takes UTF-8 paths and runs inside `guarded()`.
 
-- [ ] `C++` **Draw the C++ sky into the HDR scene target with OxidANT's `sky.slang`** (L, plan C2).
-  The sky goes untonemapped into the swapchain at stage 400, and post rebuilds sky radiance by
-  inverting ACES and un-premultiplying BLEND; that blocks exposure, bloom, another tonemapper and HDR
-  output. Give `sky/sky.slang` an `SV_VulkanVertexID` entry, fill its uniforms from C++ (GlobalUBO has no
-  `inv_view_proj`) and draw it at depth 1 with LessOrEqual into the RGBA16F offscreen: forward between
-  the opaque and BLEND draws, deferred into the final target, ray-traced frames where `tracedDepth` is 1,
-  never over path-traced frames. Keep `AnalyticSky.hpp`'s bake and mode 1's per-pixel `untonemapped()`.
-  Delete the swapchain sky pass, BB's `skybox.slang`, post's sky rebuild and its ACES inverse. Barriers
-  change: sync validation in CI, then the RX 9070 XT goldens.
-- [ ] `C++` **FXAA for the C++ raster** (M, plan C3). It has no anti-aliasing at all. Compile only
-  OxidANT's `fxaa.slang` `fs_main` to SPIR-V with BB's `SV_VulkanVertexID` fullscreen vertex; post renders
-  into a new UNORM LDR intermediate, and a final stage runs FXAA into the swapchain, then ImGui. Off,
-  Raster or Always, default Always (forward has no MSAA). The harness pins it off except in an
-  edge-gradient golden and its negative control.
-- [ ] `Shared` **Multi-scatter GGX energy compensation in `brdf.slang`** (L, plan N1). The furnace
-  oracles measure the loss: a white metal returns 0.671 at roughness 0.7, a white dielectric exceeds 1
-  at grazing angles. Add Turquin's compensation and replace (1 - F) with (1 - E_spec(mu)), keeping
-  (1 - metallic). Take E_ss from a small table baked by one shared Slang entry from `brdf.slang`'s own
-  functions, or from a fit whose maximum error is measured with the goldens' quadrature; Karis'
-  approximation is off by -32 % to +30 %. OxidANT's `ibl_ambient` changes with it. Done when both
-  renderers' furnace tests hold within 0.01 of 1 at every roughness and angle.
-- [ ] `Shared` **Run the shared Slang test kernels on both targets against one vector file** (L, plan
-  X3). The dual-target guards only prove that the code compiles. Turn them into kernels that write
-  every public function's outputs, keep inputs, f64 references and tolerances in OxidANT's
-  `shaders/tests/vectors/`, and check them from a Rust runner (wgpu on lavapipe) and a C++ GPU-suite
-  runner (llvmpipe, lavapipe). Only `brdf_test`, `noise_test` and `path_estimator_test` are dual-target
-  today; BB's two move into OxidANT. Every later shared module adds its kernel and vectors.
 
 - [ ] `CI` **The Windows binaries lack the CFG bit** (S). They are compiled with CFG, but the hub's
   `cmake/Hardening.cmake` never passes `/guard:cf` to the linker: none of the 13 lld-link lines of job 136406090876
@@ -129,11 +103,19 @@ Bridge foundations:
   entry: `default_scene_settings`, `setting_ranges`, `sanitize`, `parity_viewport_remap`, `parity_lens`,
   `parity_model_transform` and `load_gltf_flat_with` (Profile tree; `perfTestSuite` is not built in
   Debug).
-- [ ] `Shared` **The timed scopes cover the same work in both renderers** (S, plan I5's remainder). The
-  names match since 2026-11-19, the contents do not: Rust's Forward and DeferredLighting include the
-  sky, which C++ times as Sky; Rust's ShadowCascades includes the punctual cube faces, which C++ times
-  as PunctualShadows; Rust times TraceResolve on its own and has no Main. Split Rust's scopes the C++
-  way, so `Compare-RendererTimings.ps1` compares like with like.
+- [ ] `Rust` **The timed scopes cover the same work in both renderers** (S, plan I5's remainder). Since Phase
+  3 C++ times the sky inside Forward, DeferredLighting and RayTrace, as Rust does. Left: Rust's ShadowCascades
+  includes the punctual cube faces, which C++ times as PunctualShadows, and Rust times TraceResolve on its own
+  and has no Main; split Rust's the C++ way, so `Compare-RendererTimings.ps1` compares like with like.
+- [ ] `Shared` **Evaluate the GGX energy once per surface** (S). `brdf_smith_k` evaluates the 14x14 energy
+  spline on every call, so every punctual light pays 28 basis functions and 196 float2 FMAs
+  (`forward_lighting.slang`, `trace_shading.slang`, BB's `punctual_lights.slang`), and `ibl_ambient` evaluates
+  it in a ternary on the environment flag. Compute the energy once per surface and pass it in, branch on the
+  uniform flag, and measure the render suites on lavapipe before and after (multi-scatter GGX made them
+  1.2-1.35x slower).
+- [ ] `Shared` **Pick the path tracer's specular lobe by E_spec** (S). Owner 2026-11-21: `path_estimator`
+  keeps the unbiased F(n.v) split for now; E_spec lowers variance but moves the noise of every path-traced
+  golden in both renderers. Measure the variance gain on the furnace and shadow rigs first.
 - [ ] `C++` **A non-finite shadow distance or split lambda takes its default in the cascade math** (S). Owner
   2026-11-20: NaN and ±inf fall back to a field's default everywhere; the bridged `sanitize` does so since
   2026-11-20, but `CascadedShadowMapMath.cpp` turns a NaN distance into the far plane instead of 60 and passes
@@ -436,7 +418,14 @@ committed to.
   - Every empty frame, zero width or zero height, has aspect 1 in both renderers.
   - The Sun's ranges, `sanitize` and direction convention come with "One set of defaults".
 
-No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up is open.
+- **Phase 3's rules** (2026-11-21): the shared vector kernels keep tight tolerances and loosen a trig output
+  to the Vulkan/WGSL bound only on evidence from a device; their f64 references come from OxidANT's Python
+  model; BB runs one test over every vector file. Multi-scatter GGX keeps the 14x14 spline; BB's furnace rig
+  is at roughness 0.5; the lobe choice stays F(n.v). `fxaaMode` is a renderer setting, both renderers default
+  FXAA to Always (Rust's presets inherit it); the ray-traced sky fills by the target's alpha; the editor's
+  double-click window has no upper cap; the metallic-factor golden's bound is 0.9; `leak:glfwInit` stays.
+
+No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Phase 3 is open.
 
 ## Rust renderer ideas (OxidANT)
 
@@ -447,6 +436,13 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up is ope
 - **[P3] Golden-image CI** with reference images per GPU vendor, to catch shader regressions the
   driver-independent structural assertions miss.
 
+- **[P3] Kulla-Conty's reciprocal multi-scatter.** Owner 2026-11-21: Turquin's view-only diffuse share stays
+  (the BRDF is not reciprocal); Kulla-Conty needs an average energy E_avg besides E_ss, worth it once a
+  bidirectional method arrives.
+- **[P3] The GGX energy as a bound table.** A buffer or texture is the cheapest lookup per evaluation, but
+  changes `brdf_direct`/`brdf_sampled` and adds bindings to two OxidANT and five BB pipelines; Slang's
+  `var<private>` table cost lavapipe 2.3-2.9x. Only if the spline shows up on a device profile.
+
 ## Testing and performance
 
 - **[P3] Refresh the nine placeholder perf baseline rows** (`BM_ObjLoaderParseCpu_Suzanne`,
@@ -455,9 +451,7 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up is ope
   RX 9070 XT host the file is named for.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
-  `clangcl-profile` suite on the host and add an entry by the rule the existing one records. Re-derive the
-  llvmpipe profile in one session too: its Forward budget (15.3 ms, 2026-11-19) is above Main's 13.6 ms,
-  which Forward is nested in.
+  `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
 
 ## Recurring validation runs
 

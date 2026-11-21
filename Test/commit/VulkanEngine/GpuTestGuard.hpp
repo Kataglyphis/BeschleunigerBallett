@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdlib>
+#include <string>
 
 #include <gtest/gtest.h>
 #include <vulkan/vulkan.h>
@@ -47,6 +48,17 @@ template<typename Harness> bool frameCaptureAvailable(const Harness &harness)
             }                                                                                                  \
             GTEST_SKIP() << "GLFW/Vulkan runtime is unavailable on this system.";                              \
         }                                                                                                      \
+    } while (false)
+
+// A test on a device of its own needs no GLFW; `reason`, why none opened, skips it or, as above, fails it.
+#define SKIP_WITHOUT_HEADLESS_DEVICE(reason)                                                              \
+    do {                                                                                                  \
+        if (const std::string why = (reason); !why.empty()) {                                             \
+            if (::Kataglyphis::TestSupport::gpuRequired()) {                                              \
+                GTEST_FAIL() << "KATAGLYPHIS_REQUIRE_GPU is set, but no headless device opened: " << why; \
+            }                                                                                             \
+            GTEST_SKIP() << "no headless device: " << why;                                                \
+        }                                                                                                 \
     } while (false)
 
 // Vulkan support does not imply a surface that allows copying out of a swapchain image.

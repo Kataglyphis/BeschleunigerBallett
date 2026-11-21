@@ -45,8 +45,9 @@ namespace RenderStageOrder {
     inline constexpr int Clouds = 300;
     // Only while the clouds march at half resolution.
     inline constexpr int CloudUpsample = 350;
-    inline constexpr int Sky = 400;
     inline constexpr int Post = 500;
+    // Only while FXAA filters the frame; post then renders into its LDR intermediate and this stage presents.
+    inline constexpr int Fxaa = 520;
 }// namespace RenderStageOrder
 
 // Creation is the registrant's, before add(); its resources go with the closures that capture them.

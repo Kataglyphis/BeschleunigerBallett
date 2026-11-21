@@ -1,4 +1,5 @@
 module;
+#include <functional>
 #include <optional>
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
@@ -43,6 +44,7 @@ class Rasterizer
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
     vk::ImageView getDepthImageView() const { return depthBufferImage->getImageView(); }
+    vk::Format getDepthFormat() const { return depth_format; }
 
     void setPushConstant(PushConstantRasterizer push_constant);
 
@@ -52,12 +54,14 @@ class Rasterizer
     /// camera still casts into view, so culling casters by the camera frustum
     /// deletes shadows rather than saving work.
     /// `eye` orders the glTF BLEND meshes, drawn after the opaque ones, back to front.
+    /// `drawSky` records the sky between the two, inside the pass, with its depth attached.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const glm::vec3 &eye,
-      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
+      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt,
+      const std::function<void(vk::CommandBuffer)> &drawSky = {});
 
     /// Meshes drawn / considered by the most recent recordCommands call.
     /// Reset at the start of each call, so a frame that records nothing

@@ -141,14 +141,14 @@ in both the primary and the light march. Each step:
 fills every frame from the skybox switch:
 
 - **Skybox on**: the cube map's mean radiance over the upper and the lower
-  hemisphere, as the sky pass draws it: each texel sRGB-decoded, then through
-  `aces_tonemap_inverse` (the sky pass is untonemapped, so that is the radiance its
-  pixel stands for). `SkyBox::loadCubeMap` computes it once per load
+  hemisphere, as `sky/sky.slang` writes it into the HDR target: each texel
+  sRGB-decoded, then through the ACES inverse (`untonemapped`, so post's tonemap
+  shows the photo's colour). `SkyBox::loadCubeMap` computes it once per load
   (`cloudAmbientOfCubemap` in `scene/sky_box/CloudAmbient.hpp`), from at most 64 texels per
   face edge; `+Y` counts toward the top, `-Y` toward the bottom, and a side face's
   rows above its middle toward the top (the middle row toward both). Without faces the
   cube map is the baked analytic sky (`AnalyticSky.hpp`), whose means come out the same way. OxidANT's `CloudAmbient::of_cubemap` is the same average.
-- **Skybox off**: the untonemapped navy, `aces_tonemap_inverse(0, 0, 0.5)` in both
+- **Skybox off**: the untonemapped navy, the ACES inverse of `(0, 0, 0.5)` in both
   halves (`cloudAmbientOfDisabledSky`).
 
 Until 2026-11-16 the engine called the seven-argument overload, whose ambient is
@@ -369,23 +369,22 @@ values.
 `clouds_main` writes `float4(cloudColor, 1.0 - transmittance)`: premultiplied
 colour, alpha = one minus the accumulated transmittance. `post/post.slang`'s
 `fs_main` is the sole consumer. While `pc_post.clouds_enabled` is set, it
-composites every pixel in **linear HDR, before the tonemap**: the sky under
-the scene by the scene's coverage alpha, then the clouds premultiplied-over
-both, `color = cloud.rgb + (scene.rgb + sky * (1 - scene.a)) * (1 - cloud.a)`.
-It writes alpha 1, so the result replaces the sky pass's pixel.
+composites every pixel in **linear HDR, before the tonemap**, premultiplied-over
+the scene: `color = cloud.rgb + scene.rgb * (1 - cloud.a)`.
 
-The sky pass draws the cubemap (or the disabled-sky navy) untonemapped, so the
-sky's HDR radiance is the value whose ACES tonemap reproduces that pixel:
-post samples the same cubemap in the same direction
-(`common/skybox_radiance.slang`, shared with `skybox.slang`) and inverts
-`aces_tonemap` (`aces_tonemap_inverse`). A cloud-free pixel therefore keeps the
-sky pass's colour, and a cloud composites over the sky exactly as over
-geometry of that radiance. Before, the sky got the clouds after the tonemap,
-through the fixed-function alpha blend: premultiplied colour multiplied by
-alpha a second time, in display space, so thin clouds looked darker over the
-sky than over geometry. `GoldenRender.CloudsCompositeOverTheSkyAsOverGeometry`
-compares one cloud over the navy sky and over a black card. Without clouds,
-post keeps its scene alpha and blends over the sky pass as before.
+Since 2026-11-21 the sky is in the scene: `sky/sky.slang` fills the HDR target
+wherever no surface wrote depth (forward between the opaque and BLEND draws,
+deferred after its lighting, ray-traced frames where the primary ray missed),
+as the cube map's radiance whose ACES tonemap shows the photo, or the navy's.
+The target is opaque everywhere, so a cloud composites over the sky exactly as
+over geometry of that radiance. Until then a separate pass drew the sky
+untonemapped into the swapchain, and post rebuilt its radiance under the
+clouds by sampling the cube map again and inverting ACES. Before that, the sky
+got the clouds after the tonemap, through the fixed-function alpha blend:
+premultiplied colour multiplied by alpha a second time, in display space, so
+thin clouds looked darker over the sky than over geometry.
+`GoldenRender.CloudsCompositeOverTheSkyAsOverGeometry` compares one cloud over
+the navy sky and over a black card.
 
 ## Verification
 

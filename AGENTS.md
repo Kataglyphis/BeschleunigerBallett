@@ -576,8 +576,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   in its parent's time already). The share names the pass that regressed when a loaded host slows every pass: a post
   shader made 256 tonemaps long moved every llvmpipe pass past its `max_ms`, but only Post past
   its share (0.45 against 0.20). Exit 1 over budget or a budgeted pass missing, 2 when the dump
-  measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16); a host adds its own
-  from five dumps, by the rule its entry records.
+  measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16, re-derived 2026-11-21 when
+  the sky moved into Forward); a host adds its own from five dumps, by the rule its entry records.
 - **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
   `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module
@@ -866,7 +866,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (75 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (78 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -880,7 +880,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 73 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  tests timed below to 76 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
   pipeline, and ten more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
@@ -931,7 +931,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   | --- | --- | --- |
   | `PathTracedMaskCardShowsItsCutout` | 133 → 61 | about 200 min |
   | `AddedModelAppearsInPathTracing` | 133 → 61 | about 200 min |
-  | `PathTracingPassesTheWhiteFurnaceTest` | 86 → 46 in the rig, plus 41 → 25 lone-card frames at 4 spp (2026-11-15) | about 195 min for the rig; untimed with the card |
+  | `PathTracingPassesTheWhiteFurnaceTest` | 86 → 46 in the rig, plus 41 → 25 lone-card frames at 4 spp (2026-11-15), and one-segment placement frames, 2 in the rig and 4 on the card (2026-11-21) | about 195 min for the rig; untimed with the card |
   | `PathTracingAntiAliasesGeometricEdges` | 87 → 57 | about 185 min |
 
   The projection takes 190 s a frame, and 1.3 times that for a furnace frame at 16 bounces (the x64

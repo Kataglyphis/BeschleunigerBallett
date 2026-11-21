@@ -34,10 +34,12 @@ RenderStage loggingStage(const std::string &name, int order, std::vector<std::st
 TEST(RenderStageRegistry, BuiltInSlotsKeepTheFrameOrder)
 {
     namespace Order = Kataglyphis::RenderStageOrder;
-    EXPECT_LT(Order::ShadowCascades, Order::Main);
+    EXPECT_LT(Order::ShadowCascades, Order::PunctualShadows);
+    EXPECT_LT(Order::PunctualShadows, Order::Main);
     EXPECT_LT(Order::Main, Order::Clouds);
-    EXPECT_LT(Order::Clouds, Order::Sky);
-    EXPECT_LT(Order::Sky, Order::Post);
+    EXPECT_LT(Order::Clouds, Order::CloudUpsample);
+    EXPECT_LT(Order::CloudUpsample, Order::Post);
+    EXPECT_LT(Order::Post, Order::Fxaa) << "FXAA filters what post wrote";
 }
 
 TEST(RenderStageRegistry, RecordsByOrderNotByRegistration)

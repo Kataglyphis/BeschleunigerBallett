@@ -67,6 +67,9 @@ class PipelineBuilder
     // With alpha blending, alpha becomes src.a + dst.a * (1 - src.a) instead of
     // src.a, so a translucent layer over an opaque pixel leaves it opaque.
     PipelineBuilder &setCoverageAccumulation(bool enable);
+    // Writes the source where the attachment's alpha is 0 and keeps it where alpha is 1:
+    // src * (1 - dst.a) + dst * dst.a, alpha src.a. Overrides setAlphaBlending.
+    PipelineBuilder &setFillUncovered(bool enable);
     // The pass's attachment formats, in vkCmdBeginRendering's order: one blend
     // state per colour format, and none at all (no pColorBlendState) for a
     // depth-only pass. eUndefined depth means the pass has no depth attachment.
@@ -113,6 +116,7 @@ class PipelineBuilder
     vk::CullModeFlags cull_mode = vk::CullModeFlagBits::eBack;
     bool alpha_blending = false;
     bool coverage_accumulation = false;
+    bool fill_uncovered = false;
     std::vector<vk::Format> color_formats;
     vk::Format depth_format = vk::Format::eUndefined;
     uint32_t view_mask = 0;

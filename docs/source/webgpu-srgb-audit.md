@@ -22,7 +22,7 @@ swapchain, added 2026-08-04 because it had the web canvas's bug.
 | Swapchain (web) | browser-preferred (often `Bgra8Unorm`, non-sRGB) | sRGB | WebGPU canvases don't offer sRGB formats, so the tonemap shader applies the IEC 61966-2-1 transfer function itself when the target is non-sRGB (`TonemapPass::encode_srgb`, `params.w`). Fixed 2026-07-20 |
 | Headless readback target | `Rgba8UnormSrgb` | sRGB | Golden tests assert sRGB-encoded bytes (documented in `tests/headless.rs`) |
 | egui overlay | surface format | matches target | egui-wgpu handles its own color management |
-| C++/Vulkan swapchain | UNORM (`SwapchainChoices.hpp::chooseBestSurfaceFormat` prefers `eR8G8B8A8Unorm`/`eB8G8R8A8Unorm`) | sRGB | Same bug as the web canvas case: no hardware encode on present, so `post/post.slang` and `skybox/skybox.slang` (the only two shaders that write the swapchain directly) apply `linear_to_srgb` themselves. Fixed 2026-08-04 |
+| C++/Vulkan swapchain | UNORM (`SwapchainChoices.hpp::chooseBestSurfaceFormat` prefers `eR8G8B8A8Unorm`/`eB8G8R8A8Unorm`) | sRGB | Same bug as the web canvas case: no hardware encode on present, so `post/post.slang`, the only shader that writes the swapchain directly (the sky goes into the HDR target since 2026-11-21), applies `linear_to_srgb` itself. Fixed 2026-08-04 |
 
 **No known deviations**: both swapchain caveats are closed (web 2026-07-20,
 C++/Vulkan 2026-08-04).

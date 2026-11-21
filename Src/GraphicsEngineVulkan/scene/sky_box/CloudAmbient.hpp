@@ -33,7 +33,7 @@ inline auto acesTonemap(float radiance) -> float
     return std::clamp((x * (2.51F * x + 0.03F)) / (x * (2.43F * x + 0.59F) + 0.14F), 0.0F, 1.0F);
 }
 
-// post.slang's aces_tonemap_inverse: the sky pass is untonemapped, so this is the radiance its pixel stands for.
+// sky.slang's untonemapped(): the photo sky enters the HDR target as the radiance whose tonemap shows its pixel.
 inline auto acesTonemapInverse(float display) -> float
 {
     constexpr float a = 2.51F;

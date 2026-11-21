@@ -98,8 +98,7 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
 TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 0U);
-    EXPECT_EQ(offsetof(PushConstantPost, skybox_enabled), 4U);
-    EXPECT_EQ(sizeof(PushConstantPost), 8U);
+    EXPECT_EQ(sizeof(PushConstantPost), 4U);
 }
 
 // Mirrored in raytracing/rt_types.slang.

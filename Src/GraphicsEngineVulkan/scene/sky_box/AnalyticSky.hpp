@@ -51,7 +51,7 @@ inline auto cubemapTexelDirection(std::size_t face, uint32_t column, uint32_t ro
     }
 }
 
-// Six RGBA8 sRGB faces back to back: the sky pass is untonemapped, so each texel is the tonemapped gradient post would show.
+// Six RGBA8 sRGB faces back to back: sky.slang untonemaps each texel, so post shows the tonemapped gradient.
 inline auto analyticSkyFaces(uint32_t size) -> std::vector<unsigned char>
 {
     std::vector<unsigned char> texels(static_cast<std::size_t>(size) * size * 4U * 6U);

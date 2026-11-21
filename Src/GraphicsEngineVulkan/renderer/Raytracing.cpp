@@ -104,16 +104,6 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     const vk::Extent2D &swap_chain_extent = this->vulkanSwapChain->getSwapChainExtent();
     commandBuffer.traceRaysKHR(
       rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
-
-    // The consumer is post.slang's fragment shader.
-    Kataglyphis::recordImageBarrier(commandBuffer,
-      Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
-        vk::ImageLayout::eGeneral,
-        vk::ImageLayout::eShaderReadOnlyOptimal,
-        vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
-        vk::AccessFlagBits2::eShaderStorageWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
-        vk::AccessFlagBits2::eShaderSampledRead));
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()

@@ -70,7 +70,7 @@ Describe 'Test-GpuTimingBudget' {
 
   It 'exits 1 when a budgeted pass is missing from the dump' {
     $dump = New-Dump -Name 'missing-dump.json' -Passes $passes
-    $budget = New-JsonFile -Name 'missing-budget.json' -Content @{ hosts = @{ 'test-host' = @{ max_ms = @{ Sky = 1.0 } } } }
+    $budget = New-JsonFile -Name 'missing-budget.json' -Content @{ hosts = @{ 'test-host' = @{ max_ms = @{ Forward = 1.0 } } } }
     Invoke-Budget -TimingPath $dump -BudgetPath $budget | Should Be 1
   }
 

@@ -28,6 +28,7 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
+import kataglyphis.vulkan.fxaa_stage;
 import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.render_stage_registry;
@@ -208,8 +209,9 @@ class VulkanRenderer
     void recordMainStage(const RenderStageFrame &frame);
     void recordCloudsStage(const RenderStageFrame &frame);
     void recordCloudUpsampleStage(const RenderStageFrame &frame);
-    void recordSkyStage(const RenderStageFrame &frame);
     void recordPostStage(const RenderStageFrame &frame);
+    // The one rule post and the fxaa stage decide this frame's target by.
+    [[nodiscard]] bool fxaaFiltersFrame(const RenderStageFrame &frame) const;
 
     // Returns the offscreen colour texture of whichever raster path is active
     // this frame (forward vs deferred), reading the mode once. The RT/PT and
@@ -277,8 +279,9 @@ class VulkanRenderer
     Texture tracedDepth;
     void createTracedDepthResources();
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
+    Kataglyphis::VulkanRendererInternals::FxaaStage fxaaStage;
 
-    // Atmospheric & Lighting Additions
+    // Drawn inside the main stage, into the HDR target post reads.
     Kataglyphis::SkyBox skyBox;
     Kataglyphis::Clouds clouds;
     // The depth image this frame's main pass writes; the clouds' descriptor is rewritten only when it changes.

@@ -37,7 +37,7 @@ The CMake formatter uses ANTfrastructure's locked uv tool project.
 
 ## Highlights
 
-- **Vulkan renderer in C++23 modules:** forward and deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps, skybox, volumetric clouds.
+- **Vulkan renderer in C++23 modules:** forward and deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps, skybox, volumetric clouds, FXAA.
 - **A docked Dear ImGui editor:** scene outliner and model library, an inspector per object, a profiler with per-pass GPU timings, a DPI-aware graphite theme; F1 hides it.
 - **Fail-fast engine plumbing:** VMA memory, fence-synced uploads, a persisted `VkPipelineCache`, exceptions disabled project-wide.
 - **A Rust WebGPU sibling renderer** from [OxidANT](https://github.com/Kataglyphis/OxidANT), native and [in the browser](https://beschleunigerballette.jonasheinle.de/webgpu_demo.html), sharing the shader math owned in OxidANT's pinned `shaders/` tree.

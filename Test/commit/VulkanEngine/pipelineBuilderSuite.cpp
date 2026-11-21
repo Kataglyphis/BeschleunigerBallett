@@ -231,10 +231,9 @@ TEST(PipelineBuilderUnit, MatchesDeferredLightingCallSite)
 
 TEST(PipelineBuilderUnit, MatchesPostStageCallSite)
 {
-    // PostStage.cpp: blending composites the tonemapped result over the swapchain.
+    // PostStage.cpp: the HDR target holds the sky, so post overwrites every swapchain pixel without blending.
     const GraphicsPipelineState state = PipelineBuilder()
                                           .setCullMode(vk::CullModeFlagBits::eNone)
-                                          .setAlphaBlending(true)
                                           .setDepthTest(false)
                                           .setDepthWrite(false)
                                           .setRenderingFormats({ vk::Format::eB8G8R8A8Unorm })
@@ -242,8 +241,27 @@ TEST(PipelineBuilderUnit, MatchesPostStageCallSite)
 
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eNone);
     ASSERT_EQ(state.color_states.size(), 1U);
-    EXPECT_EQ(state.color_states[0].blendEnable, VK_TRUE);
+    EXPECT_EQ(state.color_states[0].blendEnable, VK_FALSE);
     EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_FALSE);
+    EXPECT_EQ(state.rendering_create_info.pColorAttachmentFormats[0], vk::Format::eB8G8R8A8Unorm);
+}
+
+TEST(PipelineBuilderUnit, MatchesFxaaStageCallSite)
+{
+    // FxaaStage.cpp: a vertex-less fullscreen triangle that overwrites the swapchain image, before the GUI blends.
+    const GraphicsPipelineState state = PipelineBuilder()
+                                          .setVertexInput({}, {})
+                                          .setCullMode(vk::CullModeFlagBits::eNone)
+                                          .setDepthTest(false)
+                                          .setDepthWrite(false)
+                                          .setRenderingFormats({ vk::Format::eB8G8R8A8Unorm })
+                                          .buildState();
+
+    EXPECT_EQ(state.vertex_input_create_info.pVertexBindingDescriptions, nullptr);
+    ASSERT_EQ(state.color_states.size(), 1U);
+    EXPECT_EQ(state.color_states[0].blendEnable, VK_FALSE);
+    EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_FALSE);
+    EXPECT_EQ(state.rendering_create_info.depthAttachmentFormat, vk::Format::eUndefined);
     EXPECT_EQ(state.rendering_create_info.pColorAttachmentFormats[0], vk::Format::eB8G8R8A8Unorm);
 }
 
@@ -276,22 +294,47 @@ TEST(PipelineBuilderUnit, MatchesCascadedShadowMapCallSite)
     EXPECT_EQ(info.pColorBlendState, nullptr);
 }
 
-TEST(PipelineBuilderUnit, MatchesSkyBoxCallSite)
+TEST(PipelineBuilderUnit, MatchesSkyBoxRasterCallSite)
 {
-    // SkyBox.cpp: drawn behind everything, so no depth test or write, into the swapchain format.
+    // SkyBox.cpp's raster pipeline: at depth 1, it passes LessOrEqual only where no surface wrote depth.
     const GraphicsPipelineState state = PipelineBuilder()
+                                          .setVertexInput({}, {})
                                           .setCullMode(vk::CullModeFlagBits::eNone)
-                                          .setDepthTest(false)
                                           .setDepthWrite(false)
-                                          .setDepthCompareOp(vk::CompareOp::eAlways)
-                                          .setRenderingFormats({ vk::Format::eB8G8R8A8Unorm })
+                                          .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
+                                          .setRenderingFormats({ kColor }, kDepth)
                                           .buildState();
 
     EXPECT_EQ(state.rasterizer_create_info.cullMode, vk::CullModeFlagBits::eNone);
-    EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_FALSE);
+    EXPECT_EQ(state.depth_stencil_create_info.depthTestEnable, VK_TRUE);
     EXPECT_EQ(state.depth_stencil_create_info.depthWriteEnable, VK_FALSE);
-    EXPECT_EQ(state.depth_stencil_create_info.depthCompareOp, vk::CompareOp::eAlways);
-    EXPECT_EQ(state.rendering_create_info.colorAttachmentCount, 1U);
+    EXPECT_EQ(state.depth_stencil_create_info.depthCompareOp, vk::CompareOp::eLessOrEqual);
+    ASSERT_EQ(state.color_states.size(), 1U);
+    EXPECT_EQ(state.color_states[0].blendEnable, VK_FALSE);
+    EXPECT_EQ(state.rendering_create_info.depthAttachmentFormat, kDepth);
+}
+
+TEST(PipelineBuilderUnit, FillUncoveredKeepsCoveredPixelsAndWritesTheRest)
+{
+    // SkyBox.cpp's traced pipeline: ray tracing writes alpha 1 on a hit and 0 on a miss, where the sky goes.
+    const GraphicsPipelineState state = PipelineBuilder()
+                                          .setAlphaBlending(true)
+                                          .setFillUncovered(true)
+                                          .setDepthTest(false)
+                                          .setDepthWrite(false)
+                                          .setRenderingFormats({ kColor })
+                                          .buildState();
+
+    ASSERT_EQ(state.color_states.size(), 1U);
+    const vk::PipelineColorBlendAttachmentState &attachment = state.color_states[0];
+    EXPECT_EQ(attachment.blendEnable, VK_TRUE);
+    // colour = src * (1 - dst.a) + dst * dst.a: the source on a miss, the hit untouched.
+    EXPECT_EQ(attachment.srcColorBlendFactor, vk::BlendFactor::eOneMinusDstAlpha);
+    EXPECT_EQ(attachment.dstColorBlendFactor, vk::BlendFactor::eDstAlpha);
+    // alpha = src.a, so the filled target is opaque everywhere.
+    EXPECT_EQ(attachment.srcAlphaBlendFactor, vk::BlendFactor::eOne);
+    EXPECT_EQ(attachment.dstAlphaBlendFactor, vk::BlendFactor::eZero);
+    EXPECT_EQ(state.rendering_create_info.depthAttachmentFormat, vk::Format::eUndefined);
 }
 
 }// namespace

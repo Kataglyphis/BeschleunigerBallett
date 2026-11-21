@@ -16,6 +16,7 @@
 #include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "gui/DoubleClickWindow.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 #include <GLFW/glfw3.h>
@@ -133,6 +134,8 @@ struct GUI::StudioState
 
 namespace {
 using namespace Kataglyphis::Frontend::gui_detail;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::FXAA_MODE_LABELS;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::SceneViewport;
@@ -539,9 +542,9 @@ void GUI::render()
 
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
-    // A click's down, up and down reach ImGui one frame each, so at llvmpipe frame rates 0.3 s is never a double-click.
+    // At llvmpipe and QEMU frame rates ImGui's fixed 0.3 s is never a double-click.
     ImGuiIO &frame_io = ImGui::GetIO();
-    frame_io.MouseDoubleClickTime = std::clamp(1.5F * (studio->previousDeltaTime + frame_io.DeltaTime), 0.3F, 2.0F);
+    frame_io.MouseDoubleClickTime = doubleClickWindow(studio->previousDeltaTime, frame_io.DeltaTime);
     // NewFrame asserts this stays above the double-click window; at 60 FPS both are ImGui's defaults again.
     frame_io.MouseSingleClickDelay = frame_io.MouseDoubleClickTime + 0.2F;
     studio->previousDeltaTime = frame_io.DeltaTime;
@@ -1315,6 +1318,16 @@ void GUI::renderRenderInspector()
         endStudioProperties();
     }
     studioEndDisabled();
+
+    sectionHeader("ANTI-ALIASING");
+    if (beginStudioProperties("##anti_aliasing", propertyLabelWidth())) {
+        studioPropertyLabel("FXAA", "After the tonemap: never, on raster frames only, or on every frame");
+        int fxaa_mode = static_cast<int>(guiRendererSharedVars.fxaaMode);
+        if (studioSegmented("##fxaa_mode", &fxaa_mode, FXAA_MODE_LABELS, {}, -1.0F)) {
+            guiRendererSharedVars.fxaaMode = static_cast<FxaaMode>(fxaa_mode);
+        }
+        endStudioProperties();
+    }
 
     sectionHeader("PATH TRACING");
     studioBeginDisabled(mode != 2);

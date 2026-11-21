@@ -47,6 +47,12 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setCoverageAccumulat
     return *this;
 }
 
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setFillUncovered(bool enable)
+{
+    fill_uncovered = enable;
+    return *this;
+}
+
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setRenderingFormats(
   std::vector<vk::Format> in_color_formats,
   vk::Format in_depth_format)
@@ -140,7 +146,15 @@ Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() co
     vk::PipelineColorBlendAttachmentState color_state;
     color_state.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
                                  | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-    if (alpha_blending) {
+    if (fill_uncovered) {
+        color_state.blendEnable = VK_TRUE;
+        color_state.srcColorBlendFactor = vk::BlendFactor::eOneMinusDstAlpha;
+        color_state.dstColorBlendFactor = vk::BlendFactor::eDstAlpha;
+        color_state.colorBlendOp = vk::BlendOp::eAdd;
+        color_state.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+        color_state.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+        color_state.alphaBlendOp = vk::BlendOp::eAdd;
+    } else if (alpha_blending) {
         color_state.blendEnable = VK_TRUE;
         color_state.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
         color_state.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;

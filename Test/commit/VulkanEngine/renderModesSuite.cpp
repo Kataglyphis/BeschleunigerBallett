@@ -13,11 +13,13 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <string_view>
 
 import kataglyphis.vulkan.camera;
+import kataglyphis.vulkan.fxaa_stage;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
@@ -28,7 +30,12 @@ import kataglyphis.vulkan.window;
 namespace {
 
 using Kataglyphis::TestSupport::ScopedEnvVar;
+using Kataglyphis::VulkanRendererInternals::FxaaStage;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::drawnRenderMode;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::FXAA_MODE_LABELS;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::fxaaFilters;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::renderModeLogName;
 
@@ -159,6 +166,29 @@ TEST(RenderModeUnit, DrawnModeIsRasterUntilTracingIsAvailable)
     EXPECT_EQ(drawnRenderMode(false, true, false), 0) << "path tracing picked before the TLAS exists draws raster";
     // The editor never sets both; when it does not hold, path tracing wins, as GUI::renderMode() reads them.
     EXPECT_EQ(drawnRenderMode(true, true, true), 2);
+}
+
+// Raster filters what the raster paths drew, Always every frame; post and the fxaa stage both decide by this rule.
+TEST(RenderModeUnit, FxaaFiltersRasterFramesOrEveryFrame)
+{
+    EXPECT_FALSE(fxaaFilters(FxaaMode::Off, false, true));
+    EXPECT_FALSE(fxaaFilters(FxaaMode::Off, true, true));
+    EXPECT_TRUE(fxaaFilters(FxaaMode::Raster, false, true));
+    EXPECT_FALSE(fxaaFilters(FxaaMode::Raster, true, true)) << "Raster filtered a traced frame";
+    EXPECT_TRUE(fxaaFilters(FxaaMode::Always, false, true));
+    EXPECT_TRUE(fxaaFilters(FxaaMode::Always, true, true));
+    // A stage without its set or pipeline would leave the swapchain image unwritten and the GUI undrawn.
+    for (const FxaaMode mode : { FxaaMode::Raster, FxaaMode::Always }) {
+        EXPECT_FALSE(fxaaFilters(mode, false, false))
+          << "post rendered into the intermediate of an FXAA that cannot run";
+    }
+    EXPECT_FALSE(FxaaStage{}.ready(0)) << "a stage without its sets and pipeline reported ready";
+    // Forward has no MSAA yet, so the editor starts with FXAA on every frame.
+    EXPECT_EQ(GUIRendererSharedVars{}.fxaaMode, FxaaMode::Always);
+    // The labels the editor shows, in the enum's order.
+    EXPECT_STREQ(FXAA_MODE_LABELS[static_cast<std::size_t>(FxaaMode::Off)], "Off");
+    EXPECT_STREQ(FXAA_MODE_LABELS[static_cast<std::size_t>(FxaaMode::Raster)], "Raster");
+    EXPECT_STREQ(FXAA_MODE_LABELS[static_cast<std::size_t>(FxaaMode::Always)], "Always");
 }
 
 // The renderer's submit-failure log once named the GUI's pick, ray tracing first, even while raster was drawn.

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <glm/glm.hpp>
 #include <span>
 #include <sstream>
@@ -70,7 +71,7 @@ auto Kataglyphis::VulkanRendererInternals::buildTransparentScenePipeline(const s
     return pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
       .setVertexInput({ binding_description }, { attribute_descriptions.begin(), attribute_descriptions.end() })
       .setAlphaBlending(true)
-      // Over an opaque pixel the result stays opaque, so post never blends the sky through it.
+      // Over the opaque pixels and the sky alike the result stays opaque.
       .setCoverageAccumulation(true)
       // Tested against the opaque depth, never written: a nearer translucent layer must not hide a farther one.
       .setDepthWrite(false)
@@ -98,7 +99,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
   Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const glm::vec3 &eye,
-  const std::optional<FrustumPlanes> &cameraFrustum)
+  const std::optional<FrustumPlanes> &cameraFrustum,
+  const std::function<void(vk::CommandBuffer)> &drawSky)
 {
     // Every draw reads set 0, as Clouds::recordComputeCommands' dispatch does.
     if (descriptorSets.empty()) {
@@ -165,10 +167,15 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     meshesDrawn = draw_stats.drawn;
     meshesConsidered = draw_stats.considered;
 
-    // glTF BLEND last, farthest first, over the opaque colour and against its depth.
+    // After the opaque draws, so it fills only what they left at depth 1; before BLEND, which shows it through.
+    if (drawSky) { drawSky(commandBuffer); }
+
+    // glTF BLEND last, farthest first, over the opaque colour and sky and against their depth.
     const std::vector<BlendDraw> blend_draws = collectBlendDraws(scene, cameraFrustum, eye);
     if (!blend_draws.empty()) {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, transparent_pipeline);
+        // The sky's own set 0 replaced the shared one.
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
         meshesDrawn += recordBlendDraws(commandBuffer,
           pipeline_layout,
           vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,

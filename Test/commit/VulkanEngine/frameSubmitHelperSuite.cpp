@@ -12,9 +12,9 @@ using Kataglyphis::kSwapchainAcquireWaitStage;
 
 using Stage = vk::PipelineStageFlagBits2;
 
-// The sky pass's UNDEFINED -> colour-attachment transition chains off this wait only through its source stage.
+// The post pass's UNDEFINED -> colour-attachment transition chains off this wait only through its source stage.
 static_assert(kSwapchainAcquireWaitStage == vk::PipelineStageFlags2(Stage::eColorAttachmentOutput),
-  "the acquire wait must be the colour-attachment stage the sky pass's first barrier names as its source");
+  "the acquire wait must be the colour-attachment stage the post pass's first barrier names as its source");
 
 // A narrower signal would leave post's ePresentSrcKHR transition or a capture's restore of it outside the semaphore.
 static_assert(kRenderFinishedSignalStage == vk::PipelineStageFlags2(Stage::eAllCommands),
