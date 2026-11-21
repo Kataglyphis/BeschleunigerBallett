@@ -65,15 +65,18 @@ takes UTF-8 paths and runs inside `guarded()`.
   (osv-scanner, cargo-audit, cargo-deny; green in all 50 of AccelerANTgine's recent runs), lint-gates' `agents-drift`
   and `sha-pin` (0 tag-pinned actions today), the quality-report step (skipped in run 44784593082),
   `retry-disk-refusal`, and `core.hooksPath` on the Pi's clone so its pre-push checks run.
-- [ ] `CI` **A develop run finishes instead of being cancelled** (S, owner D9 2026-11-21). 27 of the last 50 x64 runs
-  were cancelled by newer pushes, many after 70 to 92 minutes, and left their commits without a verdict; cancel in
-  progress only off develop. Not verified: whether six-job runs then queue against the account's limit of concurrent
-  jobs; if they do, push less often rather than cancel.
-- [ ] `C++` **cppcheck stops claiming to run, and the filesystem rule fires again** (S, owner D10 2026-11-21). cppcheck
-  is ON by default, but the image has no binary, so it is skipped without a word (jobs 135983570303, 135983570356):
-  the default goes. BuildIntegrity's exception-free filesystem rule cannot fire for `create_directories(` or
+- [ ] `CI` **A develop run finishes instead of being cancelled** (S, owner D9 2026-11-21). **In source** since
+  2026-11-21 (seven workflows cancel only off main and develop); left: the next develop pushes show finished runs. 27
+  of the last 50 x64 runs were cancelled by newer pushes, many after 70 to 92 minutes, and left their commits without
+  a verdict; cancel in progress only off develop. Not verified: whether six-job runs then queue against the account's
+  limit of concurrent jobs; if they do, push less often rather than cancel.
+- [ ] `C++` **cppcheck stops claiming to run, and the filesystem rule fires again** (S, owner D10 2026-11-21). **In
+  source** since 2026-11-21: cppcheck OFF by default, the BuildIntegrity check replaced by `quality-report.toml`'s
+  pattern row (`test-filesystem-pattern.sh`, one recipe); left: the next lint-gates run grades the row. cppcheck was
+  ON by default, but the image has no binary, so it was skipped without a word (jobs 135983570303, 135983570356): the
+  default goes. BuildIntegrity's exception-free filesystem rule cannot fire for `create_directories(` or
   `directory_iterator(`, whose names contain "ec" (`buildIntegritySuite.cpp:7910-7913`); the hub's pattern-limits row
-  (CON295) replaces it.
+  (CON295) replaced it.
 - [ ] `CI` **Linux linker hardening and the hub's newer gates** (S each). "Hardening Linker Flags:" is empty (job
   135983570303, log 2886): hub CON294 adds PIE and `-z relro -z now` and an ELF gate. The SYNC-HAZARD scan moves onto
   `ctest-run.sh --fail-on-log-pattern` (CON291), with `VUID-` added (0 in green job 136455950642); the staged runner's

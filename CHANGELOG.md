@@ -66,6 +66,15 @@ the GitHub releases themselves.
   metallic card it used brightened to 226 against the emissive 233), and `PathTracingHonorsTheUntexturedMetallicFactor`
   bounds the metal at 0.9 of its dielectric twin instead of 0.8 (measured 0.824; an unread metallicFactor gives 1).
   `Compare-RendererTimings.ps1`'s note on the Rust FXAA default follows the pin.
+- A develop run finishes instead of being cancelled by a newer push (owner D9, 2026-11-21): 27 of the last 50 x64 runs
+  had been cancelled, many after 70 to 92 minutes, and left their commits without a verdict. Runs of other refs still
+  cancel.
+- cppcheck is off by default (owner D10): the image carries no binary, so ON was skipped without a word.
+- The exception-free filesystem rule moves from BuildIntegrity to the `throwing_filesystem_calls` pattern row of the
+  new `quality-report.toml`, which the hub's lint gates bind with max = 0. The BuildIntegrity check could not fire for
+  `create_directories(` or `directory_iterator(`, whose names contain "ec"; the row catches the one-argument throwing
+  overloads, the iterator declaration and a bare `current_path()`, and `test-filesystem-pattern.sh` with a mutation
+  recipe proves it.
 
 ### Removed
 

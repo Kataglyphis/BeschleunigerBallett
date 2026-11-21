@@ -1,0 +1,10 @@
+# Rows the hub's lint gates bind: run-lint-gates.sh fails a pattern row that matches more often than its max.
+
+[[metric]]
+name = "throwing_filesystem_calls"
+kind = "pattern"
+unit = "lines"
+# Built without exceptions, a throwing std::filesystem overload aborts on any OS error but not-found (owner D10).
+pattern = '(std::filesystem|\bfs)::((exists|absolute|canonical|weakly_canonical|proximate|relative|is_directory|is_regular_file|is_empty|is_symlink|create_directory|create_directories|file_size|hard_link_count|last_write_time|remove|remove_all|read_symlink|status|symlink_status|space|(recursive_)?directory_iterator(\s+\w+)?)\([^,()]*\)|(current_path|temp_directory_path)\(\s*\))'
+include = ["Src/*"]
+max = 0

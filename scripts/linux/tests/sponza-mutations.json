@@ -150,5 +150,13 @@
     "replace": "# removed for mutation proof",
     "test": "bash scripts/linux/tests/test-third-party-package-licenses.sh",
     "why": "CPackCommon must load before Src, or the Linux closure install rule runs bash with an empty script."
+  },
+  {
+    "id": "lint.throwing-filesystem-limit",
+    "target": "quality-report.toml",
+    "find": "include = [\"Src/*\"]\nmax = 0",
+    "replace": "include = [\"Src/*\"]\nmax = 1",
+    "test": "bash scripts/linux/tests/test-filesystem-pattern.sh",
+    "why": "A throwing std::filesystem overload in Src/ must fail the lint gates, not be counted."
   }
 ]

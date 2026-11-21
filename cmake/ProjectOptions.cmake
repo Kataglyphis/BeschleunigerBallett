@@ -30,7 +30,7 @@ macro(myproject_setup_options)
   myproject_supports_sanitizers()
   myproject_default_debug_sanitizers()
 
-  # cppcheck ON is this project's own call; AccelerANTgine keeps it OFF.
+  # cppcheck OFF: the image carries no binary, so ON was skipped without a word (owner D10, 2026-11-21).
   myproject_define_core_options(
     ASAN_DEFAULT
     ${DEFAULT_ASAN}
@@ -39,7 +39,7 @@ macro(myproject_setup_options)
     TSAN_DEFAULT
     OFF
     CPPCHECK_DEFAULT
-    ON)
+    OFF)
 
   myproject_mark_core_options_advanced()
 

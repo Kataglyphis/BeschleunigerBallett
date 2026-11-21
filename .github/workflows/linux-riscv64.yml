@@ -18,10 +18,10 @@ on:
         default: ''
   workflow_call:
 
-# Per lane and caller (github.workflow is the caller's name when called), the GPU run in its own; main's runs are never cancelled.
+# Per lane and caller (github.workflow is the caller's name when called), the GPU run in its own; main's and develop's runs are never cancelled (D9).
 concurrency:
   group: linux-riscv64-${{ github.ref }}-${{ github.workflow }}-${{ (github.event_name == 'schedule' || inputs.gpu-tests) && 'gpu' || 'cpu' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 permissions:
   contents: read

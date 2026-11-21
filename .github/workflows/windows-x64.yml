@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
   workflow_call:
 
-# Per lane and caller (github.workflow is the caller's name when called); main's runs are never cancelled.
+# Per lane and caller (github.workflow is the caller's name when called); main's and develop's runs are never cancelled (D9).
 concurrency:
   group: windows-x64-${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 permissions:
   contents: read

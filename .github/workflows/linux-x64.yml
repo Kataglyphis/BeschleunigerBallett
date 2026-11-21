@@ -27,10 +27,10 @@ on:
         default: false
   workflow_call:
 
-# Per lane and caller (github.workflow is the caller's name when called), the sweep in its own; main's runs are never cancelled.
+# Per lane and caller (github.workflow is the caller's name when called), the sweep in its own; main's and develop's runs are never cancelled (D9).
 concurrency:
   group: linux-x64-${{ github.ref }}-${{ github.workflow }}${{ (github.event_name == 'schedule' || inputs.gui-sweep) && '-gui-sweep' || '' }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 permissions:
   contents: read
@@ -67,6 +67,8 @@ jobs:
         run: bash scripts/linux/tests/test-docs-build-web.sh
       - name: Locked documentation environment wrapper
         run: bash scripts/linux/tests/test-uv-sync-project.sh
+      - name: The throwing-filesystem row on a planted tree
+        run: bash scripts/linux/tests/test-filesystem-pattern.sh
 
   build-x64:
     if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep }}

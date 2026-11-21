@@ -11,10 +11,10 @@ on:
 permissions:
   contents: read
 
-# Per lane and caller (github.workflow is the caller's name when called); main's runs are never cancelled.
+# Per lane and caller (github.workflow is the caller's name when called); main's and develop's runs are never cancelled (D9).
 concurrency:
   group: windows-arm64-cross-${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 jobs:
   cross:

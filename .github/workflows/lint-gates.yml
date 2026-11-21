@@ -10,10 +10,10 @@ on:
   # Re-runs the gates after an upstream ANTfrastructure fix without a new commit here.
   workflow_dispatch:
 
-# main is exempt from cancellation: its runs are what a release is cut from.
+# main and develop are never cancelled: a release is cut from main, and every develop commit gets its verdict (D9).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 permissions:
   contents: read
