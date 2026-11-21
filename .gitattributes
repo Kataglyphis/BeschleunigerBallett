@@ -29,3 +29,5 @@ licenses/fonts/** -text
 licenses/third-party-licenses.txt text eol=lf
 # The Sponza text is checked against its recorded SHA-256.
 licenses/CC-BY-3.0.txt -text
+# Byte-identical to OxidANT's crates/assets/tests/assets copy, which that repo checks out with LF on every OS.
+Resources/Models/GltfTest/cube_textured.gltf text eol=lf
