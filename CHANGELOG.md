@@ -97,6 +97,12 @@ the GitHub releases themselves.
 - `GoldenRender.MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels: face-on to `two_primitives.gltf`, the left
   quad's mean radiance must be red-dominant and the right one's green-dominant (each channel over twice the others). The
   mesh count alone passed with the in-place upload's index re-base zeroed.
+- VSync is on by default (plan X15, owner 2026-11-19), as the Rust renderer and the browser present: the swapchain
+  takes Fifo, where it took Mailbox whenever the surface offered it. `GUIRendererSharedVars::vsync` is the choice, in
+  the Renderer panel's new DISPLAY section and the Render menu; off takes Mailbox, else Immediate, else Fifo, and a
+  toggle rebuilds the swapchain. The golden harness pins it off; `GoldenRender.VsyncTogglesBetweenFifoAndAnUncappedMode`
+  turns it on and off again (lavapipe under Xvfb offers Immediate, Mailbox, Fifo and FifoRelaxed). The Rust renderer
+  keeps its fixed Fifo and has no switch yet.
 
 ### Removed
 

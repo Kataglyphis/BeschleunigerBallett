@@ -6,6 +6,7 @@ module;
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/PathTracingHistory.hpp"
+#include "renderer/SwapChainDetails.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
@@ -104,7 +105,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     create_command_pool();
 
-    vulkanSwapChain.initVulkanContext(device, window, device->getSurface());
+    vulkanSwapChain.initVulkanContext(device, window, device->getSurface(), settings.renderer.vsync);
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), output.gpuTimings);
     create_uniform_buffers();
     create_command_buffers();
@@ -296,6 +297,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
 
     handleShaderHotReloadRequest(settings.renderer);
     handleRasterizationModeChange(settings.renderer);
+    handleVsyncChange(settings.renderer);
 
     handleShadowResolutionChange(sceneSettings);
     // The load just published resets the inspector, so its pending transform belongs to the replaced model.
@@ -368,6 +370,16 @@ void Kataglyphis::VulkanRenderer::handleRasterizationModeChange(
         updateAllDescriptorSets();
         lastBoundRasterizationMode = rendererSettings.rasterizationMode;
     }
+}
+
+std::vector<vk::PresentModeKHR> Kataglyphis::VulkanRenderer::offeredPresentModes() const
+{ return device->getSwapchainDetails().presentation_mode; }
+
+void Kataglyphis::VulkanRenderer::handleVsyncChange(
+  const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings)
+{
+    // frameSettings already holds the new choice, which recreateSwapChain() reads.
+    if (rendererSettings.vsync != vulkanSwapChain.vsyncRequested()) { recreateSwapChain(); }
 }
 
 void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
@@ -876,7 +888,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
     // No framebuffers to rebuild: every pass names its swapchain image view at vkCmdBeginRendering.
-    vulkanSwapChain.recreate(device, device->getSurface());
+    vulkanSwapChain.recreate(device, device->getSurface(), frameSettings.renderer.vsync);
 
     // The query pool is sized per swapchain image.
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), output.gpuTimings);

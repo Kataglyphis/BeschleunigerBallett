@@ -119,3 +119,12 @@ TEST(RenderSettingsUnit, FeedbackWithoutASunKeepsTheEditorsSun)
     EXPECT_FLOAT_EQ(settings.scene.directional_light_direction[0], 0.25F);
     EXPECT_FLOAT_EQ(settings.scene.directional_light_color[2], 0.5F);
 }
+
+// Owner 2026-11-19: VSync on by default, as the Rust renderer and the browser present; a feedback never turns it off.
+TEST(RenderSettingsUnit, VsyncIsOnByDefaultAndSurvivesFeedback)
+{
+    RenderSettings settings;
+    EXPECT_TRUE(settings.renderer.vsync);
+    applyRendererFeedback(settings, RendererFeedback{});
+    EXPECT_TRUE(settings.renderer.vsync);
+}

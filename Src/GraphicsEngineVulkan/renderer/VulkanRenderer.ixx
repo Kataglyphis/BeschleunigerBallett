@@ -96,6 +96,8 @@ class VulkanRenderer
     [[nodiscard]] vk::Instance vulkanInstance() const { return instance->getVulkanInstance(); }
     [[nodiscard]] vk::Format swapChainFormat() const { return vulkanSwapChain.getSwapChainFormat(); }
     [[nodiscard]] uint32_t swapChainImageCount() const { return vulkanSwapChain.getNumberSwapChainImages(); }
+    [[nodiscard]] vk::PresentModeKHR presentMode() const { return vulkanSwapChain.getPresentMode(); }
+    [[nodiscard]] std::vector<vk::PresentModeKHR> offeredPresentModes() const;
     // Test instrumentation: an addModel must build one BLAS and keep the others' handles.
     [[nodiscard]] std::uint64_t bottomLevelBuildCount() const { return asManager.getBlasBuildCount(); }
     [[nodiscard]] std::vector<vk::AccelerationStructureKHR> bottomLevelHandles() const
@@ -149,6 +151,8 @@ class VulkanRenderer
     void handleShaderHotReloadRequest(
       const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
     void handleRasterizationModeChange(
+      const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
+    void handleVsyncChange(
       const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
     void handleShadowResolutionChange(const GUISceneSharedVars &sceneSettings);
     // Tears down and re-creates dirShadowMap against the resolution/cascade

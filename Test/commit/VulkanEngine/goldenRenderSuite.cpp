@@ -154,6 +154,8 @@ struct EngineHarness
         gui->setOverlayVisible(false);
         // The goldens grade pixels FXAA would move; FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone turns it on.
         settings.renderer.fxaaMode = FxaaMode::Off;
+        // Frames unpaced by the display, as before; VsyncTogglesBetweenFifoAndAnUncappedMode turns VSync on.
+        settings.renderer.vsync = false;
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
         Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
@@ -3853,6 +3855,50 @@ TEST(GoldenRender, FxaaSmoothsTheRasterStaircaseAndLeavesFlatRegionsAlone)
         EXPECT_EQ(traced_raster, traced_off) << "Raster mode filtered a ray-traced frame";
         EXPECT_NE(traced_always, traced_off) << "Always mode left a ray-traced frame's edges alone";
     }
+}
+
+// The app presents in Fifo by default; the harness pins VSync off, and a toggle must rebuild the chain both ways.
+TEST(GoldenRender, VsyncTogglesBetweenFifoAndAnUncappedMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const std::vector<vk::PresentModeKHR> offered = harness.renderer->offeredPresentModes();
+    const auto offers = [&offered](vk::PresentModeKHR mode) {
+        return std::find(offered.begin(), offered.end(), mode) != offered.end();
+    };
+    const bool uncapped_offered = offers(vk::PresentModeKHR::eMailbox) || offers(vk::PresentModeKHR::eImmediate);
+    const auto expect_uncapped = [&](const char *when) {
+        const vk::PresentModeKHR mode = harness.renderer->presentMode();
+        if (uncapped_offered) {
+            EXPECT_TRUE(mode == vk::PresentModeKHR::eMailbox || mode == vk::PresentModeKHR::eImmediate)
+              << when << ": VSync off presented in " << vk::to_string(mode);
+        } else {
+            EXPECT_EQ(mode, vk::PresentModeKHR::eFifo) << when << ": no uncapped mode offered, so Fifo";
+        }
+    };
+    std::string offered_names;
+    for (const vk::PresentModeKHR mode : offered) { offered_names += " " + vk::to_string(mode); }
+    GTEST_LOG_(INFO) << "the surface offers" << offered_names << "; VSync off took "
+                     << vk::to_string(harness.renderer->presentMode());
+    ASSERT_TRUE(Kataglyphis::RenderSettings{}.renderer.vsync) << "VSync must be on by default, as in Rust";
+    ASSERT_FALSE(harness.settings.renderer.vsync) << "the goldens run with VSync off";
+    expect_uncapped("the harness's first chain");
+
+    harness.render_frames(WARMUP_FRAMES);
+    harness.settings.renderer.vsync = true;
+    harness.render_frame();
+    EXPECT_EQ(harness.renderer->presentMode(), vk::PresentModeKHR::eFifo) << "VSync on did not rebuild the chain";
+    uint32_t width = 0;
+    uint32_t height = 0;
+    EXPECT_FALSE(harness.capture_frame(width, height).empty()) << "no frame after turning VSync on";
+
+    harness.settings.renderer.vsync = false;
+    harness.render_frame();
+    expect_uncapped("after turning VSync off again");
+    EXPECT_FALSE(harness.capture_frame(width, height).empty()) << "no frame after turning VSync off";
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
 }
 
 // A 2x1 emissive texture, white then black, nearest-filtered, so each half of a card shows which UV set it sampled.

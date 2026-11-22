@@ -181,6 +181,9 @@ struct GUIRendererSharedVars
     // Always by default: forward has no MSAA yet, so FXAA is the only anti-aliasing a raster frame gets.
     FxaaMode fxaaMode = FxaaMode::Always;
 
+    // On, as the Rust renderer and the browser present; a toggle rebuilds the swapchain, whose present mode is fixed.
+    bool vsync = true;
+
     // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
     // with stale comments claiming 64/32); changing either mid-run resets the
     // accumulation history - a mean over two different estimators is biased.

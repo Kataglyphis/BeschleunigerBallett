@@ -4,20 +4,36 @@
 
 namespace {
 
-TEST(SwapchainChoicesUnit, PrefersMailboxOverFifo)
+TEST(SwapchainChoicesUnit, VsyncOnPresentsInFifoWhateverTheSurfaceOffers)
 {
     const std::vector<vk::PresentModeKHR> modes = {
-        vk::PresentModeKHR::eFifo, vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate
+        vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eFifo
     };
 
-    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(modes), vk::PresentModeKHR::eMailbox);
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(modes, true), vk::PresentModeKHR::eFifo);
 }
 
-TEST(SwapchainChoicesUnit, FallsBackToFifoWhenMailboxIsAbsent)
+TEST(SwapchainChoicesUnit, VsyncOffPrefersMailboxThenImmediate)
 {
-    const std::vector<vk::PresentModeKHR> modes = { vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eFifoRelaxed };
+    const std::vector<vk::PresentModeKHR> all = {
+        vk::PresentModeKHR::eFifo, vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eMailbox
+    };
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(all, false), vk::PresentModeKHR::eMailbox)
+      << "Immediate tears where Mailbox does not";
 
-    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(modes), vk::PresentModeKHR::eFifo);
+    const std::vector<vk::PresentModeKHR> no_mailbox = {
+        vk::PresentModeKHR::eFifoRelaxed, vk::PresentModeKHR::eImmediate, vk::PresentModeKHR::eFifo
+    };
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(no_mailbox, false), vk::PresentModeKHR::eImmediate);
+}
+
+TEST(SwapchainChoicesUnit, VsyncOffFallsBackToFifoWithoutAnUncappedMode)
+{
+    const std::vector<vk::PresentModeKHR> capped = { vk::PresentModeKHR::eFifoRelaxed, vk::PresentModeKHR::eFifo };
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode(capped, false), vk::PresentModeKHR::eFifo);
+    // A failed query leaves the list empty; Fifo is still the one mode every surface has.
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode({}, false), vk::PresentModeKHR::eFifo);
+    EXPECT_EQ(Kataglyphis::chooseBestPresentationMode({}, true), vk::PresentModeKHR::eFifo);
 }
 
 TEST(SwapchainChoicesUnit, PicksAnSrgbNonlinearUnormFormat)

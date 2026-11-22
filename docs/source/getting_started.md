@@ -185,6 +185,9 @@ WGSL (Rust). Details: [`shader-build-pipeline.md`](shader-build-pipeline.md).
 
 ## Troubleshooting
 
+A frame rate held at the display's refresh is VSync, on by default as in the Rust renderer. The Renderer
+panel's DISPLAY switch, or Render > VSync, turns it off: Mailbox where the surface offers it, else Immediate.
+
 Missing Vulkan validation layers fail startup with:
 
 ```bash

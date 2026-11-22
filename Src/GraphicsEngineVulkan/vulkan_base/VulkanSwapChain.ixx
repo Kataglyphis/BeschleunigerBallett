@@ -19,14 +19,18 @@ class VulkanSwapChain
     void initVulkanContext(const std::shared_ptr<VulkanDevice> &in_device,
       Kataglyphis::Frontend::Window *window,
       const vk::SurfaceKHR &surface,
+      bool vsync,
       const vk::SwapchainKHR &oldSwapchain = nullptr);
 
-    void recreate(const std::shared_ptr<VulkanDevice> &in_device, const vk::SurfaceKHR &surface);
+    void recreate(const std::shared_ptr<VulkanDevice> &in_device, const vk::SurfaceKHR &surface, bool vsync);
 
     const vk::SwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };
     const vk::Extent2D &getSwapChainExtent() const { return swap_chain_extent; };
     const vk::Format &getSwapChainFormat() const { return swap_chain_image_format; };
+    // What the chain was created for; the mode is what the surface granted (Fifo when nothing uncapped was offered).
+    bool vsyncRequested() const { return vsync_requested; };
+    vk::PresentModeKHR getPresentMode() const { return present_mode; };
     Texture &getSwapChainImage(uint32_t index) { return swap_chain_images[index]; };
     // True when the surface advertised eTransferSrc among its supported usage
     // flags and the swapchain was therefore created with it. Only then may a
@@ -47,6 +51,8 @@ class VulkanSwapChain
     vk::Format swap_chain_image_format{ vk::Format::eB8G8R8A8Unorm };
     vk::Extent2D swap_chain_extent{ 0, 0 };
     bool transfer_src_supported{ false };
+    bool vsync_requested{ true };
+    vk::PresentModeKHR present_mode{ vk::PresentModeKHR::eFifo };
 
     // Destroys the per-image views without touching the swapchain handle, so
     // recreate() can keep the old swapchain as the oldSwapchain handoff.

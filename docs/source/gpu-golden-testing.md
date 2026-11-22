@@ -331,7 +331,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=89 runnable=87 integration=13 total=100 excluded=3 -->
+<!-- golden-counts: defined=90 runnable=88 integration=13 total=101 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -369,6 +369,10 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   2452 of 3868 measured with it, 0 without), move no pixel farther than two pixels from every edge
   (0 of 895412), filter a raster frame the same in Raster and Always, and leave a ray-traced frame
   alone in Raster. The integration suites keep the default, Always.
+- **The harness pins VSync off** (`GUIRendererSharedVars::vsync`, 2026-11-22), so frames stay
+  unpaced by the display, as before VSync defaulted on. `VsyncTogglesBetweenFifoAndAnUncappedMode`
+  turns it on (Fifo) and off again (Mailbox, else Immediate where the surface offers one) and
+  captures a frame after each rebuild. The integration suites keep the default, on.
 - **For a radiance bound, read the HDR target.** `EngineHarness::capture_hdr_frame` arms
   `VulkanRenderer::requestHdrCapture`, which copies the RGBA16F target post just read, as linear
   floats. ACES squeezes everything above about 1 into the last few 8-bit levels, so a ratio or an

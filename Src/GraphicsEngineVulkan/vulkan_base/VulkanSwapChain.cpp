@@ -24,6 +24,7 @@ Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<VulkanDevice> &in_device,
   Kataglyphis::Frontend::Window *frontend_window,
   const vk::SurfaceKHR &surface,
+  bool vsync,
   const vk::SwapchainKHR &oldSwapchain)
 {
     this->device = in_device;
@@ -33,7 +34,8 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     Kataglyphis::VulkanRendererInternals::SwapChainDetails const swap_chain_details = device->getSwapchainDetails();
 
     vk::SurfaceFormatKHR const surface_format = chooseBestSurfaceFormat(swap_chain_details.formats);
-    vk::PresentModeKHR const present_mode = chooseBestPresentationMode(swap_chain_details.presentation_mode);
+    vk::PresentModeKHR const chosen_present_mode =
+      chooseBestPresentationMode(swap_chain_details.presentation_mode, vsync);
 
     // A max currentExtent lets the window decide; that needs the live window, so it stays out of SwapchainChoices.
     vk::Extent2D extent{};
@@ -63,7 +65,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     swap_chain_create_info.surface = surface;// swapchain surface
     swap_chain_create_info.imageFormat = surface_format.format;// swapchain format
     swap_chain_create_info.imageColorSpace = surface_format.colorSpace;// swapchain color space
-    swap_chain_create_info.presentMode = present_mode;// swapchain presentation mode
+    swap_chain_create_info.presentMode = chosen_present_mode;
     swap_chain_create_info.imageExtent = extent;// swapchain image extents
     swap_chain_create_info.minImageCount = image_count;// minimum images in swapchain
     swap_chain_create_info.imageArrayLayers = 1;// number of layers for each image in chain
@@ -114,6 +116,8 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     // store for later reference
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
+    vsync_requested = vsync;
+    present_mode = chosen_present_mode;
 
     // get swapchain images
     std::vector<vk::Image> images =
@@ -151,11 +155,12 @@ void Kataglyphis::VulkanSwapChain::cleanUp()
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() { cleanUp(); }
 
 void Kataglyphis::VulkanSwapChain::recreate(const std::shared_ptr<VulkanDevice> &in_device,
-  const vk::SurfaceKHR &surface)
+  const vk::SurfaceKHR &surface,
+  bool vsync)
 {
     // The old handle survives the create as the oldSwapchain handoff; its views go first, as they reference its images.
     const vk::SwapchainKHR previousSwapchain = swapchain;
     destroyImageViews();
-    initVulkanContext(in_device, window, surface, previousSwapchain);
+    initVulkanContext(in_device, window, surface, vsync, previousSwapchain);
     if (previousSwapchain) { in_device->getLogicalDevice().destroySwapchainKHR(previousSwapchain); }
 }

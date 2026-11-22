@@ -763,6 +763,7 @@ void GUI::renderMenuBar()
         }
         ImGui::Separator();
         ImGui::MenuItem("Frustum culling", nullptr, &guiRendererSharedVars.frustum_culling_enabled);
+        ImGui::MenuItem("VSync", nullptr, &guiRendererSharedVars.vsync);
         ImGui::EndMenu();
     }
     if (ImGui::BeginMenu("Help")) {
@@ -1326,6 +1327,13 @@ void GUI::renderRenderInspector()
         if (studioSegmented("##fxaa_mode", &fxaa_mode, FXAA_MODE_LABELS, {}, -1.0F)) {
             guiRendererSharedVars.fxaaMode = static_cast<FxaaMode>(fxaa_mode);
         }
+        endStudioProperties();
+    }
+
+    sectionHeader("DISPLAY");
+    if (beginStudioProperties("##display", propertyLabelWidth())) {
+        studioPropertyLabel("VSync", "On waits for the display's refresh; off presents each frame as it finishes");
+        studioToggle("##vsync", &guiRendererSharedVars.vsync);
         endStudioProperties();
     }
 

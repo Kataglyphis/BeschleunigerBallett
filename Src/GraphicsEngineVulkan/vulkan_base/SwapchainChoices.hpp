@@ -30,14 +30,19 @@ inline vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::Surfac
     return formats[0];
 }
 
-inline vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::PresentModeKHR> &presentation_modes)
+// VSync on is Fifo, as the Rust renderer and the browser present; off prefers Mailbox, which does not tear, to Immediate.
+inline vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::PresentModeKHR> &presentation_modes,
+  bool vsync)
 {
-    // look for mailbox presentation mode
-    for (const auto &presentation_mode : presentation_modes) {
-        if (presentation_mode == vk::PresentModeKHR::eMailbox) { return presentation_mode; }
+    if (!vsync) {
+        for (const vk::PresentModeKHR uncapped : { vk::PresentModeKHR::eMailbox, vk::PresentModeKHR::eImmediate }) {
+            for (const vk::PresentModeKHR offered : presentation_modes) {
+                if (offered == uncapped) { return uncapped; }
+            }
+        }
     }
 
-    // if can't find, use FIFO as Vulkan spec says it must be present
+    // The one mode the spec requires of every surface.
     return vk::PresentModeKHR::eFifo;
 }
 

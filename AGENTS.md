@@ -549,6 +549,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
 - The build copies the ASAN runtime DLL next to `GraphicsEngine.exe`, and the run helpers set
   `ASAN_OPTIONS` with a relative `log_path`
   ([why both](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md#windows-asan-note)).
+- **VSync is on by default** (Fifo, as the Rust renderer presents); the editor's VSync switch turns
+  it off (Mailbox, else Immediate). The golden harness pins it off.
 
 ## Testing
 
