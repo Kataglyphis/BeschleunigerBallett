@@ -39,6 +39,12 @@ namespace {
 
         return frustumCorners;
     }
+
+    // GUISceneSharedVars' defaults, which OxidANT's sanitize gives a non-finite field (owner 2026-11-20).
+    constexpr float kDefaultShadowDistance = 60.0F;
+    constexpr float kDefaultSplitLambda = 0.0F;
+
+    float finiteOr(float value, float fallback) { return std::isfinite(value) ? value : fallback; }
 }// namespace
 
 uint32_t clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit)
@@ -80,8 +86,8 @@ void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, co
     const float nearPlane = params.nearPlane;
     const float farPlane = params.farPlane;
     const glm::vec3 &lightDir = params.lightDir;
-    const float shadowDistance = params.shadowDistance;
-    const float splitLambda = params.splitLambda;
+    const float shadowDistance = finiteOr(params.shadowDistance, kDefaultShadowDistance);
+    const float splitLambda = finiteOr(params.splitLambda, kDefaultSplitLambda);
     const uint32_t shadowMapResolution = params.shadowMapResolution;
 
     // Fit to shadowDistance, not the far plane, which wastes texels on empty space; 0 or less means the far plane.

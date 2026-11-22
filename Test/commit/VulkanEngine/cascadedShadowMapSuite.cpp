@@ -7,10 +7,12 @@
 
 #include <array>
 #include <cmath>
+#include <limits>
 #include <span>
 #include <vector>
 
 import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.gui_scene_shared_vars;
 
 namespace {
 
@@ -184,6 +186,54 @@ TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
         const float p = static_cast<float>(i + 1) / static_cast<float>(kCascades);
         EXPECT_NEAR(cascades[i].splitDepth, kNear + ((kFar - kNear) * p), 1e-2F)
           << "lambda 0 must be the uniform scheme exactly, so it stays a usable baseline";
+    }
+}
+
+constexpr std::array<float, 3> kNonFinite = { std::numeric_limits<float>::quiet_NaN(),
+    std::numeric_limits<float>::infinity(),
+    -std::numeric_limits<float>::infinity() };
+
+// Owner 2026-11-20: NaN and +-inf take the field's default, the GUI's 60, as OxidANT's sanitize does.
+TEST(CascadedShadowMapUnit, NonFiniteShadowDistanceTakesTheDefault)
+{
+    auto reference = default_params();
+    reference.shadowDistance = GUISceneSharedVars{}.shadow_distance;
+    ASSERT_LT(reference.shadowDistance, kFar) << "a default at the far plane cannot tell the two fallbacks apart";
+    const std::vector<CascadeData> expected = computeCascadeData(kCascades, reference);
+
+    for (const float distance : kNonFinite) {
+        auto params = default_params();
+        params.shadowDistance = distance;
+        const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
+        ASSERT_EQ(cascades.size(), kCascades);
+        for (size_t i = 0; i < kCascades; ++i) {
+            EXPECT_FLOAT_EQ(cascades[i].splitDepth, expected[i].splitDepth)
+              << "distance " << distance << ", cascade " << i;
+            EXPECT_TRUE(is_finite(cascades[i].viewProjMatrix)) << "distance " << distance << ", cascade " << i;
+        }
+    }
+}
+
+// std::clamp passes NaN through and turns +inf into 1, so both must fall back to the GUI's default first.
+TEST(CascadedShadowMapUnit, NonFiniteSplitLambdaTakesTheDefault)
+{
+    auto reference = default_params();
+    reference.splitLambda = GUISceneSharedVars{}.cascade_split_lambda;
+    auto logarithmic = default_params();
+    logarithmic.splitLambda = 1.0F;
+    const std::vector<CascadeData> expected = computeCascadeData(kCascades, reference);
+    ASSERT_GT(std::abs(computeCascadeData(kCascades, logarithmic)[0].splitDepth - expected[0].splitDepth), 1.0F)
+      << "the default must split unlike lambda 1, or +inf's clamp would pass unseen";
+
+    for (const float lambda : kNonFinite) {
+        auto params = default_params();
+        params.splitLambda = lambda;
+        const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
+        ASSERT_EQ(cascades.size(), kCascades);
+        for (size_t i = 0; i < kCascades; ++i) {
+            EXPECT_FLOAT_EQ(cascades[i].splitDepth, expected[i].splitDepth) << "lambda " << lambda << ", cascade " << i;
+            EXPECT_TRUE(is_finite(cascades[i].viewProjMatrix)) << "lambda " << lambda << ", cascade " << i;
+        }
     }
 }
 

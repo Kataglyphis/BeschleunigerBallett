@@ -88,6 +88,10 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- A NaN or infinite shadow distance or split lambda takes the field's default in the cascade math, 60 and 0, as
+  OxidANT's `sanitize` gives them (owner 2026-11-20): `CascadedShadowMapMath.cpp` fitted a NaN distance to the far
+  plane and passed a NaN lambda through `std::clamp`, which also made +inf logarithmic.
+  `CascadedShadowMapUnit.NonFiniteShadowDistanceTakesTheDefault` and `NonFiniteSplitLambdaTakesTheDefault`.
 - An FXAA stage without its descriptor set or pipeline left the swapchain image unwritten and the GUI undrawn: post
   rendered into the intermediate, and FXAA returned early. `fxaaFilters` takes `FxaaStage::ready`, so post keeps the
   swapchain image then; `RenderModeUnit.FxaaFiltersRasterFramesOrEveryFrame` holds both.
