@@ -439,6 +439,29 @@ double mean_hdr_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t c
     return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
 
+// Mean linear radiance of each channel of an RGBA float capture over a square around (cx, cy).
+glm::dvec4 mean_hdr_rgba_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    glm::dvec4 sum(0.0);
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+            sum += glm::dvec4(rgba[base], rgba[base + 1U], rgba[base + 2U], rgba[base + 3U]);
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : sum;
+}
+
+// Pixel column of world-space x on a camera looking along -Z (or +Z, mirrored) from `distance`, at the golden fov.
+uint32_t card_column(float world_x, float distance, uint32_t width, uint32_t height)
+{
+    const float half_width =
+      distance * std::tan(glm::radians(45.0F) * 0.5F) * static_cast<float>(width) / static_cast<float>(height);
+    return static_cast<uint32_t>((0.5F + 0.5F * world_x / half_width) * static_cast<float>(width));
+}
+
 // Every texel finite and at most hdr_safe.slang's HDR_MAX, and the largest one, from an RGBA float capture.
 struct HdrRange
 {
@@ -1994,7 +2017,7 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
                              << " pixels - it is being drawn somewhere invisible, or not drawn at all";
 }
 
-// The mesh count is the framing-independent proof; pixels depend on the camera.
+// Two meshes, and each draws its own quad: a zeroed index re-base still builds two but feeds the second wrong vertices.
 TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
 {
     SKIP_WITHOUT_GPU();
@@ -2006,6 +2029,11 @@ TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
 
     auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = false;// count every mesh, framing aside
+    harness.settings.scene.shadows_enabled = false;
+    // Face-on to the two quads, red on x in [-1, 0] and green on [0, 1], across the frame's middle.
+    constexpr float DISTANCE = 3.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, DISTANCE));
+    harness.camera->set_orientation(-90.0F, 0.0F);
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost())
@@ -2016,8 +2044,18 @@ TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
 
     uint32_t width = 0;
     uint32_t height = 0;
-    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
-    ASSERT_FALSE(frame.empty()) << "the two-primitive glTF captured no frame";
+    const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(radiance.empty()) << "the two-primitive glTF captured no frame";
+
+    const glm::dvec4 left =
+      mean_hdr_rgba_in_square(radiance, width, card_column(-0.5F, DISTANCE, width, height), height / 2U, 12U);
+    const glm::dvec4 right =
+      mean_hdr_rgba_in_square(radiance, width, card_column(0.5F, DISTANCE, width, height), height / 2U, 12U);
+    GTEST_LOG_(INFO) << "left quad (" << left.r << ", " << left.g << ", " << left.b << "), right quad (" << right.r
+                     << ", " << right.g << ", " << right.b << ")";
+    // Dominance, not values: the metallic quads reflect a sky whose radiance the driver and the IBL bake decide.
+    EXPECT_GT(left.r, 2.0 * std::max(left.g, left.b)) << "the left quad, material 0, does not draw red";
+    EXPECT_GT(right.g, 2.0 * std::max(right.r, right.b)) << "the right quad, material 1, does not draw green";
 }
 
 // Covers the whole loop: env var, accumulation over real frames, the write in cleanUp, and the schema.
@@ -3545,22 +3583,6 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
       << "the card is not finely tiled - KHR_texture_transform scale is not reaching the sampled UV";
 }
 
-// Mean linear radiance of each channel of an RGBA float capture over a square around (cx, cy).
-static glm::dvec4
-  mean_hdr_rgba_in_square(const std::vector<float> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
-{
-    glm::dvec4 sum(0.0);
-    size_t count = 0;
-    for (uint32_t y = cy - half; y < cy + half; ++y) {
-        for (uint32_t x = cx - half; x < cx + half; ++x) {
-            const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
-            sum += glm::dvec4(rgba[base], rgba[base + 1U], rgba[base + 2U], rgba[base + 3U]);
-            ++count;
-        }
-    }
-    return count > 0U ? sum / static_cast<double>(count) : sum;
-}
-
 // The emissive card's quad as one glTF node per entry, each with its own material and so its own mesh.
 static void make_card_scene(nlohmann::json &gltf,
   const std::vector<nlohmann::json> &materials,
@@ -3582,14 +3604,6 @@ static void make_card_scene(nlohmann::json &gltf,
         gltf["scenes"][0]["nodes"].push_back(gltf["nodes"].size());
         gltf["nodes"].push_back(node);
     }
-}
-
-// Pixel column of world-space x on a camera looking along -Z (or +Z, mirrored) from `distance`, at the golden fov.
-static uint32_t card_column(float world_x, float distance, uint32_t width, uint32_t height)
-{
-    const float half_width =
-      distance * std::tan(glm::radians(45.0F) * 0.5F) * static_cast<float>(width) / static_cast<float>(height);
-    return static_cast<uint32_t>((0.5F + 0.5F * world_x / half_width) * static_cast<float>(width));
 }
 
 // Two half-transparent cards over an opaque one, seen from both sides, so each order is right once and wrong once.

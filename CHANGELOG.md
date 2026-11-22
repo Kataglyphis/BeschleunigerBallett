@@ -75,6 +75,9 @@ the GitHub releases themselves.
   `create_directories(` or `directory_iterator(`, whose names contain "ec"; the row catches the one-argument throwing
   overloads, the iterator declaration and a bare `current_path()`, and `test-filesystem-pattern.sh` with a mutation
   recipe proves it.
+- `GoldenRender.MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels: face-on to `two_primitives.gltf`, the left
+  quad's mean radiance must be red-dominant and the right one's green-dominant (each channel over twice the others). The
+  mesh count alone passed with the in-place upload's index re-base zeroed.
 
 ### Removed
 
