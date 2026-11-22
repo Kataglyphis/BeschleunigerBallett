@@ -198,6 +198,13 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
                 << "the normal texture's KHR_texture_transform is lost";
           } },
         { "cube_on_plane.gltf", [](const GltfLoader &loader) { EXPECT_EQ(loader.getMeshRanges().size(), 2U); } },
+        { "cube_quantized.gltf",
+          [](const GltfLoader &loader) {
+              for (const Vertex &vertex : loader.getVertices()) {
+                  EXPECT_LE(glm::length(vertex.position), 0.867F)
+                    << "the node's scale and translation did not dequantize";
+              }
+          } },
         { "cube_textured.gltf",
           [](const GltfLoader &loader) {
               ASSERT_EQ(loader.getTextureImages().size(), 1U);
@@ -209,6 +216,12 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
         { "cube_unlit.gltf", [](const GltfLoader &loader) { EXPECT_EQ(loader.getMaterials().at(0).unlit, 1); } },
         { "point_light.gltf", [](const GltfLoader &loader) { EXPECT_EQ(loader.getPunctualLights().size(), 2U); } },
         { "skinned_bar.gltf", [](const GltfLoader &loader) { EXPECT_TRUE(loader.getMeshRanges().at(0).doubleSided); } },
+        { "skinned_bar_quantized.gltf",
+          [](const GltfLoader &loader) {
+              for (const Vertex &vertex : loader.getVertices()) {
+                  EXPECT_LE(vertex.position.y, 2.001F) << "the joints' inverse binds did not dequantize";
+              }
+          } },
     };
     return facts;
 }
@@ -295,6 +308,27 @@ TEST(GltfParseUnit, DefaultMorphWeightsArriveBakedIntoThePositions)
     EXPECT_FLOAT_EQ(highest->position.y, 1.5F) << "the neutral cube's top at 0.5 was not lifted";
     for (const Vertex &vertex : vertices) {
         EXPECT_FLOAT_EQ(std::abs(vertex.position.x), 0.5F) << "the target moves along y alone";
+    }
+}
+
+// gltfpack's layouts: the cube dequantized by its node, the skin by its joints at rest, which the bridge bakes.
+TEST(GltfParseUnit, QuantizedFixturesArriveAsTheirFloatTwins)
+{
+    const std::array<std::array<const char *, 2>, 2> twins{ { { "cube.gltf", "cube_quantized.gltf" },
+      { "skinned_bar.gltf", "skinned_bar_quantized.gltf" } } };
+    for (const auto &[floatName, quantizedName] : twins) {
+        GltfLoader floats;
+        GltfLoader quantized;
+        ASSERT_TRUE(floats.parseCpu(oxidantGltfFixture(floatName))) << floatName;
+        ASSERT_TRUE(quantized.parseCpu(oxidantGltfFixture(quantizedName))) << quantizedName;
+        const std::span<const Vertex> expected = floats.getVertices();
+        const std::span<const Vertex> got = quantized.getVertices();
+        ASSERT_EQ(got.size(), expected.size()) << quantizedName;
+        for (std::size_t i = 0; i < got.size(); ++i) {
+            // Half a 14-bit step of the bar's extent per axis, and an 8-bit normal's step.
+            EXPECT_LE(glm::length(got[i].position - expected[i].position), 2e-4F) << quantizedName << " vertex " << i;
+            EXPECT_LE(glm::length(got[i].normal - expected[i].normal), 1.5e-2F) << quantizedName << " vertex " << i;
+        }
     }
 }
 

@@ -46,7 +46,12 @@ No P0 item is open.
   and metallic goldens under multi-scatter GGX, and `Integration.SharedSlangKernelsMeetTheirVectors` (the
   vector tolerances assume correctly rounded f32 sin and cos); since Phase 4 also
   `MultiPrimitiveGltfLoadsAsMultipleMeshes`' pixel check, the shadow goldens and `Compare-RendererTimings.ps1`
-  over the Rust scopes re-cut as this engine's.
+  over the Rust scopes re-cut as this engine's. Since Phase 5: the app opens at the refresh rate and the
+  DISPLAY toggle and Render > VSync switch present modes without a device loss
+  (`VsyncTogglesBetweenFifoAndAnUncappedMode`), `GpuTimingJsonDumpIsWrittenAndSane`,
+  `Integration.DebugLabelsAndNamesWorkWithoutTheValidationLayer`, a RenderDoc capture of Profile or Release
+  showing the pass labels and object names, and the seven `BM_Bridge*` placeholder rows refreshed with
+  `perfTestSuite`.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -98,22 +103,17 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Bridge foundations:
 
-- [ ] `Rust` **Criterion benchmarks for the renderer code behind the bridge** (M, plan X7's remainder;
-  `benches/load_flat.rs` is done). QEM, the tile grid, the cascade fit and the BVH build, under the
-  bench profile with fat LTO. BB adds a `BM_` row with a labelled placeholder baseline for each bridged
-  entry: `default_scene_settings`, `setting_ranges`, `sanitize`, `parity_viewport_remap`, `parity_lens`,
-  `parity_model_transform` and `load_gltf_flat_with` (Profile tree; `perfTestSuite` is not built in
-  Debug).
 - [ ] `Shared` **Pick the path tracer's specular lobe by E_spec** (S). Owner 2026-11-21: `path_estimator`
   keeps the unbiased F(n.v) split for now; E_spec lowers variance but moves the noise of every path-traced
   golden in both renderers. Measure the variance gain on the furnace and shadow rigs first.
 
 Loader:
 
-- [ ] `Assets` **Bake the skin's rest pose in `flat.rs`** (M, plan B2). Owner rule 2026-11-19: a skinned
-  node's own transform is ignored, as the glTF spec says, so `flat.rs` and
-  its test `a_skinned_node_keeps_its_bind_pose_and_a_plain_one_moves` keep identity and the Rust renderer stops applying it to
-  unweighted vertices. Moves `joint_matrices`, `skin_vertex` and `Pose` from the tracer into kataglyphis_assets.
+- [ ] `Assets` **A skin mirrored by its joints keeps its triangle winding** (S). Since Phase 5 `load_flat`
+  bakes a skin's rest pose and flips only the tangent handedness per vertex where the joints mirror; the
+  triangle winding stays, in `flat.rs`, the Rust tracer and the raster's pipeline choice alike. A skin
+  mirrored by its joints therefore draws inside out where back faces are culled. Flip the winding per triangle
+  by the sign of its joints' determinant, with a mirrored-joint fixture in both renderers.
 - [ ] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6). Tolerant like tinyobjloader (a bad line
   is skipped and reported) with one mesh per `usemtl` group, and Rust's material rules (owner 2026-11-19): d
   below 1 or Tr above 0 is BLEND, map_Ke without Ke glows at factor 1, no Kd is white 1.0, no Pr and no Ns is
@@ -216,10 +216,10 @@ C++ catches up:
 - [ ] `C++` **Device-loss breadcrumbs and `VK_EXT_device_fault`** (M, plan C10). Markers at the debug-label
   scopes (the path tracer records inside `main`), `vkCmdWriteBufferMarker2AMD` or NV checkpoints where
   present, the fault query after a loss; feature-gated, best effort.
-- [ ] `C++` **Name Vulkan objects and keep debug labels without the validation layer** (S, plan X8).
-  Enable `VK_EXT_debug_utils` whenever the instance lists it, so the existing labels reach Profile and
-  Release captures; a `nameObject` helper on the per-pass targets and pipelines. Naming every object is a
-  later M.
+- [ ] `C++` **Name every Vulkan object** (M, plan X8's remainder). Since Phase 5 `VK_EXT_debug_utils` is on
+  wherever the loader lists it and the per-pass targets, the graphics, compute and ray-tracing pipelines carry
+  names (`nameObject`, `PipelineBuilder::setDebugName`); buffers, descriptor sets, samplers, acceleration
+  structures and command buffers are still unnamed in a capture.
 - [ ] `CI` **GPU-assisted validation for buffer-device-address reads** (M, plan X6). `robustBufferAccess`
   is off and every shader reads materials through raw BDA. A weekly GPU-AV subset on Linux llvmpipe and an
   `Invoke-SyncValidation.ps1` switch; scan the log for GPU-AV VUIDs.
@@ -249,11 +249,9 @@ New in both:
 - [b] `Shared` **Cloud shadows** (M-L, plan N3; after the shared shadow Slang and integrator). Bake
   T = exp(-light_optical_depth) into a light-space map covering the cloud box's projection; raster, RT and
   both path tracers read the same map.
-- [ ] `Assets` **KHR_mesh_quantization** (S-M, plan N4). gltfpack output fails in both renderers. Accept the
-  integer formats in `accessor_check.rs` and read them with a reader that honours `normalized`; C++
-  needs no change.
-- [ ] `Assets` **EXT_meshopt_compression** (M-L, plan N4). A pure-Rust decoder, fuzzed through
-  `load_flat`'s proptest, with a licence row; then Colosseum-web can be republished through gltfpack.
+- [ ] `Assets` **EXT_meshopt_compression** (M-L, plan N4). A pure-Rust decoder, fuzzed through `load_flat`'s
+  proptest, with a licence row; then Colosseum-web can be republished through gltfpack. Since Phase 5 gltfpack
+  output without `-cc` loads (`KHR_mesh_quantization`, OxidANT 0bbea5a).
 - [b] `Shared` **A view file shared by both renderers** (L, plan N6; after the settings schema and the
   framing). serde types bridged as `view_to_json`/`view_from_json`, `--view` in both applications and the
   golden dump; it unblocks a per-pixel renderer comparison.
@@ -286,8 +284,8 @@ New in both:
 - [b] `C++` **LOD chains at load time from Rust's QEM** (L, plan B11; per-level material ids first).
   Harden `qem.rs` (`remap[i]` panics on bad indices), return each level's error, pick the level by
   screen-space error at draw time; shadows and BLAS keep full detail.
-- [b] `C++` **glTF animation through one Rust animator** (XL, plan B12; after the skin's rest pose).
-  Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked snapshot.
+- [ ] `C++` **glTF animation through one Rust animator** (XL, plan B12; the skin's rest pose is in since Phase
+  5). Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked snapshot.
   Extract the animator from `ForwardRenderer` into a wgpu-free crate first; skinning in shared Slang, a
   compute pre-skin with a BLAS update for the traced modes.
 - [ ] `C++` **GPU occlusion culling, then multi-draw indirect** (L + L, plan C12). A Hi-Z pyramid
@@ -330,14 +328,24 @@ New in both:
 - [ ] `Shared` **Reversed-Z for the camera in both renderers** (L, plan N17). Owner 2026-11-19: reversed-Z
   yes, photometric light units no. Moves depth-reading goldens and passes on each side.
 - [b] `Shared` **Coverage-preserving MASK mips** (M, plan X11; after the texture ingest).
-- [ ] `Shared` **A VSync choice with one default in both renderers** (S, plan X15). On (Fifo) by default
-  (owner 2026-11-19), as Rust and the browser; C++ moves from Mailbox, and the goldens keep pinning it off.
+- [ ] `Rust` **A VSync switch in the Rust renderer** (S, plan X15's remainder). C++ has a `vsync` setting
+  since Phase 5 (on, Fifo, by default; off picks Mailbox, then Immediate) with a toggle in the Renderer panel;
+  Rust hard-codes Fifo in `context.rs` and `wgpu_init.rs`. The same setting and toggle there, the browser
+  keeping Fifo.
 - [b] `Assets` **The full Rust settings schema as cxx shared structs** (L, plan B10; when the view file
   needs it).
-- [ ] `C++` **Why the deferred G-buffer pass costs about 0.5 s a frame on llvmpipe** (S). In
-  `GoldenRender.GpuTimingSplitsMainIntoTheScopeThatDrew` (Debug, sync validation, aarch64 WSL, 2026-11-19)
-  GBuffer took 510-635 ms against about 8 ms for Forward on Dinosaurs, and DeferredLighting 11-107 ms. Find
-  the cause before a host profile budgets the deferred passes; it may be llvmpipe alone.
+- [ ] `CI` **Budget llvmpipe's GPU passes from a build without ASan** (S). Phase 5 found the 0.5 s G-buffer
+  was the Debug build's ASan: its interceptors slow llvmpipe's mesh passes 7-9 times (Profile: Forward 76 ms,
+  GBuffer 66, ShadowCascades 180; the same binary with ASan preloaded 557, 539, 1600), and the validation
+  layer adds nothing. The `wsl-aarch64-llvmpipe` budget still comes from Debug dumps on a warm Mesa cache (a
+  cold cache fails its Forward bound). Take it from the Profile perf rig instead, or say in the entry that it
+  measures ASan. The export after `GpuTimingSubsystem::restart()` also holds the load frame (on llvmpipe the
+  frame that compiles the pass), and `RendersNonBlankFrame` leaves about three slices for the dump: skip the
+  first slice after a restart, or draw more frames before it (Phase 5 review).
+- [ ] `C++` **Why the shadow cascades dominate the llvmpipe frame** (S). In Profile on llvmpipe ShadowCascades
+  takes about 180 ms against Forward's 76: the four cascade views redo the vertex work. Measure per cascade
+  and the vertex share before a host budgets the pass; a geometry-shader or multiview pass, or culling per
+  cascade, would be the candidates.
 - [b] `C++` **`GltfLoader`'s index views back to `std::span` members** (S; **waits for ANTfrastructure
   CON281**). GCC 16.2 crashed on two `std::span<const unsigned int>` data members (f7e9c7fc keeps a pointer
   and a count). Restore the span members once the image's GCC compiles them, checked first under a 4 GB

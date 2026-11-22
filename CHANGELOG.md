@@ -42,6 +42,14 @@ the GitHub releases themselves.
 
 ### Changed
 
+- OxidANT pin to `5551f29`, on OxidANT develop's `e3f554f`: glTF files with `KHR_mesh_quantization` (gltfpack's
+  integer positions, normals, tangents and texture coordinates) and posed skins load through the bridge; `load_flat`
+  bakes a skin's rest pose (joint world times inverse bind) and leaves unweighted vertices in mesh space; a file
+  without the extension reads u8 and u16 texture coordinates normalized whatever their flag, as before.
+  `GltfParseUnit.QuantizedFixturesArriveAsTheirFloatTwins` reads OxidANT's quantized cube and skinned bar against
+  their float twins (positions within 2e-4, normals 1.5e-2), and `GltfFixtureRoundTrip` takes both fixtures. No
+  shipped scene has a skin or quantized attributes, and `skinned_bar.gltf`'s rest pose is its bind pose, so no frame
+  changes.
 - The C++ shaders evaluate the GGX energy fit once per shading point (OxidANT `d0433b1`'s `brdf_direct`,
   `brdf_sampled`, `brdf_smith_k` and `sample_bounce` take it as `energy`): `rasterizer.slang` and `deferred.slang`
   once per pixel for the sun and every punctual light (`punctual_lighting` takes it too), `raytrace.rchit.slang` once
