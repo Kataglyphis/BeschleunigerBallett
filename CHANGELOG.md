@@ -143,6 +143,17 @@ the GitHub releases themselves.
   2 s, which two QEMU frames outlast. `gui/DoubleClickWindow.hpp`'s `doubleClickWindow` drops the cap (still at least
   0.3 s), and `DoubleClickWindowUnit.OutlastsTheTwoFramesBetweenThePressesAtAnyFrameRate` holds it. A test-side
   widening cannot work: the editor rewrites the value before every `NewFrame`.
+- The GPU timings restart when new geometry arrives (the first load, a reload, `addModel`). The rolling averages and
+  the `KATAGLYPHIS_GPU_TIMING_JSON` export held the about 240 sky-only frames a Debug run draws while Dinosaurs
+  parses, against its six frames of the scene, so on llvmpipe Forward read 8-15 ms while the G-buffer, whose average
+  starts at the mode switch, read 510-635 ms. Per frame of the scene both cost about half a second there (Forward
+  525-545 ms, GBuffer 500-526 ms, DeferredLighting 11-16 ms), and a pipeline's first frame compiles it on llvmpipe
+  (Forward 1070 ms, GBuffer 1181 ms, DeferredLighting 1356 ms once). The half second is ASan's: in the Profile build
+  the passes cost 76, 66 and 10-11 ms, and ASan's runtime preloaded into it brings back the Debug numbers.
+  `GoldenRender.GpuTimingJsonDumpIsWrittenAndSane`
+  bounds the dump's frames by the frames drawn after the load. `gpu-timing-budgets.json`'s llvmpipe profile is
+  re-derived from frames of the scene: Main 747.9 ms, Forward 741.2, Post 4.6, ShadowCascades 2066.6 (was 23.0, 22.3,
+  5.7 and 35.9).
 
 ## [1.6.0] - 2026-11-20
 

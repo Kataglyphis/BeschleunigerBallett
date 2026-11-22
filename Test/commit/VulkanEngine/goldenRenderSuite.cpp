@@ -2073,6 +2073,7 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
       << "Stale dump at " << json_path << " could not be removed; the test would read a lie.";
 
     const ScopedGpuTimingJsonPath scoped_path(json_path.string());
+    constexpr int LOADED_FRAMES = 30;
 
     {
         EngineHarness harness;
@@ -2080,7 +2081,7 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
         harness.settings.scene.shadows_enabled = true;
 
         // Fresh query pools are unreadable until recorded once, so the first readbacks measure nothing.
-        harness.render_frames(30);
+        harness.render_frames(LOADED_FRAMES);
         ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while rendering.";
     }// the renderer's destructor writes the dump
 
@@ -2111,6 +2112,9 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
 
     EXPECT_GT(dump["frames_measured"].get<std::uint64_t>(), 0U)
       << "Timestamps are supported but no frame produced a valid sample: " << dump.dump(2);
+    // About 240 sky-only frames before Dinosaurs arrived once outweighed its six, so Forward read 60 times too cheap.
+    EXPECT_LE(dump["frames_measured"].get<std::uint64_t>(), static_cast<std::uint64_t>(LOADED_FRAMES) + 1U)
+      << "the dump counted frames drawn before the model arrived (the load frame is the one extra): " << dump.dump(2);
 
     // These are bracketed every frame, so absence means broken accumulation, not a disabled feature.
     for (const char *always_recorded : { "Main", "Forward", "Post" }) {
@@ -2155,6 +2159,7 @@ TEST(GoldenRender, GpuTimingSplitsMainIntoTheScopeThatDrew)
     const auto ms = [&timings](GpuTimedPass pass) { return timings.pass_ms[static_cast<size_t>(pass)]; };
     EXPECT_GE(ms(GpuTimedPass::Main), 0.0F);
     EXPECT_GE(ms(GpuTimedPass::Forward), 0.0F) << "a forward frame must time Forward";
+    const float forward_ms = ms(GpuTimedPass::Forward);
     EXPECT_LT(ms(GpuTimedPass::GBuffer), 0.0F) << "a forward frame timed a G-buffer pass";
     EXPECT_LT(ms(GpuTimedPass::DeferredLighting), 0.0F) << "a forward frame timed a lighting pass";
 
@@ -2167,8 +2172,10 @@ TEST(GoldenRender, GpuTimingSplitsMainIntoTheScopeThatDrew)
     EXPECT_LT(ms(GpuTimedPass::Forward), 0.0F) << "a deferred frame timed Forward";
     EXPECT_LT(ms(GpuTimedPass::RayTrace), 0.0F);
     EXPECT_LT(ms(GpuTimedPass::PathTrace), 0.0F);
-    GTEST_LOG_(INFO) << "deferred G-buffer " << ms(GpuTimedPass::GBuffer) << " ms, lighting "
-                     << ms(GpuTimedPass::DeferredLighting) << " ms; Main's average still holds forward frames";
+    // Both averages start at the model's arrival or the switch; llvmpipe compiles the deferred pair on first use.
+    GTEST_LOG_(INFO) << "forward " << forward_ms << " ms; deferred G-buffer " << ms(GpuTimedPass::GBuffer)
+                     << " ms, lighting " << ms(GpuTimedPass::DeferredLighting)
+                     << " ms; Main's average still holds forward frames";
 }
 
 // New samples every frame must make early frames differ and late frames converge (1/N running mean).

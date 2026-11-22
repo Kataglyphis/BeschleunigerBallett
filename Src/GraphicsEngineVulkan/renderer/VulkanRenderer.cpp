@@ -262,6 +262,8 @@ void Kataglyphis::VulkanRenderer::finishModelLoad() { refreshAfterSceneChange(tr
 
 void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLevel)
 {
+    // Frames before new geometry drew another scene: about 240 sky-only frames once outweighed six of Dinosaurs.
+    if (rebuildBottomLevel) { gpuTiming.restart(output.gpuTimings); }
     // Skipping any step leaves the model invisible or traced through stale descriptors.
     rebuildObjectDescriptions();
 

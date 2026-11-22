@@ -580,7 +580,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   shader made 256 tonemaps long moved every llvmpipe pass past its `max_ms`, but only Post past
   its share (0.45 against 0.20). Exit 1 over budget or a budgeted pass missing, 2 when the dump
   measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16, re-derived 2026-11-21 when
-  the sky moved into Forward); a host adds its own from five dumps, by the rule its entry records.
+  the sky moved into Forward and 2026-11-22 when timings started at the model's arrival); a host adds
+  its own from five dumps, by the rule its entry records, after a warm-up run on a cold shader cache.
 - **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
   `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module

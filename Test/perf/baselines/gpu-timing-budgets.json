@@ -3,19 +3,19 @@
   "hosts": {
     "wsl-aarch64-llvmpipe": {
       "device": "llvmpipe (LLVM 21.1.8, 256 bits) in the :latest CI image, aarch64 WSL2, 8 cores",
-      "measured": "2026-11-21, linux-debug-clang, 5 runs of 243-282 frames in one session, the sky drawn inside Forward since plan C2: Main 11.07-15.31 ms, Forward (nested in Main) 10.71-14.86, Post 3.00-3.76, ShadowCascades 19.91-23.90; shares of the top-level passes 0.32-0.36, 0.31-0.35, 0.08-0.09, 0.56-0.59. Until then (2026-11-16 and 2026-11-19) a Sky pass of 4.14-5.10 ms stood beside Main 7.43-10.57",
+      "measured": "2026-11-22, linux-debug-clang through run-ctest.sh --virtual-display, 5 runs in two sessions after a warm-up run that fills Mesa's shader cache, 3 frames each now that timings start at the model's arrival: Main 478.47-498.55 ms, Forward (nested in Main) 474.25-494.09, Post 2.69-3.02, ShadowCascades 1345.61-1377.68; shares of the top-level passes 0.26-0.27, 0.26-0.27, 0.00, 0.73-0.74. A cold cache compiles Forward inside its first frame (1028 and 1032 ms) and fails this budget. ASan, not the layer, makes these about 7 times the Profile build's (Forward 76 ms, ShadowCascades 180 in linux-profile-clang). Until then (2026-11-16 to 2026-11-21) about 240 sky-only frames drawn while Dinosaurs parsed held Main at 7.43-15.31 ms",
       "rule": "max_ms 1.5x the slowest run, max_share the largest share plus 0.1",
       "max_ms": {
-        "Forward": 22.3,
-        "Main": 23.0,
-        "Post": 5.7,
-        "ShadowCascades": 35.9
+        "Forward": 741.2,
+        "Main": 747.9,
+        "Post": 4.6,
+        "ShadowCascades": 2066.6
       },
       "max_share": {
-        "Forward": 0.45,
-        "Main": 0.46,
-        "Post": 0.19,
-        "ShadowCascades": 0.69
+        "Forward": 0.37,
+        "Main": 0.37,
+        "Post": 0.11,
+        "ShadowCascades": 0.84
       }
     }
   }

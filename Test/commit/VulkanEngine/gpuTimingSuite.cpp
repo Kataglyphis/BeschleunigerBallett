@@ -47,6 +47,16 @@ TEST(GpuTimingUnit, ResetClearsHistory)
     EXPECT_FLOAT_EQ(mean, 20.0F);
 }
 
+// New geometry restarts what the editor shows; a reading kept from the old scene would sit beside the new one's.
+TEST(GpuTimingUnit, RestartClearsEveryPublishedReading)
+{
+    FrontendShared::GpuTimings timings;
+    timings.pass_ms.fill(12.5F);
+    GpuTimingSubsystem subsystem;
+    subsystem.restart(timings);
+    for (const float pass_ms : timings.pass_ms) { EXPECT_EQ(pass_ms, -1.0F); }
+}
+
 // A zero-filled or mismatched pass table compiles fine but yields a null name or a silent 0.000 ms.
 TEST(GpuTimingTablesUnit, EveryPassHasBothADisplayAndAnExportName)
 {

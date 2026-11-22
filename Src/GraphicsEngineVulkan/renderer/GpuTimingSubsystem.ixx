@@ -118,6 +118,17 @@ class GpuTimingSubsystem
         gpu_timing_slice_recorded.assign(imageCount, false);
     }
 
+    // New geometry: the averages and the export restart, and slices recorded before it are never read.
+    void restart(FrontendShared::GpuTimings &timings)
+    {
+        for (float &pass_ms : timings.pass_ms) { pass_ms = -1.0F; }
+        for (auto &average : gpu_pass_averages) { average.reset(); }
+        gpu_timing_slice_recorded.assign(gpu_timing_slice_recorded.size(), false);
+        gpu_timing_export_sum_ms.fill(0.0);
+        gpu_timing_export_samples.fill(0U);
+        gpu_timing_export_frames = 0;
+    }
+
     void destroy()
     {
         if (gpu_timing_query_pool) {
@@ -338,7 +349,7 @@ class GpuTimingSubsystem
     // readTimings. Kept separate from GpuPassAverage on purpose: the GUI
     // wants a short smoothed window, the export wants the true mean over every
     // measured frame. Deliberately not reset on swapchain recreation - the
-    // queries restart, the run's statistics do not.
+    // queries restart, the run's statistics do not - only by restart().
     PassSums gpu_timing_export_sum_ms{};
     PassSamples gpu_timing_export_samples{};
     uint64_t gpu_timing_export_frames{ 0 };
