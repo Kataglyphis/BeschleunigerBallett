@@ -33,6 +33,12 @@ the GitHub releases themselves.
   `PipelineBuilder::setDebugName`, the compute pipelines after their SPIR-V entry (`clouds.clouds_main`) and the
   ray-tracing pipeline. Naming every other object is left for later. `VulkanInstance(false)` creates an instance
   without the layer, which `Integration.DebugLabelsAndNamesWorkWithoutTheValidationLayer` labels and names through.
+- `perfTestSuite` times each bridged OxidANT entry through cxx and `guarded()`; the Rust Criterion half is OxidANT's:
+  `BM_BridgeDefaultSceneSettings`, `BM_BridgeSettingRanges`, `BM_BridgeSanitize` (a NaN and a far value, so both of
+  its branches run), `BM_BridgeParityViewportRemap`, `BM_BridgeParityLens`, `BM_BridgeParityModelTransform` and
+  `BM_BridgeLoadGltfFlatWith` (`cube_textured.gltf`, the bridge call without `GltfLoader`'s copy into engine types).
+  Their `win-9070xt-32core.json` rows are labelled placeholders from the aarch64 WSL Profile build (5-32 ns, 14 us
+  for the load) until the RX 9070 XT host refreshes them.
 
 ### Changed
 

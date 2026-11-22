@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <random>
@@ -30,6 +31,10 @@
 
 // The engine's tinyobj build (ObjLoader.cpp); a second copy here would clash.
 #include "tiny_obj_loader.h"
+
+#include "oxidant_bridge/gltf.h"
+#include "oxidant_bridge/parity.h"
+#include "oxidant_bridge/settings.h"
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
@@ -503,6 +508,97 @@ void BM_UploadCpuHalf(benchmark::State &state)
                             * static_cast<int64_t>(range_vertices.size_bytes() + range_indices.size_bytes()));
 }
 BENCHMARK(BM_UploadCpuHalf)->Arg(64)->Arg(4096)->Arg(65536);
+
+// Each bridged OxidANT entry the engine calls, through cxx and guarded(), so a slower bridge shows beside the Rust half.
+
+namespace ox_settings = kataglyphis::oxidant::settings;
+namespace ox_parity = kataglyphis::oxidant::parity;
+namespace ox_gltf = kataglyphis::oxidant::gltf;
+
+void BM_BridgeDefaultSceneSettings(benchmark::State &state)
+{
+    for (auto _ : state) {
+        ox_settings::SceneSettings settings = ox_settings::default_scene_settings();
+        benchmark::DoNotOptimize(settings);
+    }
+}
+BENCHMARK(BM_BridgeDefaultSceneSettings);
+
+void BM_BridgeSettingRanges(benchmark::State &state)
+{
+    for (auto _ : state) {
+        ox_settings::SettingRanges ranges = ox_settings::setting_ranges();
+        benchmark::DoNotOptimize(ranges);
+    }
+}
+BENCHMARK(BM_BridgeSettingRanges);
+
+// A NaN takes the field's default and a far value its clamp, so both of sanitize's branches run.
+void BM_BridgeSanitize(benchmark::State &state)
+{
+    ox_settings::SceneSettings settings = ox_settings::default_scene_settings();
+    settings.clouds.density = std::numeric_limits<float>::quiet_NaN();
+    settings.clouds.coverage = 1.0e6F;
+    for (auto _ : state) {
+        ox_settings::SceneSettings sanitized = ox_settings::sanitize(settings);
+        benchmark::DoNotOptimize(sanitized);
+    }
+}
+BENCHMARK(BM_BridgeSanitize);
+
+void BM_BridgeParityViewportRemap(benchmark::State &state)
+{
+    const ox_parity::ViewportRect rect{ 0.2F, 0.05F, 0.8F, 0.75F };
+    for (auto _ : state) {
+        ox_parity::ViewportRemap remap = ox_parity::parity_viewport_remap(rect);
+        benchmark::DoNotOptimize(remap);
+    }
+}
+BENCHMARK(BM_BridgeParityViewportRemap);
+
+void BM_BridgeParityLens(benchmark::State &state)
+{
+    const ox_parity::Lens lens{
+        45.0F, 1200.0F / 768.0F, 0.1F, 150.0F, ox_parity::ViewportRect{ 0.2F, 0.05F, 0.8F, 0.75F }
+    };
+    for (auto _ : state) {
+        ox_parity::Matrix4 projection = ox_parity::parity_lens(lens);
+        benchmark::DoNotOptimize(projection);
+    }
+}
+BENCHMARK(BM_BridgeParityLens);
+
+void BM_BridgeParityModelTransform(benchmark::State &state)
+{
+    const ox_parity::ModelPose pose{ { 1.0F, -2.0F, 3.0F }, { 10.0F, 45.0F, -30.0F } };
+    for (auto _ : state) {
+        ox_parity::Matrix4 transform = ox_parity::parity_model_transform(pose);
+        benchmark::DoNotOptimize(transform);
+    }
+}
+BENCHMARK(BM_BridgeParityModelTransform);
+
+// The bridge call alone; BM_GltfLoaderParseCpu_CubeTextured adds GltfLoader's copy into engine types.
+void BM_BridgeLoadGltfFlatWith(benchmark::State &state)
+{
+    const std::string path = find_model("GltfTest/cube_textured.gltf");
+    if (path.empty()) {
+        skipWithError(state, "gltf model not found (run from the repo root)");
+        return;
+    }
+    const ox_gltf::GltfLoadOptions options{};
+    const auto *bytes = reinterpret_cast<const std::uint8_t *>(path.data());
+    for (auto _ : state) {
+        ox_gltf::GltfModel model =
+          ox_gltf::load_gltf_flat_with(rust::Slice<const std::uint8_t>(bytes, path.size()), options);
+        if (!model.ok) {
+            skipWithError(state, "load_gltf_flat_with reported an error");
+            return;
+        }
+        benchmark::DoNotOptimize(model.vertices.data());
+    }
+}
+BENCHMARK(BM_BridgeLoadGltfFlatWith)->Unit(benchmark::kMicrosecond);
 
 // record_commands per render mode, on the golden scene and camera; the GPU never runs what is recorded.
 
