@@ -75,8 +75,8 @@ float punctual_shadow_visibility(PunctualShadow shadow, float3 lightPos, float3 
 }
 
 // Every light; a light with a cube among the `shadowCubes` rendered this frame is shadowed by it.
-float3 punctual_lighting(
-    float3 worldPos, float3 n, float3 v, float3 albedo, float metallic, float roughness, float3 f0, uint shadowCubes)
+float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo, float metallic, float roughness, float3 f0,
+    float2 energy, uint shadowCubes)
 {
     float3 total = float3(0.0);
     uint count = punctual_light_count();
@@ -91,7 +91,7 @@ float3 punctual_lighting(
         if (shadow.slot >= 0 && uint(shadow.slot) < shadowCubes)
             visibility = punctual_shadow_visibility(shadow, light.position, worldPos, n, incidence.l);
         total += brdf_direct(n, v, incidence.l, albedo, metallic, roughness, f0,
-            light.radiance * incidence.attenuation * visibility);
+            light.radiance * incidence.attenuation * visibility, energy);
     }
     return total;
 }

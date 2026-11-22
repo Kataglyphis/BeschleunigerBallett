@@ -77,14 +77,16 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float lightIntensity = sceneUBO.dirLight.color.w;
 
     float3 f0 = lerp(float3(0.04), albedo, metallic);
+    // The fit once per fragment, not once per light: the sun and every punctual light share it.
+    float2 energy = ggx_energy(dot(N, V), roughness);
     float3 color = brdf_direct(N, V, L, albedo, metallic, roughness, f0,
-                               lightColor * lightIntensity);
+                               lightColor * lightIntensity, energy);
 
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
     color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
 
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
-    color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0, sceneUBO.punctualShadowCount);
+    color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);

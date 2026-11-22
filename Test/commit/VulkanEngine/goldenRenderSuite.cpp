@@ -2053,7 +2053,7 @@ TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
       mean_hdr_rgba_in_square(radiance, width, card_column(0.5F, DISTANCE, width, height), height / 2U, 12U);
     GTEST_LOG_(INFO) << "left quad (" << left.r << ", " << left.g << ", " << left.b << "), right quad (" << right.r
                      << ", " << right.g << ", " << right.b << ")";
-    // Dominance, not values: the metallic quads reflect a sky whose radiance the driver and the IBL bake decide.
+    // Dominance, not values: the metallic quads show only the sun's specular, whose radiance varies by driver.
     EXPECT_GT(left.r, 2.0 * std::max(left.g, left.b)) << "the left quad, material 0, does not draw red";
     EXPECT_GT(right.g, 2.0 * std::max(right.r, right.b)) << "the right quad, material 1, does not draw green";
 }

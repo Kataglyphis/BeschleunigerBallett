@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -278,6 +279,22 @@ TEST(GltfParseUnit, OxidantsFixtureSetHoldsEveryKindTheRoundTripChecks)
     for (const auto &[name, fact] : fixtureFacts()) { expected.push_back(name); }
     for (const std::string &name : expected) {
         EXPECT_NE(std::find(scanned.begin(), scanned.end(), name), scanned.end()) << name << " is not in the scan";
+    }
+}
+
+// The mesh weight 1.0 lifts the cube's every vertex by 1; the engine draws no morphs, so the bridge bakes the pose.
+TEST(GltfParseUnit, DefaultMorphWeightsArriveBakedIntoThePositions)
+{
+    GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(oxidantGltfFixture("cube_morph.gltf")));
+    const std::span<const Vertex> vertices = loader.getVertices();
+    ASSERT_EQ(vertices.size(), 24U);
+    const auto by_height = [](const Vertex &a, const Vertex &b) { return a.position.y < b.position.y; };
+    const auto [lowest, highest] = std::minmax_element(vertices.begin(), vertices.end(), by_height);
+    EXPECT_FLOAT_EQ(lowest->position.y, 0.5F) << "the neutral cube's floor at -0.5 was not lifted";
+    EXPECT_FLOAT_EQ(highest->position.y, 1.5F) << "the neutral cube's top at 0.5 was not lifted";
+    for (const Vertex &vertex : vertices) {
+        EXPECT_FLOAT_EQ(std::abs(vertex.position.x), 0.5F) << "the target moves along y alone";
     }
 }
 

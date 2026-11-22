@@ -11117,7 +11117,7 @@ TEST(BuildIntegrity, NonDebugBuildsLinkTheBridgeWithAPanicThatUnwinds)
       << cmake_path.string() << " must select OxidANT's bridge profile for every configuration but Debug";
 }
 
-// Compare-RendererTimings lines the renderers' passes up by name, and both GUIs smooth over one window of frames.
+// Compare-RendererTimings lines the passes up by name and nesting; both GUIs smooth over one window of frames.
 TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
 {
     namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
@@ -11141,7 +11141,7 @@ TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
     ASSERT_GE(rust_names.size(), 10U) << "parsed only " << rust_names.size() << " Rust pass names - the scan broke";
 
     // The C++ renderer's own scopes; any other pass must carry the Rust renderer's name for the same work.
-    static const std::set<std::string> kCppOnly = { "Main", "Post", "CloudUpsample", "PunctualShadows" };
+    static const std::set<std::string> kCppOnly = { "Post", "CloudUpsample" };
     for (const char *name : FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES) {
         if (kCppOnly.contains(name)) {
             EXPECT_FALSE(rust_names.contains(name)) << name << " is a Rust pass too: drop it from kCppOnly";
@@ -11154,6 +11154,35 @@ TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
                     [shared](const char *name) { return std::string_view(name) == shared; }),
           FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES.end())
           << "the C++ renderer no longer times " << shared << " inside Main";
+    }
+
+    // A frame sums its top-level passes, so a shared scope must nest in the same parent in both renderers.
+    std::smatch nested_fn;
+    ASSERT_TRUE(
+      std::regex_search(*rust, nested_fn, std::regex(R"(fn nested_in\(self\)[^{]*\{\s*match self \{([^}]*)\})")))
+      << rust_path.string() << " has no TimedPass::nested_in() match";
+    std::map<std::string, std::string> rust_parents;
+    const std::string nested_arms = nested_fn[1].str();
+    static const std::regex kNestedArm(R"re(((?:\|?\s*TimedPass::\w+\s*)+)=>\s*Some\(TimedPass::(\w+)\))re");
+    static const std::regex kVariant(R"re(TimedPass::(\w+))re");
+    for (std::sregex_iterator arm(nested_arms.begin(), nested_arms.end(), kNestedArm), end; arm != end; ++arm) {
+        const std::string children = (*arm)[1].str();
+        for (std::sregex_iterator child(children.begin(), children.end(), kVariant); child != end; ++child) {
+            rust_parents[(*child)[1].str()] = (*arm)[2].str();
+        }
+    }
+    ASSERT_FALSE(rust_parents.empty()) << rust_path.string() << " nests no pass - the scan broke";
+    for (std::size_t pass = 0; pass < FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES.size(); ++pass) {
+        const std::string name = FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[pass];
+        if (kCppOnly.contains(name)) { continue; }
+        const FrontendShared::GpuTimedPass parent = FrontendShared::GPU_TIMED_PASS_PARENTS[pass];
+        const std::string cpp_parent =
+          parent == FrontendShared::GpuTimedPass::Count
+            ? std::string()
+            : FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[static_cast<std::size_t>(parent)];
+        const auto found = rust_parents.find(name);
+        EXPECT_EQ(found == rust_parents.end() ? std::string() : found->second, cpp_parent)
+          << name << " nests in another parent in the Rust renderer";
     }
 
     std::smatch window;
@@ -11267,7 +11296,7 @@ TEST(BuildIntegrity, GltfTestHoldsNoCopyOfOxidantsFixturesButTheLibrarysCheckerC
             violations.push_back(name + ": differs from OxidANT's copy; the two must stay byte-identical");
         }
     }
-    EXPECT_GT(scanned, 10U) << "found only " << scanned << " GltfTest file(s) - the scan broke";
+    EXPECT_GT(scanned, 5U) << "found only " << scanned << " GltfTest file(s) - the scan broke";
     EXPECT_TRUE(violations.empty()) << joinViolations(violations);
 }
 

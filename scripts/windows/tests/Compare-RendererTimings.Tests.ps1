@@ -37,6 +37,8 @@ impl TimedPass {
     pub fn name(self) -> &'static str {
         match self {
             TimedPass::ShadowCascades => "ShadowCascades",
+            TimedPass::PunctualShadows => "PunctualShadows",
+            TimedPass::Main => "Main",
             TimedPass::Forward => "Forward",
             TimedPass::OcclusionCull => "OcclusionCull",
             TimedPass::Bloom => "Bloom",
@@ -49,7 +51,6 @@ impl TimedPass {
             TimedPass::Clouds => "Clouds",
             TimedPass::RayTrace => "RayTrace",
             TimedPass::PathTrace => "PathTrace",
-            TimedPass::TraceResolve => "TraceResolve",
             TimedPass::Fxaa => "Fxaa",
             TimedPass::DrawCull => "DrawCull",
         }
@@ -134,14 +135,22 @@ impl TimedPass {
     ($json.Rust -contains 'OcclusionCull') | Should Be $false
   }
 
-  It 'excludes the deferred, cloud, tracer and FXAA passes a forward timing run never records' {
+  It 'excludes the light shadow, deferred, histogram, cloud, tracer and FXAA passes a forward timing run never records' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
-    foreach ($pass in @('GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')) {
+    foreach ($pass in @('PunctualShadows', 'GBuffer', 'DeferredLighting', 'Histogram', 'Clouds', 'RayTrace', 'PathTrace', 'Fxaa')) {
       ($json.Rust -contains $pass) | Should Be $false
     }
-    ($json.Rust -join ',') | Should Be 'ShadowCascades,Forward,Bloom,Ssao,Histogram,ExposureReduce,Tonemap,DrawCull'
+    ($json.Rust -join ',') | Should Be 'ShadowCascades,Main,Forward,Bloom,Ssao,ExposureReduce,Tonemap,DrawCull'
+  }
+
+  It 'requires the Rust Main scope, which spans the scene draw as the C++ one does' {
+    $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
+    $result.ExitCode | Should Be 0
+    $json = $result.Output | ConvertFrom-Json
+    ($json.Rust -contains 'Main') | Should Be $true
+    ($json.Cpp -contains 'Main') | Should Be $true
   }
 
   It 'excludes the C++ CloudUpsample, PunctualShadows and Fxaa passes, which only some scenes record' {
@@ -201,17 +210,17 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   It 'passes -ValidationOnly when JSON is missing an optional pass but has every required one' {
     $outDir = Join-Path $script:tmpDir 'validation-ok'
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    # Every required Rust pass present, every optional one (OcclusionCull, deferred, clouds, tracer, FXAA) absent.
+    # Every required Rust pass present, every optional one (OcclusionCull, light shadows, deferred, histogram, clouds, tracer, FXAA) absent.
     @'
 {
   "frames_measured": 96,
   "timestamps_supported": true,
   "passes": {
     "ShadowCascades": 0.1,
+    "Main": 0.25,
     "Forward": 0.2,
     "Bloom": 0.3,
     "Ssao": 0.4,
-    "Histogram": 0.5,
     "ExposureReduce": 0.6,
     "Tonemap": 0.7,
     "DrawCull": 0.8
@@ -239,7 +248,39 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "timestamps_supported": true,
   "passes": {
     "ShadowCascades": 0.1,
+    "Main": 0.25,
     "Forward": 0.2,
+    "Ssao": 0.4,
+    "Histogram": 0.5,
+    "ExposureReduce": 0.6,
+    "Tonemap": 0.7,
+    "DrawCull": 0.8
+  }
+}
+'@ | Set-Content -Path (Join-Path $outDir 'gpu-timings-rust.json')
+
+    $scriptArgs = @(
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
+      '-ValidationOnly', '-OutDir', $outDir,
+      '-CppPassSourcePath', $script:cppFixturePath,
+      '-RustPassSourcePath', $script:rustFixturePath
+    )
+    & pwsh @scriptArgs | Out-Null
+    $LASTEXITCODE | Should Not Be 0
+  }
+
+  It 'fails -ValidationOnly on a Rust dump from before Main, whose scopes the C++ ones do not match' {
+    $outDir = Join-Path $script:tmpDir 'validation-no-main'
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+    # The split before 2026-11-21: light cubes inside ShadowCascades, TraceResolve on its own, no Main.
+    @'
+{
+  "frames_measured": 96,
+  "timestamps_supported": true,
+  "passes": {
+    "ShadowCascades": 0.1,
+    "Forward": 0.2,
+    "Bloom": 0.3,
     "Ssao": 0.4,
     "Histogram": 0.5,
     "ExposureReduce": 0.6,

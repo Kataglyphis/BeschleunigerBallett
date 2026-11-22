@@ -34,7 +34,8 @@ returned `GltfModel` alive through an untyped `std::shared_ptr` and views its
 vertices, indices, material ids and encoded images in place (`std::span` over
 `data()`/`size()`; `GltfVertex` and `Vertex` agree field by field): nothing is
 copied before the staging buffer, which for `Colosseum-gltf` was about 0.5 GB
-held twice at the parse's peak. Copies of a loader share the parse. It bakes world space, reverses a mirrored node's winding,
+held twice at the parse's peak. Copies of a loader share the parse. It bakes the default morph pose (the node's
+`weights`, else the mesh's) and world space, reverses a mirrored node's winding,
 gives a primitive without `NORMAL` one vertex per corner with its face's
 normal, keeps only the vertices a primitive's indices use, and hands textures
 over as the file's encoded bytes, deduped on `(image, sampler settings, srgb)`.
@@ -50,7 +51,9 @@ into the options once, through `gltfLoadOptionsFromEnvironment` (any non-empty
 value; empty counts as unset, as in OxidANT's viewer), and tests ask through the
 options. The fixtures both renderers load are OxidANT's
 `crates/assets/tests/assets`; `GltfFixtureRoundTrip.*` checks each one's
-mapping into `Vertex`, `MeshRange` and `ObjMaterial`.
+mapping into `Vertex`, `MeshRange` and `ObjMaterial`. What the parser decides
+(slots, material defaults, the scene walk) is tested in OxidANT's
+`crates/assets/tests/flat.rs`; `GltfParseUnit.*` keeps what the C++ side decides.
 
 An error, or a panic in any build, comes back as a failed parse, never an
 exception or an abort: every bridged call runs inside OxidANT's `guarded()`,

@@ -127,15 +127,17 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     float lightIntensity = sceneUBO_lighting.dirLight.color.w;
 
     float3 f0 = lerp(float3(0.04), albedo.rgb, metallic);
+    // The fit once per pixel, not once per light: the sun and every punctual light share it.
+    float2 energy = ggx_energy(dot(N, V), roughness);
     float3 color = brdf_direct(N, V, L, albedo.rgb, metallic, roughness, f0,
-                               lightColor * lightIntensity);
+                               lightColor * lightIntensity, energy);
 
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
     color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
 
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
     color += punctual_lighting(
-        worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0, sceneUBO_lighting.punctualShadowCount);
+        worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0, energy, sceneUBO_lighting.punctualShadowCount);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;

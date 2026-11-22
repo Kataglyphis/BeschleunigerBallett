@@ -128,13 +128,15 @@ void rchit_main(
     // Start from zero like forward and deferred: the engine has no ambient term to seed with albedo.
     payload.hit_value = float3(0.0);
     payload.is_hit = 1.0;
+    // The fit once per hit, not once per light: the sun and every punctual light share it.
+    float2 energy = ggx_energy(dot(N, V), roughness);
 
     if (!shadowed)
     {
         float3 f0 = lerp(float3(0.04), albedo, metallic);
         payload.hit_value += brdf_direct(
             N, V, L, albedo, metallic, roughness, f0,
-            lightColor * lightIntensity);
+            lightColor * lightIntensity, energy);
     }
 
     // Each punctual light with its own shadow ray, which stops short of the light.
@@ -149,7 +151,7 @@ void rchit_main(
         if (occluded(shadowOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
             continue;
         payload.hit_value += brdf_direct(N, V, incidence.l, albedo, metallic, roughness, f0Punctual,
-            light.radiance * incidence.attenuation);
+            light.radiance * incidence.attenuation, energy);
     }
 
     // Emissive is added after shadowing (emitted light is not shadowed); explicit LOD as above.

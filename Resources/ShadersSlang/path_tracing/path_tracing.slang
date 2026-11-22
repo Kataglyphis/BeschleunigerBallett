@@ -295,6 +295,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 shadingNormal = faceNormal;
             }
 
+            // The fit once per path vertex, after the normal is final: both lights and the bounce share it.
+            float2 energy = ggx_energy(dot(shadingNormal, V), roughness);
+
             // Offset along the normal against self-intersection.
             rayOrigin = hitWorldPosition + 0.0001 * faceNormal;
 
@@ -306,7 +309,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     // brdf_direct is raster's BRDF times n.l and the light, so an unshadowed hit matches forward's.
                     float3 lightRadiance = sceneUBO.dirLight.color.rgb * sceneUBO.dirLight.color.w;
-                    radiance += throughput * brdf_direct(shadingNormal, V, lightDir, albedo, metallic, roughness, f0, lightRadiance);
+                    radiance += throughput * brdf_direct(shadingNormal, V, lightDir, albedo, metallic, roughness, f0, lightRadiance, energy);
                 }
             }
 
@@ -321,12 +324,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                     && !occluded_inline(rayOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
                 {
                     float3 lightRadiance = light.radiance * incidence.attenuation * float(punctualCount);
-                    radiance += throughput * brdf_direct(shadingNormal, V, incidence.l, albedo, metallic, roughness, f0, lightRadiance);
+                    radiance += throughput * brdf_direct(shadingNormal, V, incidence.l, albedo, metallic, roughness, f0, lightRadiance, energy);
                 }
             }
 
             // One-sample MIS over both lobes, weighted by brdf_sampled's f * n.l over the mixture's density.
-            Bounce next = sample_bounce(shadingNormal, faceNormal, V, albedo, metallic, roughness, rngState);
+            Bounce next = sample_bounce(shadingNormal, faceNormal, V, albedo, metallic, roughness, energy, rngState);
             // A direction below either surface ends the path: past the triangle, a tilted normal would leak light.
             if (all(next.weight == float3(0.0)))
             {

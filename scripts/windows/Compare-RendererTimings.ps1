@@ -69,8 +69,8 @@ if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
     $cppAllPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
     $CppExpectedPasses = @($cppAllPasses | Where-Object { $_ -notin $CppOptionalPasses })
 }
-# dump_gpu_timings renders the forward path with clouds off and no tracer (FXAA on every frame since the 2026-11-21 pin, optional for older dumps); DrawCull runs every raster frame.
-$RustOptionalPasses = @('OcclusionCull', 'GBuffer', 'DeferredLighting', 'Clouds', 'RayTrace', 'PathTrace', 'TraceResolve', 'Fxaa')
+# dump_gpu_timings renders the forward path with clouds off, manual exposure (no Histogram), no tracer and no point or spot light (FXAA on every frame since the 2026-11-21 pin, optional for older dumps); DrawCull runs every raster frame.
+$RustOptionalPasses = @('OcclusionCull', 'PunctualShadows', 'GBuffer', 'DeferredLighting', 'Histogram', 'Clouds', 'RayTrace', 'PathTrace', 'Fxaa')
 if (-not $PSBoundParameters.ContainsKey('RustExpectedPasses')) {
     $rustAllPasses = Get-ExpectedPassNames -Engine Rust -Path $RustPassSourcePath
     $RustExpectedPasses = @($rustAllPasses | Where-Object { $_ -notin $RustOptionalPasses })

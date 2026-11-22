@@ -88,7 +88,10 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (E_spec(mu)) instead of `1 - F`, times `1 - metallic`, so a white surface
   returns all of a uniform sky. `ggx_energy` reads E_ss, split by Fresnel,
   from `common/brdf_energy_fit.slang`, a generated 14 x 14 cubic B-spline
-  fitted to `brdf_sampled`'s single-scatter albedo; both remaps take it.
+  fitted to `brdf_sampled`'s single-scatter albedo; both remaps take it. A
+  shading point evaluates it once, `ggx_energy(dot(n, v), roughness)`, and hands
+  it to `brdf_direct`, `brdf_sampled`, `brdf_smith_k` and `sample_bounce` as
+  `energy`, so a light costs no fit of its own.
 - `common/path_estimator.slang` — both path tracers' estimator: the PCG RNG
   and per-pixel seed (`rng_next`, `path_rng_seed`), Russian roulette
   (`russian_roulette_survives`) and `sample_bounce`, the one-sample MIS over

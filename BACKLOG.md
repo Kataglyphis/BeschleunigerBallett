@@ -44,7 +44,9 @@ No P0 item is open.
   GPU-timing goldens (`writeTimestamp2`, the nested scopes, sync-validated on llvmpipe only), the glTF and
   reload goldens over the in-place upload, the sky drawn into the HDR target in every mode, FXAA, the furnace
   and metallic goldens under multi-scatter GGX, and `Integration.SharedSlangKernelsMeetTheirVectors` (the
-  vector tolerances assume correctly rounded f32 sin and cos).
+  vector tolerances assume correctly rounded f32 sin and cos); since Phase 4 also
+  `MultiPrimitiveGltfLoadsAsMultipleMeshes`' pixel check, the shadow goldens and `Compare-RendererTimings.ps1`
+  over the Rust scopes re-cut as this engine's.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -96,47 +98,21 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Bridge foundations:
 
-- [ ] `C++` **Parser-behaviour twins in Rust only** (S, plan X5's remainder). `gltfParseSuite.cpp` still
-  tests behaviour of OxidANT's parser that `kataglyphis_assets` tests too. Pair each such case with its
-  Rust twin, delete the C++ copy and keep the cases that check the mapping into Mesh, MeshRange and
-  ObjMaterial; `GltfFixtureRoundTrip` already covers every fixture.
 - [ ] `Rust` **Criterion benchmarks for the renderer code behind the bridge** (M, plan X7's remainder;
   `benches/load_flat.rs` is done). QEM, the tile grid, the cascade fit and the BVH build, under the
   bench profile with fat LTO. BB adds a `BM_` row with a labelled placeholder baseline for each bridged
   entry: `default_scene_settings`, `setting_ranges`, `sanitize`, `parity_viewport_remap`, `parity_lens`,
   `parity_model_transform` and `load_gltf_flat_with` (Profile tree; `perfTestSuite` is not built in
   Debug).
-- [ ] `Rust` **The timed scopes cover the same work in both renderers** (S, plan I5's remainder). Since Phase
-  3 C++ times the sky inside Forward, DeferredLighting and RayTrace, as Rust does. Left: Rust's ShadowCascades
-  includes the punctual cube faces, which C++ times as PunctualShadows, and Rust times TraceResolve on its own
-  and has no Main; split Rust's the C++ way, so `Compare-RendererTimings.ps1` compares like with like.
-- [ ] `Shared` **Evaluate the GGX energy once per surface** (S). `brdf_smith_k` evaluates the 14x14 energy
-  spline on every call, so every punctual light pays 28 basis functions and 196 float2 FMAs
-  (`forward_lighting.slang`, `trace_shading.slang`, BB's `punctual_lights.slang`), and `ibl_ambient` evaluates
-  it in a ternary on the environment flag. Compute the energy once per surface and pass it in, branch on the
-  uniform flag, and measure the render suites on lavapipe before and after (multi-scatter GGX made them
-  1.2-1.35x slower).
 - [ ] `Shared` **Pick the path tracer's specular lobe by E_spec** (S). Owner 2026-11-21: `path_estimator`
   keeps the unbiased F(n.v) split for now; E_spec lowers variance but moves the noise of every path-traced
   golden in both renderers. Measure the variance gain on the furnace and shadow rigs first.
-- [ ] `C++` **A non-finite shadow distance or split lambda takes its default in the cascade math** (S). Owner
-  2026-11-20: NaN and ±inf fall back to a field's default everywhere; the bridged `sanitize` does so since
-  2026-11-20, but `CascadedShadowMapMath.cpp` turns a NaN distance into the far plane instead of 60 and passes
-  a NaN split lambda through `std::clamp`. A `cascadedShadowMapSuite` case per field, with a negative control.
-- [ ] `C++` **`MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels** (S). It counts meshes only
-  and passed with the in-place upload's index re-base zeroed; only
-  `BlendCardsCompositeInDepthOrderFromBothSides` caught that mutant. Check that the left quad draws red
-  and the right one green.
 
 Loader:
 
-- [ ] `Assets` **Bake glTF default morph weights in `flat.rs`** (S, plan B2). `cube_morph.gltf` has weight
-  1.0 and no animation: Rust draws it morphed, C++ neutral. Blend with `node.weights()` or `mesh.weights()`
-  through the existing `blend_morph_targets` before baking world space; a `flat.rs` position test and a
-  `GltfParseUnit` twin.
 - [ ] `Assets` **Bake the skin's rest pose in `flat.rs`** (M, plan B2). Owner rule 2026-11-19: a skinned
   node's own transform is ignored, as the glTF spec says, so `flat.rs` and
-  `GltfParseUnit.SkinnedNodeTransformIsIgnored` keep identity and the Rust renderer stops applying it to
+  its test `a_skinned_node_keeps_its_bind_pose_and_a_plain_one_moves` keep identity and the Rust renderer stops applying it to
   unweighted vertices. Moves `joint_matrices`, `skin_vertex` and `Pose` from the tracer into kataglyphis_assets.
 - [ ] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6). Tolerant like tinyobjloader (a bad line
   is skipped and reported) with one mesh per `usemtl` group, and Rust's material rules (owner 2026-11-19): d
@@ -445,6 +421,12 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 - **[P3] The GGX energy as a bound table.** A buffer or texture is the cheapest lookup per evaluation, but
   changes `brdf_direct`/`brdf_sampled` and adds bindings to two OxidANT and five BB pipelines; Slang's
   `var<private>` table cost lavapipe 2.3-2.9x. Only if the spline shows up on a device profile.
+
+- **[P3] Count BB's GGX energy evaluations in BuildIntegrity.** OxidANT's `tests/brdf.rs` counts `ggx_energy`
+  call sites in its WGSL since Phase 4; BB's `rasterizer`, `deferred`, `raytrace.rchit` and `path_tracing`
+  Slang evaluate it once each, guarded only by review. On lavapipe the hoist changed no frame time (LLVM had
+  already moved the fit out of the light loop), so the 1.2-1.35x cost of multi-scatter GGX is not per light; a
+  device profile would say where it is.
 
 ## Testing and performance
 

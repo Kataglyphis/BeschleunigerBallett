@@ -29,6 +29,20 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The C++ shaders evaluate the GGX energy fit once per shading point (OxidANT `d0433b1`'s `brdf_direct`,
+  `brdf_sampled`, `brdf_smith_k` and `sample_bounce` take it as `energy`): `rasterizer.slang` and `deferred.slang`
+  once per pixel for the sun and every punctual light (`punctual_lighting` takes it too), `raytrace.rchit.slang` once
+  per hit, `path_tracing.slang` once per path vertex for both NEE lights and the bounce. Each passes
+  `ggx_energy(dot(N, V), roughness)`, the value `brdf_smith_k` computed itself, so no frame should change.
+- `Compare-RendererTimings.ps1` compares the Rust renderer's scopes as this engine's (OxidANT `5e1d194`): its point
+  and spot light cubes time as `PunctualShadows`, apart from `ShadowCascades`; its `Main` spans whichever of
+  `Forward`, `GBuffer` + `DeferredLighting`, `RayTrace` or `PathTrace` drew; its traced kernels' scopes run through
+  their resolve, as this `RayTrace` spans its sky fill, so `TraceResolve` is gone. `$RustOptionalPasses` takes
+  `PunctualShadows` (a scene without a point or spot light records none) instead of `TraceResolve`, and `Histogram`,
+  which the Rust dump's default manual exposure never records, so a real dump failed validation; `Main` is required.
+  The Pester suite's Rust fixture follows, a dump without `Main` fails validation.
+  `BuildIntegrity.GpuTimingMatchesTheRustRenderersTaxonomy` keeps `Post` and `CloudUpsample` as the only C++ scopes
+  and checks that every shared scope nests in the same parent as the Rust `TimedPass::nested_in()` says.
 - The C++ sky goes into the HDR scene target (plan C2): OxidANT's `sky/sky.slang`, through its new `vs_vulkan_main`,
   draws at depth 1 under LessOrEqual, forward between the opaque and BLEND draws, deferred after its lighting pass, and
   in a ray-traced frame wherever the primary ray missed (alpha 0, where `tracedDepth` is 1); a path-traced frame keeps
@@ -75,12 +89,24 @@ the GitHub releases themselves.
   `create_directories(` or `directory_iterator(`, whose names contain "ec"; the row catches the one-argument throwing
   overloads, the iterator declaration and a bare `current_path()`, and `test-filesystem-pattern.sh` with a mutation
   recipe proves it.
+- A glTF's default morph pose reaches the C++ renderer (plan B2): OxidANT's `load_flat` blends the node's `weights`,
+  else the mesh's, into the vertices before world space, so `cube_morph.gltf` (mesh weight 1.0, no animation) draws
+  lifted by its target here as in the Rust renderer, which keeps blending from the neutral pose itself.
+  `GltfParseUnit.DefaultMorphWeightsArriveBakedIntoThePositions` reads the lifted cube through the bridge. OxidANT pin
+  to `7951bd0`, on OxidANT develop's `a02dcce`.
 - `GoldenRender.MultiPrimitiveGltfLoadsAsMultipleMeshes` checks its pixels: face-on to `two_primitives.gltf`, the left
   quad's mean radiance must be red-dominant and the right one's green-dominant (each channel over twice the others). The
   mesh count alone passed with the in-place upload's index re-base zeroed.
 
 ### Removed
 
+- 66 `GltfParseUnit` cases that tested OxidANT's parser rather than the mapping into `Vertex`, `MeshRange` and
+  `ObjMaterial` (plan X5): each has its twin in OxidANT's `crates/assets/tests/flat.rs`, 18 of them new there.
+  `gltfParseSuite.cpp` keeps the 18 cases the C++ side decides (the loader's views and moves, the parse result, the
+  sampler enums, shininess, the lights and their packing, the UTF-8 path, the `mask_card` fixture the goldens read,
+  the parity of the generated tangents with `computeTangents`), and `GltfFixtureRoundTrip.*` every fixture's mapping.
+- The four `GltfTest` fixtures only those cases read: `mask_card_hc`, `uv_transform_rotation_card`,
+  `uv_transform_slots_card` and `vertex_colored_quad`.
 - `Resources/ShadersSlang/tests/brdf_test.slang` and `noise_test.slang` and their manifest rows (plan X3): OxidANT's
   vector kernels of the same names replace them, and this engine's build compiles them through the imported manifest.
 - `skybox.slang`, the swapchain sky pass and its `sky` stage, post's sky rebuild under the clouds and its ACES inverse,
