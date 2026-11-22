@@ -545,7 +545,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   `VkLayer_khronos_validation.{dll,json}` (extractable from the ANTfrastructure image under
   `C:\Users\ContainerAdministrator\scoop\apps\vulkan\current\Bin`). Profile/Release builds run
   without validation layers unless `KATAGLYPHIS_VULKAN_VALIDATION` is set (the Windows x64 lane's
-  lavapipe step sets it, with the layer staged beside the suite).
+  lavapipe step sets it, with the layer staged beside the suite). They still enable
+  `VK_EXT_debug_utils` where the loader lists it, so captures keep the labels and object names.
 - The build copies the ASAN runtime DLL next to `GraphicsEngine.exe`, and the run helpers set
   `ASAN_OPTIONS` with a relative `log_path`
   ([why both](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md#windows-asan-note)).

@@ -17,6 +17,7 @@ module;
 
 module kataglyphis.vulkan.shader_helper;
 
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.device;
 import kataglyphis.shared.util.file_reader;
 
@@ -107,6 +108,11 @@ auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &dev
 
     handles.pipeline = vkCheck(
       device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo), pipelineErrorMessage);
+    // The SPIR-V file's stem, "clouds.clouds_main", is the entry point a capture shows.
+    const std::size_t slash = spvPath.find_last_of("/\\");
+    std::string name = spvPath.substr(slash == std::string::npos ? 0 : slash + 1);
+    if (name.ends_with(".spv")) { name.resize(name.size() - 4); }
+    debug::nameObject(device->getLogicalDevice(), handles.pipeline, name.c_str());
 
     device->getLogicalDevice().destroyShaderModule(shaderModule);
 

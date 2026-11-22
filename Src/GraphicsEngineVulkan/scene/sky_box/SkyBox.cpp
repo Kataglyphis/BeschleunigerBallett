@@ -320,6 +320,7 @@ void SkyBox::createGraphicsPipelines(vk::Format in_color_format, vk::Format in_d
                        .setDepthWrite(false)
                        .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
                        .setRenderingFormats({ colorFormat }, depthFormat)
+                       .setDebugName("raster sky")
                        .build(device->getLogicalDevice(),
                          pipelineLayout,
                          device->getPipelineCache(),
@@ -333,6 +334,7 @@ void SkyBox::createGraphicsPipelines(vk::Format in_color_format, vk::Format in_d
                        .setDepthTest(false)
                        .setDepthWrite(false)
                        .setRenderingFormats({ colorFormat })
+                       .setDebugName("traced sky")
                        .build(device->getLogicalDevice(),
                          pipelineLayout,
                          device->getPipelineCache(),

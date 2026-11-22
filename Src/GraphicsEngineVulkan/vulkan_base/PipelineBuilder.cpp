@@ -11,6 +11,8 @@ module;
 
 module kataglyphis.vulkan.pipeline_builder;
 
+import kataglyphis.vulkan.debug;
+
 Kataglyphis::PipelineBuilder::PipelineBuilder() = default;
 
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setShaderStages(
@@ -95,6 +97,12 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthClamp(bool e
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCulling(bool enable)
 {
     dynamic_culling = enable;
+    return *this;
+}
+
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDebugName(const char *name)
+{
+    debug_name = name;
     return *this;
 }
 
@@ -219,6 +227,8 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     const vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info =
       linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout);
 
-    return vkCheck(device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info), error_message)
-      .front();
+    const vk::Pipeline pipeline =
+      vkCheck(device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info), error_message).front();
+    if (debug_name != nullptr) { debug::nameObject(device, pipeline, debug_name); }
+    return pipeline;
 }

@@ -26,6 +26,13 @@ the GitHub releases themselves.
   over the files, so OxidANT's next module needs no edit here. OxidANT's `shader_vectors.rs` checks the WGSL of the
   same kernels against the same files. `lsanSuppressions.cpp` also names `glfwInit`: a test that only probes GLFW, as
   this one first did, finds libX11 unloaded by exit, so its known leak shows without an X11 frame.
+- `VK_EXT_debug_utils` whenever the loader lists it, not only with the validation layer (plan X8), so the
+  command-buffer labels reach Profile and Release captures. `debug::nameObject` names any vulkan.hpp handle: the
+  per-pass targets (the forward, deferred and G-buffer attachments, the FXAA intermediate, the path-tracing
+  accumulation, the traced depth) through the attachment helpers' new name argument, every graphics pipeline through
+  `PipelineBuilder::setDebugName`, the compute pipelines after their SPIR-V entry (`clouds.clouds_main`) and the
+  ray-tracing pipeline. Naming every other object is left for later. `VulkanInstance(false)` creates an instance
+  without the layer, which `Integration.DebugLabelsAndNamesWorkWithoutTheValidationLayer` labels and names through.
 
 ### Changed
 

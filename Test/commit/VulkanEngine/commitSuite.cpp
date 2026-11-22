@@ -1,5 +1,6 @@
 #include "EngineFrame.hpp"
 #include "GpuTestGuard.hpp"
+#include "common/ExtensionSupport.hpp"
 #include <gtest/gtest.h>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -9,6 +10,7 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
+#include <array>
 #include <cstdlib>
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
@@ -18,7 +20,9 @@
 #include <vector>
 
 import kataglyphis.vulkan.camera;
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
@@ -63,4 +67,48 @@ TEST(Integration, VulkanEngine)
     gui.reset();
     scene.reset();
     window.reset();
+}
+
+// Profile and Release create no validation layer; their captures still need the labels and the object names.
+TEST(Integration, DebugLabelsAndNamesWorkWithoutTheValidationLayer)
+{
+    SKIP_WITHOUT_GPU();
+
+    Kataglyphis::VulkanInstance instance(false);
+    const auto listed = vk::enumerateInstanceExtensionProperties();
+    ASSERT_EQ(listed.result, vk::Result::eSuccess);
+    const bool loader_lists = Kataglyphis::supportsExtension(listed.value, VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    EXPECT_EQ(instance.debugUtilsEnabled(), loader_lists) << "debug_utils must come on exactly where it is listed";
+    if (!loader_lists) { return; }
+
+    const auto physical_devices = instance.getVulkanInstance().enumeratePhysicalDevices();
+    ASSERT_EQ(physical_devices.result, vk::Result::eSuccess);
+    ASSERT_FALSE(physical_devices.value.empty());
+    const float priority = 1.0F;
+    const vk::DeviceQueueCreateInfo queue_info({}, 0, 1, &priority);
+    vk::DeviceCreateInfo device_info{};
+    device_info.queueCreateInfoCount = 1;
+    device_info.pQueueCreateInfos = &queue_info;
+    const auto created = physical_devices.value.front().createDevice(device_info);
+    ASSERT_EQ(created.result, vk::Result::eSuccess);
+    const vk::Device device = created.value;
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(device);
+
+    EXPECT_TRUE(Kataglyphis::debug::labelsAvailable()) << "the label calls would no-op in a Profile or Release frame";
+    const auto pool = device.createCommandPool(vk::CommandPoolCreateInfo({}, 0));
+    ASSERT_EQ(pool.result, vk::Result::eSuccess);
+    const auto buffers =
+      device.allocateCommandBuffers(vk::CommandBufferAllocateInfo(pool.value, vk::CommandBufferLevel::ePrimary, 1));
+    ASSERT_EQ(buffers.result, vk::Result::eSuccess);
+    const vk::CommandBuffer command_buffer = buffers.value.front();
+    ASSERT_EQ(command_buffer.begin(vk::CommandBufferBeginInfo{}), vk::Result::eSuccess);
+    {
+        const Kataglyphis::debug::ScopedCmdLabel label(command_buffer, "probe", { 1.0F, 1.0F, 1.0F, 1.0F });
+    }
+    EXPECT_EQ(command_buffer.end(), vk::Result::eSuccess);
+    EXPECT_TRUE(Kataglyphis::debug::nameObject(device, command_buffer, "debug-utils probe"));
+    EXPECT_TRUE(Kataglyphis::debug::nameObject(device, pool.value, "debug-utils probe pool"));
+
+    device.destroyCommandPool(pool.value);
+    device.destroy();
 }

@@ -264,6 +264,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
         .setRenderingFormats({}, depth_format)
         // Multiview draws to every cascade layer at once; features11.multiview is requested at device creation.
         .setViewMask(cascadeViewMask())
+        .setDebugName("shadow cascades")
         .build(device->getLogicalDevice(),
           pipelineLayout,
           device->getPipelineCache(),

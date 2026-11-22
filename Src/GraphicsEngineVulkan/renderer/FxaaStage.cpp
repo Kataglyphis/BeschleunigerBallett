@@ -79,7 +79,8 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::createFrameResources()
           device,
           extent,
           vulkanSwapChain->getSwapChainFormat(),
-          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+          "fxaa intermediate");
         intermediates[i] = std::move(texture);
     }
 
@@ -138,6 +139,7 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::createPipeline()
                  .setDepthTest(false)
                  .setDepthWrite(false)
                  .setRenderingFormats({ vulkanSwapChain->getSwapChainFormat() })
+                 .setDebugName("fxaa")
                  .build(device->getLogicalDevice(),
                    pipelineLayout,
                    device->getPipelineCache(),

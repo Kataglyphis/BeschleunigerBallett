@@ -2,6 +2,7 @@ module;
 
 #include "spdlog/spdlog.h"
 #include <array>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -89,7 +90,7 @@ void freeDebugCallback(vk::Instance instance)
 
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
 {
-    // debug_utils is enabled only with the validation layers; otherwise the dispatcher pointer is null.
+    // Null when the instance enabled no debug_utils, as on a loader that does not list it.
     if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT == nullptr) { return; }
 
     vk::DebugUtilsLabelEXT label{};
@@ -105,5 +106,24 @@ void endCmdLabel(vk::CommandBuffer commandBuffer)
 {
     if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT == nullptr) { return; }
     commandBuffer.endDebugUtilsLabelEXT();
+}
+
+bool labelsAvailable()
+{
+    return VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT != nullptr
+           && VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT != nullptr
+           && VULKAN_HPP_DEFAULT_DISPATCHER.vkSetDebugUtilsObjectNameEXT != nullptr;
+}
+
+bool setObjectName(vk::Device device, vk::ObjectType type, std::uint64_t handle, const char *name)
+{
+    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkSetDebugUtilsObjectNameEXT == nullptr || !device || handle == 0U) {
+        return false;
+    }
+    vk::DebugUtilsObjectNameInfoEXT info{};
+    info.objectType = type;
+    info.objectHandle = handle;
+    info.pObjectName = name;
+    return device.setDebugUtilsObjectNameEXT(info) == vk::Result::eSuccess;
 }
 }// namespace Kataglyphis::debug

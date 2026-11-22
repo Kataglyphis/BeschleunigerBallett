@@ -7,6 +7,7 @@ module;
 
 export module kataglyphis.vulkan.depth_attachment;
 
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
 
@@ -26,7 +27,8 @@ vk::Format createDepthAttachment(Texture &target,
   const std::shared_ptr<VulkanDevice> &device,
   vk::Extent2D extent,
   vk::ImageUsageFlags extraUsage,
-  vk::ImageAspectFlags viewAspect)
+  vk::ImageAspectFlags viewAspect,
+  const char *debugName)
 {
     vk::Format format = chooseDepthFormat(device->getPhysicalDevice());
 
@@ -40,6 +42,8 @@ vk::Format createDepthAttachment(Texture &target,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     target.createImageView(device, format, viewAspect, 1);
+    debug::nameObject(device->getLogicalDevice(), target.getImage(), debugName);
+    debug::nameObject(device->getLogicalDevice(), target.getImageView(), debugName);
 
     return format;
 }

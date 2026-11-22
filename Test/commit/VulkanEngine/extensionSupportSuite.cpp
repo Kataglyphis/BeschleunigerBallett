@@ -69,6 +69,18 @@ TEST(ExtensionSupportUnit, EmptyAvailableListFindsNothing)
     EXPECT_STREQ(missing, "VK_KHR_swapchain");
 }
 
+// The labels and object names reach Profile and Release captures only if their instance enables debug_utils too.
+TEST(ExtensionSupportUnit, DebugUtilsComesOnWhereverListedAndAlwaysWithValidation)
+{
+    const std::array<vk::ExtensionProperties, 2> listed = { makeExtension("VK_KHR_surface"),
+        makeExtension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME) };
+    const std::array<vk::ExtensionProperties, 1> unlisted = { makeExtension("VK_KHR_surface") };
+    EXPECT_TRUE(Kataglyphis::enablesDebugUtils(listed, false)) << "an instance without the layer lost its labels";
+    EXPECT_FALSE(Kataglyphis::enablesDebugUtils(unlisted, false)) << "an unlisted extension fails vkCreateInstance";
+    EXPECT_TRUE(Kataglyphis::enablesDebugUtils(listed, true));
+    EXPECT_TRUE(Kataglyphis::enablesDebugUtils(unlisted, true)) << "the validation messenger needs debug_utils";
+}
+
 TEST(ExtensionSupportUnit, SupportsLayerFindsExactMatchOnly)
 {
     std::array<vk::LayerProperties, 1> available = { makeLayer("VK_LAYER_KHRONOS_validation") };

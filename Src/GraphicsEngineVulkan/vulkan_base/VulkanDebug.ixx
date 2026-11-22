@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <cstdint>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.debug;
@@ -10,11 +11,24 @@ extern int validationLayerCount;
 extern const char *validationLayerNames[];
 
 // Command-buffer debug label helpers (VK_EXT_debug_utils). All of them
-// no-op when the extension is absent (e.g. Release builds without
-// validation layers): they check the dynamically dispatched function
-// pointers before use.
+// no-op when the instance did not enable the extension (its loader lists
+// none): they check the dynamically dispatched function pointers before use.
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color);
 void endCmdLabel(vk::CommandBuffer commandBuffer);
+
+// True once an instance enabled debug_utils, with or without the validation layer.
+bool labelsAvailable();
+
+// Names an object for captures and validation messages; false when debug_utils is off or the driver refused.
+bool setObjectName(vk::Device device, vk::ObjectType type, std::uint64_t handle, const char *name);
+
+// Any vulkan.hpp handle type; a null handle has nothing to name.
+template<typename Handle> bool nameObject(vk::Device device, Handle handle, const char *name)
+{
+    if (!handle) { return false; }
+    return setObjectName(
+      device, Handle::objectType, reinterpret_cast<std::uint64_t>(static_cast<typename Handle::CType>(handle)), name);
+}
 
 // RAII wrapper so early returns cannot leave a label region open.
 class ScopedCmdLabel

@@ -69,36 +69,46 @@ void DeferredRasterizer::createTextures()
     gBufferMaterials.resize(count);
 
     const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
-    auto createAttachment =
-      [&](std::vector<std::unique_ptr<Texture>> &textures, vk::Format format, vk::ImageUsageFlags usage) {
-          for (uint32_t i = 0; i < count; i++) {
-              auto tex = std::make_unique<Texture>();
-              createColorAttachment(*tex, device, extent, format, usage);
-              textures[i] = std::move(tex);
-          }
-      };
+    auto createAttachment = [&](std::vector<std::unique_ptr<Texture>> &textures,
+                              vk::Format format,
+                              vk::ImageUsageFlags usage,
+                              const char *name) {
+        for (uint32_t i = 0; i < count; i++) {
+            auto tex = std::make_unique<Texture>();
+            createColorAttachment(*tex, device, extent, format, usage, name);
+            textures[i] = std::move(tex);
+        }
+    };
 
     // Use specific formats for GBuffer
     createAttachment(offscreenTextures,
       FINAL_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-        | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
+        | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
+      "deferred hdr");
     // Sampled, no position target: the lighting pass texel-fetches these and rebuilds position from depth.
     createAttachment(gBufferNormals,
       GBUFFER_NORMAL_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+      "g-buffer normal");
     createAttachment(gBufferAlbedos,
       GBUFFER_ALBEDO_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+      "g-buffer albedo");
     createAttachment(gBufferMaterials,
       GBUFFER_MATERIAL_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled);
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+      "g-buffer material");
 
     // No transition here: recordCommands() performs the first one from eUndefined every frame.
     depthBufferImage = std::make_unique<Texture>();
     // Sampled view: exactly one aspect, not depthStencilTransitionAspect. See its doc comment.
-    depth_format = createDepthAttachment(
-      *depthBufferImage, device, extent, vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eDepth);
+    depth_format = createDepthAttachment(*depthBufferImage,
+      device,
+      extent,
+      vk::ImageUsageFlagBits::eSampled,
+      vk::ImageAspectFlagBits::eDepth,
+      "deferred depth");
 }
 
 void DeferredRasterizer::createPushConstantRange()
@@ -193,6 +203,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
         // Dynamic, so doubleSided meshes skip culling and mirrored models flip their winding here too.
         .setDynamicCulling(true)
         .setRenderingFormats({ GBUFFER_NORMAL_FORMAT, GBUFFER_ALBEDO_FORMAT, GBUFFER_MATERIAL_FORMAT }, depth_format)
+        .setDebugName("g-buffer")
         .build(device->getLogicalDevice(), geometryPipelineLayout, device->getPipelineCache());
 
     // BLEND has no G-buffer encoding: it is shaded forward over the lit result, as the Rust renderer does.
@@ -218,6 +229,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
                          .setDepthWrite(false)
                          // No depth attachment: the lighting pass samples the geometry pass's depth instead.
                          .setRenderingFormats({ FINAL_FORMAT })
+                         .setDebugName("deferred lighting")
                          .build(device->getLogicalDevice(), lightingPipelineLayout, device->getPipelineCache());
 }
 

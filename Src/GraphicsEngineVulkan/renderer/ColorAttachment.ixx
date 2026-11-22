@@ -5,6 +5,7 @@ module;
 
 export module kataglyphis.vulkan.color_attachment;
 
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
 
@@ -26,7 +27,8 @@ void createColorAttachment(Texture &target,
   const std::shared_ptr<VulkanDevice> &device,
   vk::Extent2D extent,
   vk::Format format,
-  vk::ImageUsageFlags usage)
+  vk::ImageUsageFlags usage,
+  const char *debugName)
 {
     target.createImage(device,
       extent.width,
@@ -38,6 +40,8 @@ void createColorAttachment(Texture &target,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     target.createImageView(device, format, vk::ImageAspectFlagBits::eColor, 1);
+    debug::nameObject(device->getLogicalDevice(), target.getImage(), debugName);
+    debug::nameObject(device->getLogicalDevice(), target.getImageView(), debugName);
 }
 
 }// namespace Kataglyphis::VulkanRendererInternals

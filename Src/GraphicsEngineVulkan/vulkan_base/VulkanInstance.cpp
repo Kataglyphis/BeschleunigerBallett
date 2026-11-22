@@ -16,12 +16,28 @@ module kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.debug;
 
-Kataglyphis::VulkanInstance::VulkanInstance()
+namespace {
+std::vector<vk::ExtensionProperties> listedInstanceExtensions()
+{
+    auto extensions_result = vk::enumerateInstanceExtensionProperties();
+    if (extensions_result.result != vk::Result::eSuccess) {
+        spdlog::warn(
+          "vkEnumerateInstanceExtensionProperties failed (result {}); treating as no supported "
+          "instance extensions.",
+          static_cast<int>(extensions_result.result));
+    }
+    return extensions_result.value;
+}
+}// namespace
+
+Kataglyphis::VulkanInstance::VulkanInstance() : VulkanInstance(Kataglyphis::validationLayersEnabled()) {}
+
+Kataglyphis::VulkanInstance::VulkanInstance(bool validation) : validation_enabled(validation)
 {
     static vk::detail::DynamicLoader dl;
     VULKAN_HPP_DEFAULT_DISPATCHER.init(dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
 
-    if (Kataglyphis::validationLayersEnabled() && !check_validation_layer_support()) {
+    if (validation_enabled && !check_validation_layer_support()) {
         spdlog::error("Validation layers requested, but not available!");
     }
 
@@ -41,7 +57,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     create_info.pApplicationInfo = &app_info;
 
     // add validation layers IF enabled to the creeate info struct
-    if (Kataglyphis::validationLayersEnabled()) {
+    if (validation_enabled) {
         create_info.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         create_info.ppEnabledLayerNames = validationLayers.data();
 
@@ -63,7 +79,8 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     // Add GLFW extensions to list of extensions
     for (size_t i = 0; i < glfw_extensions_count; i++) { instance_extensions.push_back(glfw_extensions[i]); }
 
-    if (Kataglyphis::validationLayersEnabled()) { instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); }
+    debug_utils_enabled = enablesDebugUtils(listedInstanceExtensions(), validation_enabled);
+    if (debug_utils_enabled) { instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); }
 
     // check instance extensions supported
     if (!check_instance_extension_support(instance_extensions)) {
@@ -79,7 +96,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 
-    if (Kataglyphis::validationLayersEnabled()) {
+    if (validation_enabled) {
         debug::setupDebugging(
           instance, vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning, nullptr);
     }
@@ -106,14 +123,7 @@ auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::span<const char *const> check_extensions)
   -> bool
 {
-    auto extensions_result = vk::enumerateInstanceExtensionProperties();
-    if (extensions_result.result != vk::Result::eSuccess) {
-        spdlog::warn(
-          "vkEnumerateInstanceExtensionProperties failed (result {}); treating as no supported "
-          "instance extensions.",
-          static_cast<int>(extensions_result.result));
-    }
-    std::vector<vk::ExtensionProperties> extensions = extensions_result.value;
+    const std::vector<vk::ExtensionProperties> extensions = listedInstanceExtensions();
 
     const char *missing = firstMissingExtension(extensions, check_extensions);
     if (missing != nullptr) {

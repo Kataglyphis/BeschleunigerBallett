@@ -21,6 +21,7 @@
 
 module kataglyphis.vulkan.raytracing;
 
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.swapchain;
 
@@ -195,6 +196,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
       &graphicsPipeline,
       VULKAN_HPP_DEFAULT_DISPATCHER);
     vkCheck(result2, "Failed to create raytracing pipeline!");
+    debug::nameObject(device->getLogicalDevice(), graphicsPipeline, "raytracing");
 
     device->getLogicalDevice().destroyShaderModule(raygen_shader_module);
     device->getLogicalDevice().destroyShaderModule(raymiss_shader_module);

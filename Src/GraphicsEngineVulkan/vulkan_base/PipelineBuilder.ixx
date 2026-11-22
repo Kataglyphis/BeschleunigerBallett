@@ -90,6 +90,8 @@ class PipelineBuilder
     // keeps its static state. Used by the forward and deferred geometry passes:
     // doubleSided glTF meshes skip culling, mirrored models wind clockwise.
     PipelineBuilder &setDynamicCulling(bool enable);
+    // What captures and validation messages call the pipeline; build() names it when debug_utils is on.
+    PipelineBuilder &setDebugName(const char *name);
 
     // Assembles every sub-state build() needs without touching a vk::Device -
     // see GraphicsPipelineState. Pair with linkGraphicsPipelineCreateInfo to
@@ -125,5 +127,6 @@ class PipelineBuilder
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
     bool depth_clamp = false;
     bool dynamic_culling = false;
+    const char *debug_name = nullptr;
 };
 }// namespace Kataglyphis

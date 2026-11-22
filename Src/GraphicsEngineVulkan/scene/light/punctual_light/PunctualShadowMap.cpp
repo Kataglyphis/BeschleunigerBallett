@@ -214,6 +214,7 @@ void PunctualShadowMaps::buildGraphicsPipeline()
         .setCullMode(vk::CullModeFlagBits::eNone)
         .setRenderingFormats({}, depthFormat)
         .setViewMask(kCubeViewMask)
+        .setDebugName("punctual shadows")
         .build(device->getLogicalDevice(),
           pipelineLayout,
           device->getPipelineCache(),

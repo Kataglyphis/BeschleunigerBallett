@@ -1448,8 +1448,12 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     pathTracingAccumulation.cleanUp();
 
     vk::Extent2D const extent = vulkanSwapChain.getSwapChainExtent();
-    Kataglyphis::VulkanRendererInternals::createColorAttachment(
-      pathTracingAccumulation, device, extent, vk::Format::eR32G32B32A32Sfloat, vk::ImageUsageFlagBits::eStorage);
+    Kataglyphis::VulkanRendererInternals::createColorAttachment(pathTracingAccumulation,
+      device,
+      extent,
+      vk::Format::eR32G32B32A32Sfloat,
+      vk::ImageUsageFlagBits::eStorage,
+      "path-tracing accumulation");
 
     // Storage images stay in eGeneral for their whole lifetime.
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
@@ -1482,7 +1486,8 @@ void Kataglyphis::VulkanRenderer::createTracedDepthResources()
       device,
       vulkanSwapChain.getSwapChainExtent(),
       vk::Format::eR32Sfloat,
-      vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled);
+      vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled,
+      "traced depth");
 
     // RT/PT write it as a storage image and the clouds sample it, so it stays in eGeneral.
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(

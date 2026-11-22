@@ -77,6 +77,7 @@ auto Kataglyphis::VulkanRendererInternals::buildTransparentScenePipeline(const s
       .setDepthWrite(false)
       .setDynamicCulling(true)
       .setRenderingFormats({ color_format }, depth_format)
+      .setDebugName("transparent")
       .build(device->getLogicalDevice(), layout, device->getPipelineCache());
 }
 
@@ -269,7 +270,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
           swap_chain_extent,
           OFFSCREEN_FORMAT,
           vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-            | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc);
+            | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
+          "forward hdr");
 
         offscreenTextures[index] = std::move(texture);
     }
@@ -281,8 +283,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
       depthStencilTransitionAspect(chooseDepthFormat(device->getPhysicalDevice()));
 
     // Sampled view: exactly one aspect, not depth_aspect_flags. See depthStencilTransitionAspect's doc comment.
-    depth_format = createDepthAttachment(
-      *depthBufferImage, device, swap_chain_extent, vk::ImageUsageFlagBits::eSampled, vk::ImageAspectFlagBits::eDepth);
+    depth_format = createDepthAttachment(*depthBufferImage,
+      device,
+      swap_chain_extent,
+      vk::ImageUsageFlagBits::eSampled,
+      vk::ImageAspectFlagBits::eDepth,
+      "forward depth");
 
     // This overload submits and waits on its own command buffer.
     VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();
@@ -327,6 +333,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         // Dynamic, so doubleSided glTF meshes skip back-face culling and mirrored models flip their winding per draw.
         .setDynamicCulling(true)
         .setRenderingFormats({ OFFSCREEN_FORMAT }, depth_format)
+        .setDebugName("forward")
         .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 
     transparent_pipeline = buildTransparentScenePipeline(device, pipeline_layout, OFFSCREEN_FORMAT, depth_format);

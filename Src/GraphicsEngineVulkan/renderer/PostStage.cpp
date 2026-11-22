@@ -195,5 +195,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
                           .setDepthTest(false)
                           .setDepthWrite(false)
                           .setRenderingFormats({ vulkanSwapChain->getSwapChainFormat() })
+                          .setDebugName("post")
                           .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 }
