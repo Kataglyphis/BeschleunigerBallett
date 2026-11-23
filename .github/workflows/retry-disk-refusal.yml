@@ -1,0 +1,25 @@
+# Re-runs only a job prepare-linux-ci-host refused for disk. See third_party/ANTfrastructure/.github/actions/README.md#retry-disk-refusal
+name: CI · retry a runner disk refusal
+
+on:
+  workflow_run:
+    # The lanes whose jobs pull the image through prepare-linux-ci-host; on-request.yml carries the arm64 and riscv64 lanes.
+    workflows:
+      - "Linux x64 · build + test"
+      - "On request · [ci <lane>] in a commit message"
+      - "Release · every lane, then v<version>"
+    types: [completed]
+
+permissions:
+  actions: write
+  checks: read
+  contents: read
+
+jobs:
+  retry:
+    name: Re-run a job refused for disk
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: Kataglyphis/ANTfrastructure/.github/actions/retry-disk-refusal@develop

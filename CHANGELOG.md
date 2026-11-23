@@ -14,6 +14,12 @@ the GitHub releases themselves.
 
 ### Added
 
+- `security-audit.yml` calls the hub's lockfile audit: osv-scanner over `uv.lock`, where a new HIGH or CRITICAL
+  advisory fails a push (a planted pyyaml 5.3 did) and the Monday run reports every one. `retry-disk-refusal.yml`
+  re-runs a Linux x64, on-request or release job that `prepare-linux-ci-host` refused for disk. The code quality
+  measurements grade the tree with `quality-report: true`, and `quality-report.toml` names the docs toctree, without
+  which that run was incomplete. The lint gates enforce all four workflow conventions (`sha-pin`, `permissions`,
+  `job-timeout`, `artifact-error`), each at 0 findings, in CI and in `run-lint-gates.sh`.
 - The hub's hardening gates read the shipped binaries (CON294): the Linux release job runs `verify-elf-hardening.sh`
   on the .deb's `usr/lib/graphicsengine/GraphicsEngine`, and `Build-Windows.ps1` runs `Assert-PeHardening` over every
   `.exe` and `.dll` of the portable bundle, in both Windows lanes. On the binaries of runs 45001331996 and

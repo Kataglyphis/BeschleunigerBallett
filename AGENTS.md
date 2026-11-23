@@ -705,6 +705,8 @@ opt-ins before that are gone. Linux x64 still skips a docs-only commit through `
 | --- | --- | --- |
 | Lint gates (`lint` + `powershell-lint`) | `lint-gates.yml` — `lint` is one `uses:` of ANTfrastructure's reusable lane, with `ratchets: true` | always, **including docs-only commits** — no `paths-ignore` |
 | Submodule pins | `submodule-pins.yml` — one `uses:` of ANTfrastructure's reusable lane | always, no `paths-ignore` |
+| Security audit (osv-scanner over `uv.lock`; a new HIGH or CRITICAL advisory fails a push) | `security-audit.yml` — one `uses:` of ANTfrastructure's reusable lane | push and PR on `main`/`develop`, Mondays 07:50 UTC (report only), by hand |
+| Code quality measurements (`quality-report.sh` against the newest develop record; a regression is reported, an incomplete run fails) | `code-quality-report.yml` — one `uses:` of ANTfrastructure's reusable lane, with `quality-report: true` | every push and PR |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
 | Linux x86_64 GUI input sweep (`gui-sweep`: the debug build, then only `GuiInputSweepNeverCrashesOrLosesTheDevice` on llvmpipe) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gui-sweep`; skips every other job of the lane |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
@@ -969,8 +971,12 @@ The workflows here are mostly wiring. The steps come from composite actions pull
 ANTfrastructure's `develop` branch (owner directive 2026-09-25; `main` lags it and still names the
 retired `:latest-cross` image): `prepare-linux-ci-host`, `run-in-linux-container`,
 `compiler-cache-restore`, `compiler-cache-save`, `clean-host-package-check`, `requested-lanes`,
-`run-pester-suite`; and from five of its reusable workflows (`lint-gates.yml`,
-`submodule-pins.yml`, `container-ci-windows.yml`, `container-ci-riscv64.yml`, `build-docs.yml`).
+`run-pester-suite`, `retry-disk-refusal`; and from its reusable workflows (`lint-gates.yml`,
+`submodule-pins.yml`, `container-ci-windows.yml`, `container-ci-riscv64.yml`, `build-docs.yml`,
+`security-audit.yml`, `code-quality-report.yml`, among others).
+`retry-disk-refusal.yml` re-runs a job of the Linux x64, on-request or release run that
+`prepare-linux-ci-host` refused for disk, and nothing else
+([the action](third_party/ANTfrastructure/.github/actions/README.md#retry-disk-refusal)).
 **There is no pin: a push to ANTfrastructure `develop` changes this repo's CI on the next run**,
 which is why both repos ship together with ANTfrastructure first (the rule above). A lane failing in
 a step whose `uses:` points at ANTfrastructure is defined there: read the action or workflow there.
@@ -1001,7 +1007,9 @@ proves a workflow is valid YAML, not valid Actions, and a bash quoting or undefi
 only surfaces when that line runs, an hour into a gcc build.
 
 - **`lint` is one `uses:` line** onto the lane ANTfrastructure publishes as a `workflow_call`
-  workflow, with `submodules: 'recursive'` (the hub's default) and `ratchets: true`.
+  workflow, with `submodules: 'recursive'` (the hub's default) and `ratchets: true`. Its
+  `workflow-conventions` enforces all four of the hub's conventions (`sha-pin`, `permissions`,
+  `job-timeout`, `artifact-error`), each measured clean, and `run-lint-gates.sh` sets the same.
 - **`powershell-lint`** calls the hub's reusable `powershell-quality.yml` on `windows-2025`.
   Its `analyzer-strict: false` keeps the existing `$WebDavPassword` analyzer finding advisory
   while parser and AST-trap failures remain fatal. The shared lane reads the version pin,

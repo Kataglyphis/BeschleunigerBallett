@@ -1,5 +1,10 @@
 # Rows the hub's lint gates bind: run-lint-gates.sh fails a pattern row that matches more often than its max.
 
+# The Sphinx toctree; quality-report.sh's agents_drift_findings needs it, and is incomplete without it.
+[docs]
+build_list = "docs/source/index.rst"
+source = "docs/source"
+
 [[metric]]
 name = "throwing_filesystem_calls"
 kind = "pattern"

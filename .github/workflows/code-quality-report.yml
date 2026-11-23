@@ -8,3 +8,6 @@ permissions:
 jobs:
   report:
     uses: Kataglyphis/ANTfrastructure/.github/workflows/code-quality-report.yml@develop
+    with:
+      # Grades the tree against the newest develop record; a regression is reported, an incomplete run fails.
+      quality-report: true

@@ -1,0 +1,19 @@
+name: Security audit
+
+# The hub's lockfile audit over uv.lock: push and PR fail on a new HIGH or CRITICAL advisory, Mondays and dispatch report every one.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '50 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    uses: Kataglyphis/ANTfrastructure/.github/workflows/security-audit.yml@develop

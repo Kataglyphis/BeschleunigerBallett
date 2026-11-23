@@ -26,6 +26,8 @@ jobs:
     with:
       submodules: 'recursive'
       ratchets: true
+      # All four measured clean (0 findings); scripts/linux/run-lint-gates.sh enforces the same set.
+      workflow-conventions: 'sha-pin,permissions,job-timeout,artifact-error'
 
   # Keep analyzer diagnostics advisory until the public WebDavPassword parameter is migrated.
   powershell-lint:
