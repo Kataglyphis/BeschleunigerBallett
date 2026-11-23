@@ -374,6 +374,15 @@ try {
       Write-BuildLog -Context $context -Message "Portable bundle $($result.Bundle); DLL closure: $($result.Added -join ', '); packages: $($result.Installers -join ', ')"
     } | Out-Null
 
+    # check-deb-layout.sh's rule for the Windows install tree, which CPack packs into the ZIP, MSI and NSIS too.
+    Invoke-BuildStep -Context $context -StepName "Bundle layout ($TargetArch)" -Critical -Script {
+      $bundle = Join-Path $distArch 'bundle'
+      $stray = @(Get-ChildItem -LiteralPath $bundle -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($bundle, $_.FullName) -replace '\\', '/' } |
+          Where-Object { $_ -match '^(include/|lib/cmake/|lib/pkgconfig/)|\.lib$' })
+      if ($stray.Count -gt 0) { throw "The bundle ships $($stray.Count) build-time file(s): $($stray -join ', ')" }
+      Write-BuildLog -Context $context -Message 'Bundle layout: no include\, lib\cmake\, lib\pkgconfig\ or .lib'
+    } | Out-Null
+
     # The hub's PE gate (CON294): every shipped .exe and .dll, the redist DLLs included, has ASLR, DEP and CFG.
     Invoke-BuildStep -Context $context -StepName "PE hardening ($TargetArch)" -Critical -Script {
       $binaries = @(Get-ChildItem -LiteralPath (Join-Path $distArch 'bundle') -Recurse -File -Include '*.exe', '*.dll' | ForEach-Object FullName)

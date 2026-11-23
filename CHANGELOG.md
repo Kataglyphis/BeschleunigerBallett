@@ -257,6 +257,14 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The Windows packages no longer ship googletest: its install rules put `include/gtest`, `include/gmock`, four
+  `.lib`s, `lib/cmake/GTest` and `lib/pkgconfig` into the bundle, ZIP, MSI and NSIS of both arches (run 45176371019).
+  `INSTALL_GTEST` is OFF, and `Build-Windows.ps1`'s *Bundle layout* step fails a bundle with `include/`,
+  `lib/cmake/`, `lib/pkgconfig/` or a `.lib`, as `check-deb-layout.sh` fails a .deb. The Linux .deb, tar.gz and
+  AppImage carried none of it.
+- spdlog builds without LTO: GCC's LTO link of `GraphicsEngine` and `perfTestSuite` warned 8 times in its bundled
+  fmt (`format.h:1209 -Wstringop-overflow=`, job 137728645504), which a SYSTEM include path cannot silence there.
+
 - The Sun's colour holds [0, 1] for a typed value: the colour picker's RGB and HSV float fields took any number
   (ImGui's `ColorEdit3` has no clamp flag; only its hex field clamps), so -1 or 7 reached the light, and a saturation
   of 5 made green and blue negative. The Sun tab edits it through `studioColorEdit3`, which clamps each channel after

@@ -221,6 +221,8 @@ if(BUILD_TESTING)
 
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   _myproject_force_cache_bool(gtest_force_shared_crt ON "")
+  # Linked statically into the suites; its install rules put headers, .libs and CMake files in every Windows package.
+  _myproject_force_cache_bool(INSTALL_GTEST OFF "")
   FetchContent_MakeAvailable(googletest)
 endif()
 
@@ -381,6 +383,8 @@ _myproject_force_cache_bool(SPDLOG_NO_EXCEPTIONS ON "Disable SPDLOG exceptions (
 
 # SYSTEM: their headers' 124 and 12 GCC warnings (job 135983570345) are not this project's (hub CON295 (c)).
 add_subdirectory(SPDLOG SYSTEM)
+# GCC's LTO link warns in its bundled fmt whatever SYSTEM says (8 -Wstringop-overflow, job 137728645504); LTO gains a logger nothing.
+set_target_properties(spdlog PROPERTIES INTERPROCEDURAL_OPTIMIZATION OFF)
 
 add_subdirectory(NLOHMANN_JSON SYSTEM)
 

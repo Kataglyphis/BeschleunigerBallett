@@ -247,6 +247,7 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
 - The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/GraphicsEngine/LICENSE`.
+- The Windows bundle has its twin: `Build-Windows.ps1`'s *Bundle layout* step fails a `dist/windows-<arch>/bundle` with `include/`, `lib/cmake/`, `lib/pkgconfig/` or a `.lib` (googletest installed all four until `INSTALL_GTEST` went OFF).
 - The hub's hardening gates (CON294) read the shipped binaries: the Linux release job runs `verify-elf-hardening.sh`
   on the .deb's `usr/lib/graphicsengine/GraphicsEngine` (PIE, RELRO, BIND_NOW, stack protector, `_FORTIFY_SOURCE`),
   and `Build-Windows.ps1` runs `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP,
