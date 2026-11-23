@@ -212,6 +212,10 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- `retry-disk-refusal.yml` names its lanes as the glob patterns `workflow_run` reads: `[ci <lane>]` held characters a
+  bracket may not, so every `workflow_run` event since 882d55de ended in a `startup_failure` of a workflow GitHub calls
+  BuildFailed (run 45195400022 among 23), and the unescaped `+` of "build + test" matched no plus, so the x64 lane would
+  never have been retried. Both are escaped now.
 - A NaN or infinite shadow distance or split lambda takes the field's default in the cascade math, 60 and 0, as
   OxidANT's `sanitize` gives them (owner 2026-11-20): `CascadedShadowMapMath.cpp` fitted a NaN distance to the far
   plane and passed a NaN lambda through `std::clamp`, which also made +inf logarithmic.

@@ -3,11 +3,11 @@ name: CI · retry a runner disk refusal
 
 on:
   workflow_run:
-    # The lanes whose jobs pull the image through prepare-linux-ci-host; on-request.yml carries the arm64 and riscv64 lanes.
+    # Glob patterns: + and [ ] escaped, else every start fails; on-request.yml holds arm64 and riscv64.
     workflows:
-      - "Linux x64 · build + test"
-      - "On request · [ci <lane>] in a commit message"
-      - "Release · every lane, then v<version>"
+      - 'Linux x64 · build \+ test'
+      - 'On request · \[ci <lane>\] in a commit message'
+      - 'Release · every lane, then v<version>'
     types: [completed]
 
 permissions:
