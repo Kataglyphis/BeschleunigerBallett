@@ -54,6 +54,12 @@ the GitHub releases themselves.
 
 ### Changed
 
+- ANTfrastructure pin to `734ab966`, through `renovate-local.sh --submodule-path`: every Windows link passes
+  `/NXCOMPAT /DYNAMICBASE /guard:cf` (CON290), so `GraphicsEngine.exe` gets the CFG bit, unset in both bundles of
+  run 45001332269; every Linux link through `myproject_options` adds `-z relro -z now` (CON294), where the .deb of
+  run 45001331996 shipped a PIE `GraphicsEngine` with RELRO but no BIND_NOW. The pin also brings
+  `ctest-run.sh --fail-on-log-pattern` (CON291), `allowed_skips` for staged gtest entries (CON292), one `::error`
+  per failed lint gate (CON293) and the ELF and PE hardening gates (CON294).
 - OxidANT pin to `d0b6725`: a skin whose joints mirror space keeps its triangles' fronts out (`d0b6725`): `load_flat`
   reverses a triangle whose blended joint matrix has a negative determinant at two or three of its corners before it
   bakes the rest pose, where only the tangent sign used to flip, so such a skin drew inside out wherever back faces
