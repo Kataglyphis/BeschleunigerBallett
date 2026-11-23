@@ -14,6 +14,12 @@ the GitHub releases themselves.
 
 ### Added
 
+- `BuildIntegrity.NoShaderCopiesASharedLeafModule` fails a `.slang` file in either tree that keeps a private copy of
+  a shared leaf module's constant, literal (3.14159, 0.045, 65000, an ACES coefficient, a ray bound), NaN check or
+  function; each rule must also still match its owner, which caught the first draft's HDR literal pattern matching
+  65500 instead of 65000. `NoVulkanShaderShadowsASharedModule` fails a local `.slang` named like any file in OxidANT's
+  `shaders/`, since Slang imports by basename; `CloudAmbientAcesCurveIsAcesSlangs` holds `kAcesCoefficients` to
+  `aces.slang`; `NoShaderRedeclaresTheFullscreenUvMapping` also fails a hand-written NDC-to-uv.
 - FXAA for the C++ renderer (plan C3): post renders into a UNORM LDR intermediate per swapchain image, and a final
   `fxaa` stage runs OxidANT's `fxaa.slang` `fs_main` (behind post's `SV_VulkanVertexID` vertex) into the swapchain
   image, then the GUI. The Renderer inspector's FXAA control picks Off, Raster (the forward and deferred frames) or
@@ -42,6 +48,17 @@ the GitHub releases themselves.
 
 ### Changed
 
+- OxidANT pin to `2d604b4` (shared Slang leaf modules, plan I8): `common/constants.slang` (`PI`, `MIN_ROUGHNESS`),
+  `common/hdr_safe.slang` (`HDR_MAX`, and `hdr_safe` with the bit-test NaN check WGSL needs) and
+  `common/trace_constants.slang` (`TRACE_TMIN`, `TRACE_TMAX`, `TRACE_SURFACE_OFFSET`, `TRACE_LIGHT_SPAN`) are OxidANT's,
+  `aces.slang` gains `aces_tonemap_inverse` (`sky.slang`'s former `untonemapped`) and `fullscreen.slang`
+  `fullscreen_ndc_to_uv`. This repo's `common/hdr_safe.slang` is gone, so `import hdr_safe;` reaches OxidANT's;
+  `material_rules.slang`'s `MIN_MATERIAL_ROUGHNESS`, the path tracer's furnace 0.045 and every `0.001`, `10000.0`,
+  `0.0001` and `1 - 1e-4` ray bound in `raytrace.rgen`, `raytrace.rchit` and `path_tracing` take the shared names.
+  `CloudAmbient.hpp`'s CPU ACES pair reads one `kAcesCoefficients`. Every value is the one the copies held, and
+  `isnan` and the bit test agree on every float, so no frame changes. The pin also brings OxidANT develop's `url`
+  2.5.9 for RUSTSEC-2026-0592 (`ac40e7b`) and the CON288 work of the text and inference crates (`c10095f`,
+  `5bf5639`, `c881224`), which the bridge does not build.
 - OxidANT pin to `5551f29`, on OxidANT develop's `e3f554f`: glTF files with `KHR_mesh_quantization` (gltfpack's
   integer positions, normals, tangents and texture coordinates) and posed skins load through the bridge; `load_flat`
   bakes a skin's rest pose (joint world times inverse bind) and leaves unweighted vertices in mesh space; a file

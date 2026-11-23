@@ -14,9 +14,10 @@ their `include_str!` calls are unchanged and now read Slang-emitted text.
 ([`shader-build-pipeline.md`](shader-build-pipeline.md) says why).
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
-ten shared modules under `shaders/common/`: `aces`, `brdf`, `fullscreen`,
-`noise`, `path_estimator`, `punctual_light`, `punctual_shadow`, `shadow_pcf`,
-`sky_model` and `volumetric_clouds`. This repo
+shared modules under `shaders/common/`: `aces`, `brdf`, `brdf_energy_fit`,
+`constants`, `fullscreen`, `hdr_safe`, `noise`, `path_estimator`,
+`punctual_light`, `punctual_shadow`, `shadow_pcf`, `sky_model`,
+`trace_constants` and `volumetric_clouds`. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
 Vulkan-specific material modules stay in `Resources/ShadersSlang/`. OxidANT
 can compile and check its generated WGSL without a superproject checkout.
@@ -53,9 +54,9 @@ Slang is module- and entry-point-centric: a no-entry-point math module cannot
 be emitted to GLSL/WGSL text, and imported functions are name-mangled in the
 emit, so sharing goes through Slang's module system, not textual `#include`:
 
-- **Shared math** lives under `third_party/OxidANT/shaders/common/`. Ten of
-  its eleven modules are imported on both targets, so both renderers share them;
-  `punctual_shadow.slang` is WebGPU's alone. The C++-only modules sit under
+- **Shared math** lives under `third_party/OxidANT/shaders/common/`. All of
+  its fourteen modules but `punctual_shadow.slang`, WebGPU's alone, are imported
+  on both targets. The C++-only modules sit under
   `Resources/ShadersSlang/common/`, shared across the raster, deferred,
   shadow-map, ray tracing and path tracing paths. The shared-module-targets
   table below is the exact, gated mapping.
@@ -75,8 +76,20 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 
 **Shared math modules** (imported by entry points, never emitted directly):
 
-- `common/aces.slang` — ACES filmic tonemap (Narkowicz 2015) + exact IEC
-  61966-2-1 sRGB encode.
+- `common/aces.slang` — ACES filmic tonemap (Narkowicz 2015), its inverse
+  `aces_tonemap_inverse` (the sky's photo faces enter as the radiance whose
+  tonemap shows them) and the exact IEC 61966-2-1 sRGB encode. The five
+  coefficients are `ACES_A` to `ACES_E`; `CloudAmbient.hpp`'s CPU pair takes
+  `kAcesCoefficients`, which `BuildIntegrity.CloudAmbientAcesCurveIsAcesSlangs`
+  holds to them.
+- `common/constants.slang` — `PI` and `MIN_ROUGHNESS` (0.045), for `brdf`,
+  `path_estimator`, `volumetric_clouds`, `material_rules.slang` and the path
+  tracer's furnace card. Both.
+- `common/trace_constants.slang` — every secondary ray's bounds:
+  `TRACE_TMIN` 0.001, `TRACE_TMAX` 10000, `TRACE_SURFACE_OFFSET` 0.0001 along
+  the face normal, and `TRACE_LIGHT_SPAN` (1 - 1e-4), where a punctual light's
+  shadow ray stops. `raytrace.rgen`, `raytrace.rchit`, `path_tracing` and
+  OxidANT's tracer. Both.
 - `common/brdf.slang` — the Epic Games / Unreal 4 microfacet PBR model
   (`distribution_ggx`, `geometry_smith_k`, `fresnel_schlick`, `brdf_direct`),
   used by both renderers' forward/RT shading and next-event estimation, and
@@ -131,8 +144,10 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   WGSL emit is byte-identical to the single formula it replaced.
   `fullscreen_uv_to_ndc` is its exact inverse, switched the same way, for the
   passes that reconstruct a position from the uv (`deferred.slang` on SPIR-V,
-  `ssao.slang` on WGSL). `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping`
-  fails on a hand-written copy of either direction. A wrong V mirrors the frame
+  `ssao.slang` on WGSL), and `fullscreen_ndc_to_uv` the reverse, for a
+  projected point's texel (`ssao.slang`, `gpu_cull.slang`).
+  `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping` fails on a
+  hand-written copy in a `fullscreen` importer. A wrong V mirrors the frame
   about its horizontal centre line, which a vertically symmetric test scene
   cannot show; `GoldenRender.WorldUpIsScreenUp` (C++) and
   `world_up_is_screen_up` (OxidANT `tests/headless.rs`) pin it.
@@ -198,12 +213,13 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   Spirv only, the same four paths as `emission.slang`;
   `forward/forward.slang`'s `fs_main` (wgsl) reimplements the same math
   locally.
-- `common/hdr_safe.slang` — `hdr_safe`, the clamp every write to an RGBA16F
-  HDR target ends in: radiance to `[0, HDR_MAX]` with `HDR_MAX = 65000`, under
-  fp16's 65504, and NaN to 0. Spirv only: the forward and deferred outputs and
-  the deferred G-buffer's emission, the ray-generation store, and the path
-  tracer's per-sample sum and output store. OxidANT clamps its WebGPU passes
-  to the same 65000.
+- `common/hdr_safe.slang` (OxidANT's since 2026-11-23) — `hdr_safe`, the clamp
+  every write to an RGBA16F HDR target ends in: radiance to `[0, HDR_MAX]` with
+  `HDR_MAX = 65000`, under fp16's 65504, and NaN to 0, found by its bits
+  because WGSL may assume floats are finite. Here: the forward and deferred
+  outputs and the deferred G-buffer's emission, the ray-generation store, and
+  the path tracer's per-sample sum and output store; in OxidANT the forward
+  pass, the sky, bloom and the tracer. Both.
 - `common/alpha_test.slang` — the glTF MASK alpha test for ray queries:
   `raytrace.rahit.slang`'s any-hit shader and `path_tracing.slang`'s ray-query
   candidate loop (which has no any-hit stage of its own). Spirv only.
@@ -284,8 +300,8 @@ tonemap shader.
 | `tracer/traced.slang` | wgsl |
 <!-- shader-targets:end -->
 
-**CI guards:** OxidANT's vector kernels, `tests/brdf_test.slang`,
-`tests/noise_test.slang` and `tests/path_estimator_test.slang`, run every
+**CI guards:** OxidANT's vector kernels, `tests/<module>_test.slang` for
+`brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces` and `fullscreen`, run every
 public function of their `common/` module once per case of
 `tests/vectors/<module>.json` (inputs, f64 references, a tolerance per output;
 OxidANT's `docs/shaders.md` § Vector kernels). Both targets are checked on a
@@ -301,13 +317,21 @@ consumer, which the table below makes checkable. OxidANT's
 `tests/volumetric_clouds_test.slang` and `tests/shadow_pcf_test.slang` are the
 reverse guards: SPIR-V only, they import `volumetric_clouds` with a
 `Sampler3D` and `shadow_pcf` with a `Sampler2DArrayShadow` the way the C++
-engine does, so OxidANT's own CI proves both still emit for this engine.
+engine does, so OxidANT's own CI proves both still emit for this engine;
+`tests/constants_test.slang` does the same for `constants` and
+`trace_constants`. `BuildIntegrity.NoShaderCopiesASharedLeafModule` fails a
+file in either tree that keeps a private copy of a leaf module's constant,
+literal or function (OxidANT's `scripts/check-shared-shader-copies.py` holds
+its own tree to the same rules).
 
 The local cloud-volume shader is `compute/noise_volume.slang` so Slang's
 `import noise;` resolves OxidANT's `common/noise.slang`. A local file named
 `noise.slang` shadowed that shared module in the compiler's include order;
 the dual-target test then failed with `E30015 undefined identifier` on
 `snoise` and `fbm` before it could test the shared math.
+`BuildIntegrity.NoVulkanShaderShadowsASharedModule` now fails on any local
+`.slang` named like a file in OxidANT's `shaders/`, which is why this repo's
+`common/hdr_safe.slang` went in the pin bump that brought OxidANT's.
 
 **Shared-module targets:** the per-`common/`-module counterpart of the table
 above, computed the same way (an import-graph walk over `shader-manifest.json`)
@@ -325,9 +349,10 @@ imports.
 | `common/brdf.slang` | both |
 | `common/brdf_energy_fit.slang` | both |
 | `common/cascaded_shadow.slang` | spirv |
+| `common/constants.slang` | both |
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
-| `common/hdr_safe.slang` | spirv |
+| `common/hdr_safe.slang` | both |
 | `common/material_fetch.slang` | spirv |
 | `common/material_rules.slang` | spirv |
 | `common/material_textures.slang` | spirv |
@@ -343,6 +368,7 @@ imports.
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |
 | `common/skybox_radiance.slang` | spirv |
+| `common/trace_constants.slang` | both |
 | `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->
 

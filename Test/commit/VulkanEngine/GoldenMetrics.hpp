@@ -290,7 +290,7 @@ inline double post_display_level(double linear)
     return srgb * 255.0;
 }
 
-// brdf.slang's MIN_ROUGHNESS and its NDF denominator guard; BuildIntegrity.FurnaceOracleUsesBrdfSlangsConstants pins both.
+// constants.slang's MIN_ROUGHNESS and brdf.slang's NDF denominator guard; BuildIntegrity.FurnaceOracleUsesBrdfSlangsConstants pins both.
 inline constexpr double kBrdfMinRoughness = 0.045;
 inline constexpr double kBrdfNdfDenominatorGuard = 1e-20;
 

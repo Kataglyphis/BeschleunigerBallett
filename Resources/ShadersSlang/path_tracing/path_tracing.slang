@@ -2,6 +2,7 @@ import scene_types;
 import base_color;
 import alpha_test;
 import brdf;
+import constants;
 import hdr_safe;
 import material_fetch;
 import material_textures;
@@ -10,6 +11,7 @@ import path_estimator;
 import skybox_radiance;
 import punctual_light;
 import punctual_lights;
+import trace_constants;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
@@ -56,8 +58,8 @@ float primary_hit_depth(uint2 pixel, uint2 resolution, float3 origin)
     RayDesc ray;
     ray.Origin = origin;
     ray.Direction = direction;
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
+    ray.TMin = TRACE_TMIN;
+    ray.TMax = TRACE_TMAX;
     depthQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
     while (depthQuery.Proceed())
     {
@@ -88,7 +90,7 @@ bool occluded_inline(float3 origin, float3 direction, float tMax)
     RayDesc shadowRay;
     shadowRay.Origin = origin;
     shadowRay.Direction = direction;
-    shadowRay.TMin = 0.001;
+    shadowRay.TMin = TRACE_TMIN;
     shadowRay.TMax = tMax;
     shadowQuery.TraceRayInline(TLAS, RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xFFu, shadowRay);
     while (shadowQuery.Proceed())
@@ -151,8 +153,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             RayDesc ray;
             ray.Origin = rayOrigin;
             ray.Direction = rayDirection;
-            ray.TMin = 0.001;
-            ray.TMax = 10000.0;
+            ray.TMin = TRACE_TMIN;
+            ray.TMax = TRACE_TMAX;
             rayQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
             // Loop Proceed() to completion; with no any-hit stage, MASK cut-outs are alpha-tested per candidate here.
             while (rayQuery.Proceed())
@@ -281,7 +283,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             // Factor times texture, as raster reads them; the furnace's white surface brings its own pair.
             float2 metallicRoughness = furnace
-                ? float2(pc_ray.furnace_metallic, clamp(pc_ray.furnace_roughness, 0.045, 1.0))
+                ? float2(pc_ray.furnace_metallic, clamp(pc_ray.furnace_roughness, MIN_ROUGHNESS, 1.0))
                 : resolved_metallic_roughness_lod0(obj, material, texCoords);
             float metallic = metallicRoughness.x;
             float roughness = metallicRoughness.y;
@@ -299,13 +301,13 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float2 energy = ggx_energy(dot(shadingNormal, V), roughness);
 
             // Offset along the normal against self-intersection.
-            rayOrigin = hitWorldPosition + 0.0001 * faceNormal;
+            rayOrigin = hitWorldPosition + TRACE_SURFACE_OFFSET * faceNormal;
 
             // NEE cannot double-count with the sky term: the delta light is unreachable by a bounce ray.
             float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
             if (dot(shadingNormal, lightDir) > 0.0)
             {
-                if (!occluded_inline(rayOrigin, lightDir, 10000.0))
+                if (!occluded_inline(rayOrigin, lightDir, TRACE_TMAX))
                 {
                     // brdf_direct is raster's BRDF times n.l and the light, so an unshadowed hit matches forward's.
                     float3 lightRadiance = sceneUBO.dirLight.color.rgb * sceneUBO.dirLight.color.w;
@@ -321,7 +323,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 PunctualLight light = fetch_punctual_light(pick);
                 PunctualIncidence incidence = punctual_incidence(light, rayOrigin);
                 if (incidence.attenuation > 0.0 && dot(shadingNormal, incidence.l) > 0.0
-                    && !occluded_inline(rayOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
+                    && !occluded_inline(rayOrigin, incidence.l, incidence.distance * TRACE_LIGHT_SPAN))
                 {
                     float3 lightRadiance = light.radiance * incidence.attenuation * float(punctualCount);
                     radiance += throughput * brdf_direct(shadingNormal, V, incidence.l, albedo, metallic, roughness, f0, lightRadiance, energy);

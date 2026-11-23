@@ -7,6 +7,7 @@ import material_textures;
 import normal_map;
 import punctual_light;
 import punctual_lights;
+import trace_constants;
 
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 
@@ -20,7 +21,7 @@ bool occluded(float3 origin, float3 direction, float tMax)
     RayDesc shadowRay;
     shadowRay.Origin = origin;
     shadowRay.Direction = direction;
-    shadowRay.TMin = 0.001;
+    shadowRay.TMin = TRACE_TMIN;
     shadowRay.TMax = tMax;
     bool shadowed = true;
     TraceRay(TLAS,
@@ -117,7 +118,7 @@ void rchit_main(
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
     float3 shadowOrigin = WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-    bool shadowed = dot(facingNormal, L) <= 0 || occluded(shadowOrigin, L, 10000.0);
+    bool shadowed = dot(facingNormal, L) <= 0 || occluded(shadowOrigin, L, TRACE_TMAX);
     // Explicit LOD: see the base-colour sample above for why.
     float2 metallicRoughness = resolved_metallic_roughness_lod0(obj, material, texCoords);
     float metallic = metallicRoughness.x;
@@ -148,7 +149,7 @@ void rchit_main(
         PunctualIncidence incidence = punctual_incidence(light, shadowOrigin);
         if (incidence.attenuation <= 0.0 || dot(facingNormal, incidence.l) <= 0.0)
             continue;
-        if (occluded(shadowOrigin, incidence.l, incidence.distance * (1.0 - 1e-4)))
+        if (occluded(shadowOrigin, incidence.l, incidence.distance * TRACE_LIGHT_SPAN))
             continue;
         payload.hit_value += brdf_direct(N, V, incidence.l, albedo, metallic, roughness, f0Punctual,
             light.radiance * incidence.attenuation, energy);

@@ -26,21 +26,21 @@ inline constexpr uint32_t kCloudAmbientMaxEdgeTexels = 64;
 // skybox_radiance.slang's SKYBOX_DISABLED_RADIANCE, the linear navy the switched-off sky shows.
 inline constexpr glm::vec3 kSkyboxDisabledRadiance{ 0.0F, 0.0F, 0.5F };
 
+// aces.slang's ACES_A to ACES_E, x (a x + b) / (x (c x + d) + e); BuildIntegrity pins them to the shader's.
+inline constexpr std::array<float, 5> kAcesCoefficients{ 2.51F, 0.03F, 2.43F, 0.59F, 0.14F };
+
 // aces.slang's aces_tonemap, the display value post gives a radiance.
 inline auto acesTonemap(float radiance) -> float
 {
+    const auto [a, b, c, d, e] = kAcesCoefficients;
     const float x = std::max(radiance, 0.0F);
-    return std::clamp((x * (2.51F * x + 0.03F)) / (x * (2.43F * x + 0.59F) + 0.14F), 0.0F, 1.0F);
+    return std::clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0F, 1.0F);
 }
 
-// sky.slang's untonemapped(): the photo sky enters the HDR target as the radiance whose tonemap shows its pixel.
+// aces.slang's aces_tonemap_inverse: the photo sky enters the HDR target as the radiance whose tonemap shows its pixel.
 inline auto acesTonemapInverse(float display) -> float
 {
-    constexpr float a = 2.51F;
-    constexpr float b = 0.03F;
-    constexpr float c = 2.43F;
-    constexpr float d = 0.59F;
-    constexpr float e = 0.14F;
+    const auto [a, b, c, d, e] = kAcesCoefficients;
     const float y = std::clamp(display, 0.0F, 1.0F);
     const float qa = a - c * y;
     const float qb = b - d * y;

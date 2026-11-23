@@ -3647,6 +3647,8 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
 
     // Texel-to-NDC in compute and ray-generation shaders is legitimate, so only fullscreen_vs importers are held to it.
     static const std::vector<std::string> kCopies{ "(y + 1.0) * 0.5", "uv * 2.0 - 1.0", "uv.y * 2.0" };
+    // WebGPU's NDC-to-uv, 0.5 - y * 0.5, is fullscreen_ndc_to_uv's default branch.
+    static const std::regex kNdcToUvCopy(R"(\b0\.5\s*-\s*[^;,]*\*\s*0\.5\b)");
 
     std::vector<std::string> violations;
     int importers = 0;
@@ -3674,12 +3676,16 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
                     violations.push_back(relative_path + ':' + std::to_string(line_number) + ": " + copy);
                 }
             }
+            if (std::regex_search(line, kNdcToUvCopy)) {
+                violations.push_back(relative_path + ':' + std::to_string(line_number) + ": NDC to uv by hand");
+            }
         }
     }
 
     EXPECT_GE(importers, 5) << "fewer fullscreen.slang importers than expected - did the import syntax change?";
     EXPECT_TRUE(violations.empty()) << violations.size()
-                                    << " fullscreen uv mapping copies - call fullscreen_vs / fullscreen_uv_to_ndc: "
+                                    << " fullscreen uv mapping copies - call fullscreen_vs / fullscreen_uv_to_ndc / "
+                                       "fullscreen_ndc_to_uv: "
                                     << joinViolations(violations);
 }
 
@@ -5041,7 +5047,7 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
     std::map<std::string, std::vector<std::string>> exported_names_by_file;
     for (const auto &fn : functions) { exported_names_by_file[fn.relative_file].push_back(fn.name); }
     for (const auto &st : structs) { exported_names_by_file[st.relative_file].push_back(st.name); }
-    // A module-scope constant is an export too: traced.slang imports brdf for MIN_ROUGHNESS alone.
+    // A module-scope constant is an export too: material_rules.slang imports constants for MIN_ROUGHNESS alone.
     static const std::regex kConstantRe(R"(^static\s+const\s+\w+\s+([A-Za-z_]\w*)\s*=)");
     for (const auto &relative_path : all_relative_paths) {
         const auto lines = readFileLines(slang_root / relative_path);
@@ -7135,14 +7141,18 @@ TEST(BuildIntegrity, SkyModesSelectTheCubeMapAndTheNavyInSkySlang)
 // The furnace goldens grade against a C++ copy of brdf.slang, whose floor and guard once drifted from the shader's.
 TEST(BuildIntegrity, FurnaceOracleUsesBrdfSlangsConstants)
 {
+    const fs::path constants_path = sharedSlangRoot() / "common" / "constants.slang";
+    const auto constants = readFileText(constants_path);
+    ASSERT_TRUE(constants.has_value()) << "missing " << constants_path.string()
+                                       << " - is the OxidANT submodule checked out?";
+    std::smatch floor;
+    ASSERT_TRUE(std::regex_search(*constants, floor, std::regex(R"(MIN_ROUGHNESS\s*=\s*([0-9.]+)\s*;)")))
+      << constants_path.string() << " no longer defines MIN_ROUGHNESS as a literal";
+    EXPECT_DOUBLE_EQ(std::stod(floor[1].str()), Kataglyphis::Test::GoldenMetrics::kBrdfMinRoughness)
+      << "GoldenMetrics.hpp's kBrdfMinRoughness differs from " << constants_path.string();
     const fs::path brdf_path = sharedSlangRoot() / "common" / "brdf.slang";
     const auto contents = readFileText(brdf_path);
-    ASSERT_TRUE(contents.has_value()) << "missing " << brdf_path.string() << " - is the OxidANT submodule checked out?";
-    std::smatch floor;
-    ASSERT_TRUE(std::regex_search(*contents, floor, std::regex(R"(MIN_ROUGHNESS\s*=\s*([0-9.]+)\s*;)")))
-      << brdf_path.string() << " no longer defines MIN_ROUGHNESS as a literal";
-    EXPECT_DOUBLE_EQ(std::stod(floor[1].str()), Kataglyphis::Test::GoldenMetrics::kBrdfMinRoughness)
-      << "GoldenMetrics.hpp's kBrdfMinRoughness differs from " << brdf_path.string();
+    ASSERT_TRUE(contents.has_value()) << "missing " << brdf_path.string();
     std::smatch guard;
     ASSERT_TRUE(std::regex_search(
       *contents, guard, std::regex(R"(max\(\s*denom\s*\*\s*denom\s*,\s*([0-9.]+(?:[eE][-+]?[0-9]+)?)\s*\))")))
@@ -10052,6 +10062,112 @@ TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
         }
     }
     EXPECT_TRUE(violations.empty()) << "HDR writes that bypass hdr_safe():" << joinViolations(violations);
+}
+
+// Slang imports by basename, so a Vulkan file named like an OxidANT module silently replaces it in every import.
+TEST(BuildIntegrity, NoVulkanShaderShadowsASharedModule)
+{
+    std::set<std::string> shared;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(sharedSlangRoot(), error), end; !error && it != end; it.increment(error)) {
+        if (it->path().extension() == ".slang") { shared.insert(it->path().filename().string()); }
+    }
+    ASSERT_FALSE(error) << "could not walk " << sharedSlangRoot().string() << ": " << error.message();
+    ASSERT_GT(shared.size(), 20U) << "found few .slang files under " << sharedSlangRoot().string();
+
+    std::vector<std::string> shadows;
+    for (fs::recursive_directory_iterator it(slangRoot(), error), end; !error && it != end; it.increment(error)) {
+        if (it->is_directory(error) && it->path().filename() == "build") {
+            it.disable_recursion_pending();
+        } else if (it->path().extension() == ".slang" && shared.contains(it->path().filename().string())) {
+            shadows.push_back(shaderRelativePath(it->path(), slangRoot()).generic_string());
+        }
+    }
+    ASSERT_FALSE(error) << "could not walk " << slangRoot().string() << ": " << error.message();
+    EXPECT_TRUE(shadows.empty()) << "Vulkan shaders named like an OxidANT module, which they replace in every import:"
+                                 << joinViolations(shadows);
+}
+
+// Each shared leaf module's constants and functions live in one OxidANT file; a private copy drifts from it unseen.
+TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
+{
+    struct Rule
+    {
+        std::string owner;
+        std::regex pattern;
+        std::string what;
+    };
+    static const std::string kDefines = R"(^\s*(?!return\b)\w+\s+)";
+    static const std::vector<Rule> kRules = {
+        { "common/constants.slang",
+          std::regex(R"(\bstatic\s+const\s+\w+\s+(\w*PI|MIN_\w*ROUGHNESS)\s*=)"),
+          "a PI or roughness-floor constant" },
+        { "common/constants.slang", std::regex(R"(\b3\.14159|\b6\.28318|\b0\.31830|\b1\.57079)"), "a PI literal" },
+        { "common/constants.slang", std::regex(R"((^|[^0-9.])0\.045($|[^0-9]))"), "the 0.045 roughness floor" },
+        { "common/hdr_safe.slang", std::regex(R"(\bstatic\s+const\s+\w+\s+\w*HDR_MAX\s*=)"), "an HDR maximum" },
+        { "common/hdr_safe.slang", std::regex(R"(\b65(000|504)\b)"), "the HDR maximum literal" },
+        { "common/hdr_safe.slang", std::regex(R"(\bisnan\s*\(|0x7[fF]800000)"), "a NaN check" },
+        { "common/hdr_safe.slang", std::regex(kDefines + R"(hdr_safe\s*\()"), "a second hdr_safe" },
+        { "common/aces.slang", std::regex(R"(\b2\.51\b|\b2\.43\b)"), "an ACES coefficient" },
+        { "common/aces.slang",
+          std::regex(kDefines + R"((aces_tonemap|aces_tonemap_inverse|untonemapped|linear_to_srgb)\s*\()"),
+          "an ACES or sRGB curve" },
+        { "common/trace_constants.slang",
+          std::regex(R"(\bstatic\s+const\s+\w+\s+\w*(TMIN|TMAX|SURFACE_OFFSET|LIGHT_SPAN)\s*=)"),
+          "a ray bound" },
+        { "common/trace_constants.slang",
+          std::regex(
+            R"(\b[Tt][Mm](in|ax)\s*=\s*[0-9.]*[1-9]|\b10000\.0\b|\b0\.0001\s*\*|\*\s*0\.0001\b|\b1\.0\s*-\s*1e-4\b)"),
+          "a ray-bound literal" },
+        { "common/fullscreen.slang",
+          std::regex(kDefines + R"((fullscreen_vs|fullscreen_uv_to_ndc|fullscreen_ndc_to_uv)\s*\()"),
+          "a fullscreen mapping" },
+    };
+
+    std::vector<std::string> violations;
+    std::vector<bool> owner_matches(kRules.size(), false);
+    std::error_code error;
+    for (const fs::path &path : shaderSourceFiles(slangRoot(), error)) {
+        const std::string relative = shaderRelativePath(path, slangRoot()).generic_string();
+        if (relative.starts_with("build/")) { continue; }
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not open " << path.string();
+        for (std::size_t i = 0; i < lines->size(); ++i) {
+            const std::string line = strip_line_comment((*lines)[i]);
+            for (std::size_t r = 0; r < kRules.size(); ++r) {
+                if (!std::regex_search(line, kRules[r].pattern)) { continue; }
+                if (relative == kRules[r].owner) {
+                    owner_matches[r] = true;
+                } else {
+                    violations.push_back(relative + ":" + std::to_string(i + 1) + ": " + kRules[r].what);
+                }
+            }
+        }
+    }
+    ASSERT_FALSE(error) << error.message();
+    for (std::size_t r = 0; r < kRules.size(); ++r) {
+        EXPECT_TRUE(owner_matches[r]) << kRules[r].owner << " no longer holds " << kRules[r].what
+                                      << ", so the rule that guards its copies matches nothing";
+    }
+    EXPECT_TRUE(violations.empty()) << "private copies of a shared leaf module; import it instead:"
+                                    << joinViolations(violations);
+}
+
+// CloudAmbient.hpp's CPU tonemap pair untonemaps the skybox for the cloud ambient as sky.slang does on the GPU.
+TEST(BuildIntegrity, CloudAmbientAcesCurveIsAcesSlangs)
+{
+    const fs::path aces_path = sharedSlangRoot() / "common" / "aces.slang";
+    const auto contents = readFileText(aces_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << aces_path.string();
+    for (std::size_t i = 0; i < Kataglyphis::kAcesCoefficients.size(); ++i) {
+        const std::string name = std::string("ACES_") + static_cast<char>('A' + i);
+        std::smatch match;
+        ASSERT_TRUE(std::regex_search(
+          *contents, match, std::regex(R"(static\s+const\s+float\s+)" + name + R"(\s*=\s*([0-9.]+)\s*;)")))
+          << aces_path.string() << " no longer defines " << name << " as a literal";
+        EXPECT_FLOAT_EQ(std::stof(match[1].str()), Kataglyphis::kAcesCoefficients[i])
+          << "CloudAmbient.hpp's kAcesCoefficients[" << i << "] differs from " << name;
+    }
 }
 
 // Both raster passes bind descriptorSets[0]; an empty span there is undefined behaviour unless refused first.

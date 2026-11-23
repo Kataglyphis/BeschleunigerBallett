@@ -1,6 +1,7 @@
 import scene_types;
 import rt_types;
 import hdr_safe;
+import trace_constants;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
@@ -30,8 +31,8 @@ void rgen_main()
     RayDesc ray;
     ray.Origin = origin.xyz;
     ray.Direction = direction.xyz;
-    ray.TMin = 0.001;
-    ray.TMax = 10000.0;
+    ray.TMin = TRACE_TMIN;
+    ray.TMax = TRACE_TMAX;
 
     // Not RAY_FLAG_FORCE_OPAQUE: that would skip raytrace.rahit.slang's MASK alpha test for primary rays.
     TraceRay(TLAS,
