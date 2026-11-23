@@ -75,20 +75,17 @@ takes UTF-8 paths and runs inside `guarded()`.
   GitHub keeps one waiting run per concurrency group, so runs 44929269007 and 44930561429 were replaced with 0
   jobs while 145423b5's ran. Either a group per commit on develop, whose runs then compete for the account's
   concurrent jobs, or fewer pushes.
-- [ ] `CI` **Warnings that count, and the cache cap's first runs** (S each). **In source** since 2026-11-23
-  (hub pin 04981676): explicit PIE at the project's scope (CON297), IWYU as a report over the units without
-  modules (the static-analysis job; BB also fails on IWYU's `: fatal error:`, which the hub's count misses),
-  spdlog built without LTO (the profiling job's 8 `-Wstringop-overflow` came from GCC's LTO link, which
-  `-isystem` does not silence), and `SCCACHE_CACHE_SIZE` 1200M per key. Left: the first runs (about 194 gcc
-  warning lines in the profiling job; the six compiler keys about 1.2-1.3 GB each, under 10 GB in total).
-  1200M sits at or below the debug working set (about 1.5 GB at zlib-1): if the clang-tests or sanitizer
-  builds slow down, drop the profile and tsan keys and go back to 1500M. Then CON295's ratchet, once the hub
-  ships it, and warnings as errors on the product targets.
+- [ ] `CI` **Warnings that count, and the cache cap's first runs** (S each). Since 2026-11-23 (hub pin
+  04981676, run 45233255466): explicit PIE at the project's scope, IWYU as a report (32 of 35 units with
+  suggestions), and no spdlog `-Wstringop-overflow` in the profiling job since spdlog builds without LTO;
+  `SCCACHE_CACHE_SIZE` is 1200M per key. Left: watch the next few runs' clang-tests and sanitizer build times
+  and the cache total (under 10 GB); 1200M sits at or below the debug working set (about 1.5 GB at zlib-1), so
+  if the builds slow down, drop the profile and tsan keys and go back to 1500M. At the next hub pin (d2aaa551
+  or later) drop BB's own `: fatal error:` count in `run-static-analysis-format.sh`, which the hub's IWYU
+  count now has, and once hub CON299 lands, replace `Build-Windows.ps1`'s inline "Bundle layout" step with its
+  install-tree check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product
+  targets.
 
-- [ ] `CI` **The Windows bundle ships build-time files** (S). **In source** since 2026-11-23: googletest
-  installs nothing (`INSTALL_GTEST OFF`), and `Build-Windows.ps1`'s critical step "Bundle layout" fails a
-  bundle with `include\`, `lib\cmake\`, `lib\pkgconfig\` or a `.lib` (run 45176371019's bundle: 52 such
-  files). Left: the next `[ci windows]` run shows both arches' step passing and an artifact without them.
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
