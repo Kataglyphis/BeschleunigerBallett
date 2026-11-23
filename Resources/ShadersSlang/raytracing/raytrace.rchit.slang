@@ -155,8 +155,8 @@ void rchit_main(
     }
 
     // As the raster passes add it, unshadowed: the sky lights what the sun cannot reach.
-    payload.hit_value += sceneUBO.dirLight.direction.w
-                         * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy, L, lightIntensity);
+    float skyAmbient = sceneUBO.dirLight.direction.w;
+    payload.hit_value += skyAmbient * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
 
     // Emissive is added after shadowing (emitted light is not shadowed); explicit LOD as above.
     payload.hit_value += resolved_emission_lod0(obj, material, texCoords);

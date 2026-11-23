@@ -155,6 +155,11 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
 | `PathTracingPassesTheWhiteFurnaceTest` | 8 → 4 per card view, 80 → 40 in the rig | card within 0.0005 of 1, rig (roughness 0.5) 0.9997, 1.0 within ±0.1 (2026-11-21, aarch64 llvmpipe, one stream) | card within 0.0009 of 1, rig 0.9996, 0.9996 (one stream) | card 0.01 of 1, rig 0.994-1.005, 0.98 | albedo 0.99: rig 0.9889, fails; albedo 1.01: rig 1.0106, fails |
 | `PathTracingAntiAliasesGeometricEdges` | 80 → 25 | 312 of 312 columns blended | 312 of 312 | over half | no jitter: 0-1 of 312, fails |
 
+- **At the Sun of 2026-11-23** (OxidANT's, radiance 5 and warm; the anti-aliasing golden lights the rig
+  at radiance 10), aarch64 llvmpipe, one stream, full and light: the mask card 0.351 and 0.352 of its
+  box, the added model's box 0.0016 and 0.0018 before the add, 0.220 and 0.220 after, the furnace rig
+  0.99967 and 0.99963, the edge 312 of 312 columns blended and 310 of 312 on steps of 37-42 levels.
+  Every margin holds; the table's columns are the measurements at the old Sun (radiance 10, white).
 - **Where each depth stops working.** At a history of 8 the mask card fails: noise pixels
   outside the card stretch its bounding box (0.139). From 16 on it finds the full variant's box.
   The added model's control picks up noise as the history shortens: 0.111 at 8, 0.078 at 16,
@@ -205,7 +210,9 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   column of the panel-free crop down from the sky to its first step of more than 20 levels, so
   the measurement follows the edge if the framing moves. The sky is analytic and the slab's front
   face is seen head-on, so without jitter the edge pixel is slab: per column it sits 0-3 levels
-  inside the 42-44-level step, and 5-11 with jitter. More than 4 counts as blended, and the test
+  inside the 42-44-level step, and 5-11 with jitter (2026-10, a white sun of radiance 10). Since
+  2026-11-23 the test lights the rig with the warm default Sun at radiance 10, where the step is
+  37.9-41.1 levels; at the default 5 only 61 of 312 columns cleared 20. More than 4 counts as blended, and the test
   fails when fewer than half the columns blend. Measured over the five streams, both variants:
   312 of 312 columns jittered, 0 of 312 through the pixel centre (0-1 at the light variant's 25
   frames).
@@ -331,7 +338,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=92 runnable=90 integration=15 total=105 excluded=3 -->
+<!-- golden-counts: defined=93 runnable=91 integration=15 total=106 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -449,7 +456,18 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   Measured on aarch64 llvmpipe: (0.0223, 0.0397, 0.0869) at the default, ratio 5.713, deferred
   within 0.01 % of forward and the ray tracer equal to it. With the term dropped from
   `deferred.slang` its shadow is black and the test fails. `ForwardLightingRespondsToTheDirectionalLight`
-  and `RaytracedShadowsAreDarkerThanLitGround` set the Ambient to 0 since: they isolate the sun.
+  and `RaytracedShadowsAreDarkerThanLitGround` set the Ambient to 0 since: they isolate the sun. The
+  first also switches the skybox off and reads its radiance-0 crop over geometry only (the navy marks
+  the sky): the cube-map sky alone had put the crop at 29.8 against its bound of 30. Geometry reads 0
+  over 161257 px (204.6 lit); with forward's sun lobe blind to the radiance, as b513d010's diffuse was,
+  it stays at 115.3, its lit value, and fails.
+- **`AMirrorInTheSunsShadowReflectsTheSkyAndNoSun`** (2026-11-23): a smooth white metal card
+  (roughness 0.05) under the rig's slab, turned so the eye sees the sun mirrored in its centre, in
+  forward, deferred and ray-traced frames. At Ambient 0 the card must be black (the slab shadows it,
+  so the test measures something); per unit of Ambient its centre may gain no more than the
+  brightest sky radiance, the horizon's 0.72, and at least 0.2 in blue. Measured on aarch64
+  llvmpipe at Ambient 2: (0.277, 0.403, 0.722), a gain of (0.139, 0.202, 0.361), deferred within
+  0.5 %. With OxidANT's sun disk back in `analytic_ambient` the card reads (87.7, 83.5, 75.1) at Ambient 2 and fails in every mode.
 - **`SkyFillsTheHdrTargetInEveryModeButPathTracing`**: on the shadow rig with the navy sky, the
   forward, deferred and ray-traced HDR targets hold no transparent texel and more than 5000
   texels at the navy's untonemapped radiance, which post shows as the navy; the path-traced

@@ -355,6 +355,8 @@ inline auto studioSlider(const char *strId,
 {
     ImGuiWindow *window = ImGui::GetCurrentWindow();
     if (window->SkipItems) { return false; }
+    // A setting's range holds for a Ctrl+click entry too: ImGui clamps typed values only when asked.
+    flags |= ImGuiSliderFlags_AlwaysClamp;
     const bool logarithmic = (flags & ImGuiSliderFlags_Logarithmic) != 0;
     IM_ASSERT(!logarithmic || (min > T{ 0 } && max > min));
 

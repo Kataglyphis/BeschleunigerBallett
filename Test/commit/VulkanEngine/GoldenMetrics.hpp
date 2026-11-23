@@ -89,7 +89,7 @@ inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint
     return total > 0U ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
 }
 
-// Shadow rig, white sun of radiance 10 (2026-10): slab 42-44 levels off the sky, an edge pixel 5-11 in, centred 0-3.
+// Shadow rig, warm sun of radiance 10: slab 38-41 levels off the sky; an edge pixel 5-11 in, a centred 0-3 (2026-10).
 constexpr double SKY_SILHOUETTE_STEP = 20.0;
 constexpr double SKY_SILHOUETTE_BLEND_MARGIN = 4.0;
 
@@ -100,6 +100,8 @@ struct SkySilhouette
     size_t blended = 0;
     uint32_t first_row = std::numeric_limits<uint32_t>::max();
     uint32_t last_row = 0;
+    double min_step = std::numeric_limits<double>::infinity();
+    double max_step = 0.0;
 };
 
 // Walks down from the crop's top, which must be sky; a step there is geometry, never a shadow or texture edge.
@@ -118,6 +120,8 @@ inline SkySilhouette sky_silhouette(const std::vector<uint8_t> &rgba, uint32_t w
         ++result.columns;
         result.first_row = std::min(result.first_row, row);
         result.last_row = std::max(result.last_row, row);
+        result.min_step = std::min(result.min_step, std::abs(object - sky));
+        result.max_step = std::max(result.max_step, std::abs(object - sky));
         const double edge = lum(row);
         const double lo = std::min(sky, object);
         const double hi = std::max(sky, object);

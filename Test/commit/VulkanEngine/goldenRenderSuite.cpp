@@ -1583,6 +1583,102 @@ TEST(GoldenRender, TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame)
     }
 }
 
+// brdf_direct's GGX lobe carries the sun, so a sun disk in the ambient kept a mirror's glint inside the sun's shadow.
+TEST(GoldenRender, AMirrorInTheSunsShadowReflectsTheSkyAndNoSun)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto mirror = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_mirror_card.gltf", [](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.9, 0.9, 0.9, 1.0 } }, { "metallicFactor", 1.0 }, { "roughnessFactor", 0.05 }
+        };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+    });
+    ASSERT_TRUE(mirror.has_value()) << "could not write the mirror card";
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = true;
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Under the slab, which shadows it from the sun, turned so the eye sees the sun mirrored in its centre.
+    const glm::vec3 centre(0.0F, 2.0F, -4.0F);
+    const glm::vec3 to_sun = glm::normalize(glm::vec3(scene_vars.directional_light_direction[0],
+      scene_vars.directional_light_direction[1],
+      scene_vars.directional_light_direction[2]));
+    const glm::vec3 mirror_normal =
+      glm::normalize(to_sun + glm::normalize(harness.camera->get_camera_position() - centre));
+    const glm::vec3 card_normal(0.0F, 0.0F, 1.0F);
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), centre)
+                                * glm::rotate(glm::mat4(1.0F),
+                                  std::acos(glm::dot(card_normal, mirror_normal)),
+                                  glm::normalize(glm::cross(card_normal, mirror_normal)))
+                                * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(mirror->string(), placement).has_value()) << "adding the mirror failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false },
+        Mode{ "deferred", RasterizationMode::Deferred, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true });
+    }
+    const float brightest_sky = std::max(
+      { Kataglyphis::kAnalyticSkyHorizon.r, Kataglyphis::kAnalyticSkyHorizon.g, Kataglyphis::kAnalyticSkyHorizon.b });
+    for (const Mode &mode : modes) {
+        SCOPED_TRACE(mode.name);
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        std::array<glm::dvec3, 2> means{};
+        for (size_t i = 0; i < means.size(); ++i) {
+            scene_vars.directional_light_ambient = i == 0U ? 0.0F : kMaxAmbient;
+            harness.render_frames(SETTLE_FRAMES);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+            ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+            const glm::vec4 clip =
+              glm::inverse(harness_inverse_view_projection(harness, width, height)) * glm::vec4(centre, 1.0F);
+            const auto px = static_cast<int>((clip.x / clip.w * 0.5F + 0.5F) * static_cast<float>(width));
+            const auto py = static_cast<int>((clip.y / clip.w * 0.5F + 0.5F) * static_cast<float>(height));
+            ASSERT_TRUE(px >= 3 && py >= 3 && px + 3 < static_cast<int>(width) && py + 3 < static_cast<int>(height))
+              << "the mirror's centre projects to (" << px << ", " << py << "), outside the frame";
+            glm::dvec3 sum(0.0);
+            for (int y = py - 3; y <= py + 3; ++y) {
+                for (int x = px - 3; x <= px + 3; ++x) {
+                    const float *texel = &radiance[(static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4U];
+                    sum += glm::dvec3(texel[0], texel[1], texel[2]);
+                }
+            }
+            means[i] = sum / 49.0;
+            GTEST_LOG_(INFO) << mode.name << ", ambient " << scene_vars.directional_light_ambient << ": mirror at ("
+                             << px << ", " << py << "), mean radiance (" << means[i].r << ", " << means[i].g << ", "
+                             << means[i].b << ")";
+        }
+        EXPECT_LT(std::max({ means[0].r, means[0].g, means[0].b }), 1e-3)
+          << "the mirror is lit at ambient 0: the slab no longer shadows it, so the test measures nothing";
+        // Per unit of Ambient a surface returns at most the sky it reflects: the brightest radiance is the horizon's.
+        const glm::dvec3 gain = (means[1] - means[0]) / static_cast<double>(kMaxAmbient);
+        for (int c = 0; c < 3; ++c) {
+            EXPECT_LE(gain[c], 1.02 * brightest_sky) << "channel " << c << ": the ambient put the sun into its shadow";
+        }
+        EXPECT_GT(gain.b, 0.2) << "the mirror reflects no sky";
+    }
+}
+
 // Post's whole chain against its formula, texel by texel of one frame: the HDR capture is exactly what post read.
 TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
 {
@@ -2446,7 +2542,8 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     const size_t crop_columns = crop.x1 - crop.x0;
     GTEST_LOG_(INFO) << "slab-vs-sky silhouette: rows " << silhouette.first_row << "-" << silhouette.last_row << ", "
                      << silhouette.columns << " of " << crop_columns << " columns, " << silhouette.blended
-                     << " with a blended pixel";
+                     << " with a blended pixel, steps " << silhouette.min_step << "-" << silhouette.max_step
+                     << " levels";
 
     ASSERT_GE(silhouette.columns * 2U, crop_columns)
       << "The slab's top edge against the sky (a step of more than " << SKY_SILHOUETTE_STEP
@@ -2917,6 +3014,8 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     harness.useForwardRaster();
     // The sun alone: the sky, which TheSkyLightsShadowedGround* checks, lit the radiance-0 crop to a mean of 70.5.
     scene_vars.directional_light_ambient = 0.0F;
+    // The switched-off sky's navy marks the sky pixels, which the crop's means leave out: no light reaches them.
+    scene_vars.skybox_enabled = false;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
     uint32_t width = 0;
@@ -2933,8 +3032,9 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
 
     const double response = swung_fraction(lit, unlit, width, height, panel_free_crop(width, height));
 
-    // Specular alone swings many pixels, so only an unlit crop mean catches a light-blind diffuse.
-    const auto crop_mean_luminance = [](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
+    // Specular swings many pixels, so an unlit geometry mean catches a light-blind diffuse; the sky alone read 29.8.
+    size_t geometry_pixels = 0;
+    const auto crop_mean_luminance = [&geometry_pixels](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
         const uint32_t x0 = (w * 18U) / 25U;
         const uint32_t x1 = (w * 49U) / 50U;
         const uint32_t y0 = h / 20U;
@@ -2943,16 +3043,21 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
         size_t count = 0;
         for (uint32_t y = y0; y < y1; ++y) {
             for (uint32_t x = x0; x < x1; ++x) {
-                sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+                const size_t pixel = static_cast<size_t>(y) * w + x;
+                if (is_disabled_sky(rgba, pixel)) { continue; }
+                sum += luminance_of(rgba, pixel);
                 ++count;
             }
         }
-        return sum / static_cast<double>(count);
+        geometry_pixels = count;
+        return count > 0U ? sum / static_cast<double>(count) : 0.0;
     };
     const double unlit_luma = crop_mean_luminance(unlit, width, height);
     const double lit_luma = crop_mean_luminance(lit, width, height);
     GTEST_LOG_(INFO) << "forward lit-vs-unlit swung-pixel fraction (panel-free crop): " << response
-                     << ", lit crop mean luminance: " << lit_luma << ", unlit crop mean luminance: " << unlit_luma;
+                     << ", lit crop mean luminance: " << lit_luma << ", unlit crop mean luminance: " << unlit_luma
+                     << " over " << geometry_pixels << " geometry px";
+    ASSERT_GT(geometry_pixels, 20000U) << "Too little geometry in the crop; the test measures nothing.";
 
     EXPECT_LT(unlit_luma, 30.0) << "The scene stays lit with the directional light at zero radiance - "
                                    "the light factors are not reaching the diffuse term.";

@@ -141,8 +141,8 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
         worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0, energy, sceneUBO_lighting.punctualShadowCount);
 
     // After the sun's shadow: the sky lights what the sun cannot reach.
-    color += sceneUBO_lighting.dirLight.direction.w
-             * analytic_ambient(N, V, albedo.rgb, metallic, roughness, f0, energy, L, lightIntensity);
+    float skyAmbient = sceneUBO_lighting.dirLight.direction.w;
+    color += skyAmbient * analytic_ambient(N, V, albedo.rgb, metallic, roughness, f0, energy);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += material.gba;

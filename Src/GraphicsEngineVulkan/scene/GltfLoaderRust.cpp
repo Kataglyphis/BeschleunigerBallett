@@ -17,6 +17,7 @@ module;
 #include "spdlog/spdlog.h"
 
 #include "oxidant_bridge/gltf.h"
+#include "oxidant_bridge/settings.h"
 
 module kataglyphis.vulkan.gltf_loader;
 
@@ -116,6 +117,21 @@ namespace {
         return light;
     }
 
+    // The editor adopts this Sun, so it takes the editor's ranges once, at load, through OxidANT's sanitize.
+    PunctualLight toSun(const ox::GltfLight &source)
+    {
+        namespace settings = kataglyphis::oxidant::settings;
+        PunctualLight sun = toPunctualLight(source);
+        settings::SceneSettings scene = settings::default_scene_settings();
+        // The bridge holds the way towards the Sun; a glTF light points the way it shines.
+        scene.sun.direction = { -sun.direction.x, -sun.direction.y, -sun.direction.z };
+        scene.sun.color = { sun.color.r, sun.color.g, sun.color.b };
+        const settings::SunSettings sane = settings::sanitize(scene).sun;
+        sun.direction = -glm::vec3(sane.direction[0], sane.direction[1], sane.direction[2]);
+        sun.color = glm::vec3(sane.color[0], sane.color[1], sane.color[2]);
+        return sun;
+    }
+
     MeshRange toMeshRange(const ox::GltfMeshRange &range)
     {
         return MeshRange{ range.vertex_base,
@@ -158,7 +174,7 @@ bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptio
     }
     for (const ox::GltfMeshRange &range : model.mesh_ranges) { meshRanges.push_back(toMeshRange(range)); }
     for (const ox::GltfLight &light : model.lights) { punctualLights.push_back(toPunctualLight(light)); }
-    if (model.has_sun) { sun = toPunctualLight(model.sun); }
+    if (model.has_sun) { sun = toSun(model.sun); }
     bridge = std::move(parsed);
     return !vertices.empty();
 }

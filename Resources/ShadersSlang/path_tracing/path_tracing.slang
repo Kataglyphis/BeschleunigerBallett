@@ -33,7 +33,7 @@ struct PushConstantPathTracing
     uint skybox_enabled;
 };
 
-// OxidANT's bounce_sky scale at its defaults, ambient strength 0.35 times environment intensity 1; C++ has neither setting.
+// OxidANT's bounce_sky scale at its defaults (ambient 0.35, intensity 1); this kernel does not read the slider.
 static const float BOUNCE_SKY_SCALE = 0.35;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;

@@ -90,8 +90,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
 
     // After the sun's shadow: the sky lights what the sun cannot reach.
-    color += sceneUBO.dirLight.direction.w
-             * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy, L, lightIntensity);
+    color += sceneUBO.dirLight.direction.w * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);

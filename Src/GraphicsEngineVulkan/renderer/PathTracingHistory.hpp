@@ -2,6 +2,8 @@
 
 #include <glm/glm.hpp>
 
+#include "renderer/SceneUBO.hpp"
+
 namespace Kataglyphis::VulkanRendererInternals {
 
 // Inputs whose change must reset accumulation; SceneUBO's cloud and shadow fields stay out, as the tracer ignores them.
@@ -9,7 +11,7 @@ struct PathTracingHistoryKey
 {
     glm::mat4 view{ 1.0F };
     glm::mat4 projection{ 1.0F };
-    glm::vec4 lightDirection{ 0.0F };
+    glm::vec3 lightDirection{ 0.0F };
     glm::vec4 lightColorAndRadiance{ 0.0F };
     int samplesPerPixel{ 0 };
     int maxBounces{ 0 };
@@ -18,5 +20,24 @@ struct PathTracingHistoryKey
 
     friend auto operator==(const PathTracingHistoryKey &, const PathTracingHistoryKey &) -> bool = default;
 };
+
+// The light's direction alone: dirLight.direction.w is the raster's ambient, which no traced sample reads.
+inline auto makePathTracingHistoryKey(const glm::mat4 &view,
+  const glm::mat4 &projection,
+  const DirectionalLightData &light,
+  int samplesPerPixel,
+  int maxBounces,
+  bool skyboxEnabled) -> PathTracingHistoryKey
+{
+    return PathTracingHistoryKey{
+        .view = view,
+        .projection = projection,
+        .lightDirection = glm::vec3(light.direction),
+        .lightColorAndRadiance = light.color,
+        .samplesPerPixel = samplesPerPixel,
+        .maxBounces = maxBounces,
+        .skyboxEnabled = skyboxEnabled,
+    };
+}
 
 }// namespace Kataglyphis::VulkanRendererInternals

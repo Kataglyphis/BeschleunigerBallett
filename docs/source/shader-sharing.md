@@ -85,8 +85,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 - `common/ambient.slang` (OxidANT's, 2026-11-23) — the sky's share of a
   surface's light: `ambient_split_sum` (an irradiance and a reflection by
   `brdf_direct`'s compensated albedo) and `analytic_ambient` (`sky_model`'s
-  hemisphere irradiance and its reflected gradient and sun disk, blurred towards
-  it by roughness squared). Here `rasterizer`, `deferred` and `raytrace.rchit`
+  hemisphere irradiance and its reflected gradient, blurred towards it by
+  roughness squared; no sun disk, since `brdf_direct`'s lobe carries the sun
+  and must stay in its shadow). Here `rasterizer`, `deferred` and `raytrace.rchit`
   add `analytic_ambient` after the sun's shadow, scaled by
   `dirLight.direction.w` (the Sun's ambient, the Sky tab's Ambient slider); in
   OxidANT `forward_lighting.slang`'s `ibl_ambient`, which takes the baked

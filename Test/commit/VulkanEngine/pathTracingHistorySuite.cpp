@@ -9,16 +9,17 @@ using Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey;
 
 namespace {
 
+using Kataglyphis::VulkanRendererInternals::DirectionalLightData;
+using Kataglyphis::VulkanRendererInternals::makePathTracingHistoryKey;
+
+// The renderer's own key for `light`, so the tests hold whatever the key keeps of it.
+auto key_for(const DirectionalLightData &light) -> PathTracingHistoryKey
+{ return makePathTracingHistoryKey(glm::mat4(1.0F), glm::mat4(1.0F), light, 4, 3, true); }
+
 auto make_key() -> PathTracingHistoryKey
 {
-    return PathTracingHistoryKey{
-        .view = glm::mat4(1.0F),
-        .projection = glm::mat4(1.0F),
-        .lightDirection = glm::vec4(0.0F, -1.0F, 0.0F, 1.0F),
-        .lightColorAndRadiance = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F),
-        .samplesPerPixel = 4,
-        .maxBounces = 3,
-    };
+    return key_for(DirectionalLightData{
+      .direction = glm::vec4(0.0F, -1.0F, 0.0F, 0.35F), .color = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F) });
 }
 
 }// namespace
@@ -35,8 +36,8 @@ TEST(PathTracingHistoryUnit, IdenticalKeysCompareEqual)
 TEST(PathTracingHistoryUnit, ALightDirectionChangeInvalidatesTheHistory)
 {
     const PathTracingHistoryKey a = make_key();
-    PathTracingHistoryKey b = make_key();
-    b.lightDirection = glm::vec4(1.0F, 0.0F, 0.0F, 1.0F);
+    const PathTracingHistoryKey b = key_for(DirectionalLightData{
+      .direction = glm::vec4(1.0F, 0.0F, 0.0F, 0.35F), .color = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F) });
 
     EXPECT_TRUE(a != b);
 }
@@ -78,4 +79,16 @@ TEST(PathTracingHistoryUnit, ASkyboxToggleInvalidatesTheHistory)
     b.skyboxEnabled = !a.skyboxEnabled;
 
     EXPECT_TRUE(a != b);
+}
+
+// The Ambient slider moves dirLight.direction.w, which the path tracer never reads, so its mean must survive it.
+TEST(PathTracingHistoryUnit, TheAmbientInTheLightsWDoesNotInvalidateTheHistory)
+{
+    const DirectionalLightData dim{ .direction = glm::vec4(0.0F, -1.0F, 0.0F, 0.35F),
+        .color = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F) };
+    DirectionalLightData bright = dim;
+    bright.direction.w = 2.0F;
+
+    EXPECT_TRUE(key_for(dim) == key_for(bright)) << "an Ambient change restarted the path-traced mean";
+    EXPECT_TRUE(key_for(dim) == make_key());
 }

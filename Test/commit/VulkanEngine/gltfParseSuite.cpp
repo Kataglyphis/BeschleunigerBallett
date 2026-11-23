@@ -18,6 +18,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "GltfVariant.hpp"
 #include "RepoFiles.hpp"
 
 import kataglyphis.shared.util.utf8_path;
@@ -537,6 +538,29 @@ TEST(GltfParseUnit, TheFirstDirectionalLightIsTheSunNotAPunctualLight)
     EXPECT_NEAR(uploader.getSun()->direction.y, -0.48F, 1e-4F);
     ASSERT_TRUE(uploader.parseCpu(test_punctual_gltf()));
     EXPECT_FALSE(uploader.getSun().has_value()) << "a file without a directional light has no Sun";
+}
+
+// The editor adopts a file's Sun, so its colour takes the editor's range at load: OxidANT's sanitize (owner 2026-11-20).
+TEST(GltfParseUnit, AFilesSunArrivesInTheEditorsRanges)
+{
+    if (!std::filesystem::exists(test_directional_gltf())) { GTEST_SKIP() << "test gltf not present"; }
+    // 1e39 overflows to infinity as an f32, the one non-finite value JSON can carry.
+    const auto wild = Kataglyphis::TestSupport::GltfVariant::create(
+      test_directional_gltf(), "kataglyphis_wild_sun.gltf", [](nlohmann::json &gltf) {
+          gltf["extensions"]["KHR_lights_punctual"]["lights"][0]["color"] = { 3.0, -0.5, 1e39 };
+      });
+    ASSERT_TRUE(wild.has_value()) << "could not write the wild Sun's variant";
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(wild->string()));
+    ASSERT_TRUE(loader.getSun().has_value()) << "the directional light did not become the Sun";
+    const Kataglyphis::PunctualLight &sun = *loader.getSun();
+    EXPECT_EQ(sun.color.r, 1.0F) << "a channel over 1 clamps to the picker's top";
+    EXPECT_EQ(sun.color.g, 0.0F) << "a negative channel clamps to 0";
+    EXPECT_EQ(sun.color.b, 0.92F) << "an infinite channel takes the default Sun's";
+    EXPECT_NEAR(sun.direction.x, 0.6F, 1e-4F) << "a unit direction is in range already";
+    EXPECT_NEAR(sun.direction.y, -0.48F, 1e-4F);
+    EXPECT_NEAR(sun.direction.z, 0.64F, 1e-4F);
 }
 
 TEST(GltfParseUnit, Utf8PathBytesAreTheUtf8OfThePath)

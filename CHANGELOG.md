@@ -16,8 +16,11 @@ the GitHub releases themselves.
 
 - An analytic ambient term (BACKLOG "An analytic ambient term with an Ambient slider", plan C4 stage 1): forward,
   deferred and the closest-hit shader add OxidANT's `analytic_ambient` (`common/ambient.slang`) after the sun's
-  shadow, the procedural sky's hemisphere irradiance and its reflected gradient and sun disk blurred towards it by
-  roughness squared, which Rust's forward pass takes without a baked environment. Shadowed ground was black; it takes
+  shadow, the procedural sky's hemisphere irradiance and its reflected gradient blurred towards it by roughness
+  squared, which Rust's forward pass takes without a baked environment. It takes no sun disk: `brdf_direct`'s GGX
+  lobe carries the sun, and a disk here kept a glossy surface's glint inside the sun's shadow (review, OxidANT pin
+  `6054002`); `GoldenRender.AMirrorInTheSunsShadowReflectsTheSkyAndNoSun` holds a smooth metal card mirroring the sun
+  under the rig's slab to the brightest sky radiance per unit of Ambient in forward, deferred and ray-traced frames. Shadowed ground was black; it takes
   the sky's blue now. The Sky tab's ENVIRONMENT section has Rust's Ambient slider (0-2, default 0.35), the Sun's
   `ambient`, which reaches the shaders in `dirLight.direction.w`. The path tracer gets the sky through its misses and
   keeps its 0.35 bounce scale. `GoldenRender.TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame` reads the
@@ -26,6 +29,16 @@ the GitHub releases themselves.
   readers of `dirLight.direction.w` and fails a private `analytic_ambient` or `ambient_split_sum`.
 - `Integration.F5RequestsAShaderReload` presses F5 in the editor and sees the reload request reach the renderer;
   `BuildIntegrity.ShaderReloadRequestsAreInEveryBuild` fails a request site inside an `NDEBUG` block.
+- The Sun's ranges hold at run time: every editor slider (`studioSlider`) clamps a Ctrl+click entry to its range
+  (`StudioWidgetsUnit.ASliderHoldsItsRangeForATypedValue` types -1 and 7 into a [0, 2] slider), and a glTF's Sun is
+  sanitized once at load through the bridge (`GltfParseUnit.AFilesSunArrivesInTheEditorsRanges`: colour (3, -0.5,
+  inf) arrives as (1, 0, 0.92)). `EveryShaderDerivesTheLightVectorByNegation` requires `.xyz` on every
+  `dirLight.direction` read but the three ambient readers' `.w`.
+- The Ambient slider no longer restarts the path tracer's mean: `makePathTracingHistoryKey` keys on the light's
+  direction alone (`PathTracingHistoryUnit.TheAmbientInTheLightsWDoesNotInvalidateTheHistory`).
+- `ForwardLightingRespondsToTheDirectionalLight` reads its radiance-0 crop over geometry only, with the navy sky
+  masked out: the cube-map sky alone had put the crop at 29.8 against the bound of 30. Geometry reads 0 over 161257
+  pixels (204.6 lit); a forward sun lobe blind to the radiance stays at 115.3 and fails.
 
 - `security-audit.yml` calls the hub's lockfile audit: osv-scanner over `uv.lock`, where a new HIGH or CRITICAL
   advisory fails a push (a planted pyyaml 5.3 did) and the Monday run reports every one. `retry-disk-refusal.yml`

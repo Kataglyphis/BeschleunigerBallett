@@ -1320,15 +1320,13 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
         Texture &renderResult = activeOffscreenTexture(image_index);
 
         // A camera, light or quality change restarts the running mean.
-        const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history{
-            .view = camera->calculate_viewmatrix(),
-            .projection = globalUBO.projection,
-            .lightDirection = sceneUBO.dirLight.direction,
-            .lightColorAndRadiance = sceneUBO.dirLight.color,
-            .samplesPerPixel = rendererSettings.pathTracingSamplesPerPixel,
-            .maxBounces = rendererSettings.pathTracingMaxBounces,
-            .skyboxEnabled = frameSettings.scene.skybox_enabled,
-        };
+        const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history =
+          Kataglyphis::VulkanRendererInternals::makePathTracingHistoryKey(camera->calculate_viewmatrix(),
+            globalUBO.projection,
+            sceneUBO.dirLight,
+            rendererSettings.pathTracingSamplesPerPixel,
+            rendererSettings.pathTracingMaxBounces,
+            frameSettings.scene.skybox_enabled);
         if (current_history != pathTracingLastHistory) {
             pathTracingAccumulatedFrames = 0;
             pathTracingLastHistory = current_history;

@@ -4129,12 +4129,23 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
                 const auto marker_pos = line.find(kMarker, search_from);
                 if (marker_pos == std::string::npos) { break; }
                 search_from = marker_pos + kMarker.size();
-                if (line.compare(search_from, 2, ".w") == 0
-                    && (search_from + 2 == line.size() || !is_identifier_char(line[search_from + 2]))) {
+                const auto swizzled = [&line, search_from](std::string_view swizzle) {
+                    const std::size_t end = search_from + swizzle.size();
+                    return line.compare(search_from, swizzle.size(), swizzle) == 0
+                           && (end == line.size() || !is_identifier_char(line[end]));
+                };
+                if (swizzled(".w")) {
                     ambient_readers.insert(path.filename().string());
                     continue;
                 }
                 ++occurrences_checked;
+                // The whole float4, .xyzw or [3] would hand the ambient in .w to a direction.
+                if (!swizzled(".xyz")) {
+                    violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                         + std::to_string(line_number) + ": " + kMarker
+                                         + " is read without .xyz, so its .w (the ambient) joins the direction");
+                    continue;
+                }
 
                 // Walk back over the "scene." or "sceneUBO_lighting." prefix to where the read starts.
                 std::size_t expr_start = marker_pos;
