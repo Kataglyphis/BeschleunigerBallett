@@ -75,21 +75,20 @@ takes UTF-8 paths and runs inside `guarded()`.
   GitHub keeps one waiting run per concurrency group, so runs 44929269007 and 44930561429 were replaced with 0
   jobs while 145423b5's ran. Either a group per commit on develop, whose runs then compete for the account's
   concurrent jobs, or fewer pushes.
-- [ ] `CI` **Warnings that count, IWYU and the Actions cache** (S each). Since 2026-11-23 the hardening runs:
-  the ELF gate reads "PIE RELRO BIND_NOW" from the shipped program, both PE gates find GUARD_CF on every
-  bundled binary (9 on x64, 8 on arm64), the staged suites skip nothing (1138 on arm64), and no test logs
-  `SYNC-HAZARD` or `VUID-` (runs 45176371019, 45176785860). spdlog and nlohmann as SYSTEM includes took gcc's
-  warnings from 339 to 203 (job 137728645203), but the profiling job still logs 8 spdlog `format.h:1209
-  -Wstringop-overflow=` through a non-SYSTEM include path (job 137728645504). Left: that path, CON295's
-  ratchet and then warnings as errors on the product targets; IWYU (CON295 (a)) and an explicit PIE (CON297)
-  with the hub pin 941d2d23, wired as AccelerANTgine 0126297 wires IWYU (`require_tools iwyu_tool`, `run_gate
-  iwyu run_iwyu`); and the Actions cache, 10.65 of 10 GB: six compiler caches hold 9.49 GB beside CodeQL's
-  0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or no profile and tsan keys.
+- [ ] `CI` **Warnings that count, and the cache cap's first runs** (S each). **In source** since 2026-11-23
+  (hub pin 04981676): explicit PIE at the project's scope (CON297), IWYU as a report over the units without
+  modules (the static-analysis job; BB also fails on IWYU's `: fatal error:`, which the hub's count misses),
+  spdlog built without LTO (the profiling job's 8 `-Wstringop-overflow` came from GCC's LTO link, which
+  `-isystem` does not silence), and `SCCACHE_CACHE_SIZE` 1200M per key. Left: the first runs (about 194 gcc
+  warning lines in the profiling job; the six compiler keys about 1.2-1.3 GB each, under 10 GB in total).
+  1200M sits at or below the debug working set (about 1.5 GB at zlib-1): if the clang-tests or sanitizer
+  builds slow down, drop the profile and tsan keys and go back to 1500M. Then CON295's ratchet, once the hub
+  ships it, and warnings as errors on the product targets.
 
-- [ ] `CI` **The Windows bundle ships build-time files** (S). `dist/windows-x64/bundle` holds gtest's and
-  gmock's `.lib`s, `include/`, `lib/cmake` and `lib/pkgconfig` (run 45001332269's artifact), which the Linux
-  .deb gate forbids. Keep the test dependencies out of the install and check the bundle as
-  `check-deb-layout.sh` checks the .deb.
+- [ ] `CI` **The Windows bundle ships build-time files** (S). **In source** since 2026-11-23: googletest
+  installs nothing (`INSTALL_GTEST OFF`), and `Build-Windows.ps1`'s critical step "Bundle layout" fails a
+  bundle with `include\`, `lib\cmake\`, `lib\pkgconfig\` or a `.lib` (run 45176371019's bundle: 52 such
+  files). Left: the next `[ci windows]` run shows both arches' step passing and an artifact without them.
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
