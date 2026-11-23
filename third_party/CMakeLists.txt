@@ -379,9 +379,10 @@ add_subdirectory(GLFW)
 
 _myproject_force_cache_bool(SPDLOG_NO_EXCEPTIONS ON "Disable SPDLOG exceptions (required when exceptions are disabled globally)")
 
-add_subdirectory(SPDLOG)
+# SYSTEM: their headers' 124 and 12 GCC warnings (job 135983570345) are not this project's (hub CON295 (c)).
+add_subdirectory(SPDLOG SYSTEM)
 
-add_subdirectory(NLOHMANN_JSON)
+add_subdirectory(NLOHMANN_JSON SYSTEM)
 
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
 # with this trick IMGUI will be excluded from time consuming static code analysis
