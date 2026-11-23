@@ -432,6 +432,16 @@ inline auto studioDragAxes(const char *strId,
     return changed;
 }
 
+// ColorEdit3 for a colour in [0, 1]: its picker's typed RGB and HSV fields take any value, and ImGui has no clamp flag.
+inline auto studioColorEdit3(const char *strId,
+  std::span<float, 3> rgb,
+  ImGuiColorEditFlags flags = ImGuiColorEditFlags_None) -> bool
+{
+    if (!ImGui::ColorEdit3(strId, rgb.data(), flags)) { return false; }
+    for (float &channel : rgb) { channel = std::clamp(channel, 0.0F, 1.0F); }
+    return true;
+}
+
 // A key as a small raised cap; text after it on the same row, table rows included, centres on it.
 inline void studioKeycap(const char *key)
 {

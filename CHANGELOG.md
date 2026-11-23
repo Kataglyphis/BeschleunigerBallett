@@ -251,6 +251,12 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The Sun's colour holds [0, 1] for a typed value: the colour picker's RGB and HSV float fields took any number
+  (ImGui's `ColorEdit3` has no clamp flag; only its hex field clamps), so -1 or 7 reached the light, and a saturation
+  of 5 made green and blue negative. The Sun tab edits it through `studioColorEdit3`, which clamps each channel after
+  a change. `StudioWidgetsUnit.AColourPickerHoldsItsRangeForATypedValue` opens the picker and types 0.25, -1 and 7
+  into red and 5 into saturation; `BuildIntegrity.EditorColourEditsHoldTheirRange` fails an `ImGui::ColorEdit` or
+  `ImGui::ColorPicker` call under `Src/` outside the widget.
 - `retry-disk-refusal.yml` names its lanes as the glob patterns `workflow_run` reads: `[ci <lane>]` held characters a
   bracket may not, so every `workflow_run` event since 882d55de ended in a `startup_failure` of a workflow GitHub calls
   BuildFailed (run 45195400022 among 23), and the unescaped `+` of "build + test" matched no plus, so the x64 lane would

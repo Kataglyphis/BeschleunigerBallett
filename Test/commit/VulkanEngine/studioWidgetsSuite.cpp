@@ -69,7 +69,57 @@ float type_into_slider(const char *text, float value)
     return value;
 }
 
+// Opens the Sun tab's colour picker, types `text` into its `edit` row's `field` ("##rgb"/"##X" is red) and returns it.
+std::array<float, 3>
+  type_into_color_picker(const char *edit, const char *field, const char *text, std::array<float, 3> rgb)
+{
+    ImGuiContext *previous = ImGui::GetCurrentContext();
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ImGui::SetCurrentContext(ctx);
+    ImGuiIO &io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(640.0F, 480.0F);
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    for (int frame = 0; frame < 6; ++frame) {
+        if (frame == 3) { io.AddInputCharactersUTF8(text); }
+        if (frame == 4) { io.AddKeyEvent(ImGuiKey_Enter, true); }
+        if (frame == 5) { io.AddKeyEvent(ImGuiKey_Enter, false); }
+        ImGui::NewFrame();
+        ImGui::Begin("panel");
+        const ImGuiID swatch = ImGui::GetIDWithSeed("##ColorButton", nullptr, ImGui::GetID("##color"));
+        Kataglyphis::Frontend::studioColorEdit3(
+          "##color", rgb, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHex);
+        ImGui::End();
+        ImGui::Render();
+        if (frame == 0) { ImGui::ActivateItemByID(swatch); }
+        if (frame == 1 && !ctx->OpenPopupStack.empty() && ctx->OpenPopupStack.back().Window != nullptr) {
+            // The popup's ColorPicker4 pushes "##picker", its rows "##rgb" and "##hsv", their fields "##X".."##Z".
+            const ImGuiID picker = ImGui::GetIDWithSeed("##picker", nullptr, ctx->OpenPopupStack.back().Window->ID);
+            ImGui::ActivateItemByID(ImGui::GetIDWithSeed(field, nullptr, ImGui::GetIDWithSeed(edit, nullptr, picker)));
+            ctx->NavNextActivateFlags = ImGuiActivateFlags_PreferInput;
+        }
+    }
+    ImGui::DestroyContext(ctx);
+    ImGui::SetCurrentContext(previous);
+    return rgb;
+}
+
 }// namespace
+
+// The Sun's colour keeps [0, 1] for a value typed into its picker, whose float fields ImGui leaves unclamped.
+TEST(StudioWidgetsUnit, AColourPickerHoldsItsRangeForATypedValue)
+{
+    const std::array<float, 3> sun = { 0.8F, 0.4F, 0.2F };
+    EXPECT_FLOAT_EQ(type_into_color_picker("##rgb", "##X", "0.25", sun)[0], 0.25F)
+      << "typing does not reach the picker's red field: the harness is broken";
+    EXPECT_EQ(type_into_color_picker("##rgb", "##X", "-1", sun)[0], 0.0F) << "a typed red below 0 passed unclamped";
+    EXPECT_EQ(type_into_color_picker("##rgb", "##X", "7", sun)[0], 1.0F) << "a typed red above 1 passed unclamped";
+    // A saturation of 5 turns this orange into green -1.87 and blue -3.2 before any clamp.
+    const std::array<float, 3> saturated = type_into_color_picker("##hsv", "##Y", "5", sun);
+    EXPECT_NE(saturated, sun) << "typing does not reach the picker's saturation field: the harness is broken";
+    for (const float channel : saturated) {
+        EXPECT_TRUE(channel >= 0.0F && channel <= 1.0F) << "a typed saturation of 5 left a channel at " << channel;
+    }
+}
 
 // The Sun's Ambient and Radiance, and every other editor slider, keep their range for a typed value too.
 TEST(StudioWidgetsUnit, ASliderHoldsItsRangeForATypedValue)

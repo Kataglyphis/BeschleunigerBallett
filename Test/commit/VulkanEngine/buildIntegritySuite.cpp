@@ -10300,6 +10300,35 @@ TEST(BuildIntegrity, BothRenderModeControlsShareTheReselectableSwitch)
       << "renderModeSwitch's control is not reselectable, so Raster cannot cancel a pick that waits for a TLAS";
 }
 
+// ImGui's colour picker leaves a typed RGB or HSV value unclamped, so an editor colour goes through studioColorEdit3.
+TEST(BuildIntegrity, EditorColourEditsHoldTheirRange)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path widgets = repo_root / "Src" / "shared" / "imgui" / "KataglyphisImGuiWidgets.ixx";
+    ASSERT_TRUE(sourceExists(widgets)) << "missing " << widgets.string();
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || fs::equivalent(path, widgets, error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        for (std::size_t i = 0; i < lines->size(); ++i) {
+            const std::string line = strip_line_comment((*lines)[i]);
+            if (line.find("ImGui::ColorEdit") != std::string::npos
+                || line.find("ImGui::ColorPicker") != std::string::npos) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ":" + std::to_string(i + 1));
+            }
+        }
+    }
+    EXPECT_TRUE(violations.empty()) << "a colour edit outside studioColorEdit3 takes a typed value outside [0, 1]:"
+                                    << joinViolations(violations);
+}
+
 // Model owns the transform; a per-mesh matrix would be a second truth that no draw path reads.
 TEST(BuildIntegrity, MeshDoesNotHoldAModelMatrix)
 {

@@ -1112,7 +1112,7 @@ void GUI::renderLightInspector()
         studioPropertyLabel("Radiance");
         studioSlider("##radiance", &guiSceneSharedVars.directional_light_radiance, 0.0F, kMaxSunRadiance, "%.1f");
         studioPropertyLabel("Color", "Click the swatch for the picker");
-        ImGui::ColorEdit3("##color",
+        studioColorEdit3("##color",
           guiSceneSharedVars.directional_light_color,
           ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHex);
         studioPropertyLabel("Direction", "Points from the sun into the scene; normalized before use");

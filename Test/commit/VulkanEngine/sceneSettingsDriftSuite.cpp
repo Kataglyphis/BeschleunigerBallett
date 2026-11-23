@@ -113,7 +113,7 @@ TEST(SceneSettingsDrift, RangesMatchTheEditorsBounds)
     expectRange(rust.shadows.distance, kMinShadowDistance, kMaxShadowDistance, "distance");
     expectRange(rust.shadows.split_lambda, kMinUnitSetting, kMaxUnitSetting, "split lambda");
 
-    // GUI.cpp's Sun tab and the Sky tab's Ambient; ImGui's ColorEdit3 keeps each channel in [0, 1].
+    // GUI.cpp's Sun tab and the Sky tab's Ambient; studioColorEdit3 keeps each channel in [0, 1].
     expectRange(rust.sun.direction, -kMaxSunDirectionAxis, kMaxSunDirectionAxis, "sun direction");
     expectRange(rust.sun.color, kMinUnitSetting, kMaxUnitSetting, "sun colour");
     expectRange(rust.sun.radiance, 0.0F, kMaxSunRadiance, "sun radiance");
