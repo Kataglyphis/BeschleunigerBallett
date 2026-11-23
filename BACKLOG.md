@@ -67,36 +67,28 @@ Slang in OxidANT, each renderer keeping its own host pass; a bridged function re
 takes UTF-8 paths and runs inside `guarded()`.
 
 
-- [ ] `CI` **The Windows binaries lack the CFG bit** (S). **In source** since 2026-11-23: the hub pin 734ab966
-  links `/guard:cf` (CON290), and `Build-Windows.ps1`'s critical step "PE hardening (<arch>)" runs the hub's
-  `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP, high-entropy VA, CFG).
-  Left: the next `[ci windows]` run shows both steps passing and the suites green with CFG enforced; a
-  third-party DLL without CFG would fail the step by name.
 
 ### P2: medium
 
-- [ ] `CI` **The hub gates BB does not call yet** (S). **In source** since 2026-11-23: `security-audit.yml`
-  (osv-scanner over `uv.lock`), `retry-disk-refusal.yml`, the quality-report step (`quality-report.toml`
-  gained its `[docs]` table, without which the report is incomplete) and the workflow conventions `sha-pin`,
-  `permissions`, `job-timeout` and `artifact-error` (0 findings each). Left: their first runs. Not wired:
-  `agents-drift`, which needs AGENTS.md in the hub's six-section template (22 findings) and which the hub
-  scopes to its AI consumers, and `core.hooksPath` on the Pi's clone, outside this repo.
 - [b] `CI` **A burst of develop pushes loses the middle commit's verdict** (S, needs an owner decision). Since
   9dedc393 no develop run that had started was cancelled (D9 holds: dc69fa7e ran 142 min to its end), but
   GitHub keeps one waiting run per concurrency group, so runs 44929269007 and 44930561429 were replaced with 0
   jobs while 145423b5's ran. Either a group per commit on develop, whose runs then compete for the account's
   concurrent jobs, or fewer pushes.
-- [ ] `CI` **Linux linker hardening and the hub's newer gates** (S each). **In source** since 2026-11-23: `-z
-  relro -z now` from the hub pin ("Hardening Linker Flags: -Wl,-z,relro;-Wl,-z,now"), PIE by clang's default,
-  the hub's ELF gate on the program each release `.deb` ships, `run-ctest.sh --virtual-display` and
-  `Invoke-SyncValidation.ps1` failing on `SYNC-HAZARD` or `VUID-` through the hub's log pattern (CON291), and
-  an empty `allowed_skips` on every staged gtest entry (CON292). spdlog and nlohmann as SYSTEM includes
-  (CON295 (c) step 1) are in since a9333e7e; the next gcc job's warning count shows the 124 and 12 gone. Left:
-  the first runs; CON295's ratchet and then warnings as errors on the product targets; IWYU (CON295 (a)) from
-  hub 486827f8 on, wired as AccelerANTgine 0126297 wires it (`run-static-analysis-format.sh`: `require_tools
-  iwyu_tool`, `run_gate iwyu run_iwyu`); and the Actions cache, 10.65 of 10 GB: six compiler caches hold 9.49
-  GB beside CodeQL's 0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or no profile and tsan keys.
+- [ ] `CI` **Warnings that count, IWYU and the Actions cache** (S each). Since 2026-11-23 the hardening runs:
+  the ELF gate reads "PIE RELRO BIND_NOW" from the shipped program, both PE gates find GUARD_CF on every
+  bundled binary (9 on x64, 8 on arm64), the staged suites skip nothing (1138 on arm64), and no test logs
+  `SYNC-HAZARD` or `VUID-` (runs 45176371019, 45176785860). spdlog and nlohmann as SYSTEM includes took gcc's
+  warnings from 339 to 203 (job 137728645203), but the profiling job still logs 8 spdlog `format.h:1209
+  -Wstringop-overflow=` through a non-SYSTEM include path (job 137728645504). Left: that path, CON295's
+  ratchet and then warnings as errors on the product targets; IWYU (CON295 (a)) and an explicit PIE (CON297)
+  with the hub pin 941d2d23, wired as AccelerANTgine 0126297 wires IWYU (`require_tools iwyu_tool`, `run_gate
+  iwyu run_iwyu`); and the Actions cache, 10.65 of 10 GB: six compiler caches hold 9.49 GB beside CodeQL's
+  0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or no profile and tsan keys.
 
+- [ ] `C++` **The colour picker holds the Sun's range** (S). Since Phase 7 every editor slider clamps a typed
+  value and a glTF Sun arrives sanitized, but the colour picker popup's float fields still take values outside
+  [0, 1] (the hex field clamps).
 - [ ] `CI` **The Windows bundle ships build-time files** (S). `dist/windows-x64/bundle` holds gtest's and
   gmock's `.lib`s, `include/`, `lib/cmake` and `lib/pkgconfig` (run 45001332269's artifact), which the Linux
   .deb gate forbids. Keep the test dependencies out of the install and check the bundle as
@@ -502,6 +494,9 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 
 So the next sweep stops here instead of re-deriving them.
 
+- `agents-drift` (2026-11-23): the hub scopes it to its AI consumers, and BB's AGENTS.md is not in the hub's
+  six-section template (22 findings on a trial run). `core.hooksPath` on the Pi's clone is that host's, not
+  this repo's.
 - `VulkanDevice::create_logical_device` (~290 lines) keeps its feature setup inline: it is a
   `pNext` chain of stack locals, and extracting it into returning helpers dangles them.
 - The AS rebuild and descriptor refresh around `rebuildObjectDescriptions()` stay inline: the
