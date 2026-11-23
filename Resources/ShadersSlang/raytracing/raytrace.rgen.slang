@@ -1,7 +1,7 @@
+import camera_ray;
 import scene_types;
 import rt_types;
 import hdr_safe;
-import trace_constants;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
@@ -14,14 +14,9 @@ import trace_constants;
 [shader("raygeneration")]
 void rgen_main()
 {
-    float2 pixelCenter = float2(DispatchRaysIndex().xy) + float2(0.5);
-    float2 pixelCenterUV = pixelCenter / float2(DispatchRaysDimensions().xy);
-    float2 pixelCenterCS = pixelCenterUV * 2.0 - 1.0;
-
-    // Camera ray from inv_view/inv_projection (precomputed on CPU).
-    float4 origin = mul(globalUBO.inv_view, float4(0, 0, 0, 1));
-    float4 target = mul(globalUBO.inv_projection, float4(pixelCenterCS.x, pixelCenterCS.y, 1, 1));
-    float4 direction = mul(globalUBO.inv_view, float4(normalize(target.xyz), 0));
+    // From the near plane through the pixel centre to the far plane, where raster clips.
+    CameraRay camera = camera_ray_through_pixel(clip_to_world(globalUBO), float2(DispatchRaysIndex().xy) + 0.5,
+        float2(DispatchRaysDimensions().xy));
 
     HitPayload payload;
     payload.hit_value = float3(0);
@@ -29,10 +24,10 @@ void rgen_main()
     payload.hit_t = 0.0;
 
     RayDesc ray;
-    ray.Origin = origin.xyz;
-    ray.Direction = direction.xyz;
-    ray.TMin = TRACE_TMIN;
-    ray.TMax = TRACE_TMAX;
+    ray.Origin = camera.origin;
+    ray.Direction = camera.direction;
+    ray.TMin = 0.0;
+    ray.TMax = camera.length;
 
     // Not RAY_FLAG_FORCE_OPAQUE: that would skip raytrace.rahit.slang's MASK alpha test for primary rays.
     TraceRay(TLAS,

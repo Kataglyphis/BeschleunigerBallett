@@ -76,9 +76,10 @@ image the binding can name.
 
 ## The estimator
 
-Per pixel, `clouds_main` reconstructs a view ray through the texel centre
-from the precomputed `inv_projection`/`inv_view` (no per-pixel `inverse()`:
-Slang has none for SPIR-V) and intersects the cloud box with iquilezles' slab
+Per pixel, `clouds_main` takes the direction of OxidANT's `camera_ray`
+through the texel centre, over the product of the precomputed
+`inv_view`/`inv_projection` (no per-pixel `inverse()`: Slang has none for
+SPIR-V); the march itself starts at the eye and intersects the cloud box with iquilezles' slab
 test (`box_intersect`; a ray direction with an exactly zero component takes
 1e-30 there, so a sun straight overhead never meets `inf - inf`). The box is **axis-aligned**: centred on Offset
 (`cloud.offset`), with half extents `cloud.radius` = Scale x 10; Density only

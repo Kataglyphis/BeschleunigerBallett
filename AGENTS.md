@@ -870,7 +870,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (78 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (79 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -884,9 +884,9 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 76 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  tests timed below to 77 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
-  pipeline, and ten more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
+  pipeline, and eleven more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
   deferred and ray-traced ones), `TracedSecondModelResolvesItsOwnMeshAndTextures` (a lone cube,
   2 spp for 8 frames),
@@ -895,7 +895,8 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   and one bounce for 4 frames), `PathTracedMirrorReflectsTheSkyboxItDraws` (a lone card, 4 spp for two
   8-frame histories, 4 in the light variant), `HdrTargetStaysBelowTheHalfFloatMaximum`, `PathTracedUnlitCardKeepsItsAlbedo`,
   `TracedFramesSkipTheShadowPass` and `PunctualLightsPoolOnThePlaneWhenPathTraced` (a lone plane, 2 spp and
-  two bounces for two 17-frame histories, 2026-11-17). The rewritten `PathTracingPassesTheWhiteFurnaceTest` adds four
+  two bounces for two 17-frame histories, 2026-11-17), and `TracedCameraRaysStartAtTheNearPlane` (two cards over the rig,
+  1 spp and one bounce for 3 frames, 2026-11-23). The rewritten `PathTracingPassesTheWhiteFurnaceTest` adds four
   lone-card histories to the rig's (below), and every path-traced frame now pays for a GGX lobe;
   only a frame with clouds on still traces the extra cloud-depth ray.
 

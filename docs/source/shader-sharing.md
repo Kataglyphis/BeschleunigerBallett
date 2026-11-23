@@ -15,7 +15,7 @@ their `include_str!` calls are unchanged and now read Slang-emitted text.
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
 shared modules under `shaders/common/`: `aces`, `brdf`, `brdf_energy_fit`,
-`constants`, `fullscreen`, `hdr_safe`, `noise`, `path_estimator`,
+`camera_ray`, `constants`, `fullscreen`, `hdr_safe`, `noise`, `path_estimator`,
 `punctual_light`, `punctual_shadow`, `shadow_pcf`, `sky_model`,
 `trace_constants` and `volumetric_clouds`. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
@@ -55,7 +55,7 @@ be emitted to GLSL/WGSL text, and imported functions are name-mangled in the
 emit, so sharing goes through Slang's module system, not textual `#include`:
 
 - **Shared math** lives under `third_party/OxidANT/shaders/common/`. All of
-  its fourteen modules but `punctual_shadow.slang`, WebGPU's alone, are imported
+  its fifteen modules but `punctual_shadow.slang`, WebGPU's alone, are imported
   on both targets. The C++-only modules sit under
   `Resources/ShadersSlang/common/`, shared across the raster, deferred,
   shadow-map, ray tracing and path tracing paths. The shared-module-targets
@@ -85,6 +85,15 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
 - `common/constants.slang` — `PI` and `MIN_ROUGHNESS` (0.045), for `brdf`,
   `path_estimator`, `volumetric_clouds`, `material_rules.slang` and the path
   tracer's furnace card. Both.
+- `common/camera_ray.slang` — the camera's ray: `camera_ray(clip_to_world,
+  ndc)` unprojects the near and far plane, so a traced camera ray starts on the
+  near plane, where raster clips (owner 2026-11-19), with the far plane as its
+  length; `camera_ray_through_pixel` takes a pixel through
+  `fullscreen_uv_to_ndc`. Here `raytrace.rgen`, `path_tracing` (the camera and
+  cloud-depth rays) and `compute/clouds` (its direction; the march starts at the
+  eye), over `scene_types.slang`'s `clip_to_world(GlobalUBO)`, the product of the
+  two inverses the UBO carries; in OxidANT the tracer, the sky and the cloud
+  march. Both.
 - `common/trace_constants.slang` — every secondary ray's bounds:
   `TRACE_TMIN` 0.001, `TRACE_TMAX` 10000, `TRACE_SURFACE_OFFSET` 0.0001 along
   the face normal, and `TRACE_LIGHT_SPAN` (1 - 1e-4), where a punctual light's
@@ -301,7 +310,8 @@ tonemap shader.
 <!-- shader-targets:end -->
 
 **CI guards:** OxidANT's vector kernels, `tests/<module>_test.slang` for
-`brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces` and `fullscreen`, run every
+`brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces`, `fullscreen` and
+`camera_ray`, run every
 public function of their `common/` module once per case of
 `tests/vectors/<module>.json` (inputs, f64 references, a tolerance per output;
 OxidANT's `docs/shaders.md` § Vector kernels). Both targets are checked on a
@@ -348,6 +358,7 @@ imports.
 | `common/base_color.slang` | spirv |
 | `common/brdf.slang` | both |
 | `common/brdf_energy_fit.slang` | both |
+| `common/camera_ray.slang` | both |
 | `common/cascaded_shadow.slang` | spirv |
 | `common/constants.slang` | both |
 | `common/emission.slang` | spirv |

@@ -2,6 +2,7 @@ import scene_types;
 import base_color;
 import alpha_test;
 import brdf;
+import camera_ray;
 import constants;
 import hdr_safe;
 import material_fetch;
@@ -48,18 +49,16 @@ static const float BOUNCE_SKY_SCALE = 0.35;
 [[vk::push_constant]] PushConstantPathTracing pc_ray;
 
 // NDC depth of the first surface through the pixel centre, for the clouds; 1 on a miss, like a cleared depth buffer.
-float primary_hit_depth(uint2 pixel, uint2 resolution, float3 origin)
+float primary_hit_depth(uint2 pixel, uint2 resolution)
 {
-    float2 cs = (float2(pixel) + 0.5) / float2(resolution) * 2.0 - 1.0;
-    float4 target = mul(globalUBO.inv_projection, float4(cs.x, cs.y, 1, 1));
-    float3 direction = normalize(mul(globalUBO.inv_view, float4(normalize(target.xyz), 0)).xyz);
+    CameraRay camera = camera_ray_through_pixel(clip_to_world(globalUBO), float2(pixel) + 0.5, float2(resolution));
 
     RayQuery<0> depthQuery;
     RayDesc ray;
-    ray.Origin = origin;
-    ray.Direction = direction;
-    ray.TMin = TRACE_TMIN;
-    ray.TMax = TRACE_TMAX;
+    ray.Origin = camera.origin;
+    ray.Direction = camera.direction;
+    ray.TMin = 0.0;
+    ray.TMax = camera.length;
     depthQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
     while (depthQuery.Proceed())
     {
@@ -77,7 +76,7 @@ float primary_hit_depth(uint2 pixel, uint2 resolution, float3 origin)
     {
         return 1.0;
     }
-    float3 hitPosition = origin + direction * depthQuery.CommittedRayT();
+    float3 hitPosition = camera.origin + camera.direction * depthQuery.CommittedRayT();
     float4 clip = mul(globalUBO.projection, mul(globalUBO.view, float4(hitPosition, 1.0)));
     return clip.z / clip.w;
 }
@@ -119,7 +118,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     // RNG state: frame index folded in so every frame draws different samples.
     uint rngState = path_rng_seed(resolution.x * tid.y + tid.x, pc_ray.frame_index);
 
-    float4 cameraOrigin = mul(globalUBO.inv_view, float4(0, 0, 0, 1));
+    float4x4 clipToWorld = clip_to_world(globalUBO);
 
     int numSamples = int(pc_ray.samples_per_pixel);
     int maxBounces = int(pc_ray.max_bounces);
@@ -131,12 +130,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     {
         // Jitter within the pixel so accumulation anti-aliases edges instead of only denoising.
         float2 pixelCenter = float2(tid.xy) + float2(rng_next(rngState), rng_next(rngState));
-        float2 uv = pixelCenter / float2(resolution);
-        float2 cs = uv * 2.0 - 1.0;
-
-        float4 target = mul(globalUBO.inv_projection, float4(cs.x, cs.y, 1, 1));
-        float3 rayOrigin = cameraOrigin.xyz;
-        float3 rayDirection = normalize(mul(globalUBO.inv_view, float4(normalize(target.xyz), 0)).xyz);
+        // The camera segment runs from the near plane to the far plane, as raster sees; later ones leave a surface.
+        CameraRay camera = camera_ray_through_pixel(clipToWorld, pixelCenter, float2(resolution));
+        float3 rayOrigin = camera.origin;
+        float3 rayDirection = camera.direction;
+        float rayTMin = 0.0;
+        float rayTMax = camera.length;
 
         float3 throughput = float3(1.0);
         float3 radiance = float3(0.0);
@@ -153,8 +152,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             RayDesc ray;
             ray.Origin = rayOrigin;
             ray.Direction = rayDirection;
-            ray.TMin = TRACE_TMIN;
-            ray.TMax = TRACE_TMAX;
+            ray.TMin = rayTMin;
+            ray.TMax = rayTMax;
             rayQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
             // Loop Proceed() to completion; with no any-hit stage, MASK cut-outs are alpha-tested per candidate here.
             while (rayQuery.Proceed())
@@ -302,6 +301,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             // Offset along the normal against self-intersection.
             rayOrigin = hitWorldPosition + TRACE_SURFACE_OFFSET * faceNormal;
+            rayTMin = TRACE_TMIN;
+            rayTMax = TRACE_TMAX;
 
             // NEE cannot double-count with the sky term: the delta light is unreachable by a bounce ray.
             float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
@@ -351,7 +352,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     // A whole extra primary ray per pixel, so only when the clouds read it.
     if (pc_ray.trace_cloud_depth != 0u)
     {
-        tracedDepth[tid.xy] = primary_hit_depth(tid.xy, resolution, cameraOrigin.xyz);
+        tracedDepth[tid.xy] = primary_hit_depth(tid.xy, resolution);
     }
 
     // Temporal accumulation: running mean across frames.

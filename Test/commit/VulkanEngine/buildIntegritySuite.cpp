@@ -3645,7 +3645,7 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
-    // Texel-to-NDC in compute and ray-generation shaders is legitimate, so only fullscreen_vs importers are held to it.
+    // Shadow-map lookups convert NDC by hand until the shared shadow Slang, so only fullscreen importers are held to it.
     static const std::vector<std::string> kCopies{ "(y + 1.0) * 0.5", "uv * 2.0 - 1.0", "uv.y * 2.0" };
     // WebGPU's NDC-to-uv, 0.5 - y * 0.5, is fullscreen_ndc_to_uv's default branch.
     static const std::regex kNdcToUvCopy(R"(\b0\.5\s*-\s*[^;,]*\*\s*0\.5\b)");
@@ -10122,6 +10122,15 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
         { "common/fullscreen.slang",
           std::regex(kDefines + R"((fullscreen_vs|fullscreen_uv_to_ndc|fullscreen_ndc_to_uv)\s*\()"),
           "a fullscreen mapping" },
+        { "common/camera_ray.slang",
+          std::regex(kDefines + R"((camera_ray|camera_ray_through_pixel)\s*\()"),
+          "a camera ray" },
+        { "common/camera_ray.slang",
+          std::regex(
+            R"(mul\(\s*[\w.]*(inv_view_proj|inv_projection|clip_to_world)\s*,\s*float4\([^;]*,\s*[01](\.0)?\s*,\s*1(\.0)?\s*\)\s*\))"
+            R"(|float4\s+\w+\s*=\s*float4\(\s*(?![-0-9.]+\s*,)[^;]*,\s*[01](\.0)?\s*,\s*1(\.0)?\s*\)\s*;)"
+            R"(|\binv_view\s*,\s*float4\(\s*0(\.0)?\s*,\s*0(\.0)?\s*,\s*0(\.0)?\s*,\s*1(\.0)?\s*\)|\binv_view\s*\[\s*3\s*\])"),
+          "a near- or far-plane unprojection, inline or a statement later, or the eye as a ray origin" },
     };
 
     std::vector<std::string> violations;

@@ -14,6 +14,12 @@ the GitHub releases themselves.
 
 ### Added
 
+- `GoldenRender.TracedCameraRaysStartAtTheNearPlane`: an unlit card half the near distance in front of the eye, wider
+  than the frustum there, shows in no mode, and a smaller one beyond the near plane fills the frame's centre in forward,
+  ray-traced and path-traced frames; with the camera rays started at the eye, the traced frames showed the near card
+  over the whole border. `BuildIntegrity.NoShaderCopiesASharedLeafModule` also fails a hand-written near- or far-plane
+  unprojection, inline or through a clip-space point declared a statement before (the old cloud pass's), or the eye
+  as a ray origin.
 - `BuildIntegrity.NoShaderCopiesASharedLeafModule` fails a `.slang` file in either tree that keeps a private copy of
   a shared leaf module's constant, literal (3.14159, 0.045, 65000, an ACES coefficient, a ray bound), NaN check or
   function; each rule must also still match its owner, which caught the first draft's HDR literal pattern matching
@@ -48,6 +54,14 @@ the GitHub releases themselves.
 
 ### Changed
 
+- Traced camera rays start at the near plane (owner 2026-11-19), through OxidANT `f2360d5`'s `camera_ray.slang`:
+  `raytrace.rgen`, the path tracer's camera and cloud-depth rays and the cloud compute pass take
+  `camera_ray_through_pixel`/`camera_ray` over `scene_types.slang`'s `clip_to_world(GlobalUBO)`, the product of the
+  two inverses the UBO already carries, so the UBO layout and its gates stay as they were. A camera ray runs from the
+  near plane (`TMin` 0) to the far plane (`TMax` its length) instead of from the eye (`TMin` 0.001) to 10000, as
+  raster clips; later path segments keep `TRACE_TMIN`/`TRACE_TMAX`. A frame changes only where geometry lies closer
+  than the near plane or beyond the far plane; no golden's does. The ray-generation shader's and the path tracer's
+  `uv * 2 - 1` and the clouds' texel-to-NDC go through `fullscreen_uv_to_ndc`.
 - OxidANT pin to `2d604b4` (shared Slang leaf modules, plan I8): `common/constants.slang` (`PI`, `MIN_ROUGHNESS`),
   `common/hdr_safe.slang` (`HDR_MAX`, and `hdr_safe` with the bit-test NaN check WGSL needs) and
   `common/trace_constants.slang` (`TRACE_TMIN`, `TRACE_TMAX`, `TRACE_SURFACE_OFFSET`, `TRACE_LIGHT_SPAN`) are OxidANT's,

@@ -51,11 +51,16 @@ default 8), each up to `max_bounces` segments (GUI slider, default 8).
 Changing either slider resets the accumulation (a mean over two different
 estimators is biased).
 
-- **Primary ray** from the precomputed `inv_view`/`inv_projection` in
-  `GlobalUBO` (the kernel used to invert both matrices *per sample*: 24 4x4
-  inversions per pixel per frame), jittered uniformly within the pixel's unit
-  square (a box filter) instead of always through the exact centre, so
-  `samples_per_pixel` and the temporal running mean anti-alias geometric edges
+- **Primary ray** from OxidANT's `camera_ray_through_pixel`
+  (`common/camera_ray.slang`) over `clip_to_world(globalUBO)`, the product of
+  the precomputed `inv_view` and `inv_projection` (the kernel used to invert
+  both matrices *per sample*: 24 4x4 inversions per pixel per frame). It starts
+  on the near plane and ends on the far plane, where raster clips (owner
+  2026-11-19, as the Rust tracer and this repo's ray-generation shader trace),
+  so its `TMin` is 0 and its `TMax` the far plane's distance; every later
+  segment takes `TRACE_TMIN`/`TRACE_TMAX`. It is jittered uniformly within the
+  pixel's unit square (a box filter) instead of always through the exact centre,
+  so `samples_per_pixel` and the temporal running mean anti-alias geometric edges
   rather than just denoise a point-sampled image.
 - **Hit**: the albedo (texture, or `material.diffuse` when `textureID` is
   -1, times the vertex colour), metallic and roughness as every raster path

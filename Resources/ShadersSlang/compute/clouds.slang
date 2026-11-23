@@ -1,3 +1,5 @@
+import camera_ray;
+import fullscreen;
 import scene_types;
 import volumetric_clouds;
 
@@ -50,13 +52,9 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
         return;
 
     // Through the texel centre, where the depth below was written and where post samples this texel.
-    float2 uv = (float2(texelCoord) + 0.5) / float2(size);
-    float2 ndc = uv * 2.0 - 1.0;
-
-    float4 clip = float4(ndc, 1.0, 1.0);
-    float4 eyeCoords = mul(globalUBO.inv_projection, clip);
-    eyeCoords = float4(eyeCoords.xy, -1.0, 0.0);
-    float3 rayDirection = normalize(mul(globalUBO.inv_view, eyeCoords).xyz);
+    float2 ndc = fullscreen_uv_to_ndc((float2(texelCoord) + 0.5) / float2(size));
+    // The march starts at the eye, so it takes the camera ray's direction alone.
+    float3 rayDirection = camera_ray(clip_to_world(globalUBO), ndc).direction;
 
     CloudParams params;
     params.cloudMeshScale = scene.cloudMeshScale;
@@ -95,7 +93,7 @@ void cloud_upsample_main(uint3 tid : SV_DispatchThreadID)
     if (pixel.x >= int(width) || pixel.y >= int(height))
         return;
 
-    float2 ndc = (float2(pixel) + 0.5) / float2(int2(int(width), int(height))) * 2.0 - 1.0;
+    float2 ndc = fullscreen_uv_to_ndc((float2(pixel) + 0.5) / float2(int2(int(width), int(height))));
     float pixelDistance =
         cloud_scene_distance(globalUBO.inv_projection, ndc, sceneDepth.Load(int3(pixel, 0)), float3(0.0));
 

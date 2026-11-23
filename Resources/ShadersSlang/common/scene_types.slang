@@ -111,6 +111,12 @@ struct GlobalUBO
     float4x4 inv_view;
 };
 
+// Clip to world for camera_ray, built from the two inverses GlobalUBO carries rather than a third matrix in its layout.
+float4x4 clip_to_world(GlobalUBO ubo)
+{
+    return mul(ubo.inv_view, ubo.inv_projection);
+}
+
 struct SceneUBO
 {
     DirectionalLightData dirLight;

@@ -5138,6 +5138,87 @@ TEST(GoldenRender, PathTracedUnlitCardKeepsItsAlbedo)
     }
 }
 
+// Traced camera rays start at the near plane, where raster clips (owner 2026-11-19); from the eye they hit a card raster never draws.
+TEST(GoldenRender, TracedCameraRaysStartAtTheNearPlane)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto card = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_near_plane_card.gltf", [](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = { { "baseColorFactor", { 0.8, 0.4, 0.1, 1.0 } } };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+        material["extensions"]["KHR_materials_unlit"] = nlohmann::json::object();
+        gltf["extensionsUsed"] = nlohmann::json::array({ "KHR_materials_unlit" });
+    });
+    ASSERT_TRUE(card.has_value()) << "could not write the unlit card";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; no traced camera ray to check.";
+    }
+
+    auto &renderer_vars = harness.useForwardRaster();
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    constexpr float EYE_Z = 3.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, EYE_Z));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+    harness.render_frames(WARMUP_FRAMES);
+    // Half the 0.1 near distance from the eye and far wider than the frustum there; the control card lies beyond.
+    ASSERT_TRUE(
+      harness.renderer->addModel(card->string(), glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, EYE_Z - 0.05F)))
+        .has_value())
+      << "adding the card inside the near plane failed";
+    ASSERT_TRUE(harness.renderer
+        ->addModel(card->string(),
+          glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 0.0F, EYE_Z - 0.5F))
+            * glm::scale(glm::mat4(1.0F), glm::vec3(0.1F)))
+        .has_value())
+      << "adding the control card failed";
+    harness.render_frames(SETTLE_FRAMES);
+
+    constexpr std::array<float, 3> ORANGE = { 0.8F, 0.4F, 0.1F };
+    const auto is_card = [&](const std::vector<float> &radiance, size_t pixel) {
+        for (size_t channel = 0; channel < 3U; ++channel) {
+            if (std::abs(radiance[pixel * 4U + channel] - ORANGE[channel]) > 0.02F) { return false; }
+        }
+        return true;
+    };
+    for (const auto &[name, raytracing, path_tracing] : { std::tuple{ "forward", false, false },
+           std::tuple{ "ray traced", true, false },
+           std::tuple{ "path traced", false, true } }) {
+        renderer_vars.raytracing = raytracing;
+        renderer_vars.pathTracing = path_tracing;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+
+        // The outer tenth of every side shows the rig, never the card that covers the frustum inside the near plane.
+        size_t border = 0;
+        size_t border_card = 0;
+        for (uint32_t y = 0; y < height; ++y) {
+            for (uint32_t x = 0; x < width; ++x) {
+                if (x >= width / 10U && x < width - width / 10U && y >= height / 10U && y < height - height / 10U) {
+                    continue;
+                }
+                ++border;
+                border_card += is_card(radiance, static_cast<size_t>(y) * width + x) ? 1U : 0U;
+            }
+        }
+        const double card_share = static_cast<double>(border_card) / static_cast<double>(border);
+        GTEST_LOG_(INFO) << name << ": " << card_share << " of the border shows the card";
+        EXPECT_TRUE(is_card(radiance, static_cast<size_t>(height / 2U) * width + width / 2U))
+          << name << " does not show the control card beyond the near plane - check the placement";
+        EXPECT_LT(card_share, 0.01) << name
+                                    << " shows the card inside the near plane: its camera rays start at the eye";
+    }
+}
+
 // A metallic-roughness texel with G = 0 once made GGX alpha 0: the visible-normal density's 0/0 broke whole samples.
 TEST(GoldenRender, PathTracingFloorsAZeroRoughnessTexel)
 {
