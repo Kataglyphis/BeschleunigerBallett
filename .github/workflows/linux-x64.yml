@@ -139,7 +139,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop

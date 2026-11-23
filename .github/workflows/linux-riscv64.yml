@@ -40,7 +40,7 @@ jobs:
       container-args: -e CARGO_HOME=/tmp/cargo-home
       cache-lane: riscv64-clang-debug
       cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
-      cache-env: 'SCCACHE_CACHE_SIZE=1500M'
+      cache-env: 'SCCACHE_CACHE_SIZE=1200M'
       timeout-minutes: 120
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}
@@ -81,7 +81,7 @@ jobs:
       # The push lane's key: a scheduled run restores its cache and, off a push, never saves.
       cache-lane: riscv64-clang-debug
       cache-mounts: 'sccache:/var/cache/sccache cargo-home:/tmp/cargo-home'
-      cache-env: 'SCCACHE_CACHE_SIZE=1500M'
+      cache-env: 'SCCACHE_CACHE_SIZE=1200M'
       timeout-minutes: 360
     secrets:
       GHCR_PAT: ${{ secrets.GHCR_PAT }}

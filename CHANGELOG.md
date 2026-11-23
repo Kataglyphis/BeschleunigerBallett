@@ -101,6 +101,8 @@ the GitHub releases themselves.
 - The static-analysis job runs IWYU over the units without modules (`run-static-analysis-format.sh --only-iwyu`,
   `logs/code-quality/iwyu.txt`): suggestions are reported, a unit IWYU cannot read fails the step (35 units today, 33 with suggestions); the wrapper
   also fails a `fatal error:` line, which the hub's count of `: error:` misses (a missing header passed green).
+- The Linux compiler caches are capped at `SCCACHE_CACHE_SIZE=1200M` (was 1500M): six keys held 9.49 of the
+  repository's 10 GB beside CodeQL's 0.98, so a save evicted another lane's cache.
 - spdlog and nlohmann_json add their headers as SYSTEM (`third_party/CMakeLists.txt`, a9333e7e; hub CON295 (c)
   step 1), so their 124 and 12 gcc warnings no longer count as this repo's.
 - One set of defaults (BACKLOG "One set of defaults: the Sun, the wind and F5", plan I6): the C++ Sun is OxidANT's
