@@ -70,21 +70,15 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 ### P2: medium
 
-- [b] `CI` **A burst of develop pushes loses the middle commit's verdict** (S, needs an owner decision). Since
-  9dedc393 no develop run that had started was cancelled (D9 holds: dc69fa7e ran 142 min to its end), but
-  GitHub keeps one waiting run per concurrency group, so runs 44929269007 and 44930561429 were replaced with 0
-  jobs while 145423b5's ran. Either a group per commit on develop, whose runs then compete for the account's
-  concurrent jobs, or fewer pushes.
 - [ ] `CI` **Warnings that count, and the cache cap's first runs** (S each). Since 2026-11-23 (hub pin
   04981676, run 45233255466): explicit PIE at the project's scope, IWYU as a report (32 of 35 units with
   suggestions), and no spdlog `-Wstringop-overflow` in the profiling job since spdlog builds without LTO;
   `SCCACHE_CACHE_SIZE` is 1200M per key. Left: watch the next few runs' clang-tests and sanitizer build times
-  and the cache total (under 10 GB); 1200M sits at or below the debug working set (about 1.5 GB at zlib-1), so
-  if the builds slow down, drop the profile and tsan keys and go back to 1500M. At the next hub pin (d2aaa551
-  or later) drop BB's own `: fatal error:` count in `run-static-analysis-format.sh`, which the hub's IWYU
-  count now has, and once hub CON299 lands, replace `Build-Windows.ps1`'s inline "Bundle layout" step with its
-  install-tree check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product
-  targets.
+  and the cache total (under 10 GB); 1200M sits at or below the debug working set (about 1.5 GB at zlib-1),
+  and the owner keeps it there even if some keys miss (2026-11-23). At the next hub pin (d2aaa551 or later)
+  drop BB's own `: fatal error:` count in `run-static-analysis-format.sh`, which the hub's IWYU count now has,
+  and once hub CON299 lands, replace `Build-Windows.ps1`'s inline "Bundle layout" step with its install-tree
+  check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product targets.
 
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
@@ -483,6 +477,9 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 
 So the next sweep stops here instead of re-deriving them.
 
+- A burst of develop pushes can lose the middle commit's CI verdict, since GitHub keeps one waiting run per
+  concurrency group (runs 44929269007, 44930561429). Owner 2026-11-23: keep the groups as they are and push
+  less often.
 - `agents-drift` (2026-11-23): the hub scopes it to its AI consumers, and BB's AGENTS.md is not in the hub's
   six-section template (22 findings on a trial run). `core.hooksPath` on the Pi's clone is that host's, not
   this repo's.
