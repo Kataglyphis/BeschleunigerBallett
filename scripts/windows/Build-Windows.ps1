@@ -49,7 +49,8 @@ Import-BuildModule @(
   'WindowsCMake.Common',
   'WindowsFormatting.Common',
   'WindowsTesting.Common',
-  'WindowsTargetArch.Common'
+  'WindowsTargetArch.Common',
+  'WindowsPeHardening.Common'
 )
 
 function Assert-MsixLicenseContents {
@@ -373,6 +374,14 @@ try {
       Write-BuildLog -Context $context -Message "Portable bundle $($result.Bundle); DLL closure: $($result.Added -join ', '); packages: $($result.Installers -join ', ')"
     } | Out-Null
 
+    # The hub's PE gate (CON294): every shipped .exe and .dll, the redist DLLs included, has ASLR, DEP and CFG.
+    Invoke-BuildStep -Context $context -StepName "PE hardening ($TargetArch)" -Critical -Script {
+      $binaries = @(Get-ChildItem -LiteralPath (Join-Path $distArch 'bundle') -Recurse -File -Include '*.exe', '*.dll' | ForEach-Object FullName)
+      if ($binaries.Count -eq 0) { throw "No .exe or .dll in $distArch\bundle to check" }
+      Assert-PeHardening -Path $binaries
+      Write-BuildLog -Context $context -Message "PE hardening: $($binaries.Count) binaries carry DYNAMIC_BASE, NX_COMPAT, HIGH_ENTROPY_VA and GUARD_CF"
+    } | Out-Null
+
     # Beside the product, not in it: the run job downloads both, and the hub grades this tree with the same arch gate.
     if ($StageTests) {
       Invoke-BuildStep -Context $context -StepName "Stage tests ($TargetArch)" -Critical -Script {
@@ -384,7 +393,8 @@ try {
         # Invoke-WindowsLane.ps1's GPU suites, plus the source checks that read Src/, scripts/ and docs/, which a test tree lacks.
         $filter = '-GoldenRender.*:Integration.*:BuildIntegrity.*'
         $manifest = [System.Collections.Generic.List[object]]::new()
-        $manifest.Add(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
+        # allowed_skips: none, so any skip fails the arm64 run (CON292; 0 in job 136436488204).
+        $manifest.Add(@{ exe = 'commitTestSuite.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter"); allowed_skips = @() })
         $staged = @($suite)
         # The perf suite rides along when clangcl-profile was built; it exits non-zero when a benchmark cannot run.
         if (Test-ConfigurationSelected -Name 'clangcl-profile' -SelectedConfigurations $selectedConfigurations) {
@@ -397,7 +407,7 @@ try {
           $fuzz = @(Get-ChildItem -LiteralPath $buildPathClangRelease -Filter '*_fuzz_test.exe' -File | ForEach-Object FullName)
           if ($fuzz.Count -eq 0) { throw "The Release build made no *_fuzz_test.exe; KATAGLYPHIS_RELEASE_FUZZ_TESTS did not take" }
           $staged += $fuzz
-          foreach ($target in $fuzz) { $manifest.Add(@{ exe = (Split-Path $target -Leaf); kind = 'gtest' }) }
+          foreach ($target in $fuzz) { $manifest.Add(@{ exe = (Split-Path $target -Leaf); kind = 'gtest'; allowed_skips = @() }) }
         }
         Copy-Item -LiteralPath $staged -Destination $tests
         # kataglyphis_add_crash_dump links this PDB; without it a crash's module+RVA frames have no names.
@@ -415,7 +425,7 @@ try {
           $asanSuite = Join-Path $buildPathClangDebug 'commitTestSuite.exe'
           if (-not (Test-Path -LiteralPath $asanSuite -PathType Leaf)) { throw "The Debug build made no $asanSuite" }
           Copy-Item -LiteralPath $asanSuite -Destination (Join-Path $tests 'commitTestSuite-debug.exe')
-          $manifest.Add(@{ exe = 'commitTestSuite-debug.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter") })
+          $manifest.Add(@{ exe = 'commitTestSuite-debug.exe'; kind = 'gtest'; args = @("--gtest_filter=$filter"); allowed_skips = @() })
           & (Join-Path $workspacePath 'third_party\ANTfrastructure\windows\scripts\build\Copy-Arm64VsRuntime.ps1') -InstallDir $tests -Flat
         }
         # repoRoot() walks up to the first Resources/ShadersSlang, so the suites find the shaders, models and OxidANT's fixtures staged here.

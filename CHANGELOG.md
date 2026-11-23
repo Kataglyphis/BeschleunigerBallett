@@ -14,6 +14,12 @@ the GitHub releases themselves.
 
 ### Added
 
+- The hub's hardening gates read the shipped binaries (CON294): the Linux release job runs `verify-elf-hardening.sh`
+  on the .deb's `usr/lib/graphicsengine/GraphicsEngine`, and `Build-Windows.ps1` runs `Assert-PeHardening` over every
+  `.exe` and `.dll` of the portable bundle, in both Windows lanes. On the binaries of runs 45001331996 and
+  45001332269, built before the hub pin, the ELF gate found no BIND_NOW and the PE gate no CFG bit in
+  `GraphicsEngine.exe`. The arm64 lane's staged gtest entries carry an empty `allowed_skips` (CON292), so a skipped
+  test fails the run by name.
 - `GoldenRender.TracedCameraRaysStartAtTheNearPlane`: an unlit card half the near distance in front of the eye, wider
   than the frustum there, shows in no mode, and a smaller one beyond the near plane fills the frame's centre in forward,
   ray-traced and path-traced frames; with the camera rays started at the eye, the traced frames showed the near card

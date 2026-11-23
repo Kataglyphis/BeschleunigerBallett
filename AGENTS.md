@@ -247,6 +247,10 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
 - The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/GraphicsEngine/LICENSE`.
+- The hub's hardening gates (CON294) read the shipped binaries: the Linux release job runs `verify-elf-hardening.sh`
+  on the .deb's `usr/lib/graphicsengine/GraphicsEngine` (PIE, RELRO, BIND_NOW, stack protector, `_FORTIFY_SOURCE`),
+  and `Build-Windows.ps1` runs `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP,
+  high-entropy VA, CFG). Before the hub pin `734ab966` both failed: no BIND_NOW, no CFG bit in `GraphicsEngine.exe`.
 - MSIX packaging passes `images/logo.png` to the shared renderer; transparent placeholder logos are forbidden.
 - A selected MSIX build is critical and checks the completed package for the project license and both Sponza texts using the shared verifier.
 - The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
@@ -743,7 +747,8 @@ On `windows-11-arm` the commit suite runs whole, in two halves:
   `Invoke-StagedTests.ps1` (hub CON43): the CPU suites (the commit suite minus the GPU suites and
   the source-reading `BuildIntegrity.*` checks), `perfTestSuite.exe` (the Profile perf suite) as an
   `exitcode` entry, and the Debug (ASan) suite the lane cross-builds too (dda807b0), whose `/MDd`
-  CRT and `ucrtbased.dll` come from the runner's own VS and SDK (neither is redistributable).
+  CRT and `ucrtbased.dll` come from the runner's own VS and SDK (neither is redistributable). Every
+  gtest entry carries an empty `allowed_skips` (hub CON292), so a skipped test fails the run, named.
 - This repo's `gpu-suites` job checks the repo out, puts the staged shaders in it and runs the
   Release suite's GPU suites on lavapipe plus the source-reading `BuildIntegrity.*` checks through
   `Invoke-LavapipeTests.ps1`; its own job, because the hub's stops at 30 minutes.

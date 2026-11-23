@@ -524,6 +524,16 @@ jobs:
         if: matrix.part != 'docs'
         run: for deb in "${BUILD_RELEASE_DIR}"/*.deb; do bash scripts/linux/check-deb-layout.sh "${deb}"; done
 
+      # The hub's ELF gate (CON294) on the program the .deb ships; usr/bin/GraphicsEngine is its launcher script.
+      - name: The shipped binary's hardening
+        if: matrix.part != 'docs'
+        run: |
+          for deb in "${BUILD_RELEASE_DIR}"/*.deb; do
+            tree="$(mktemp -d)"
+            dpkg-deb -x "${deb}" "${tree}"
+            bash third_party/ANTfrastructure/linux/scripts/06-packaging/verify-elf-hardening.sh "${tree}/usr/lib/graphicsengine/GraphicsEngine"
+          done
+
       - name: Upload Linux Packages (Clang only)
         if: matrix.part != 'docs'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
