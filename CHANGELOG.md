@@ -14,6 +14,19 @@ the GitHub releases themselves.
 
 ### Added
 
+- An analytic ambient term (BACKLOG "An analytic ambient term with an Ambient slider", plan C4 stage 1): forward,
+  deferred and the closest-hit shader add OxidANT's `analytic_ambient` (`common/ambient.slang`) after the sun's
+  shadow, the procedural sky's hemisphere irradiance and its reflected gradient and sun disk blurred towards it by
+  roughness squared, which Rust's forward pass takes without a baked environment. Shadowed ground was black; it takes
+  the sky's blue now. The Sky tab's ENVIRONMENT section has Rust's Ambient slider (0-2, default 0.35), the Sun's
+  `ambient`, which reaches the shaders in `dirLight.direction.w`. The path tracer gets the sky through its misses and
+  keeps its 0.35 bounce scale. `GoldenRender.TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame` reads the
+  shadow's linear radiance in forward, deferred and ray-traced frames: none at ambient 0, the sky's blue at the
+  default, scaled by exactly 2 / 0.35 at the slider's top, and the same in all three. `BuildIntegrity` names the three
+  readers of `dirLight.direction.w` and fails a private `analytic_ambient` or `ambient_split_sum`.
+- `Integration.F5RequestsAShaderReload` presses F5 in the editor and sees the reload request reach the renderer;
+  `BuildIntegrity.ShaderReloadRequestsAreInEveryBuild` fails a request site inside an `NDEBUG` block.
+
 - `security-audit.yml` calls the hub's lockfile audit: osv-scanner over `uv.lock`, where a new HIGH or CRITICAL
   advisory fails a push (a planted pyyaml 5.3 did) and the Monday run reports every one. `retry-disk-refusal.yml`
   re-runs a Linux x64, on-request or release job that `prepare-linux-ci-host` refused for disk. The code quality
@@ -65,6 +78,17 @@ the GitHub releases themselves.
   for the load) until the RX 9070 XT host refreshes them.
 
 ### Changed
+
+- One set of defaults (BACKLOG "One set of defaults: the Sun, the wind and F5", plan I6): the C++ Sun is OxidANT's
+  (radiance 5, warm white (1, 0.97, 0.92), towards (0.5, 0.8, 0.3), ambient 0.35; was 10, white, a light travelling
+  along (-0.55, -1, -0.35) and no ambient), so `SceneSettingsDrift` compares it field by field.
+  `directional_light_direction` holds the way towards the Sun, as OxidANT's `SunSettings`; `fillSceneUboDirectionalLight` turns it into the travel
+  direction the shaders and cascades read (`sunTravelDirection`), a glTF Sun is published negated, and the Sun tab
+  still shows and edits the way the light travels, as Rust's. The bridged Sun has its ranges in `setting_ranges()`
+  and is sanitized like the other sections (clamped, NaN and infinity at the default, a zero direction straight up),
+  which the drift suite holds to the editor's constants (`kMaxSunRadiance`, `kMaxAmbient`, `kMaxSunDirectionAxis`).
+  The wind range was already ±100. F5, the File menu's Reload shaders and the Renderer tab's button reload the shaders
+  in every build, not only Debug, as Rust's viewer. OxidANT pin `8d2bc42`.
 
 - ANTfrastructure pin to `734ab966`, through `renovate-local.sh --submodule-path`: every Windows link passes
   `/NXCOMPAT /DYNAMICBASE /guard:cf` (CON290), so `GraphicsEngine.exe` gets the CFG bit, unset in both bundles of

@@ -19,7 +19,7 @@ using Kataglyphis::shadowResolutionForIndex;
 namespace {
 
 // Size when makeNonDefaultVars() was last checked against the struct.
-constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 192;
+constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 200;
 
 // Must stay exhaustive: a field forgotten here goes untested.
 GUISceneSharedVars makeNonDefaultVars()
@@ -33,6 +33,7 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.directional_light_direction[0] = -0.1F;
     vars.directional_light_direction[1] = -0.2F;
     vars.directional_light_direction[2] = -0.3F;
+    vars.directional_light_ambient = 1.25F;
     vars.shadow_map_res_index = 1;
     vars.shadow_resolution_changed = true;
     vars.num_shadow_cascades = 2;

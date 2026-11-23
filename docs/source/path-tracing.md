@@ -146,7 +146,9 @@ estimators is biased).
   (`skybox_radiance_lod0` in `common/skybox_radiance.slang`, its sRGB
   decode), the disabled sky's navy otherwise, times 0.35. Rust scales by
   its ambient strength times its environment intensity; the C++ engine has
-  neither setting, so the constant is their defaults (0.35 and 1). The cube
+  the ambient since 2026-11-23 (the Sky tab's slider, which the raster paths
+  and the closest-hit shader read) but no environment intensity, and its path
+  tracer keeps the two defaults' product (0.35 and 1) as a constant. The cube
   map is `SKYBOX_CUBEMAP_BINDING` in the ray-tracing set, compute only; it is
   uploaded once and stays `eShaderReadOnlyOptimal`, so no barrier guards it.
   The push constants' `skybox_enabled` carries the switch, and toggling it
@@ -242,13 +244,16 @@ dramatically.
   fraction in a GUI-free crop: 7.6e-3 early, 3.1e-5 late; the
   frame-invariant seed measures exactly 0 early and fails.
 - `PathTracingAntiAliasesGeometricEdges` - the shadow rig's slab against the
-  sky: a jittered, accumulated primary ray blends that edge in 312 of 312
-  columns, a pixel-centre-only kernel in none, so it fails. The oracle, and
+  sky, under a sun of radiance 10 (at the default 5 the slab's top stands off
+  the sky in 61 of 312 columns, too few for the oracle): a jittered,
+  accumulated primary ray blends that edge in 312 of 312 columns, a
+  pixel-centre-only kernel in none, so it fails. The oracle, and
   why every edge in the crop stopped being it on 2026-10-12:
   `gpu-golden-testing.md` § The riscv64 light variant.
-- `PathTracingRespondsToTheDirectionalLight` - radiance 10 vs 0 on the
-  shadow rig: swung fraction 0.751 (0.027 pre-HDR - the ceiling hid three
-  quarters of the response) vs exactly 0 for the pre-NEE kernel.
+- `PathTracingRespondsToTheDirectionalLight` - the default radiance vs 0 on
+  the shadow rig: swung fraction 0.751 at radiance 10, 0.748 at the default 5
+  since 2026-11-23 (0.027 pre-HDR - the ceiling hid three quarters of the
+  response) vs exactly 0 for the pre-NEE kernel.
 - `PathTracingHonorsTheQualityControls` - bounce cap 8 vs 1 swings 0.255
   (all indirect sky light vanishes); hardcoded-bounds kernel: 7.3e-5.
 - `PathTracingHonorsTheUntexturedMetallicFactor` - `metallic_card.gltf`
@@ -304,10 +309,12 @@ dramatically.
   path (`gpu-golden-testing.md` § Known issue: path-tracing compute
   device-lost on the large dinosaur mesh, BACKLOG.md).
 - `RaytracedShadowsAreDarkerThanLitGround` - the RT closest-hit path, not
-  PT: on the shadow rig the darkest decile of a GUI-free crop must stay
-  under 5% of the brightest decile's luminance. Measured 0 vs 244 with the
-  fix, 41.6 vs 248 when `raytrace.rchit.slang` seeds its payload with the
-  unlit albedo (`e852ac99`).
+  PT: on the shadow rig, with the Ambient at 0, the darkest decile of a
+  GUI-free crop must stay under 5% of the brightest decile's luminance.
+  Measured 0 vs 244 with the fix, 41.6 vs 248 when `raytrace.rchit.slang`
+  seeds its payload with the unlit albedo (`e852ac99`); the sky's ambient,
+  which the closest-hit shader adds since 2026-11-23, gives 43.4 vs 229 at
+  the default 0.35, so the test zeroes it.
 
 Seven more goldens cover the kernel without the `PathTracing` prefix the
 marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at

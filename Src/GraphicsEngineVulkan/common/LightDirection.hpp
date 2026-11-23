@@ -14,4 +14,7 @@ inline auto normalizedLightDirection(glm::vec3 raw) -> glm::vec3
     return glm::normalize(raw);
 }
 
+// The settings hold the way towards the Sun, as OxidANT's; the shaders and cascades take the way its light travels.
+inline auto sunTravelDirection(glm::vec3 towardsSun) -> glm::vec3 { return normalizedLightDirection(-towardsSun); }
+
 }// namespace Kataglyphis

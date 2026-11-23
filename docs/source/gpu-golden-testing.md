@@ -331,7 +331,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=91 runnable=89 integration=14 total=103 excluded=3 -->
+<!-- golden-counts: defined=92 runnable=90 integration=15 total=105 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -440,6 +440,16 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   near 0.18 must average level 141, and the two frames must hold at least 1000 green texels
   below 0.05 and above 1.0 and 100 near 0.18, so the toe, middle and shoulder are all checked.
   The C++ post has no exposure or bloom stage to test; those are the Rust renderer's.
+- **`TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame`** (2026-11-23): the shadow rig with the
+  sun's shadow at full strength, in forward, deferred and ray-traced frames, at Ambient 0, the default
+  0.35 and the slider's top, 2. Over the predicted shadow's core (`predict_ground_shadow`, every
+  pixel's 13 x 13 window shadowed, 54690 px) the linear HDR radiance must be none at 0, blue
+  (b over twice r, the zenith's irradiance on an upward face) at the default, 2 / 0.35 times the
+  default's in every channel within 2 % at 2, and the same in all three modes within 5 %.
+  Measured on aarch64 llvmpipe: (0.0223, 0.0397, 0.0869) at the default, ratio 5.713, deferred
+  within 0.01 % of forward and the ray tracer equal to it. With the term dropped from
+  `deferred.slang` its shadow is black and the test fails. `ForwardLightingRespondsToTheDirectionalLight`
+  and `RaytracedShadowsAreDarkerThanLitGround` set the Ambient to 0 since: they isolate the sun.
 - **`SkyFillsTheHdrTargetInEveryModeButPathTracing`**: on the shadow rig with the navy sky, the
   forward, deferred and ray-traced HDR targets hold no transparent texel and more than 5000
   texels at the navy's untonemapped radiance, which post shows as the navy; the path-traced

@@ -561,11 +561,10 @@ void GUI::render()
         studio->releaseFocus = overlayVisible;
         studio->scrollLibraryToCurrent = overlayVisible;
     }
-#ifndef NDEBUG
+    // Every build, as Rust's (owner 2026-11-19): a package reloads the SPIR-V it installs.
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
         guiRendererSharedVars.shader_hot_reload_triggered = true;
     }
-#endif
 
     // Re-derived from the shared vars every frame, never cached, so writes from code are not stomped.
     setRenderMode(renderMode());
@@ -714,12 +713,7 @@ void GUI::renderMenuBar()
     ImGui::Dummy(ImVec2(std::max(1.0F, style.SeparatorSize), 0.0F));
 
     if (ImGui::BeginMenu("File")) {
-#ifndef NDEBUG
         if (ImGui::MenuItem("Reload shaders", "F5")) { guiRendererSharedVars.shader_hot_reload_triggered = true; }
-#else
-        ImGui::MenuItem("Reload shaders", "F5", false, false);
-        ImGui::SetItemTooltip("Debug builds only");
-#endif
         ImGui::Separator();
         if (ImGui::MenuItem("Quit", "Esc")) { glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE); }
         ImGui::EndMenu();
@@ -1116,19 +1110,24 @@ void GUI::renderLightInspector()
 {
     if (beginStudioProperties("##sun", propertyLabelWidth())) {
         studioPropertyLabel("Radiance");
-        studioSlider("##radiance", &guiSceneSharedVars.directional_light_radiance, 0.0F, 50.0F, "%.1f");
+        studioSlider("##radiance", &guiSceneSharedVars.directional_light_radiance, 0.0F, kMaxSunRadiance, "%.1f");
         studioPropertyLabel("Color", "Click the swatch for the picker");
         ImGui::ColorEdit3("##color",
           guiSceneSharedVars.directional_light_color,
           ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayHex);
         studioPropertyLabel("Direction", "Points from the sun into the scene; normalized before use");
-        studioDragAxes("##direction",
-          guiSceneSharedVars.directional_light_direction,
-          0.005F,
-          -1.0F,
-          1.0F,
-          "%.2f",
-          ImGuiSliderFlags_AlwaysClamp);
+        // The field holds the way towards the Sun, as OxidANT's; the drag shows the way the light travels, as Rust's.
+        float *towards_sun = guiSceneSharedVars.directional_light_direction;
+        std::array<float, 3> travel{ -towards_sun[0], -towards_sun[1], -towards_sun[2] };
+        if (studioDragAxes("##direction",
+              travel,
+              0.005F,
+              -kMaxSunDirectionAxis,
+              kMaxSunDirectionAxis,
+              "%.2f",
+              ImGuiSliderFlags_AlwaysClamp)) {
+            for (std::size_t axis = 0; axis < travel.size(); ++axis) { towards_sun[axis] = -travel[axis]; }
+        }
         endStudioProperties();
     }
 
@@ -1234,6 +1233,14 @@ void GUI::renderModelInspector()
 void GUI::renderSkyInspector()
 {
     sectionHeader("SKYBOX", "##skybox_enabled", &guiSceneSharedVars.skybox_enabled);
+
+    // Rust's Sky tab holds it too: the value is the Sun's, the light the sky's.
+    sectionHeader("ENVIRONMENT");
+    if (beginStudioProperties("##environment", propertyLabelWidth())) {
+        studioPropertyLabel("Ambient", "How strongly the sky lights the scene");
+        studioSlider("##ambient", &guiSceneSharedVars.directional_light_ambient, kMinUnitSetting, kMaxAmbient, "%.2f");
+        endStudioProperties();
+    }
 
     sectionHeader("CLOUDS", "##clouds_enabled", &guiSceneSharedVars.clouds_enabled);
     studioBeginDisabled(!guiSceneSharedVars.clouds_enabled);
@@ -1362,17 +1369,10 @@ void GUI::renderRenderInspector()
     mutedWrappedText("Off draws every mesh and shadow caster. The profiler's Visibility tab counts both.");
 
     sectionHeader("SHADERS");
-#ifndef NDEBUG
     if (ImGui::Button("Reload all shaders", ImVec2(-FLT_MIN, 0.0F))) {
         guiRendererSharedVars.shader_hot_reload_triggered = true;
     }
     ImGui::SetItemTooltip("F5");
-#else
-    studioBeginDisabled(true);
-    ImGui::Button("Reload all shaders", ImVec2(-FLT_MIN, 0.0F));
-    studioEndDisabled();
-    ImGui::SetItemTooltip("Debug builds only");
-#endif
 }
 
 void GUI::renderProfilerDock(float height)

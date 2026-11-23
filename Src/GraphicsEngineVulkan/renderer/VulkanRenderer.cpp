@@ -203,7 +203,8 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
       glm::vec3(sceneSettings.directional_light_color[0],
         sceneSettings.directional_light_color[1],
         sceneSettings.directional_light_color[2]),
-      sceneSettings.directional_light_radiance);
+      sceneSettings.directional_light_radiance,
+      sceneSettings.directional_light_ambient);
 
     // Populate the settings into SceneUBO
     sceneUBO.pcfRadius = clampPcfRadius(sceneSettings.pcf_radius);
@@ -320,9 +321,10 @@ void Kataglyphis::VulkanRenderer::publishLoadedModel()
     output.loadedModelPath = scene->getLoadedModelPath();
     // The Sun is a glTF's first directional light, which no longer reaches the punctual-light rows.
     output.publishedSun.reset();
+    // A glTF light points the way it shines; the editor stores the way towards it.
     if (const auto sun = scene->getLoadedModelSun(); sun.has_value()) {
         output.publishedSun = Kataglyphis::VulkanRendererInternals::FrontendShared::PublishedSun{
-            { sun->direction.x, sun->direction.y, sun->direction.z }, { sun->color.r, sun->color.g, sun->color.b }
+            { -sun->direction.x, -sun->direction.y, -sun->direction.z }, { sun->color.r, sun->color.g, sun->color.b }
         };
     }
 }

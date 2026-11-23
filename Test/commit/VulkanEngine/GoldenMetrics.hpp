@@ -89,7 +89,7 @@ inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint
     return total > 0U ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
 }
 
-// Measured on the shadow rig: the slab is 42-44 levels off the sky, a jittered edge pixel 5-11 inside, a centred 0-3.
+// Shadow rig, white sun of radiance 10 (2026-10): slab 42-44 levels off the sky, an edge pixel 5-11 in, centred 0-3.
 constexpr double SKY_SILHOUETTE_STEP = 20.0;
 constexpr double SKY_SILHOUETTE_BLEND_MARGIN = 4.0;
 

@@ -321,3 +321,32 @@ TEST(Integration, F1HidesAndRestoresTheEditor)
     EXPECT_FALSE(shows_the_whole_image(viewport)) << "the restored editor does not inset the scene";
     ASSERT_FALSE(engine.renderer->hasDeviceLost());
 }
+
+// F5 asks for a shader reload in every build, not only Debug (owner 2026-11-19); the Release commit suites run this.
+TEST(Integration, F5RequestsAShaderReload)
+{
+    SKIP_WITHOUT_GPU();
+
+    EditorSession session;
+    auto &engine = session.engine;
+    // The renderer spends the request in the frame that raised it, so it is read between the editor and the renderer.
+    int requests = 0;
+    const auto frame = [&engine, &requests] {
+        glfwPollEvents();
+        engine.gui->render();
+        if (engine.settings.renderer.shader_hot_reload_triggered) { ++requests; }
+        engine.renderer->updateStateDueToUserInput(engine.settings, engine.feedback);
+        Kataglyphis::applyRendererFeedback(engine.settings, engine.feedback);
+        engine.renderer->updateUniforms(engine.scene.get(), engine.camera.get(), engine.settings);
+        engine.renderer->drawFrame(engine.settings, engine.feedback);
+    };
+    ImGuiInputDriver input{ engine.window->get_window(), frame };
+    ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
+
+    input.frames(2);
+    ASSERT_EQ(requests, 0) << "a shader reload was requested before any key";
+    input.pressKey(GLFW_KEY_F5);
+    EXPECT_EQ(requests, 1) << "F5 did not ask the renderer to reload the shaders";
+    EXPECT_FALSE(engine.settings.renderer.shader_hot_reload_triggered) << "the renderer did not spend the request";
+    ASSERT_FALSE(engine.renderer->hasDeviceLost());
+}

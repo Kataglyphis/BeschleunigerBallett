@@ -10,6 +10,7 @@
 
 #include <glm/glm.hpp>
 
+#include "common/LightDirection.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "oxidant_bridge/settings.h"
@@ -71,6 +72,12 @@ TEST(SceneSettingsDrift, DefaultsMatchOxidantsFieldByField)
     EXPECT_EQ(defaults.shadow_distance, rust.shadows.distance);
     EXPECT_EQ(defaults.cascade_split_lambda, rust.shadows.split_lambda);
     EXPECT_EQ(defaults.punctual_shadows_enabled, rust.shadows.punctual);
+
+    // One Sun for both (owner 2026-11-19), its direction towards the Sun in both (2026-11-20): compared as stored.
+    EXPECT_EQ(defaults.directional_light_radiance, rust.sun.radiance);
+    EXPECT_EQ(defaults.directional_light_ambient, rust.sun.ambient);
+    EXPECT_EQ(vec3Of(defaults.directional_light_color), vec3Of(rust.sun.color));
+    EXPECT_EQ(vec3Of(defaults.directional_light_direction), vec3Of(rust.sun.direction));
 }
 
 TEST(SceneSettingsDrift, RangesMatchTheEditorsBounds)
@@ -105,6 +112,12 @@ TEST(SceneSettingsDrift, RangesMatchTheEditorsBounds)
     expectRange(rust.shadows.strength, kMinUnitSetting, kMaxUnitSetting, "strength");
     expectRange(rust.shadows.distance, kMinShadowDistance, kMaxShadowDistance, "distance");
     expectRange(rust.shadows.split_lambda, kMinUnitSetting, kMaxUnitSetting, "split lambda");
+
+    // GUI.cpp's Sun tab and the Sky tab's Ambient; ImGui's ColorEdit3 keeps each channel in [0, 1].
+    expectRange(rust.sun.direction, -kMaxSunDirectionAxis, kMaxSunDirectionAxis, "sun direction");
+    expectRange(rust.sun.color, kMinUnitSetting, kMaxUnitSetting, "sun colour");
+    expectRange(rust.sun.radiance, 0.0F, kMaxSunRadiance, "sun radiance");
+    expectRange(rust.sun.ambient, kMinUnitSetting, kMaxAmbient, "ambient");
 }
 
 // Finite values inside the editor's upper bounds: the engine's floors keep a NaN and anything above them.
@@ -192,26 +205,55 @@ TEST(SceneSettingsDrift, SanitizeHoldsEveryFloatToTheEditorsBoundsAndANonFiniteO
     EXPECT_EQ(vec3Of(high.wind), glm::vec3(kMaxCloudWindSpeed));
 }
 
-// The C++ Sun moves to OxidANT's with its ambient term (BACKLOG "One set of defaults"); until then they differ.
-TEST(SceneSettingsDrift, TheSunIsTheNamedDifferenceUntilOneSetOfDefaults)
+// The bridged Sun is sanitized like the other sections: clamped to the editor's ranges, a NaN or inf at its default.
+TEST(SceneSettingsDrift, SanitizeHoldsTheSunToTheEditorsBoundsAndANonFiniteFieldToItsDefault)
 {
     const GUISceneSharedVars defaults{};
-    const ox::SunSettings rust = ox::default_scene_settings().sun;
-    constexpr const char *kWhy =
-      "the C++ Sun differs from OxidANT's until BACKLOG.md \"One set of defaults: the Sun, "
-      "the wind and F5\"; once that lands, expect the two equal here";
-    EXPECT_EQ(defaults.directional_light_radiance, 10.0F) << kWhy;
-    EXPECT_EQ(vec3Of(defaults.directional_light_color), glm::vec3(1.0F)) << kWhy;
-    EXPECT_EQ(vec3Of(defaults.directional_light_direction), glm::vec3(-0.55F, -1.0F, -0.35F)) << kWhy;
+    for (const float bad : { std::numeric_limits<float>::quiet_NaN(),
+           std::numeric_limits<float>::infinity(),
+           -std::numeric_limits<float>::infinity() }) {
+        ox::SceneSettings settings = ox::default_scene_settings();
+        settings.sun.radiance = bad;
+        settings.sun.ambient = bad;
+        settings.sun.color = { bad, bad, bad };
+        settings.sun.direction = { bad, bad, bad };
+        const ox::SunSettings sun = ox::sanitize(settings).sun;
+        EXPECT_EQ(sun.radiance, defaults.directional_light_radiance) << bad;
+        EXPECT_EQ(sun.ambient, defaults.directional_light_ambient) << bad;
+        EXPECT_EQ(vec3Of(sun.color), vec3Of(defaults.directional_light_color)) << bad;
+        EXPECT_EQ(vec3Of(sun.direction), vec3Of(defaults.directional_light_direction)) << bad;
+    }
 
-    // The owner's Sun for both renderers; the C++ engine has no ambient term to hold the 0.35 yet.
-    EXPECT_EQ(rust.radiance, 5.0F);
-    EXPECT_EQ(rust.ambient, 0.35F);
-    EXPECT_EQ(vec3Of(rust.color), glm::vec3(1.0F, 0.97F, 0.92F));
+    ox::SceneSettings high = ox::default_scene_settings();
+    high.sun.radiance = 1e6F;
+    high.sun.ambient = 1e6F;
+    high.sun.color = { 2.0F, 2.0F, 2.0F };
+    high.sun.direction = { 5.0F, 5.0F, 5.0F };
+    const ox::SunSettings upper = ox::sanitize(high).sun;
+    EXPECT_EQ(upper.radiance, kMaxSunRadiance);
+    EXPECT_EQ(upper.ambient, kMaxAmbient);
+    EXPECT_EQ(vec3Of(upper.color), glm::vec3(kMaxUnitSetting));
+    EXPECT_EQ(vec3Of(upper.direction), glm::vec3(kMaxSunDirectionAxis));
 
-    EXPECT_NE(defaults.directional_light_radiance, rust.radiance) << kWhy;
-    EXPECT_NE(vec3Of(defaults.directional_light_color), vec3Of(rust.color)) << kWhy;
-    // C++ stores the way the light travels, OxidANT the way towards the Sun.
-    const glm::vec3 cppTowardsSun = -glm::normalize(vec3Of(defaults.directional_light_direction));
-    EXPECT_GT(glm::distance(cppTowardsSun, glm::normalize(vec3Of(rust.direction))), 1e-3F) << kWhy;
+    ox::SceneSettings low = ox::default_scene_settings();
+    low.sun.radiance = -1.0F;
+    low.sun.ambient = -1.0F;
+    low.sun.color = { -1.0F, -1.0F, -1.0F };
+    low.sun.direction = { -5.0F, -5.0F, -5.0F };
+    const ox::SunSettings lower = ox::sanitize(low).sun;
+    EXPECT_EQ(lower.radiance, 0.0F);
+    EXPECT_EQ(lower.ambient, kMinUnitSetting);
+    EXPECT_EQ(vec3Of(lower.color), glm::vec3(kMinUnitSetting));
+    EXPECT_EQ(vec3Of(lower.direction), glm::vec3(-kMaxSunDirectionAxis));
+}
+
+// Both renderers send a Sun with no direction straight down; the bridged sanitize points it straight up to match.
+TEST(SceneSettingsDrift, ASunWithNoDirectionShinesStraightDownInBothRenderers)
+{
+    ox::SceneSettings settings = ox::default_scene_settings();
+    settings.sun.direction = { 0.0F, 0.0F, 0.0F };
+    const glm::vec3 towards = vec3Of(ox::sanitize(settings).sun.direction);
+    EXPECT_EQ(towards, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_EQ(Kataglyphis::sunTravelDirection(glm::vec3(0.0F)), glm::vec3(0.0F, -1.0F, 0.0F));
+    EXPECT_EQ(Kataglyphis::sunTravelDirection(towards), glm::vec3(0.0F, -1.0F, 0.0F));
 }

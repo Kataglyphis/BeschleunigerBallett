@@ -409,14 +409,16 @@ TEST(SceneUboMarshal, CameraFillsPositionAndDirection)
     EXPECT_FLOAT_EQ(ubo.view_dir.w, 1.0F) << "view_dir.w is filler - no shader reads past .xyz";
 }
 
-TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
+// The settings hold the way towards the Sun, OxidANT's convention; the shaders read the way the light travels.
+TEST(SceneUboMarshal, DirectionalLightPacksTheTravelDirectionTheAmbientAndTheRadiance)
 {
     SceneUBO ubo{};
-    fillSceneUboDirectionalLight(ubo, glm::vec3(3.0F, 4.0F, 0.0F), glm::vec3(0.9F, 0.8F, 0.7F), 2.5F);
+    fillSceneUboDirectionalLight(ubo, glm::vec3(3.0F, 4.0F, 0.0F), glm::vec3(0.9F, 0.8F, 0.7F), 2.5F, 0.35F);
 
-    EXPECT_FLOAT_EQ(glm::length(glm::vec3(ubo.dirLight.direction)), 1.0F)
-      << "direction.xyz must be unit length even for a non-normalized input";
-    EXPECT_FLOAT_EQ(ubo.dirLight.direction.w, 1.0F) << "direction.w is filler - no shader reads past .xyz";
+    EXPECT_FLOAT_EQ(ubo.dirLight.direction.x, -0.6F) << "direction.xyz is the unit way the light travels";
+    EXPECT_FLOAT_EQ(ubo.dirLight.direction.y, -0.8F);
+    EXPECT_FLOAT_EQ(ubo.dirLight.direction.z, 0.0F);
+    EXPECT_FLOAT_EQ(ubo.dirLight.direction.w, 0.35F) << "direction.w carries the ambient the raster and rchit read";
 
     EXPECT_FLOAT_EQ(ubo.dirLight.color.x, 0.9F);
     EXPECT_FLOAT_EQ(ubo.dirLight.color.y, 0.8F);
@@ -424,9 +426,9 @@ TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
     EXPECT_FLOAT_EQ(ubo.dirLight.color.w, 2.5F) << "color.w carries radiance - rasterizer.slang's fs_main reads it";
 
     SceneUBO zeroInput{};
-    fillSceneUboDirectionalLight(zeroInput, glm::vec3(0.0F), glm::vec3(1.0F), 1.0F);
-    EXPECT_FLOAT_EQ(glm::length(glm::vec3(zeroInput.dirLight.direction)), 1.0F)
-      << "the zero-vector fallback normalizedLightDirection defines must still land as a unit vector";
+    fillSceneUboDirectionalLight(zeroInput, glm::vec3(0.0F), glm::vec3(1.0F), 1.0F, 0.0F);
+    EXPECT_EQ(glm::vec3(zeroInput.dirLight.direction), glm::vec3(0.0F, -1.0F, 0.0F))
+      << "a Sun with no direction shines straight down, the fallback normalizedLightDirection defines";
 }
 
 }// namespace

@@ -8,7 +8,7 @@ namespace Kataglyphis::VulkanRendererInternals {
 
 struct DirectionalLightData
 {
-    vec4 direction;
+    vec4 direction;// the way the light travels; w = the sky's ambient strength
     vec4 color;// w = radiance
 };
 

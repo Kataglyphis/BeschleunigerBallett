@@ -1,5 +1,6 @@
 import scene_types;
 import rt_types;
+import ambient;
 import brdf;
 import base_color;
 import material_fetch;
@@ -126,22 +127,20 @@ void rchit_main(
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
-    // Start from zero like forward and deferred: the engine has no ambient term to seed with albedo.
     payload.hit_value = float3(0.0);
     payload.is_hit = 1.0;
-    // The fit once per hit, not once per light: the sun and every punctual light share it.
+    // The fit once per hit, not once per light: the sun, every punctual light and the ambient share it.
     float2 energy = ggx_energy(dot(N, V), roughness);
+    float3 f0 = lerp(float3(0.04), albedo, metallic);
 
     if (!shadowed)
     {
-        float3 f0 = lerp(float3(0.04), albedo, metallic);
         payload.hit_value += brdf_direct(
             N, V, L, albedo, metallic, roughness, f0,
             lightColor * lightIntensity, energy);
     }
 
     // Each punctual light with its own shadow ray, which stops short of the light.
-    float3 f0Punctual = lerp(float3(0.04), albedo, metallic);
     uint punctualCount = punctual_light_count();
     for (uint i = 0u; i < punctualCount; i++)
     {
@@ -151,9 +150,13 @@ void rchit_main(
             continue;
         if (occluded(shadowOrigin, incidence.l, incidence.distance * TRACE_LIGHT_SPAN))
             continue;
-        payload.hit_value += brdf_direct(N, V, incidence.l, albedo, metallic, roughness, f0Punctual,
+        payload.hit_value += brdf_direct(N, V, incidence.l, albedo, metallic, roughness, f0,
             light.radiance * incidence.attenuation, energy);
     }
+
+    // As the raster passes add it, unshadowed: the sky lights what the sun cannot reach.
+    payload.hit_value += sceneUBO.dirLight.direction.w
+                         * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy, L, lightIntensity);
 
     // Emissive is added after shadowing (emitted light is not shadowed); explicit LOD as above.
     payload.hit_value += resolved_emission_lod0(obj, material, texCoords);

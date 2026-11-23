@@ -99,7 +99,7 @@ static const int MAX_PCF_RADIUS = 5;
 
 struct DirectionalLightData
 {
-    float4 direction;
+    float4 direction; // the way the light travels; w = the sky's ambient strength
     float4 color; // w = radiance
 };
 

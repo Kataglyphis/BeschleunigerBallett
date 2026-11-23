@@ -1287,7 +1287,8 @@ TEST(GoldenRender, ShadowFootprintMatchesTheAnalyticCaster)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
-    const glm::vec3 default_light(scene_vars.directional_light_direction[0],
+    // The settings hold the way towards the Sun; the cases name the way its light travels.
+    const glm::vec3 default_light = -glm::vec3(scene_vars.directional_light_direction[0],
       scene_vars.directional_light_direction[1],
       scene_vars.directional_light_direction[2]);
     // Opposite light tilts put the shadow on opposite sides of the slab; the camera moves pick each cascade.
@@ -1314,7 +1315,7 @@ TEST(GoldenRender, ShadowFootprintMatchesTheAnalyticCaster)
         SCOPED_TRACE(rig_case.name);
         harness.camera->set_camera_position(rig_case.camera_position);
         for (int axis = 0; axis < 3; ++axis) {
-            scene_vars.directional_light_direction[axis] = rig_case.light_travel[axis];
+            scene_vars.directional_light_direction[axis] = -rig_case.light_travel[axis];
             scene_vars.model_position[axis] = rig_case.model_position[axis];
             scene_vars.model_rotation[axis] = axis == 1 ? rig_case.model_yaw_degrees : 0.0F;
         }
@@ -1426,7 +1427,8 @@ TEST(GoldenRender, WidestPcfLeavesLitGroundLit)
     ASSERT_EQ(unshadowed.size(), static_cast<size_t>(width) * height * 4U);
     ASSERT_EQ(shadowed.size(), unshadowed.size());
 
-    const glm::vec3 light(scene_vars.directional_light_direction[0],
+    // The settings hold the way towards the Sun; the prediction takes the way its light travels.
+    const glm::vec3 light = -glm::vec3(scene_vars.directional_light_direction[0],
       scene_vars.directional_light_direction[1],
       scene_vars.directional_light_direction[2]);
     const GroundShadowPrediction prediction =
@@ -1458,6 +1460,127 @@ TEST(GoldenRender, WidestPcfLeavesLitGroundLit)
     ASSERT_GT(far_lit.compared, 20000U) << "Too little lit ground in view; the test measures nothing.";
     // Measured 0 % with the receiver plane; the kernel before it darkened 62 % here (gpu-golden-testing.md).
     EXPECT_LT(darkened_fraction, 0.01) << "PCF darkens lit ground far from any shadow: shadow acne from the kernel.";
+}
+
+// Ground pixels whose whole (2 band + 1)^2 window the prediction calls shadowed: no PCF texel or edge reaches them.
+std::vector<bool> shadow_core(const std::vector<GroundPixel> &predicted, uint32_t w, uint32_t h, uint32_t band)
+{
+    const size_t stride = static_cast<size_t>(w) + 1U;
+    std::vector<uint32_t> sum(stride * (h + 1U), 0U);
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            const size_t at = (static_cast<size_t>(y) + 1U) * stride + x + 1U;
+            const uint32_t hit = predicted[static_cast<size_t>(y) * w + x] == GroundPixel::Shadowed ? 1U : 0U;
+            sum[at] = hit + sum[at - 1U] + sum[at - stride] - sum[at - stride - 1U];
+        }
+    }
+    std::vector<bool> core(predicted.size(), false);
+    const auto area = (2U * band + 1U) * (2U * band + 1U);
+    for (uint32_t y = band; y + band < h; ++y) {
+        for (uint32_t x = band; x + band < w; ++x) {
+            const size_t x0 = x - band;
+            const size_t y0 = y - band;
+            const size_t x1 = static_cast<size_t>(x) + band + 1U;
+            const size_t y1 = static_cast<size_t>(y) + band + 1U;
+            core[static_cast<size_t>(y) * w + x] =
+              sum[y1 * stride + x1] - sum[y0 * stride + x1] - sum[y1 * stride + x0] + sum[y0 * stride + x0] == area;
+        }
+    }
+    return core;
+}
+
+// Without OxidANT's analytic_ambient shadowed ground was black; linear HDR reads the term as the shaders wrote it.
+TEST(GoldenRender, TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = true;
+    // The whole sun leaves the shadow, as the ray tracer's binary shadow ray takes it.
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false },
+        Mode{ "deferred", RasterizationMode::Deferred, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true });
+    }
+    const float default_ambient = GUISceneSharedVars{}.directional_light_ambient;
+    const std::array<float, 3> ambients{ 0.0F, default_ambient, kMaxAmbient };
+    std::vector<glm::dvec3> at_default;
+    for (const Mode &mode : modes) {
+        SCOPED_TRACE(mode.name);
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        std::array<glm::dvec3, 3> means{};
+        size_t core_pixels = 0;
+        for (size_t i = 0; i < ambients.size(); ++i) {
+            scene_vars.directional_light_ambient = ambients[i];
+            harness.render_frames(SETTLE_FRAMES);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+            ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+            const glm::vec3 travel = -glm::vec3(scene_vars.directional_light_direction[0],
+              scene_vars.directional_light_direction[1],
+              scene_vars.directional_light_direction[2]);
+            const GroundShadowPrediction prediction =
+              predict_ground_shadow(harness_inverse_view_projection(harness, width, height),
+                width,
+                height,
+                SHADOW_RIG_GROUND,
+                SHADOW_RIG_SLAB,
+                travel);
+            // Past the widest PCF footprint and a cascade texel either side of the analytic edge.
+            constexpr uint32_t CORE_BAND_PX = 6U;
+            const std::vector<bool> core = shadow_core(prediction.pixels, width, height, CORE_BAND_PX);
+            glm::dvec3 sum(0.0);
+            core_pixels = 0;
+            for (size_t pixel = 0; pixel < core.size(); ++pixel) {
+                if (!core[pixel]) { continue; }
+                sum += glm::dvec3(radiance[pixel * 4U], radiance[pixel * 4U + 1U], radiance[pixel * 4U + 2U]);
+                ++core_pixels;
+            }
+            ASSERT_GT(core_pixels, 2000U) << "Too little shadow in view; the test measures nothing.";
+            means[i] = sum / static_cast<double>(core_pixels);
+            GTEST_LOG_(INFO) << mode.name << ", ambient " << ambients[i] << ": " << core_pixels
+                             << " shadowed ground px, mean radiance (" << means[i].r << ", " << means[i].g << ", "
+                             << means[i].b << ")";
+        }
+        at_default.push_back(means[1]);
+
+        // Without the sky the shadow holds no light at all: the sun is the only other light in the rig.
+        EXPECT_LT(std::max({ means[0].r, means[0].g, means[0].b }), 1e-3) << "light in the shadow at ambient 0";
+        // The irradiance of an upward face is the zenith's, blue (0.09, 0.16, 0.35): no grey constant passes.
+        EXPECT_GT(means[1].b, 0.02) << "the default ambient leaves the shadow unlit";
+        EXPECT_GT(means[1].b, 2.0 * means[1].r) << "the shadow's light is not the sky's blue";
+        // The slider scales the term and nothing else: 2 / 0.35 in every channel, linear in the HDR target.
+        const double expected_ratio = static_cast<double>(kMaxAmbient) / static_cast<double>(default_ambient);
+        for (int c = 0; c < 3; ++c) {
+            EXPECT_NEAR(means[2][c] / means[1][c], expected_ratio, 0.02 * expected_ratio)
+              << "channel " << c << " does not scale with the Ambient slider";
+        }
+    }
+    // One shared function: the three shaders put the same sky into the same shadow.
+    for (size_t m = 1; m < at_default.size(); ++m) {
+        for (int c = 0; c < 3; ++c) {
+            EXPECT_NEAR(at_default[m][c], at_default[0][c], 0.05 * at_default[0][c])
+              << modes[m].name << " lights the shadow unlike forward, channel " << c;
+        }
+    }
 }
 
 // Post's whole chain against its formula, texel by texel of one frame: the HDR capture is exactly what post read.
@@ -2300,6 +2423,8 @@ TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
     renderer_vars.raytracing = false;
     renderer_vars.pathTracing = true;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    // The edge needs contrast: under the default Sun (radiance 5) the slab's top cleared the step in 61 of 312 columns.
+    harness.settings.scene.directional_light_radiance = 10.0F;
     harness.render_frames(WARMUP_FRAMES);
 
     // History-reset nudge, as in PathTracingAccumulatesAndConverges.
@@ -2509,7 +2634,7 @@ struct PunctualRenderInfo
     uint32_t width = 0;
 };
 
-// Renders `model` lit by its lights alone (the sun at zero), framed on the plane, with `mode`'s renderer.
+// Renders `model` lit by its lights alone (the sun and its sky at zero), framed on the plane, with `mode`'s renderer.
 std::vector<uint8_t> render_punctual_scene(const std::string &model,
   PunctualMode mode,
   bool &skipped,
@@ -2530,6 +2655,7 @@ std::vector<uint8_t> render_punctual_scene(const std::string &model,
     harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 7.0F));
     harness.camera->set_orientation(-90.0F, -40.0F);
     harness.settings.scene.directional_light_radiance = 0.0F;
+    harness.settings.scene.directional_light_ambient = 0.0F;
     harness.settings.scene.punctual_shadows_enabled = lightShadows;
     auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.rasterizationMode =
@@ -2613,8 +2739,8 @@ TEST(GoldenRender, PunctualLightsPoolOnThePlaneWhenPathTraced)
 
 namespace {
 
-// The Sun directional_light.gltf names: its node's -Z and its light's colour.
-constexpr std::array<float, 3> kFixtureSunDirection{ 0.6F, -0.48F, 0.64F };
+// The Sun directional_light.gltf names: towards it, the opposite of its node's -Z (0.6, -0.48, 0.64), and its colour.
+constexpr std::array<float, 3> kFixtureSunDirection{ -0.6F, 0.48F, -0.64F };
 constexpr std::array<float, 3> kFixtureSunColor{ 1.0F, 0.7F, 0.4F };
 
 struct SunScene
@@ -2789,6 +2915,8 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
 
     auto &scene_vars = harness.settings.scene;
     harness.useForwardRaster();
+    // The sun alone: the sky, which TheSkyLightsShadowedGround* checks, lit the radiance-0 crop to a mean of 70.5.
+    scene_vars.directional_light_ambient = 0.0F;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
     uint32_t width = 0;
@@ -2887,6 +3015,8 @@ TEST(GoldenRender, RaytracedShadowsAreDarkerThanLitGround)
     renderer_vars.raytracing = true;
     renderer_vars.pathTracing = false;
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    // The shadow ray alone: the sky's ambient lit the darkest decile to 43.4, as the albedo seed's 41.6 did.
+    harness.settings.scene.directional_light_ambient = 0.0F;
     harness.render_frames(WARMUP_FRAMES);
 
     uint32_t width = 0;
@@ -4959,7 +5089,7 @@ TEST(GoldenRender, PathTracedMetalCardReflectsTheSkyAndTheSun)
 
     // Mirror images of one placement; only the right card turns its normal halfway between the sun and the camera.
     const glm::vec3 right_centre(5.0F, 4.0F, 15.0F);
-    const glm::vec3 to_sun = glm::normalize(-glm::vec3(scene_vars.directional_light_direction[0],
+    const glm::vec3 to_sun = glm::normalize(glm::vec3(scene_vars.directional_light_direction[0],
       scene_vars.directional_light_direction[1],
       scene_vars.directional_light_direction[2]));
     const glm::vec3 to_camera = glm::normalize(harness.camera->get_camera_position() - right_centre);
@@ -5338,9 +5468,9 @@ TEST(GoldenRender, TracedHitsTakeTheirSideFromTheTriangleWinding)
     auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // Lit along the leaning normal: raster's N.L is 0.96, a normal flipped by the ray's side gets none.
-    scene_vars.directional_light_direction[0] = -0.9F;
-    scene_vars.directional_light_direction[1] = -0.3F;
-    scene_vars.directional_light_direction[2] = -0.33F;
+    scene_vars.directional_light_direction[0] = 0.9F;
+    scene_vars.directional_light_direction[1] = 0.3F;
+    scene_vars.directional_light_direction[2] = 0.33F;
     renderer_vars.pathTracingSamplesPerPixel = 4;
     renderer_vars.pathTracingMaxBounces = 2;
     // 60 degrees off the card's axis toward -X: the triangle faces the camera, the vertex normal (N.V -0.64) does not.
@@ -6631,9 +6761,9 @@ TEST(GoldenRender, NormalMappedBackFaceFlipsItsWholeTangentFrame)
     auto &scene_vars = harness.settings.scene;
     scene_vars.shadows_enabled = false;
     // From +X and the camera's side: the front card's mapped normal (0.71, 0, 0.71) faces it almost squarely.
-    scene_vars.directional_light_direction[0] = -1.0F;
-    scene_vars.directional_light_direction[1] = -0.3F;
-    scene_vars.directional_light_direction[2] = -1.0F;
+    scene_vars.directional_light_direction[0] = 1.0F;
+    scene_vars.directional_light_direction[1] = 0.3F;
+    scene_vars.directional_light_direction[2] = 1.0F;
     renderer_vars.pathTracingSamplesPerPixel = 4;
     renderer_vars.pathTracingMaxBounces = 2;
     harness.render_frames(WARMUP_FRAMES);
@@ -6712,8 +6842,8 @@ TEST(GoldenRender, MirroredModelKeepsItsWindingAndNormalMapRelief)
     scene_vars.shadows_enabled = false;
     // From above and behind the camera, in the mirror plane: the mapped normal (0, 0.71, 0.71) faces it squarely.
     scene_vars.directional_light_direction[0] = 0.0F;
-    scene_vars.directional_light_direction[1] = -1.0F;
-    scene_vars.directional_light_direction[2] = -1.0F;
+    scene_vars.directional_light_direction[1] = 1.0F;
+    scene_vars.directional_light_direction[2] = 1.0F;
     renderer_vars.pathTracingSamplesPerPixel = 4;
     renderer_vars.pathTracingMaxBounces = 2;
     harness.render_frames(WARMUP_FRAMES);

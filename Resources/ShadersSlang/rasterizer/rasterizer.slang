@@ -1,4 +1,5 @@
 import scene_types;
+import ambient;
 import brdf;
 import material_fetch;
 import material_rules;
@@ -77,7 +78,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float lightIntensity = sceneUBO.dirLight.color.w;
 
     float3 f0 = lerp(float3(0.04), albedo, metallic);
-    // The fit once per fragment, not once per light: the sun and every punctual light share it.
+    // The fit once per fragment, not once per light: the sun, every punctual light and the ambient share it.
     float2 energy = ggx_energy(dot(N, V), roughness);
     float3 color = brdf_direct(N, V, L, albedo, metallic, roughness, f0,
                                lightColor * lightIntensity, energy);
@@ -87,6 +88,10 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
 
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
     color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
+
+    // After the sun's shadow: the sky lights what the sun cannot reach.
+    color += sceneUBO.dirLight.direction.w
+             * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy, L, lightIntensity);
 
     // Emissive is added after shadowing: emitted light is not shadowed.
     color += resolved_emission(obj, material, In.texCoords);

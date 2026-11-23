@@ -30,6 +30,10 @@ export inline constexpr float kMinCloudMeshOffset = -200.0F;
 export inline constexpr float kMaxCloudMeshOffset = 400.0F;
 // Either way along each axis; 100 in both renderers (owner 2026-11-19).
 export inline constexpr float kMaxCloudWindSpeed = 100.0F;
+// The Sun's controls: Radiance, Ambient, and each axis of the Direction drag (the way the light travels).
+export inline constexpr float kMaxSunRadiance = 50.0F;
+export inline constexpr float kMaxAmbient = 2.0F;
+export inline constexpr float kMaxSunDirectionAxis = 1.0F;
 
 // Clamps out-of-range indices into [0, kShadowMapResolutionCount - 1] rather
 // than silently falling through to 512 the way the old if/else chain did.
@@ -60,13 +64,13 @@ constexpr uint32_t shadowResolutionForIndex(int index)
 
 export struct GUISceneSharedVars
 {
-    float directional_light_radiance = 10.f;
-    float directional_light_color[3] = { 1.f, 1.f, 1.f };
-    // Angled rather than near-vertical: a straight-down sun drops every shadow
-    // directly underneath its caster, where it is barely visible. This throws
-    // the dinosaurs' shadows sideways across their ground plane, which is what
-    // makes the cascaded shadow maps read at a glance.
-    float directional_light_direction[3] = { -0.55f, -1.f, -0.35f };
+    // OxidANT's SunSettings, the owner's Sun for both renderers (2026-11-19).
+    float directional_light_radiance = 5.f;
+    float directional_light_color[3] = { 1.f, 0.97f, 0.92f };
+    // Towards the Sun, as OxidANT stores it; the Sun tab shows and edits the way the light travels.
+    float directional_light_direction[3] = { 0.5f, 0.8f, 0.3f };
+    // How strongly the sky lights the scene: the analytic ambient's scale, the Sky tab's Ambient slider.
+    float directional_light_ambient = 0.35f;
 
     // Shadows
     // Index 2 ("2048") matches the pixel count VulkanRenderer::init actually

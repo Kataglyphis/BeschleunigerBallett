@@ -30,7 +30,7 @@ inline void renderCommonKeyBindings()
         Binding{ { "Right mouse" }, "Hold to look around" },
         Binding{ { "ESC" }, "Leave the focused panel; pressed again, quit" },
         Binding{ { "F1" }, "Show or hide the editor" },
-        Binding{ { "F5" }, "Reload all shaders (Debug builds)" },
+        Binding{ { "F5" }, "Reload all shaders" },
     };
 
     if (!ImGui::BeginTable("##key_bindings", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {

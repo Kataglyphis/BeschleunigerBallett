@@ -191,10 +191,10 @@ struct GUIRendererSharedVars
     int pathTracingMaxBounces = 8;
 };
 
-/// A loaded glTF's first directional light: the unit direction its light travels and its linear colour.
+/// A loaded glTF's first directional light: the unit direction towards it, as the editor stores it, and its colour.
 struct PublishedSun
 {
-    std::array<float, 3> direction{ 0.0F, -1.0F, 0.0F };
+    std::array<float, 3> direction{ 0.0F, 1.0F, 0.0F };
     std::array<float, 3> color{ 1.0F, 1.0F, 1.0F };
 };
 

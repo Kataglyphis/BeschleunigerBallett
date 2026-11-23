@@ -4097,7 +4097,7 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
       << "calling resolve_texture_slot(): " << joinViolations(other_definitions);
 }
 
-// dirLight.direction is the travel direction, so toward-light vectors negate it where read, inside normalize(...).
+// dirLight.direction is the travel direction, so toward-light vectors negate it inside normalize(); .w is the ambient.
 TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 {
     const fs::path repo_root = repoRoot();
@@ -4110,6 +4110,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
     static const std::string kNormalizeCall = "normalize(";
 
     int occurrences_checked = 0;
+    std::set<std::string> ambient_readers;
     std::vector<std::string> violations;
     std::error_code error;
     for (const auto &shader_path : shaderSourceFiles(slang_root, error)) {
@@ -4128,6 +4129,11 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
                 const auto marker_pos = line.find(kMarker, search_from);
                 if (marker_pos == std::string::npos) { break; }
                 search_from = marker_pos + kMarker.size();
+                if (line.compare(search_from, 2, ".w") == 0
+                    && (search_from + 2 == line.size() || !is_identifier_char(line[search_from + 2]))) {
+                    ambient_readers.insert(path.filename().string());
+                    continue;
+                }
                 ++occurrences_checked;
 
                 // Walk back over the "scene." or "sceneUBO_lighting." prefix to where the read starts.
@@ -4162,6 +4168,8 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
       << "expected exactly 5 shader sites reading dirLight.direction, found " << occurrences_checked
       << " - update this count if a consumer was intentionally added or removed, and confirm the new "
          "site also negates the field";
+    EXPECT_EQ(ambient_readers, (std::set<std::string>{ "deferred.slang", "rasterizer.slang", "raytrace.rchit.slang" }))
+      << "the shaders that read the ambient in dirLight.direction.w: forward, deferred and closest-hit add the sky";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
@@ -8171,6 +8179,40 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
          "allow-list needs updating if it was renamed or its signature changed";
 }
 
+// F5 reloads the shaders in every native build (owner 2026-11-19), so no request site may sit in an NDEBUG block.
+TEST(BuildIntegrity, ShaderReloadRequestsAreInEveryBuild)
+{
+    const fs::path gui_path = repoRoot() / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
+    const auto lines = readFileLines(gui_path);
+    ASSERT_TRUE(lines.has_value()) << "could not open " << gui_path.string();
+
+    // Each open #if block's directive, its #else and #elif appended: the #else of an NDEBUG test depends on it too.
+    std::vector<std::string> open_blocks;
+    int sites = 0;
+    std::vector<std::string> gated;
+    for (std::size_t i = 0; i < lines->size(); ++i) {
+        const std::string line = strip_line_comment((*lines)[i]);
+        const auto first = line.find_first_not_of(" \t");
+        const std::string directive = first == std::string::npos ? std::string{} : line.substr(first);
+        if (directive.starts_with("#if")) {
+            open_blocks.push_back(directive);
+        } else if (directive.starts_with("#el") && !open_blocks.empty()) {
+            open_blocks.back() += " " + directive;
+        } else if (directive.starts_with("#endif") && !open_blocks.empty()) {
+            open_blocks.pop_back();
+        }
+        if (line.find("shader_hot_reload_triggered = true") == std::string::npos) { continue; }
+        ++sites;
+        if (std::any_of(open_blocks.begin(), open_blocks.end(), [](const std::string &block) {
+                return block.find("NDEBUG") != std::string::npos;
+            })) {
+            gated.push_back("GUI.cpp:" + std::to_string(i + 1));
+        }
+    }
+    EXPECT_GE(sites, 3) << "the F5 key, the File menu and the Renderer tab's button each raise the reload request";
+    EXPECT_TRUE(gated.empty()) << "shader reload requests a Release build compiles out:" << joinViolations(gated);
+}
+
 // The renderer must call every stage's shaderHotReload, or reload silently skips it; counted, not hand-mapped.
 TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
 {
@@ -10135,6 +10177,9 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
             R"(|float4\s+\w+\s*=\s*float4\(\s*(?![-0-9.]+\s*,)[^;]*,\s*[01](\.0)?\s*,\s*1(\.0)?\s*\)\s*;)"
             R"(|\binv_view\s*,\s*float4\(\s*0(\.0)?\s*,\s*0(\.0)?\s*,\s*0(\.0)?\s*,\s*1(\.0)?\s*\)|\binv_view\s*\[\s*3\s*\])"),
           "a near- or far-plane unprojection, inline or a statement later, or the eye as a ray origin" },
+        { "common/ambient.slang",
+          std::regex(kDefines + R"((ambient_split_sum|analytic_ambient)\s*\()"),
+          "an ambient term" },
     };
 
     std::vector<std::string> violations;

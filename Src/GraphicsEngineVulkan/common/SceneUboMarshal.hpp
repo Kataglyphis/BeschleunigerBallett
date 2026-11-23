@@ -141,13 +141,14 @@ inline void fillSceneUboCamera(VulkanRendererInternals::SceneUBO &ubo, glm::vec3
     ubo.cam_pos = glm::vec4(position, 1.0F);
 }
 
-// color.w carries radiance, the one SceneUBO .w slot a shader must read; direction.w is filler.
+// The one place the settings' towards-the-Sun direction turns into the travel direction; direction.w is the ambient.
 inline void fillSceneUboDirectionalLight(VulkanRendererInternals::SceneUBO &ubo,
-  glm::vec3 rawDirection,
+  glm::vec3 towardsSun,
   glm::vec3 color,
-  float radiance)
+  float radiance,
+  float ambient)
 {
-    ubo.dirLight.direction = glm::vec4(normalizedLightDirection(rawDirection), 1.0F);
+    ubo.dirLight.direction = glm::vec4(sunTravelDirection(towardsSun), ambient);
     ubo.dirLight.color = glm::vec4(color, radiance);
 }
 
