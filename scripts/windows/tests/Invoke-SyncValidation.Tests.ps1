@@ -26,7 +26,19 @@ Describe 'Invoke-SyncValidation' {
     $LASTEXITCODE | Should Not Be 0
   }
 
-  It 'exits zero when the log has no SYNC-HAZARD' {
+  It 'exits non-zero when the log contains a VUID' {
+    $logPath = Join-Path $script:tmpDir 'vuid.log'
+    Set-Content -Path $logPath -Value @(
+      '[ RUN      ] GoldenRender.ShadowsDarkenSomePixels'
+      'Validation Error: [ VUID-vkCmdDraw-None-08600 ] pipeline layout does not match the bound descriptor sets'
+      '[       OK ] GoldenRender.ShadowsDarkenSomePixels'
+    )
+
+    & pwsh -NoProfile -ExecutionPolicy Bypass -File $script:scriptPath -LogFixturePath $logPath | Out-Null
+    $LASTEXITCODE | Should Not Be 0
+  }
+
+  It 'exits zero when the log has neither a SYNC-HAZARD nor a VUID' {
     $logPath = Join-Path $script:tmpDir 'clean.log'
     Set-Content -Path $logPath -Value @(
       '[ RUN      ] GoldenRender.ShadowsDarkenSomePixels'

@@ -629,9 +629,10 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   ```pwsh
   pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Invoke-SyncValidation.ps1
   ```
-  It exits non-zero when the run log contains `SYNC-HAZARD`, and with the test executable's own code
+  It exits non-zero when the run log contains `SYNC-HAZARD` or `VUID-`, and with the test executable's own code
   when the run itself fails. Linux CI runs sync validation on llvmpipe since 2026-10-06
-  (`run-ctest.sh --virtual-display`); this script is the host-GPU and Windows run. Details:
+  (`run-ctest.sh --virtual-display`, which fails a test that logs either through the hub's
+  `--fail-on-log-pattern`); this script is the host-GPU and Windows run. Details:
   [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md).
 
 **Adding tests is always in scope.** No permission needed to improve or extend the suites; a change

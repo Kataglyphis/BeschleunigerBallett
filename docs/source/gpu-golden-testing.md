@@ -515,9 +515,10 @@ resource (WRITE-AFTER-WRITE, READ-AFTER-WRITE, WRITE-AFTER-READ). It found 10 re
 WRITE-AFTER-WRITE hazards in July 2026.
 
 **Linux CI runs it on every push since 2026-10-06.** `run-ctest.sh --virtual-display` sets
-`VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1` for the GPU suites and fails the run when ctest's log
-holds a `SYNC-HAZARD` line, naming the tests that logged one. Most tests ignore validation
-messages, so the log is the only place a hazard shows. On llvmpipe it costs about 2%: the 42 GPU
+`VK_KHRONOS_VALIDATION_VALIDATE_SYNC=1` for the GPU suites and passes the hub's
+`--fail-on-log-pattern 'SYNC-HAZARD|VUID-'` (CON291), which fails the run when a test's output in
+ctest's log holds either, naming each test. Most tests ignore validation messages, so the log is
+the only place a hazard or a validation error shows. On llvmpipe it costs about 2%: the 42 GPU
 tests took 921 s with it and 900 s without, on 32 cores. Its first run found two
 WRITE-AFTER-WRITE classes, both fixed the same day:
 
@@ -570,7 +571,7 @@ It uses the same `commitTestSuite.exe` as above (repo root or `build-clangcl-deb
 working-directory requirement), copies `scripts/vk_layer_settings.txt` next to it for the run (the
 Vulkan loader reads `vk_layer_settings.txt` from the CWD or the executable's directory; there is
 no path env var for it), and exits non-zero with a per-hazard summary if the run's log contains
-`SYNC-HAZARD`.
+`SYNC-HAZARD` or `VUID-`.
 
 ## Known issue: path-tracing compute device-lost on the large dinosaur mesh
 

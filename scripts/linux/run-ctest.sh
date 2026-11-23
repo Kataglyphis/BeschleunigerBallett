@@ -31,26 +31,14 @@ if [[ "${1:-}" == "--virtual-display" ]]; then
   fi
   # ctest's own Skipped too: every GPU test runs on llvmpipe (none of 96 skipped, 2026-11-19), so a skip is a bug.
   skipped_fails=(--fail-on-skipped '^(GoldenRender|Integration)\.')
+  # Most tests ignore validation messages, so a hazard or a VUID reaches the verdict only through ctest's log (CON291).
+  log_fails=(--fail-on-log-pattern 'SYNC-HAZARD|VUID-')
   # -noreset: a golden's GLFW probe disconnects, and a window opened while Xvfb resets found no display.
-  xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" bash "${BASH_SOURCE[0]}" "${skipped_fails[@]}" "$@"
+  xvfb-run -a -s "-screen 0 1920x1080x24 -noreset" bash "${BASH_SOURCE[0]}" "${skipped_fails[@]}" "${log_fails[@]}" "$@"
   exit 0
 fi
 
-ctest_run_parse_args "$@"
-ctest_run_prepare_env
-started="$(mktemp)"
+# In an || list, as the hub runs it: its functions do not expect errexit.
 ctest_rc=0
-ctest_run_execute || ctest_rc=$?
-
-# Most tests ignore validation messages, so a hazard reaches the verdict only through ctest's own log.
-if [[ -n "${VK_KHRONOS_VALIDATION_VALIDATE_SYNC:-}" ]]; then
-  mapfile -t logs < <(find Testing/Temporary -name 'LastTest*.log' -newer "${started}" 2>/dev/null)
-  hazards="$(cat "${logs[@]}" /dev/null | grep -c 'SYNC-HAZARD' || true)"
-  if [[ "${hazards}" -gt 0 ]]; then
-    warn "Synchronization validation logged ${hazards} SYNC-HAZARD line(s); the tests that did:"
-    awk '/^[0-9]+\/[0-9]+ Testing: /{ name = $3 } /SYNC-HAZARD/ && name != "" { print "  " name; name = "" }' "${logs[@]}" >&2
-    ctest_rc=1
-  fi
-fi
-rm -f "${started}"
+ctest_run_main "$@" || ctest_rc=$?
 exit "${ctest_rc}"

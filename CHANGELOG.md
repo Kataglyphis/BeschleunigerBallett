@@ -72,6 +72,10 @@ the GitHub releases themselves.
   run 45001331996 shipped a PIE `GraphicsEngine` with RELRO but no BIND_NOW. The pin also brings
   `ctest-run.sh --fail-on-log-pattern` (CON291), `allowed_skips` for staged gtest entries (CON292), one `::error`
   per failed lint gate (CON293) and the ELF and PE hardening gates (CON294).
+- `run-ctest.sh --virtual-display` fails a test that logs `SYNC-HAZARD` or `VUID-` through the hub's
+  `--fail-on-log-pattern` (CON291), naming it; its own scan, now gone, counted `SYNC-HAZARD` alone and passed a ctest
+  log holding a VUID. `Invoke-SyncValidation.ps1` fails on `VUID-` too, with a Pester case. `Invoke-LavapipeTests.ps1`
+  already failed on both.
 - OxidANT pin to `d0b6725`: a skin whose joints mirror space keeps its triangles' fronts out (`d0b6725`): `load_flat`
   reverses a triangle whose blended joint matrix has a negative determinant at two or three of its corners before it
   bakes the rest pose, where only the tangent sign used to flip, so such a skin drew inside out wherever back faces

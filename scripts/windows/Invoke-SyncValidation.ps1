@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-Runs the GPU suites with Vulkan synchronization validation and fails on any SYNC-HAZARD.
+Runs the GPU suites with Vulkan synchronization validation and fails on any SYNC-HAZARD or VUID- line.
 .DESCRIPTION
 Wraps ANTfrastructure's WindowsVulkanValidation.Common. Local only: the GPU suites
 skip on CI runners, so a CI gate would be vacuous.
@@ -30,9 +30,12 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 Import-BuildModule @('WindowsVulkanValidation.Common')
 
+# A VUID is a validation error the tests ignore as they ignore a hazard; run-ctest.sh fails on both too.
+$validationPatterns = @('SYNC-HAZARD', 'VUID-')
+
 # Test-only: keeps the pass/fail contract verifiable without a GPU.
 if ($LogFixturePath) {
-    if (Test-VulkanValidationLog -LogPath $LogFixturePath) { exit 0 }
+    if (Test-VulkanValidationLog -LogPath $LogFixturePath -Pattern $validationPatterns) { exit 0 }
     exit 1
 }
 
@@ -75,7 +78,7 @@ Invoke-VulkanValidationRun -ExecutablePath $ExecutablePath `
     -SettingsPath $settingsSource
 $exitCode = $LASTEXITCODE
 
-$hazards = @(Get-VulkanValidationHazard -LogPath $logPath)
+$hazards = @(Get-VulkanValidationHazard -LogPath $logPath -Pattern $validationPatterns)
 if ($hazards.Count -gt 0) {
     Write-VulkanValidationReport -Hazard $hazards -LogPath $logPath
     exit 1
@@ -83,7 +86,7 @@ if ($hazards.Count -gt 0) {
 
 Write-Host ''
 if ($exitCode -ne 0) {
-    Write-Host "Test executable exited with code $exitCode (no SYNC-HAZARD lines found, but the run itself failed - check $logPath)." -ForegroundColor Yellow
+    Write-Host "Test executable exited with code $exitCode (no SYNC-HAZARD or VUID- lines found, but the run itself failed - check $logPath)." -ForegroundColor Yellow
     exit $exitCode
 }
 
