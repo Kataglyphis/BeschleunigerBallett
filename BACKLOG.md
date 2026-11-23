@@ -51,7 +51,11 @@ No P0 item is open.
   (`VsyncTogglesBetweenFifoAndAnUncappedMode`), `GpuTimingJsonDumpIsWrittenAndSane`,
   `Integration.DebugLabelsAndNamesWorkWithoutTheValidationLayer`, a RenderDoc capture of Profile or Release
   showing the pass labels and object names, and the seven `BM_Bridge*` placeholder rows refreshed with
-  `perfTestSuite`.
+  `perfTestSuite`. Since Phase 6: the ray- and path-traced goldens with `TracedCameraRaysStartAtTheNearPlane`,
+  the vector suite's `hdr_safe` cases (NaN and the infinities as bits) and `camera_ray` on the AMD driver, and
+  by eye the traced modes with the editor docked (the lens shift through `clip_to_world`), Sponza in Release
+  at its far plane of 4000 (traced coverage as raster's) and the camera close to geometry (the traced modes
+  clip at the near plane as raster does).
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -101,19 +105,8 @@ takes UTF-8 paths and runs inside `guarded()`.
   `docs/source/gpu-golden-testing.md`, with the `excluded=3` count and the `--gtest_filter` line
   `buildIntegritySuite.cpp` pins in it.
 
-Bridge foundations:
-
-- [ ] `Shared` **Pick the path tracer's specular lobe by E_spec** (S). Owner 2026-11-21: `path_estimator`
-  keeps the unbiased F(n.v) split for now; E_spec lowers variance but moves the noise of every path-traced
-  golden in both renderers. Measure the variance gain on the furnace and shadow rigs first.
-
 Loader:
 
-- [ ] `Assets` **A skin mirrored by its joints keeps its triangle winding** (S). Since Phase 5 `load_flat`
-  bakes a skin's rest pose and flips only the tangent handedness per vertex where the joints mirror; the
-  triangle winding stays, in `flat.rs`, the Rust tracer and the raster's pipeline choice alike. A skin
-  mirrored by its joints therefore draws inside out where back faces are culled. Flip the winding per triangle
-  by the sign of its joints' determinant, with a mirrored-joint fixture in both renderers.
 - [ ] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6). Tolerant like tinyobjloader (a bad line
   is skipped and reported) with one mesh per `usemtl` group, and Rust's material rules (owner 2026-11-19): d
   below 1 or Tr above 0 is BLEND, map_Ke without Ke glows at factor 1, no Kd is white 1.0, no Pr and no Ns is
@@ -141,39 +134,26 @@ Loader:
 
 Shaders:
 
-- [ ] `Shared` **Shared Slang leaf modules** (M, plan I8). In OxidANT `shaders/common`, each with a SPIR-V
-  guard row: `hdr_safe` with the bit-test NaN check and one `HDR_MAX` (delete BB's same-named file in the
-  same pin bump, or it shadows the shared one), `aces_tonemap_inverse` in `aces.slang`, the trace
-  constants (TMIN, TMAX, the surface offset), `fullscreen_ndc_to_uv`, one PI and one minimum roughness;
-  the CPU copies in `clouds.rs` in the same sweep. Keep `noise.slang`: its dual-target import test is
-  protected by AGENTS.md.
-- [ ] `Shared` **`camera_ray.slang` for the seven camera-ray copies** (S, plan I8). Traced camera rays start
-  at the near plane in both renderers (owner 2026-11-19; the C++ tracers start at the eye today). Needs
-  `inv_projection` and `inv_view`, or an `inv_view_proj` in the C++ GlobalUBO.
-- [b] `Shared` **Single-source constants and complete layout gates** (M, plan I7; after the leaf
-  modules). `static const int` lines in a file under `Resources/ShadersSlang/common` that C++ includes
+- [ ] `Shared` **Single-source constants and complete layout gates** (M, plan I7; the leaf modules are in
+  since Phase 6). `static const int` lines in a file under `Resources/ShadersSlang/common` that C++ includes
   (not the reverse: the C++ header sits outside every `-I` root); `limits.slang` in OxidANT; a naga layout
-  table over the ~20 unchecked Rust Pod structs; ArrayStride, struct size and `cloudAmbientTop/Bottom` in
-  the C++ SPIR-V contract.
-- [ ] `Shared` **Make OxidANT's WGSL-only passes target-neutral, and probe workgroup atomics** (S, plan
-  I12). `ssao.slang` and `gpu_cull.slang` hard-code WebGPU's ndc-to-uv; `ibl.slang` has its own fullscreen
-  triangle, which mirrors faces and the LUT on Vulkan. Then port `histogram.wgsl` to Slang: slangc
-  2026.17 emits `Atomic<uint>` for both its storage and its workgroup atomics (checked 2026-11-19;
-  `InterlockedAdd` fails), not yet run through wgpu. SPIR-V rows for each pass come with the C++ change
-  that binds it.
-- [b] `Shared` **Shared material Slang** (L, plan I9; after the leaf modules). Owner 2026-11-19: metallic is
-  clamped to [0, 1] and MASK is an explicit alpha-mode flag plus cutoff, both as Rust does. Normal mapping
-  with the BC5 z rebuild, the texture transform and `gltf_material.slang`; each exists three times today. The
-  C++ push constants shrink from 116 to 68 bytes.
-- [b] `Shared` **Shared shadow and lighting Slang** (L, plan I10; after the leaf modules). C++ takes Rust's
-  G-buffer packing (owner 2026-11-19); the cascade retry comes with C11. Dual-target punctual shadows,
-  `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
-- [b] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; after `camera_ray.slang`
-  and the shared lighting Slang). Owner 2026-11-19: a camera miss shows the drawn sky, bounce misses sample
-  the drawn sky through the IBL, camera rays start at the near plane; furnace NEE, the call sites and the
-  depth ray are the item's to settle.
-  `trace_path<S: ITracedScene>` in OxidANT, C++ over RayQuery, Rust over `bvh_traverse`; BB's
-  `traced_hit.slang` folds the hit fetch of rchit and the path tracer and the three MASK candidate loops.
+  table over the ~20 unchecked Rust Pod structs; ArrayStride, struct size and `cloudAmbientTop/Bottom` in the
+  C++ SPIR-V contract.
+- [ ] `Shared` **Shared material Slang** (L, plan I9; the leaf modules are in since Phase 6). Owner
+  2026-11-19: metallic is clamped to [0, 1] and MASK is an explicit alpha-mode flag plus cutoff, both as Rust
+  does. Normal mapping with the BC5 z rebuild, the texture transform and `gltf_material.slang`; each exists
+  three times today. The C++ push constants shrink from 116 to 68 bytes.
+- [ ] `Shared` **Shared shadow and lighting Slang** (L, plan I10; the leaf modules are in since Phase 6). C++
+  takes Rust's G-buffer packing (owner 2026-11-19); the cascade retry comes with C11. Dual-target punctual
+  shadows, `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
+  `forward_lighting.slang`'s two shadow-map NDC-to-uv conversions and its `uv_y_sign` of -1 are still WebGPU's
+  alone.
+- [b] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; after the shared lighting
+  Slang; `camera_ray.slang` is in since Phase 6). Owner 2026-11-19: a camera miss shows the drawn sky, bounce
+  misses sample the drawn sky through the IBL, camera rays start at the near plane; furnace NEE, the call
+  sites and the depth ray are the item's to settle. `trace_path<S: ITracedScene>` in OxidANT, C++ over
+  RayQuery, Rust over `bvh_traverse`; BB's `traced_hit.slang` folds the hit fetch of rchit and the path tracer
+  and the three MASK candidate loops.
 
 C++ catches up:
 
@@ -243,9 +223,9 @@ New in both:
 - [b] `Shared` **Path-traced reference mode, firefly clamp and .hdr export** (L, plan N7; after the
   shared integrator). A target sample count with a resolve-only path in C++, `clamp_sample` off by default,
   a Radiance `.hdr` encoder in a wgpu-free crate returning bytes, EXR natively.
-- [b] `Shared` **Debug views, wireframe, debug lines and a GPU memory panel** (L, plan N5; after the leaf
-  modules). Material and G-buffer channels from a shared `debug_view.slang`, wireframe as a line list over
-  an edge index buffer, `vmaGetHeapBudgets` with `VK_EXT_memory_budget`.
+- [ ] `Shared` **Debug views, wireframe, debug lines and a GPU memory panel** (L, plan N5; the leaf modules
+  are in since Phase 6). Material and G-buffer channels from a shared `debug_view.slang`, wireframe as a line
+  list over an edge index buffer, `vmaGetHeapBudgets` with `VK_EXT_memory_budget`.
 - [b] `Shared` **Cloud shadows** (M-L, plan N3; after the shared shadow Slang and integrator). Bake
   T = exp(-light_optical_depth) into a light-space map covering the cloud box's projection; raster, RT and
   both path tracers read the same map.
@@ -287,7 +267,9 @@ New in both:
 - [ ] `C++` **glTF animation through one Rust animator** (XL, plan B12; the skin's rest pose is in since Phase
   5). Owner 2026-11-19: C++ animates, so FlatModel carries the animation data instead of a baked snapshot.
   Extract the animator from `ForwardRenderer` into a wgpu-free crate first; skinning in shared Slang, a
-  compute pre-skin with a BLAS update for the traced modes.
+  compute pre-skin with a BLAS update for the traced modes. Since Phase 6 `load_flat` reverses a triangle
+  whose joints mirror space at the rest pose; a pose that changes a joint's mirror sign needs the winding per
+  frame, or both faces drawn.
 - [ ] `C++` **GPU occlusion culling, then multi-draw indirect** (L + L, plan C12). A Hi-Z pyramid
   (R32Float over single-mip storage views), not occlusion queries (owner 2026-11-19; the Rust roadmap's
   queries row changes with it). GPU frustum culling alone gains nothing over the exact CPU cull.
@@ -328,10 +310,6 @@ New in both:
 - [ ] `Shared` **Reversed-Z for the camera in both renderers** (L, plan N17). Owner 2026-11-19: reversed-Z
   yes, photometric light units no. Moves depth-reading goldens and passes on each side.
 - [b] `Shared` **Coverage-preserving MASK mips** (M, plan X11; after the texture ingest).
-- [ ] `Rust` **A VSync switch in the Rust renderer** (S, plan X15's remainder). C++ has a `vsync` setting
-  since Phase 5 (on, Fifo, by default; off picks Mailbox, then Immediate) with a toggle in the Renderer panel;
-  Rust hard-codes Fifo in `context.rs` and `wgpu_init.rs`. The same setting and toggle there, the browser
-  keeping Fifo.
 - [b] `Assets` **The full Rust settings schema as cxx shared structs** (L, plan B10; when the view file
   needs it).
 - [ ] `CI` **Budget llvmpipe's GPU passes from a build without ASan** (S). Phase 5 found the 0.5 s G-buffer
@@ -426,6 +404,11 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 - **[P3] Kulla-Conty's reciprocal multi-scatter.** Owner 2026-11-21: Turquin's view-only diffuse share stays
   (the BRDF is not reciprocal); Kulla-Conty needs an average energy E_avg besides E_ss, worth it once a
   bidirectional method arrives.
+- **[P3] Pick the path tracer's specular lobe by E_spec.** Phase 6 measured it against the unbiased F(n.v)
+  split on lavapipe (128x128, a 1024 spp reference): the MSE ratio F/E was at most 1.064 in the furnace and
+  0.997-1.006 on the shadow rig, at the same cost per sample, since the 0.1 floor clamps both at most angles
+  and NEE dominates the rig. `path_estimator` keeps F(n.v) (owner 2026-11-21); revisit if the floor goes or
+  the path-traced goldens are re-baked anyway.
 - **[P3] The GGX energy as a bound table.** A buffer or texture is the cheapest lookup per evaluation, but
   changes `brdf_direct`/`brdf_sampled` and adds bindings to two OxidANT and five BB pipelines; Slang's
   `var<private>` table cost lavapipe 2.3-2.9x. Only if the spline shows up on a device profile.
