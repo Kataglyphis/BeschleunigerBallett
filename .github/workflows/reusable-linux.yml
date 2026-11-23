@@ -65,7 +65,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       # The one lane that builds the Kompute playground, so its ctest entry runs it on llvmpipe and it cannot rot.
       - name: Prepare for unit/integration tests
@@ -124,7 +124,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-asan
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build with AddressSanitizer
         if: matrix.part != 'tsan'
@@ -203,7 +203,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-tsan
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build with ThreadSanitizer
         id: tsan-build
@@ -273,7 +273,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-debug
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       # One tree for both: the analyzers read ${BUILD_DIR}/compile_commands.json, coverage runs its compileTestSuite.
       - name: Configure/build for analysis and coverage
@@ -335,6 +335,17 @@ jobs:
             --preset "linux-debug-clang"
           log-file: output.log
 
+      # Report only: suggestions stay green, a unit IWYU cannot read fails (hub CON295 (a)).
+      - name: Run IWYU (units without modules)
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          script: >-
+            bash ./scripts/linux/run-static-analysis-format.sh
+            --only-iwyu
+            --build-dir "${{ env.BUILD_DIR }}"
+          log-file: output.log
+
       # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches.
       - name: Run Rust renderer tests
         if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'rust') }}
@@ -378,7 +389,7 @@ jobs:
         with:
           key: ${{ runner.arch }}-clang-profile
           mounts: 'sccache:/var/cache/sccache'
-          env: 'SCCACHE_CACHE_SIZE=1500M'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
         if: matrix.part != 'gcc'

@@ -20,6 +20,8 @@ RUN_CLANG_ANALYZE_HTML="${RUN_CLANG_ANALYZE_HTML:-false}"
 RUN_FORMAT_AND_TIDY="${RUN_FORMAT_AND_TIDY:-true}"
 RUN_SCAN_BUILD="${RUN_SCAN_BUILD:-true}"
 RUN_FORMAT_CHECK="${RUN_FORMAT_CHECK:-false}"
+RUN_IWYU="${RUN_IWYU:-false}"
+IWYU_LOG="${IWYU_LOG:-logs/code-quality/iwyu.txt}"
 
 # Project defaults for the shared library
 CODE_QUALITY_PROJECT_ROOT="${ROOT_DIR}"
@@ -111,6 +113,22 @@ run_format_and_tidy() {
   code_quality_cleanup_compile_db
 }
 
+# Report only (hub CON295 (a)): the image's IWYU reads no module unit, suggestions stay green, an unread unit is red.
+run_iwyu() {
+  require_tools iwyu_tool
+  [[ -f "${BUILD_DIR}/compile_commands.json" ]] || err "Missing ${BUILD_DIR}/compile_commands.json; configure ${BUILD_DIR} first"
+  local files=() status=0
+  mapfile -t files < <(code_quality_find_iwyu_files "${CPP_SOURCE_ROOTS[@]}" | sed "s#^#$(pwd)/#")
+  code_quality_prepare_compile_db "${BUILD_DIR}"
+  code_quality_run_iwyu "${CODE_QUALITY_COMPILE_DB_DIR}" "${IWYU_LOG}" "${files[@]}" || status=$?
+  code_quality_cleanup_compile_db
+  # The hub counts ': error:' only, so a missing header (': fatal error:') read nothing and stayed green.
+  if grep -q ': fatal error:' "${IWYU_LOG}"; then
+    err "IWYU could not read some units ($(grep -c ': fatal error:' "${IWYU_LOG}") fatal error line(s) in ${IWYU_LOG})"
+  fi
+  return "${status}"
+}
+
 run_scan_build() {
   require_tools scan-build
 
@@ -164,6 +182,7 @@ Options:
   --only-format-check          Only check clang-format (pinned LLVM) and cmake-format; fail on any drift (CI)
   --only-scan-build            Run only scan-build step
   --only-clang-analyze-html    Run only clang++ --analyze HTML step
+  --only-iwyu                  Only the IWYU report over the units without modules (needs --build-dir's compile_commands.json)
 
   -h, --help                   Show this help
 EOF
@@ -213,6 +232,12 @@ while [[ $# -gt 0 ]]; do
       RUN_CLANG_ANALYZE_HTML="true"
       shift
       ;;
+    --only-iwyu)
+      RUN_FORMAT_AND_TIDY="false"
+      RUN_SCAN_BUILD="false"
+      RUN_IWYU="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -246,6 +271,9 @@ fi
 if [[ "${RUN_CLANG_ANALYZE_HTML}" == "true" ]]; then
   ((total_steps += 1))
 fi
+if [[ "${RUN_IWYU}" == "true" ]]; then
+  ((total_steps += 1))
+fi
 
 if [[ ${total_steps} -eq 0 ]]; then
   err "Nothing to run. Use --help for available options."
@@ -275,6 +303,12 @@ fi
 if [[ "${RUN_CLANG_ANALYZE_HTML}" == "true" ]]; then
   info "[${step}/${total_steps}] Running clang++ --analyze HTML report generation..."
   run_clang_analyze_html
+  ((step += 1))
+fi
+
+if [[ "${RUN_IWYU}" == "true" ]]; then
+  info "[${step}/${total_steps}] Running the IWYU report..."
+  run_iwyu
 fi
 
 info "Static analysis and formatting pipeline completed successfully."

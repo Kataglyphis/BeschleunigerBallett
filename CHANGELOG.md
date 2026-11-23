@@ -98,6 +98,9 @@ the GitHub releases themselves.
 - Hardening runs at the project's scope, not from `myproject_enable_local_hardening` (removed): from a function its
   `CMAKE_POSITION_INDEPENDENT_CODE` reached no target, so the Linux programs were PIE only by clang's default. Now
   `GraphicsEngine` compiles with `-fPIE` and links with `-pie` beside `-z relro -z now`.
+- The static-analysis job runs IWYU over the units without modules (`run-static-analysis-format.sh --only-iwyu`,
+  `logs/code-quality/iwyu.txt`): suggestions are reported, a unit IWYU cannot read fails the step (35 units today, 33 with suggestions); the wrapper
+  also fails a `fatal error:` line, which the hub's count of `: error:` misses (a missing header passed green).
 - spdlog and nlohmann_json add their headers as SYSTEM (`third_party/CMakeLists.txt`, a9333e7e; hub CON295 (c)
   step 1), so their 124 and 12 gcc warnings no longer count as this repo's.
 - One set of defaults (BACKLOG "One set of defaults: the Sun, the wind and F5", plan I6): the C++ Sun is OxidANT's

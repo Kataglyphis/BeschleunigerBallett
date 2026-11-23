@@ -109,6 +109,13 @@ file outside `build*/`, `.venv/` and `third_party/` against
 rewrote the CI checkout and never failed; 11 of 18 files had drifted. The sweep
 that fixed them is in `.git-blame-ignore-revs`.
 
+**IWYU reports, and fails only on a unit it cannot read** (hub CON295 (a)):
+`run-static-analysis-format.sh --only-iwyu --build-dir <tree>` runs the hub's
+`code_quality_run_iwyu` over the units of `Src` and `Test` that neither declare
+nor import a module (the image's include-what-you-use is built on clang 19 and
+reads no clang 23 module file), and writes `logs/code-quality/iwyu.txt`. The
+`static-analysis` job runs it after the debug build.
+
 ## Known state (2026-10-06)
 
 <!-- format-drift-denominator: 251 -->
