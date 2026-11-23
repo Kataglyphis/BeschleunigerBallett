@@ -54,6 +54,13 @@ the GitHub releases themselves.
 
 ### Changed
 
+- OxidANT pin to `d0b6725`: a skin whose joints mirror space keeps its triangles' fronts out (`d0b6725`): `load_flat`
+  reverses a triangle whose blended joint matrix has a negative determinant at two or three of its corners before it
+  bakes the rest pose, where only the tangent sign used to flip, so such a skin drew inside out wherever back faces
+  are culled. `GltfFixtureRoundTrip` takes OxidANT's `skinned_mirrored.gltf` (two single-sided cards, the left one
+  placed by a joint scaled -1 in X), whose fact holds every triangle's face to its normals and two triangles left of
+  the origin. No shipped scene has a skin, so no frame changes. The pin also brings the Rust renderer's VSync switch
+  (`9da66be`, on by default and Fifo, as this engine's).
 - OxidANT pin to `e817d6c` (plan I12): its WebGPU passes are target-neutral Slang (the IBL bake takes `fullscreen_vs`,
   whose uv a SPIR-V build of its own triangle would have mirrored; `ssao` and `gpu_cull` already took
   `fullscreen_ndc_to_uv`), and `histogram.wgsl`, the last hand-written WGSL, comes from `histogram/histogram.slang`

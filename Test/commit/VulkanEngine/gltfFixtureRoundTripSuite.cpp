@@ -222,6 +222,24 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
                   EXPECT_LE(vertex.position.y, 2.001F) << "the joints' inverse binds did not dequantize";
               }
           } },
+        { "skinned_mirrored.gltf",
+          [](const GltfLoader &loader) {
+              // The left card's joint mirrors X, so its winding as authored would face away from its normals.
+              const std::span<const Vertex> vertices = loader.getVertices();
+              const std::span<const unsigned int> indices = loader.getIndices();
+              ASSERT_EQ(indices.size(), 12U);
+              std::size_t left = 0;
+              for (std::size_t t = 0; t < indices.size(); t += 3) {
+                  const Vertex &a = vertices[indices[t]];
+                  const Vertex &b = vertices[indices[t + 1]];
+                  const Vertex &c = vertices[indices[t + 2]];
+                  const glm::vec3 face = glm::cross(b.position - a.position, c.position - a.position);
+                  const glm::vec3 normals = a.normal + b.normal + c.normal;
+                  EXPECT_GT(glm::dot(face, normals), 0.0F) << "triangle " << t / 3 << " faces in";
+                  left += a.position.x < 0.0F ? 1U : 0U;
+              }
+              EXPECT_EQ(left, 2U) << "the mirrored card's two triangles lie left of the origin";
+          } },
     };
     return facts;
 }
