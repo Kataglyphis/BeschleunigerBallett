@@ -86,17 +86,10 @@ takes UTF-8 paths and runs inside `guarded()`.
   iwyu run_iwyu`); and the Actions cache, 10.65 of 10 GB: six compiler caches hold 9.49 GB beside CodeQL's
   0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or no profile and tsan keys.
 
-- [ ] `C++` **The colour picker holds the Sun's range** (S). Since Phase 7 every editor slider clamps a typed
-  value and a glTF Sun arrives sanitized, but the colour picker popup's float fields still take values outside
-  [0, 1] (the hex field clamps).
 - [ ] `CI` **The Windows bundle ships build-time files** (S). `dist/windows-x64/bundle` holds gtest's and
   gmock's `.lib`s, `include/`, `lib/cmake` and `lib/pkgconfig` (run 45001332269's artifact), which the Linux
   .deb gate forbids. Keep the test dependencies out of the install and check the bundle as
   `check-deb-layout.sh` checks the .deb.
-- [ ] `C++` **The Kompute playground's write-after-write hazard** (S). `KomputePlayground.ArrayMultiply` logs
-  a real WRITE_AFTER_WRITE (a `vkCmdDispatch` storage write after `vkCmdCopyBuffer`, job 136455950642 line
-  14318), but Kompute's callback prints it without its `SYNC-HAZARD` id, so no scan sees it. Add the barrier,
-  then let the scan see Kompute's messages.
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
