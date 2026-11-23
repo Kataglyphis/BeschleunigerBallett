@@ -15,12 +15,6 @@ if(NOT COMMAND myproject_define_core_options
                       "myproject_define_core_options (version >= 1). CMAKE_MODULE_PATH is: ${CMAKE_MODULE_PATH}")
 endif()
 
-function(myproject_enable_local_hardening target)
-  include(Hardening)
-  set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
-  myproject_enable_hardening(${target} OFF ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
-endfunction()
-
 macro(myproject_setup_options)
   option(myproject_ENABLE_HARDENING "Enable hardening" ON)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
@@ -139,8 +133,10 @@ macro(myproject_local_options)
 
   myproject_apply_warnings_as_errors_linker_check()
 
+  # Not from a function: the macro's CMAKE_POSITION_INDEPENDENT_CODE must reach every later target (hub CON297).
   if(myproject_ENABLE_HARDENING AND NOT myproject_ENABLE_GLOBAL_HARDENING)
-    myproject_enable_local_hardening(myproject_options)
+    include(Hardening)
+    myproject_enable_hardening(myproject_options OFF FALSE)
   endif()
 
   if(NOT

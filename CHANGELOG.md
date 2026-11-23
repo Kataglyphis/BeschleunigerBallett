@@ -92,6 +92,12 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The ANTfrastructure pin moves 734ab966 -> 04981676 (renovate-local.sh): IWYU's report helpers (CON295 (a)), PIE on a
+  real target (CON297), quality-report without a docs table (CON298) and the sixth workflow convention, `run-filter`,
+  which grades every `workflow_run` filter as a GitHub pattern and is armed from the start (BB: 0 findings).
+- Hardening runs at the project's scope, not from `myproject_enable_local_hardening` (removed): from a function its
+  `CMAKE_POSITION_INDEPENDENT_CODE` reached no target, so the Linux programs were PIE only by clang's default. Now
+  `GraphicsEngine` compiles with `-fPIE` and links with `-pie` beside `-z relro -z now`.
 - spdlog and nlohmann_json add their headers as SYSTEM (`third_party/CMakeLists.txt`, a9333e7e; hub CON295 (c)
   step 1), so their 124 and 12 gcc warnings no longer count as this repo's.
 - One set of defaults (BACKLOG "One set of defaults: the Sun, the wind and F5", plan I6): the C++ Sun is OxidANT's
