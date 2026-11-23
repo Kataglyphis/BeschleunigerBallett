@@ -257,6 +257,12 @@ the GitHub releases themselves.
   a change. `StudioWidgetsUnit.AColourPickerHoldsItsRangeForATypedValue` opens the picker and types 0.25, -1 and 7
   into red and 5 into saturation; `BuildIntegrity.EditorColourEditsHoldTheirRange` fails an `ImGui::ColorEdit` or
   `ImGui::ColorPicker` call under `Src/` outside the widget.
+- The Kompute playground's write-after-write hazard: `OpAlgoDispatch`'s own barrier makes `OpSyncDevice`'s copies
+  visible to shader reads only, so the dispatch's storage write raced the copy into the output tensor (job
+  136455950642). An `OpMemoryBarrier` from the copies' transfer writes to the compute shader's writes now sits between
+  them. Kompute's `VK_EXT_debug_report` callback had logged the hazard at debug level without its `SYNC-HAZARD` id,
+  so neither the test nor `run-ctest.sh`'s scan failed; the playground now registers its own callback on Kompute's
+  instance and exits 1 on any validation warning or error.
 - `retry-disk-refusal.yml` names its lanes as the glob patterns `workflow_run` reads: `[ci <lane>]` held characters a
   bracket may not, so every `workflow_run` event since 882d55de ended in a `startup_failure` of a workflow GitHub calls
   BuildFailed (run 45195400022 among 23), and the unescaped `+` of "build + test" matched no plus, so the x64 lane would

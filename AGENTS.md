@@ -1077,7 +1077,9 @@ took 46 s in `:latest` from a cold target directory on a 32-core host.
 **`clang-tests` (both arches) is the only build of `Src/KomputePlayground`** (since 2026-10-06): it
 configures with `-DKATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON`, and its ctest step runs
 `KomputePlayground.ArrayMultiply` on llvmpipe with the other suites, so the demo cannot rot unseen
-again. Kompute comes from the `third_party/KOMPUTE` submodule and keeps exceptions on (its headers
+again. The playground exits 1 on any validation warning or error, sync hazards included: Kompute's own
+`VK_EXT_debug_report` callback logs them at debug level without their id, which the `SYNC-HAZARD|VUID-`
+scan needs. Kompute comes from the `third_party/KOMPUTE` submodule and keeps exceptions on (its headers
 throw; the playground links neither `myproject_options` nor its `-fno-exceptions`), and the SDK's
 `glslangValidator` compiles the GLSL shader into the build tree. Every other build leaves the option
 OFF, so none of them fetches Kompute's `fmt`.
