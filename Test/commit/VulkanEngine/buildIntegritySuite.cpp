@@ -155,7 +155,7 @@ bool newest_import_for(const fs::path &slang_root,
 
 // shader-manifest.json is both Slang build scripts' single source of truth, so these tests check the files against it.
 
-// One wgslMap row; histogram.wgsl has none, being hand-written (Slang cannot emit its InterlockedAdd to WGSL).
+// One wgslMap row: the Slang source, the directory and the WGSL file it writes.
 struct WgslMapping
 {
     std::string slang_source;// "src": relative to Resources/ShadersSlang/
@@ -3649,6 +3649,8 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
     static const std::vector<std::string> kCopies{ "(y + 1.0) * 0.5", "uv * 2.0 - 1.0", "uv.y * 2.0" };
     // WebGPU's NDC-to-uv, 0.5 - y * 0.5, is fullscreen_ndc_to_uv's default branch.
     static const std::regex kNdcToUvCopy(R"(\b0\.5\s*-\s*[^;,]*\*\s*0\.5\b)");
+    // A triangle of its own once mirrored OxidANT's IBL faces and BRDF LUT on SPIR-V.
+    static const std::regex kOwnTriangle(R"(\.svPosition\s*=\s*float4\()");
 
     std::vector<std::string> violations;
     int importers = 0;
@@ -3678,6 +3680,10 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheFullscreenUvMapping)
             }
             if (std::regex_search(line, kNdcToUvCopy)) {
                 violations.push_back(relative_path + ':' + std::to_string(line_number) + ": NDC to uv by hand");
+            }
+            if (std::regex_search(line, kOwnTriangle)) {
+                violations.push_back(
+                  relative_path + ':' + std::to_string(line_number) + ": a fullscreen triangle of its own");
             }
         }
     }
@@ -6418,7 +6424,7 @@ std::map<std::string, std::string> shared_module_target_truth(const fs::path &sl
     return result;
 }
 
-// Each source's documented target (spirv, wgsl or both) must match the manifests; tests/ and histogram are out.
+// Each source's documented target (spirv, wgsl or both) must match the manifests; tests/ are out.
 TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
 {
     const fs::path repo_root = repoRoot();
@@ -6465,11 +6471,6 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
                                        << joinViolations(manifest_only);
     EXPECT_TRUE(mismatched.empty()) << doc_path.string() << " disagrees with shader-manifest.json on target(s):"
                                     << joinViolations(mismatched);
-
-    EXPECT_FALSE(doc_targets->contains("histogram.wgsl"))
-      << doc_path.string()
-      << "'s shader-targets table must not list histogram.wgsl - it has no Slang source (hand-written WGSL "
-         "fallback) and cannot appear in shader-manifest.json";
 }
 
 // The shared-module table must equal the targets recomputed from the import graph, in both directions.
@@ -10106,7 +10107,10 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
         { "common/constants.slang", std::regex(R"((^|[^0-9.])0\.045($|[^0-9]))"), "the 0.045 roughness floor" },
         { "common/hdr_safe.slang", std::regex(R"(\bstatic\s+const\s+\w+\s+\w*HDR_MAX\s*=)"), "an HDR maximum" },
         { "common/hdr_safe.slang", std::regex(R"(\b65(000|504)\b)"), "the HDR maximum literal" },
-        { "common/hdr_safe.slang", std::regex(R"(\bisnan\s*\(|0x7[fF]800000)"), "a NaN check" },
+        { "common/hdr_safe.slang",
+          std::regex(
+            R"(\bisnan\s*\(|0x7[fF]800000|(^|[^\w.])([A-Za-z_]\w*(\.\w+|\[\w+\])*)\s*[!=]=\s*\2($|[^\w.\[(]))"),
+          "a NaN check (isnan, the exponent mask or a self-comparison)" },
         { "common/hdr_safe.slang", std::regex(kDefines + R"(hdr_safe\s*\()"), "a second hdr_safe" },
         { "common/aces.slang", std::regex(R"(\b2\.51\b|\b2\.43\b)"), "an ACES coefficient" },
         { "common/aces.slang",

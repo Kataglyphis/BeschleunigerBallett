@@ -9,9 +9,8 @@ including shared entry points where the two renderers' passes coincide.
 [`shader-build-pipeline.md`](shader-build-pipeline.md) owns the build wiring,
 compile commands, output directories, staleness rules and fast iteration. On
 the Rust side its combined WGSL emit replaces the crates' hand-written WGSL;
-their `include_str!` calls are unchanged and now read Slang-emitted text.
-`histogram.wgsl` is the one hand-written WGSL file left
-([`shader-build-pipeline.md`](shader-build-pipeline.md) says why).
+their `include_str!` calls are unchanged and now read Slang-emitted text,
+`histogram.wgsl` included since 2026-11-23.
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
 shared modules under `shaders/common/`: `aces`, `brdf`, `brdf_energy_fit`,
@@ -45,8 +44,9 @@ the C++ side and emit one target.
 **WGSL fallback policy:** a shared shader that Slang cannot express for the
 WGSL target at all (not merely emit) gets hand-written WGSL and **no** Slang
 source, rather than a Slang source nothing on the C++ side consumes that would
-still have to be kept in sync. `histogram.wgsl` is the one hand-written file today, though
-Slang can now express it ([`shader-build-pipeline.md`](shader-build-pipeline.md)).
+still have to be kept in sync. No shader needs it today: the last one,
+`histogram.wgsl`, is Slang since its workgroup atomics became `Atomic<uint>`
+([`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Architecture: Slang-native, not `#include`
 
@@ -289,6 +289,7 @@ tonemap shader.
 | `forward/forward.slang` | wgsl |
 | `fxaa/fxaa.slang` | both |
 | `gpu_cull/gpu_cull.slang` | wgsl |
+| `histogram/histogram.slang` | wgsl |
 | `ibl/ibl.slang` | wgsl |
 | `occlusion_bbox/occlusion_bbox.slang` | wgsl |
 | `path_tracing/path_tracing.slang` | spirv |
@@ -384,8 +385,9 @@ imports.
 <!-- shared-module-targets:end -->
 
 **Status:** all C++ shaders are on Slang SPIR-V (all 8 loading sites), and all
-Rust shaders on Slang-emitted WGSL except `histogram.wgsl`, still hand-written
-though Slang can now express it.
+Rust shaders on Slang-emitted WGSL, every WebGPU pass written target-neutral
+(OxidANT's `docs/shaders.md`); a pass gains its SPIR-V row with the C++ change
+that binds it.
 
 ## Known glTF loader divergences (not shader-shared, but the two renderers must stay honest about it)
 

@@ -54,6 +54,14 @@ the GitHub releases themselves.
 
 ### Changed
 
+- OxidANT pin to `e817d6c` (plan I12): its WebGPU passes are target-neutral Slang (the IBL bake takes `fullscreen_vs`,
+  whose uv a SPIR-V build of its own triangle would have mirrored; `ssao` and `gpu_cull` already took
+  `fullscreen_ndc_to_uv`), and `histogram.wgsl`, the last hand-written WGSL, comes from `histogram/histogram.slang`
+  through `Atomic<uint>`. The shader-targets table lists it; `ShaderSharingDocMatchesTheManifestTargets` no longer
+  special-cases it, and `NoShaderRedeclaresTheFullscreenUvMapping` fails a `fullscreen` importer that builds its own
+  triangle. The histogram's NaN check is `hdr_safe.slang`'s new `is_finite`, which reads the exponent bits, where
+  the hand-written WGSL compared the EV with itself; `NoShaderCopiesASharedLeafModule` fails such a self-comparison.
+  This engine binds none of these passes, so nothing here renders differently.
 - Traced camera rays start at the near plane (owner 2026-11-19), through OxidANT `f2360d5`'s `camera_ray.slang`:
   `raytrace.rgen`, the path tracer's camera and cloud-depth rays and the cloud compute pass take
   `camera_ray_through_pixel`/`camera_ray` over `scene_types.slang`'s `clip_to_world(GlobalUBO)`, the product of the

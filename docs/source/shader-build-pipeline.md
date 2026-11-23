@@ -52,14 +52,13 @@ is no runtime shader compilation. Slang emits `"main"` as the SPIR-V entry
 point name (not the Slang function name), so every `pName` in pipeline
 creation is `"main"`.
 
-`histogram.wgsl` in the Rust crate is hand-written, with no Slang source.
+`histogram.wgsl` in the Rust crate is generated from OxidANT's
+`histogram/histogram.slang` since 2026-11-23, the last hand-written WGSL.
 `InterlockedAdd` does not compile for the WGSL target, on a `RWStructuredBuffer`
 or on `groupshared` memory alike, but slangc 2026.17 emits `Atomic<uint>` as
 `atomic<u32>` in both: the global `array<atomic<u32>>` bins and the per-workgroup
-`var<workgroup>` ones the histogram privatises into (checked 2026-11-19). The
-shader is therefore no longer a case of the WGSL fallback policy in
-[`shader-sharing.md`](shader-sharing.md); nobody has ported it or run that
-output through wgpu yet.
+`var<workgroup>` ones the histogram privatises into; OxidANT's histogram and
+auto-exposure tests run that output through wgpu.
 
 ## Staleness rules
 
