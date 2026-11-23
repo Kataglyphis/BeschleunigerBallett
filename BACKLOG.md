@@ -55,7 +55,10 @@ No P0 item is open.
   the vector suite's `hdr_safe` cases (NaN and the infinities as bits) and `camera_ray` on the AMD driver, and
   by eye the traced modes with the editor docked (the lens shift through `clip_to_world`), Sponza in Release
   at its far plane of 4000 (traced coverage as raster's) and the camera close to geometry (the traced modes
-  clip at the near plane as raster does).
+  clip at the near plane as raster does). Since Phase 7: the Sky tab's Ambient slider and the Sun tab's
+  direction drag (it still shows the way the light travels and must move the shadows the same way), F5 in a
+  Profile or Release build, and `Test-GpuTimingBudget.ps1` over Forward, Deferred and RayTrace, which the
+  analytic ambient's three `pow` per pixel reach.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -88,10 +91,11 @@ takes UTF-8 paths and runs inside `guarded()`.
   the hub's ELF gate on the program each release `.deb` ships, `run-ctest.sh --virtual-display` and
   `Invoke-SyncValidation.ps1` failing on `SYNC-HAZARD` or `VUID-` through the hub's log pattern (CON291), and
   an empty `allowed_skips` on every staged gtest entry (CON292). spdlog and nlohmann as SYSTEM includes
-  (CON295 (c) step 1) came from another session. Left: the first runs; CON295's ratchet and then warnings as
-  errors on the product targets; IWYU (CON295 (a)) after the next hub pin; and the Actions cache, 10.65 of 10
-  GB: six compiler caches hold 9.49 GB beside CodeQL's 0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or
-  no profile and tsan keys.
+  (CON295 (c) step 1) are in since a9333e7e; the next gcc job's warning count shows the 124 and 12 gone. Left:
+  the first runs; CON295's ratchet and then warnings as errors on the product targets; IWYU (CON295 (a)) from
+  hub 486827f8 on, wired as AccelerANTgine 0126297 wires it (`run-static-analysis-format.sh`: `require_tools
+  iwyu_tool`, `run_gate iwyu run_iwyu`); and the Actions cache, 10.65 of 10 GB: six compiler caches hold 9.49
+  GB beside CodeQL's 0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or no profile and tsan keys.
 
 - [ ] `CI` **The Windows bundle ships build-time files** (S). `dist/windows-x64/bundle` holds gtest's and
   gmock's `.lib`s, `include/`, `lib/cmake` and `lib/pkgconfig` (run 45001332269's artifact), which the Linux
@@ -155,32 +159,28 @@ Shaders:
   shadows, `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
   `forward_lighting.slang`'s two shadow-map NDC-to-uv conversions and its `uv_y_sign` of -1 are still WebGPU's
   alone.
+- [ ] `Shared` **The analytic ambient in Rust's ray-traced mode** (S-M). Since Phase 7 Rust's forward pass and
+  every C++ raster and ray-traced frame add `ambient.slang`'s `analytic_ambient`, but Rust's tracer does not:
+  with no environment the analytic term, with one the IBL maps bound in `TRACE_LIGHTS_GROUP`. OxidANT's
+  browser test asserts a black ray-traced shadow, which changes with it.
 - [b] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; after the shared lighting
   Slang; `camera_ray.slang` is in since Phase 6). Owner 2026-11-19: a camera miss shows the drawn sky, bounce
   misses sample the drawn sky through the IBL, camera rays start at the near plane; furnace NEE, the call
-  sites and the depth ray are the item's to settle. `trace_path<S: ITracedScene>` in OxidANT, C++ over
-  RayQuery, Rust over `bvh_traverse`; BB's `traced_hit.slang` folds the hit fetch of rchit and the path tracer
-  and the three MASK candidate loops.
+  sites and the depth ray are the item's to settle; the bounce sky reads the Sun's Ambient slider, which the
+  C++ path tracer's fixed 0.35 bounce scale ignores since Phase 7. `trace_path<S: ITracedScene>` in OxidANT,
+  C++ over RayQuery, Rust over `bvh_traverse`; BB's `traced_hit.slang` folds the hit fetch of rchit and the
+  path tracer and the three MASK candidate loops.
 
 C++ catches up:
 
-- [ ] `C++` **An analytic ambient term with an Ambient slider** (S-M, plan C4 stage 1). C++ shades
-  `brdf_direct`, shadows, punctual lights and emission only, so shadowed ground gets no sky light. Port
-  Rust's environment-free path (hemisphere irradiance plus a roughness-blended sky reflection) into a
-  shared Slang function used by forward, deferred and rchit.
-- [ ] `Shared` **One set of defaults: the Sun, the wind and F5** (S, plan I6; with or after the ambient term).
-  Owner 2026-11-19: Rust's Sun (radiance 5, warm white, ambient 0.35) in both, so the C++ goldens are
-  recalibrated; the cloud wind range is ±100 in both (C++ allows ±50); F5 reloads shaders in every native
-  build of both renderers. Rust's LOD stays off by default until QEM is measured on the Colosseum. Owner
-  2026-11-20: the bridged Sun gets its ranges and a `sanitize` here, and one direction convention (Rust stores
-  the direction towards the Sun, the C++ editor the direction the light travels); until then
-  `sceneSettingsDriftSuite.cpp` compares the direction negated.
-- [b] `C++` **IBL and the occlusion map for C++** (L, plan C4 stages 2-3; after the analytic ambient term).
-  Owner 2026-11-19: both renderers bake the IBL from the drawn skybox (Rust follows with OxidANT's IBL
-  entry), and C++ takes Rust's G-buffer packing (occlusion in albedo.a, unlit in metallic's sign).
-- [b] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; after the HDR sky). Exposure as
-  Rust's two-float storage buffer, bloom from OxidANT's shader, SSAO on the ambient and IBL terms only (owner
-  2026-11-19, both renderers), auto exposure once the histogram is Slang.
+- [ ] `C++` **IBL and the occlusion map for C++** (L, plan C4 stages 2-3; the analytic ambient term is in
+  since Phase 7). Owner 2026-11-19: both renderers bake the IBL from the drawn skybox (Rust follows with
+  OxidANT's IBL entry), and C++ takes Rust's G-buffer packing (occlusion in albedo.a, unlit in metallic's
+  sign).
+- [ ] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; the HDR sky is in since Phase 3, the
+  Slang histogram since Phase 6). Exposure as Rust's two-float storage buffer, bloom from OxidANT's shader,
+  SSAO on the ambient and IBL terms only (owner 2026-11-19, both renderers), auto exposure once the histogram
+  is Slang.
 - [ ] `C++` **One set of C++ scene targets** (M-L, plan C6 step 1). One set per swapchain image, and both
   raster paths always allocated, cost 116 B/px (about 229 MiB at 1080p); afterwards 12 B/px forward or
   32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
@@ -224,9 +224,9 @@ C++ catches up:
 
 New in both:
 
-- [b] `Shared` **A tonemapper choice and dither** (M, plan N2; after the HDR sky, in both renderers). Narkowicz
-  ACES, Khronos PBR Neutral and AgX selected by a uniform; dither in the encoded domain. Both renderers
-  invert ACES for the LDR cube today, and AgX has no closed-form inverse.
+- [ ] `Shared` **A tonemapper choice and dither** (M, plan N2, in both renderers; the HDR sky is in since
+  Phase 3). Narkowicz ACES, Khronos PBR Neutral and AgX selected by a uniform; dither in the encoded domain.
+  Both renderers invert ACES for the LDR cube today, and AgX has no closed-form inverse.
 - [b] `Shared` **Path-traced reference mode, firefly clamp and .hdr export** (L, plan N7; after the
   shared integrator). A target sample count with a resolve-only path in C++, `clamp_sample` off by default,
   a Radiance `.hdr` encoder in a wgpu-free crate returning bytes, EXR natively.

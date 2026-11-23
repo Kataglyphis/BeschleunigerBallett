@@ -79,6 +79,8 @@ the GitHub releases themselves.
 
 ### Changed
 
+- spdlog and nlohmann_json add their headers as SYSTEM (`third_party/CMakeLists.txt`, a9333e7e; hub CON295 (c)
+  step 1), so their 124 and 12 gcc warnings no longer count as this repo's.
 - One set of defaults (BACKLOG "One set of defaults: the Sun, the wind and F5", plan I6): the C++ Sun is OxidANT's
   (radiance 5, warm white (1, 0.97, 0.92), towards (0.5, 0.8, 0.3), ambient 0.35; was 10, white, a light travelling
   along (-0.55, -1, -0.35) and no ambient), so `SceneSettingsDrift` compares it field by field.
