@@ -64,36 +64,43 @@ Slang in OxidANT, each renderer keeping its own host pass; a bridged function re
 takes UTF-8 paths and runs inside `guarded()`.
 
 
-- [ ] `CI` **The Windows binaries lack the CFG bit** (S). They are compiled with CFG, but the hub's
-  `cmake/Hardening.cmake` never passes `/guard:cf` to the linker: none of the 13 lld-link lines of job 136406090876
-  carries it. Hub CON290 fixes the flags; then move the hub pin and read GUARD_CF with `llvm-readobj` from
-  `GraphicsEngine.exe` in a `[ci windows]` run. Found by the C++ comparison of 2026-11-21 (owner decisions D1 to D12,
-  as recommended).
+- [ ] `CI` **The Windows binaries lack the CFG bit** (S). **In source** since 2026-11-23: the hub pin 734ab966
+  links `/guard:cf` (CON290), and `Build-Windows.ps1`'s critical step "PE hardening (<arch>)" runs the hub's
+  `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP, high-entropy VA, CFG).
+  Left: the next `[ci windows]` run shows both steps passing and the suites green with CFG enforced; a
+  third-party DLL without CFG would fail the step by name.
 
 ### P2: medium
 
-- [ ] `CI` **The hub gates BB does not call yet** (S). From the C++ comparison of 2026-11-21: `security-audit.yml`
-  (osv-scanner, cargo-audit, cargo-deny; green in all 50 of AccelerANTgine's recent runs), lint-gates' `agents-drift`
-  and `sha-pin` (0 tag-pinned actions today), the quality-report step (skipped in run 44784593082),
-  `retry-disk-refusal`, and `core.hooksPath` on the Pi's clone so its pre-push checks run.
-- [ ] `CI` **A develop run finishes instead of being cancelled** (S, owner D9 2026-11-21). **In source** since
-  2026-11-21 (seven workflows cancel only off main and develop); left: the next develop pushes show finished runs. 27
-  of the last 50 x64 runs were cancelled by newer pushes, many after 70 to 92 minutes, and left their commits without
-  a verdict; cancel in progress only off develop. Not verified: whether six-job runs then queue against the account's
-  limit of concurrent jobs; if they do, push less often rather than cancel.
-- [ ] `C++` **cppcheck stops claiming to run, and the filesystem rule fires again** (S, owner D10 2026-11-21). **In
-  source** since 2026-11-21: cppcheck OFF by default, the BuildIntegrity check replaced by `quality-report.toml`'s
-  pattern row (`test-filesystem-pattern.sh`, one recipe); left: the next lint-gates run grades the row. cppcheck was
-  ON by default, but the image has no binary, so it was skipped without a word (jobs 135983570303, 135983570356): the
-  default goes. BuildIntegrity's exception-free filesystem rule cannot fire for `create_directories(` or
-  `directory_iterator(`, whose names contain "ec" (`buildIntegritySuite.cpp:7910-7913`); the hub's pattern-limits row
-  (CON295) replaced it.
-- [ ] `CI` **Linux linker hardening and the hub's newer gates** (S each). "Hardening Linker Flags:" is empty (job
-  135983570303, log 2886): hub CON294 adds PIE and `-z relro -z now` and an ELF gate. The SYNC-HAZARD scan moves onto
-  `ctest-run.sh --fail-on-log-pattern` (CON291), with `VUID-` added (0 in green job 136455950642); the staged runner's
-  exact skip list takes an empty list (CON292; 0 Windows skips in job 136436488204); warnings become errors in three
-  steps (CON295, owner D11: spdlog and nlohmann as SYSTEM includes, 124 and 12 warnings in job 135983570345, then a
-  ratchet, then the product targets). The Actions cache is over its quota (10.58 of 10 GB).
+- [ ] `CI` **The hub gates BB does not call yet** (S). **In source** since 2026-11-23: `security-audit.yml`
+  (osv-scanner over `uv.lock`), `retry-disk-refusal.yml`, the quality-report step (`quality-report.toml`
+  gained its `[docs]` table, without which the report is incomplete) and the workflow conventions `sha-pin`,
+  `permissions`, `job-timeout` and `artifact-error` (0 findings each). Left: their first runs. Not wired:
+  `agents-drift`, which needs AGENTS.md in the hub's six-section template (22 findings) and which the hub
+  scopes to its AI consumers, and `core.hooksPath` on the Pi's clone, outside this repo.
+- [b] `CI` **A burst of develop pushes loses the middle commit's verdict** (S, needs an owner decision). Since
+  9dedc393 no develop run that had started was cancelled (D9 holds: dc69fa7e ran 142 min to its end), but
+  GitHub keeps one waiting run per concurrency group, so runs 44929269007 and 44930561429 were replaced with 0
+  jobs while 145423b5's ran. Either a group per commit on develop, whose runs then compete for the account's
+  concurrent jobs, or fewer pushes.
+- [ ] `CI` **Linux linker hardening and the hub's newer gates** (S each). **In source** since 2026-11-23: `-z
+  relro -z now` from the hub pin ("Hardening Linker Flags: -Wl,-z,relro;-Wl,-z,now"), PIE by clang's default,
+  the hub's ELF gate on the program each release `.deb` ships, `run-ctest.sh --virtual-display` and
+  `Invoke-SyncValidation.ps1` failing on `SYNC-HAZARD` or `VUID-` through the hub's log pattern (CON291), and
+  an empty `allowed_skips` on every staged gtest entry (CON292). spdlog and nlohmann as SYSTEM includes
+  (CON295 (c) step 1) came from another session. Left: the first runs; CON295's ratchet and then warnings as
+  errors on the product targets; IWYU (CON295 (a)) after the next hub pin; and the Actions cache, 10.65 of 10
+  GB: six compiler caches hold 9.49 GB beside CodeQL's 0.98, so `SCCACHE_CACHE_SIZE` 1200M (about 7.2 GB) or
+  no profile and tsan keys.
+
+- [ ] `CI` **The Windows bundle ships build-time files** (S). `dist/windows-x64/bundle` holds gtest's and
+  gmock's `.lib`s, `include/`, `lib/cmake` and `lib/pkgconfig` (run 45001332269's artifact), which the Linux
+  .deb gate forbids. Keep the test dependencies out of the install and check the bundle as
+  `check-deb-layout.sh` checks the .deb.
+- [ ] `C++` **The Kompute playground's write-after-write hazard** (S). `KomputePlayground.ArrayMultiply` logs
+  a real WRITE_AFTER_WRITE (a `vkCmdDispatch` storage write after `vkCmdCopyBuffer`, job 136455950642 line
+  14318), but Kompute's callback prints it without its `SYNC-HAZARD` id, so no scan sees it. Add the barrier,
+  then let the scan see Kompute's messages.
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
