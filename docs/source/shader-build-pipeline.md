@@ -167,8 +167,8 @@ rule to the checked-in files on every CI platform, and
 from being deleted. Raise the floor rather than hand-editing generated WGSL;
 bumping `VULKAN_VERSION` in the ANTfrastructure image re-enables WGSL
 regeneration on Linux. The pinned hub's `versions.env` names
-`VULKAN_VERSION=1.4.357.0`, whose Windows SDK ships slangc `2026.13.1` (read
-from the host SDK on 2026-09-25), above the floor. Whether the published
+`VULKAN_VERSION=1.4.363.0`. The older 1.4.357.0 Windows SDK already shipped
+slangc `2026.13.1`, above the floor. Whether the published
 `:latest` carries this SDK was not checked here.
 
 ## Fast shader iteration

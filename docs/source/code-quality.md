@@ -33,7 +33,7 @@ repo takes. Edit them upstream in `shared/config/`, then run
 `Sync-SharedConfig.ps1 -RepoRoot . -Write`. `.cmake-format.yaml` also lives at
 this repo's root. The drift gate,
 `bash third_party/ANTfrastructure/shared/config/sync-shared-config.sh --repo-root . --check`,
-is one of the six gates of the hub's lint aggregator, which
+is one of the ten always-on gates of the hub's lint aggregator, which
 `.github/workflows/lint-gates.yml` runs on every push, docs-only ones included
 (it has no `paths-ignore`). Its Pester mirror in the Windows lane:
 `scripts/windows/tests/SharedConfig.Drift.Tests.ps1`.
@@ -60,7 +60,8 @@ Linux equivalent: `scripts/linux/run-static-analysis-format.sh`.
 
 ## Running them as part of a build
 
-`Build-Windows.ps1` runs both unless told otherwise:
+`Build-Windows.ps1` runs both unless told otherwise. These commands run inside the image; on
+the host, build through `Build-Windows-Container.ps1`, which always runs both:
 
 ```pwsh
 # format + tidy included (slower)

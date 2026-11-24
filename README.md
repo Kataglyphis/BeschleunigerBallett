@@ -50,9 +50,11 @@ The CMake formatter uses ANTfrastructure's locked uv tool project.
 ```bash
 git clone --recurse-submodules --branch develop https://github.com/Kataglyphis/BeschleunigerBallett.git
 cd BeschleunigerBallett
-cmake --preset linux-debug-clang && cmake --build build && ctest --test-dir build --output-on-failure
+bash third_party/ANTfrastructure/linux/scripts/run-in-ci-image.sh . -- bash -c \
+  'bash scripts/linux/cmake-configure-build.sh --preset linux-debug-clang && bash scripts/linux/run-ctest.sh'
 ```
 
+This runs in the family's Linux CI image through Docker or nerdctl. The wrapper compiles the Slang shaders before the build; a bare `cmake --build` compiles none.
 On Windows, build in the toolchain container instead (Stevedore):
 `pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1`.
 Prerequisites, both platforms, the scenes, packaging and troubleshooting:

@@ -27,7 +27,8 @@ platform fails every GPU test instead of skipping it (the riscv64 GPU shards set
 2026-11-19 it also passes the hub's `--fail-on-skipped '^(GoldenRender|Integration)\.'` (the riscv64
 shards too, through `ctest_run_main`), which fails the run on any ctest Skipped of those suites, the
 hardware-RT `GTEST_SKIP`s included: llvmpipe has ray tracing, and none of the 96 skipped that day; a
-test that cannot run there must be named, not skipped. The two Disabled goldens never count. Locally:
+test that cannot run there must be named, not skipped. The two Disabled goldens never count. Locally,
+with `--virtual-display` as the first argument (the script checks only that one):
 
 ```bash
 bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-type Debug
@@ -351,6 +352,9 @@ run the compile script once before the engine has anything to load
 ([`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Writing a new golden test — cautions learned the hard way
+
+A new `GoldenRender` or `Integration` test raises the `golden-counts` marker above in the same
+change: `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` fails until it matches the suite.
 
 The single home for these instrument cautions; `docs/source/cpp-renderer-improvements.md`,
 `docs/source/path-tracing.md` and the suite's one-line comments link here. The expensive mistakes:

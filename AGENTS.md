@@ -44,7 +44,7 @@ Find your task, do the first action, read the doc. [Docs](#docs) and
 | `third_party/OxidANT/crates/` | The Rust side, incl. `webgpu_renderer` and `gui` |
 | `third_party/ANTfrastructure/` | The submodule that owns every reusable script, module and doc (see the rule below) |
 | `scripts/windows/`, `scripts/linux/`, `scripts/agentic-loop/` | Thin project wrappers over ANTfrastructure drivers + this project's payload |
-| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`, `FetchAssets.cmake` (the scenes, [Large tracked assets](#large-tracked-assets)). The reusable modules are ANTfrastructure's ([CMake modules](#cmake-modules-local-first-then-antfrastructure)) |
+| `cmake/` | This project's build **policy** only: `ProjectOptions.cmake` (options, exceptions, CRT, C++23, modules-mandatory), `CPackOptions.cmake`, `SystemLibDependencies.cmake`, `FetchAssets.cmake` (the scenes, [Large tracked assets](#large-tracked-assets)), and the licence texts every package ships (`SponzaLicenses.cmake`, `ThirdPartyLicenses.cmake`, `CargoLicenses.cmake`). The reusable modules are ANTfrastructure's ([CMake modules](#cmake-modules-local-first-then-antfrastructure)) |
 
 ### Large tracked assets
 
@@ -280,7 +280,8 @@ microsoft/STL#6294 closed with #6298 on 2026-10-18, which no VC Tools the image 
 Run 36052511207 stopped there on `findSampler`'s 24-byte `SamplerKey`: use `find_if` with a
 predicate until the image's VC Tools have the fix.
 
-Typical full sweep (ASAN debug, profile, release):
+Typical full sweep inside the image (ASAN debug, profile, release). On the host, build through
+`Build-Windows-Container.ps1` instead:
 
 ```pwsh
 pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
@@ -441,10 +442,10 @@ the fuzz executables before launching, but still takes `Resolve-AppExecutablePat
 ### CMake modules (local first, then ANTfrastructure)
 
 The root `CMakeLists.txt` puts **`cmake/` then `third_party/ANTfrastructure/cmake/`** on
-`CMAKE_MODULE_PATH` and includes every module by name, so a same-named file in `cmake/` overrides
+`CMAKE_MODULE_PATH` and includes the modules by name, so a same-named file in `cmake/` overrides
 an upstream one ([the hub's `cmake/README.md`](third_party/ANTfrastructure/cmake/README.md#consuming-them), which
-lists the upstream modules). Local, because each encodes **this project's policy** rather
-than a reusable mechanism:
+lists the upstream modules). `CPackOptions.cmake` and the three licence modules are included by
+path. Local, because each encodes **this project's policy** rather than a reusable mechanism:
 
 - `cmake/ProjectOptions.cmake`: the option surface and its defaults, C++23, exceptions always off,
   C++ modules mandatory (a hard `FATAL_ERROR`, not a fallback). It composes the upstream modules;
@@ -453,6 +454,9 @@ than a reusable mechanism:
 - `cmake/SystemLibDependencies.cmake`: this engine's system dependencies.
 - `cmake/FetchAssets.cmake`: this engine's scenes (its lock, its default set, its destination). The
   cached download-verify-extract half is the hub's `kataglyphis_fetch_data` since 2026-10-19.
+- `cmake/SponzaLicenses.cmake`, `cmake/ThirdPartyLicenses.cmake`, `cmake/CargoLicenses.cmake`: the
+  licence texts every package installs. They are the default scene's terms, each linked library's
+  text and the bridge's crate texts. `CargoLicenses.cmake` also gates the bridge's crate graph.
 
 **The clang-cl `-fms-compatibility-version` pin is upstream**, in `CompilerBuildFlags.cmake` as
 `MYPROJECT_CLANG_CL_MS_COMPATIBILITY_VERSION` (default `19.51.36231`). It names the VC Tools version
@@ -590,11 +594,13 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
 - **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
   `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module
-  goes upstream with it (2026-08-07). The seven left cover the module-resolution bootstrap
+  goes upstream with it (2026-08-07). The twelve left cover the module-resolution bootstrap
   (`Resolve-BuildModule`), the preset and shared-config guards (`CMakePresets.Integrity`,
-  `SharedConfig.Drift`), the validation-layer runner (`Invoke-SyncValidation`) and the three
-  comparison tools (`Compare-PerfBaseline`, `Compare-RendererPixels`, `Compare-RendererTimings`),
-  plus `Test-GpuTimingBudget`.
+  `SharedConfig.Drift`), the validation-layer runner (`Invoke-SyncValidation`), the lavapipe
+  runner's verdicts (`Invoke-LavapipeTests.Diagnostics`), the three comparison tools
+  (`Compare-PerfBaseline`, `Compare-RendererPixels`, `Compare-RendererTimings`), the GPU timing
+  budget (`Test-GpuTimingBudget`), the arm64 shader staging (`Arm64StagedShaderSources`), the
+  package wiring (`CMakePackageReuse`) and the MSIX logo and licences (`MsixLogoWiring`).
   `Compare-PerfBaseline.Tests.ps1` allocates its suite fixture with the hub's `New-TestDir`
   and releases it with `Remove-TestDir` in `AfterAll`; keep the cleanup suite-scoped.
   The same job runs the hub's `shared/windows/tests/Repo.GeneratedArtifacts.Tests.ps1` over the
@@ -729,13 +735,13 @@ multiarch triplet, so CMake never searches `/usr/lib/aarch64-linux-gnu`. Fixed i
 (ANTfrastructure backlog CON8); it reaches this lane with the next Linux `:latest`.
 
 **The Windows ARM64 lane cross-builds, then runs** (owner decision 2026-09-25).
-`Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release,clangcl-profile` runs in the
-family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build it:
+`Build-Windows.ps1 -TargetArch arm64 -Configurations clangcl-release,clangcl-profile,clangcl-debug -SkipPerfTests`
+runs in the family image's arm64 bundle (`:winarm64`) on an amd64 runner. On a cross build it:
 
-- refuses every other configuration: Debug links an x64-only ASan runtime and runs FuzzTest's
-  grammar generator at build time, and the MSVC presets pin x64. clangcl-profile builds only with
+- refuses every other configuration, since the MSVC presets pin x64. clangcl-profile builds only with
   `-SkipPerfTests` (its benchmarks cannot run on the amd64 host), into
-  `build-clangcl-profile-arm64`, for `-StageTests` to stage `perfTestSuite.exe`;
+  `build-clangcl-profile-arm64`, for `-StageTests` to stage `perfTestSuite.exe`. clangcl-debug
+  builds into `build-clangcl-debug-arm64`, for `-StageTests` to stage the Debug (ASan) suite;
 - configures with the hub's `Get-CrossConfigureArgs -Corrosion -Vulkan`, so Corrosion targets
   aarch64 and FindVulkan takes `Lib-ARM64/vulkan-1.lib` instead of the pointer-size x64 `Lib`;
 - builds into `build-clangcl-release-arm64`;
@@ -857,7 +863,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 82 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 105 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -879,7 +885,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (82 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (84 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -893,7 +899,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 80 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  tests timed below to 82 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
   pipeline, and eleven more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,

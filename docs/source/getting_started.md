@@ -34,6 +34,11 @@ ctest --test-dir build --output-on-failure
 
 Visual Studio style generators on Windows need `-C Debug` or `-C Release` on `ctest`.
 
+A bare `cmake --build` compiles no shaders, and the engine and `BuildIntegrity` need the SPIR-V.
+Run `bash scripts/linux/compile-slang-shaders.sh` (Windows: `scripts\windows\Build-SlangShaders.ps1`)
+first, or build through the wrappers below, which compile them for you
+([which builds do](shader-build-pipeline.md)).
+
 A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
 and fails `cmake --list-presets` with `Unrecognized "version" field`: read
 the file itself, or the Windows configurations table in
@@ -78,7 +83,7 @@ Each fetched scene carries its credit in `ATTRIBUTION.txt`; AssetANT's
 
 ## Linux Workflow
 
-The helper in `scripts/linux/` wraps configure and build:
+The helper in `scripts/linux/` configures, compiles the Slang shaders, then builds:
 
 ```bash
 bash ./scripts/linux/cmake-configure-build.sh \
@@ -86,6 +91,10 @@ bash ./scripts/linux/cmake-configure-build.sh \
   --build-dir build \
   --build-config Debug
 ```
+
+It is made for the family's Linux CI image, which has the toolchain and the Vulkan SDK.
+`bash third_party/ANTfrastructure/linux/scripts/run-in-ci-image.sh . -- <command>` runs a command
+there with the checkout mounted at `/workspace`.
 
 Other helpers: `scripts/linux/run-ctest.sh`, `scripts/linux/build-coverage-gcovr.sh`,
 `scripts/linux/build-coverage-llvm.sh`, `scripts/linux/run-perf-suite.sh`.
@@ -107,8 +116,9 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
-- `-TargetArch arm64` cross-builds `clangcl-release` for Windows on Arm inside the container image's arm64 bundle (`:winarm64`) and writes the portable bundle, MSI, ZIP and MSIX to `dist/windows-arm64`; `.github/workflows/windows-arm64-cross.yml` runs that.
-- A host build of `clangcl-release` writes the same to `dist/windows-x64`, plus the NSIS installer; `.github/workflows/windows-x64.yml` runs it through `scripts/windows/Invoke-WindowsLane.ps1`, with the CPU tests, the fuzz seeds and the renderer comparisons.
+- `-TargetArch arm64` cross-builds `clangcl-release`, `clangcl-debug` and `clangcl-profile` (the last only with `-SkipPerfTests`) for Windows on Arm inside the container image's arm64 bundle (`:winarm64`). The Release build writes the portable bundle, MSI, ZIP and MSIX to `dist/windows-arm64`; `.github/workflows/windows-arm64-cross.yml` runs that.
+- An x64 build of `clangcl-release` writes the same to `dist/windows-x64`, plus the NSIS installer; `.github/workflows/windows-x64.yml` runs it through `scripts/windows/Invoke-WindowsLane.ps1`, with the CPU tests, the fuzz seeds and the renderer comparisons.
+- `Build-Windows-Container.ps1` passes `-SkipMsix`, and its default tar transport streams back only `logs` and the build directories, so `dist/` stays in the container. For the packages, push a commit to `develop` whose message carries `[ci windows]` (or run `windows-x64.yml` by hand) and download its `BeschleunigerBallett-windows-x64` artifact.
 - The Release package target uses ANTfrastructure's shared CMake argument builder; `-ParallelJobs` applies to packaging as well as the ordinary build.
 - Sanitizers apply to Debug builds only; `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target): use `linux-debug-tsan-clang` or `linux-debug-tsan-GNU`.
 

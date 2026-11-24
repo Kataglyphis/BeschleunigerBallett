@@ -55,10 +55,10 @@ Do not "fix" that check.
 
 ## Gotchas
 
-- The script takes `-Configurations` (comma-separated), **not** `-Preset`. The
-  wrong parameter silently builds the default set, all three of
-  `clangcl-debug,clangcl-profile,clangcl-release`, which reads as a slow build
-  rather than an error.
+- The script takes `-Configurations` (comma-separated), **not** `-Preset`. An
+  unknown parameter such as `-Preset` fails parameter binding before anything
+  builds. Without `-Configurations` it builds all three of
+  `clangcl-debug,clangcl-profile,clangcl-release`.
 - Host `cmake` (3.29) cannot read this repo's `CMakePresets.json`
   (`version: 10`); only the container's newer CMake can.
 - **A reused container is pruned before the sources stream in**: every top-level directory under

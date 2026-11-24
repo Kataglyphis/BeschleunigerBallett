@@ -37,7 +37,7 @@ No P0 item is open.
 ### P1: high value
 
 - [b] `CI` **Prove the renderer on the RX 9070 XT** (S, **waits for the host**). The riscv64 GPU shards ran at
-  8216e01a (run 44852183781): 15 of 16 passed, and the raster shard's one failure,
+  8216e01a (run 44852183781): 15 of 16 jobs passed, and the raster shard's one failure,
   `Integration.LibraryDoubleClickLoadsTheRow`, was the editor's 2 s cap on the double-click window, gone since
   Phase 3. Both Windows lanes and both arm64 lanes run every release. Still unrun on the RX 9070 XT: the
   golden suites plus `Invoke-SyncValidation.ps1`, above all the cloud and glossy-material goldens, the

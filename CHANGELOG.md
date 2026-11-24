@@ -310,6 +310,9 @@ the GitHub releases themselves.
   bounds the dump's frames by the frames drawn after the load. `gpu-timing-budgets.json`'s llvmpipe profile is
   re-derived from frames of the scene: Main 747.9 ms, Forward 741.2, Post 4.6, ShadowCascades 2066.6 (was 23.0, 22.3,
   5.7 and 35.9).
+- Stale doc facts: the arm64 cross configurations, the Pester suites, the lint gates, the hub's `VULKAN_VERSION`, the
+  local `cmake/` modules, the riscv64 shard counts and `Build-Windows-Container.ps1`'s parameter binding. The README's
+  quick start builds in the CI image through `cmake-configure-build.sh`, which compiles the Slang shaders before the build.
 
 ## [1.6.0] - 2026-11-20
 
@@ -617,7 +620,7 @@ The Windows GraphicsEngine executable embeds the project icon via the shared CMa
   gl_BaseVertex`; `gl_BaseVertex` needs draw parameters, and Mesa's v3dv aborted at pipeline creation
   (`Unknown intrinsic ... load_first_vertex`, exit 134). They read `SV_VulkanVertexID` now, the same
   index for their `draw(3, 1, 0, 0)`. The 1.5.2 arm64 package with the two recompiled shaders renders
-  on himbeere2's desktop (Debian 13, v3dv).
+  on the test Pi's desktop (Debian 13, v3dv).
 - **The `.deb` puts the app in the desktop's menu, and ships no GLFW development files** (2026-10-18).
   The desktop entry, the AppStream file and the icons were installed to a relative `usr/share/`, which
   the `.deb`'s `/usr` prefix made `/usr/usr/share/...`, where no desktop looks; they go to `share/`
