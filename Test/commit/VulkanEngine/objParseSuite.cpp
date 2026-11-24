@@ -42,6 +42,15 @@ void writeFile(const fs::path &path, const std::string &text)
     out << text;
 }
 
+// A 1x1 PSD header, the one format OxidANT hands to stb as the file's bytes, so a tag after it names the file.
+constexpr std::size_t kPsdHeaderSize = 22;
+
+std::string psdTagged(const std::string &tag)
+{
+    std::string bytes("8BPS\0\x01\0\0\0\0\0\0\0\x03\0\0\0\x01\0\0\0\x01", kPsdHeaderSize);
+    return bytes + tag;
+}
+
 /// A fresh directory with `model.mtl` and a textured triangle per material in `materials`, plus `files`.
 fs::path writeModel(const std::string &name,
   const std::string &mtl,
@@ -60,15 +69,17 @@ fs::path writeModel(const std::string &name,
     }
     writeFile(dir / "model.obj", obj);
     // Non-empty: OxidANT gives an empty file no slot.
-    for (const auto &[file, bytes] : files) { writeFile(dir / file, bytes); }
+    for (const auto &[file, bytes] : files) { writeFile(dir / file, psdTagged(bytes)); }
     return dir;
 }
 
 std::string bytesOf(const Kataglyphis::GltfLoader &loader, int slot)
 {
     if (slot < 0) { return {}; }
-    const std::span<const unsigned char> image = loader.getTextureImages()[static_cast<std::size_t>(slot)];
-    return { image.begin(), image.end() };
+    // A PSD, which OxidANT hands over as the file's bytes for stb; the tag follows its header.
+    const std::span<const unsigned char> image = loader.getTextures()[static_cast<std::size_t>(slot)].encoded;
+    if (image.size() < kPsdHeaderSize) { return {}; }
+    return { image.begin() + static_cast<std::ptrdiff_t>(kPsdHeaderSize), image.end() };
 }
 
 }// namespace
@@ -136,7 +147,7 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
         EXPECT_EQ(material.emissiveTextureID, -1) << "a material without map_Ke must keep the sentinel";
         EXPECT_NEAR(material.metallic, 0.0F, 1e-6F) << "a .mtl without Pm must default to metallic 0.0";
     }
-    EXPECT_TRUE(loader.getTextureImages().empty()) << "dinosaurs.mtl names no texture";
+    EXPECT_TRUE(loader.getTextures().empty()) << "dinosaurs.mtl names no texture";
 }
 
 TEST(ObjParseUnit, MtlPbrChannelsReachTheMaterial)
@@ -403,10 +414,10 @@ TEST(ObjParseUnit, TexturesResolveBesideAnMtlInASubfolderAndNeverOutsideTheModel
     // The .mtl's folder is the base (tinyobjloader's rule); a path out of the OBJ's folder is refused like a glTF's.
     const fs::path dir = fs::temp_directory_path() / "kat_mtl_subfolder";
     fs::remove_all(dir);
-    writeFile(dir / "secret.png", "secret");
+    writeFile(dir / "secret.png", psdTagged("secret"));
     writeFile(dir / "model" / "sub" / "x.mtl", "newmtl near\nmap_Kd near.png\nnewmtl out\nmap_Kd ../../secret.png\n");
-    writeFile(dir / "model" / "sub" / "near.png", "near");
-    writeFile(dir / "model" / "near.png", "wrong");
+    writeFile(dir / "model" / "sub" / "near.png", psdTagged("near"));
+    writeFile(dir / "model" / "near.png", psdTagged("wrong"));
     writeFile(dir / "model" / "model.obj",
       "mtllib sub/x.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl near\nf 1 2 3\nusemtl out\nf 1 2 3\n");
 
@@ -415,7 +426,7 @@ TEST(ObjParseUnit, TexturesResolveBesideAnMtlInASubfolderAndNeverOutsideTheModel
 
     ASSERT_EQ(bytesOf(loader, loader.getMaterials()[0].textureID), "near");
     EXPECT_EQ(loader.getMaterials()[1].textureID, -1) << "a texture outside the model's folder is never read";
-    EXPECT_EQ(loader.getTextureImages().size(), 1U);
+    EXPECT_EQ(loader.getTextures().size(), 1U);
 
     fs::remove_all(dir);
 }
@@ -437,7 +448,7 @@ TEST(ObjParseUnit, OneFileSharesASlotPerColourSpace)
     EXPECT_EQ(first.textureID, second.textureID) << "two spellings of one file share a slot";
     EXPECT_EQ(first.textureID, first.emissiveTextureID) << "map_Kd and map_Ke are both sRGB";
     EXPECT_NE(first.textureID, first.normalTextureID);
-    ASSERT_EQ(loader.getTextureImages().size(), 2U);
+    ASSERT_EQ(loader.getTextures().size(), 2U);
     EXPECT_EQ(loader.getTextureSrgbFlags()[static_cast<std::size_t>(first.textureID)], 1);
     EXPECT_EQ(loader.getTextureSrgbFlags()[static_cast<std::size_t>(first.normalTextureID)], 0);
 
@@ -501,7 +512,7 @@ TEST(ObjParseUnit, AMissingTextureDrawsTheMaterialUntextured)
     ASSERT_TRUE(loader.parseCpu((dir / "model.obj").string()));
 
     EXPECT_EQ(loader.getMaterials()[0].textureID, -1);
-    EXPECT_TRUE(loader.getTextureImages().empty());
+    EXPECT_TRUE(loader.getTextures().empty());
 
     fs::remove_all(dir);
 }

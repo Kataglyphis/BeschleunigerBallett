@@ -1,9 +1,13 @@
 module;
 
+#include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+
+#include "scene/TextureFit.hpp"
 
 export module kataglyphis.vulkan.texture;
 
@@ -36,6 +40,16 @@ class Texture
       const unsigned char *encodedBytes,
       size_t byteCount,
       bool srgb = true);
+    /// Uploads a ready RGBA8 mip chain (level 0 first, packed back to back, each level halving down to 1x1), as
+    /// OxidANT's loader delivers every texture; no blit. Levels past maxImageDimension2D are skipped; false when the
+    /// chain is shorter than `levelCount` levels.
+    bool createFromLevels(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      uint32_t width,
+      uint32_t height,
+      uint32_t levelCount,
+      std::span<const unsigned char> rgba8,
+      bool srgb);
     /// Returns false if the white-default upload itself failed (e.g. a failed
     /// submit), in which case the texture is left empty/unwritten.
     bool createDefaultTexture(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
@@ -103,10 +117,9 @@ class Texture
     ~Texture();
 
   private:
-    // Shared tail of createFromFile / createFromMemory: takes tightly packed
-    // RGBA8 and does the staging-buffer copy, image creation, layout
-    // transitions, mip generation and view creation. Returns false on an empty
-    // image.
+    // Shared tail of createFromFile / createFromMemory: fits tightly packed
+    // RGBA8 to the device and hands it to uploadLevels, which blits its mip
+    // chain. Returns false on an empty image.
     bool uploadRgba(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       int width,
@@ -114,6 +127,15 @@ class Texture
       vk::DeviceSize size,
       const unsigned char *rgba,
       bool srgb = true);
+
+    // Shared tail of uploadRgba and createFromLevels: stages `texels`, creates a `level_count`-level image, copies each
+    // stored level, blits the rest of the chain when only level 0 is stored, and creates the view.
+    bool uploadLevels(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandPool commandPool,
+      vk::Format texture_format,
+      uint32_t level_count,
+      std::span<const unsigned char> texels,
+      std::span<const ChainLevel> stored);
 
     uint32_t mip_levels = 0;
 

@@ -51,14 +51,16 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::CommandBuffer command
   vk::Buffer src_buffer,
   vk::Image image,
   uint32_t width,
-  uint32_t height)
+  uint32_t height,
+  uint32_t mip_level,
+  vk::DeviceSize buffer_offset)
 {
     vk::BufferImageCopy image_region{};
-    image_region.bufferOffset = 0;
+    image_region.bufferOffset = buffer_offset;
     image_region.bufferRowLength = 0;
     image_region.bufferImageHeight = 0;
     image_region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
-    image_region.imageSubresource.mipLevel = 0;
+    image_region.imageSubresource.mipLevel = mip_level;
     image_region.imageSubresource.baseArrayLayer = 0;
     image_region.imageSubresource.layerCount = 1;
     image_region.imageOffset = vk::Offset3D{ 0, 0, 0 };

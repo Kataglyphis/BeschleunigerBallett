@@ -1,6 +1,7 @@
 module;
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -31,6 +32,17 @@ struct GltfLoadOptions
 {
     /// MikkTSpace tangents instead of Lengyel's where the file has none.
     bool mikktspaceTangents = false;
+};
+
+/// One texture slot as OxidANT's loader hands it over, viewing the bridge's arrays: an RGBA8 mip chain, level 0 first
+/// and packed back to back, or, for a format only stb reads (PSD, PIC), `levelCount` 0 and the file's bytes.
+struct ParsedTexture
+{
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint32_t levelCount = 0;
+    std::span<const unsigned char> rgba8;
+    std::span<const unsigned char> encoded;
 };
 
 /// `KATAGLYPHIS_MIKKTSPACE_TANGENTS` set and not empty means MikkTSpace; App::run reads it once, no loader does.
@@ -81,21 +93,19 @@ class GltfLoader
     std::span<const unsigned int> getIndices() const { return { indices.data, indices.size }; }
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
     std::span<const unsigned int> getMaterialIndices() const { return { materialIndex.data, materialIndex.size }; }
-    /// Encoded base-colour image bytes (PNG/JPG...), one entry per *distinct*
-    /// image; materials sharing an image share a slot, indexed by that
-    /// material's textureID. loadModel decodes and uploads them via
-    /// Texture::createFromMemory; a test can assert the CPU extraction without
-    /// a device.
-    const std::vector<std::span<const unsigned char>> &getTextureImages() const { return textureImages; }
+    /// One entry per *distinct* texture slot, decoded by OxidANT; materials sharing an image share a slot, indexed
+    /// by that material's textureID. uploadParsed uploads each with Texture::createFromLevels (createFromMemory for
+    /// a format only stb reads); a test can assert the CPU extraction without a device.
+    const std::vector<ParsedTexture> &getTextures() const { return textures; }
 
-    /// The glTF sampler (wrap modes + filters) each entry of getTextureImages()
+    /// The glTF sampler (wrap modes + filters) each entry of getTextures()
     /// was authored with, index-parallel with it. Two textures sharing one
     /// image but sampling it differently get distinct slots (see parseCpu's
     /// dedup key), so this stays index-parallel rather than needing its own
     /// lookup.
     const std::vector<GltfSamplerDesc> &getTextureSamplerDescs() const { return textureSamplerDescs; }
 
-    /// Colour space each entry of getTextureImages() was authored in,
+    /// Colour space each entry of getTextures() was authored in,
     /// index-parallel with it: 1 for sRGB (base colour, emissive), 0 for
     /// linear (normal maps). `unsigned char`, not `std::vector<bool>` - the
     /// proxy reference is a trap in a parallel-array getter. An image used as
@@ -140,11 +150,11 @@ class GltfLoader
     std::vector<ObjMaterial> materials;
     // Per-face (per-triangle) material id.
     IndexView materialIndex;
-    // One encoded image per textured material (see getTextureImages).
-    std::vector<std::span<const unsigned char>> textureImages;
-    // Index-parallel with textureImages; see getTextureSamplerDescs.
+    // One decoded texture per slot (see getTextures).
+    std::vector<ParsedTexture> textures;
+    // Index-parallel with textures; see getTextureSamplerDescs.
     std::vector<GltfSamplerDesc> textureSamplerDescs;
-    // Index-parallel with textureImages; see getTextureSrgbFlags.
+    // Index-parallel with textures; see getTextureSrgbFlags.
     std::vector<unsigned char> textureSrgb;
     // One slice per glTF primitive; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;

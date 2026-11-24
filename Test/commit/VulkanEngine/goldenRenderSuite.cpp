@@ -3260,7 +3260,7 @@ TEST(GoldenRender, SponzaBindsEveryTextureSlot)
     ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
 }
 
-// A failed decode must still fill its slot, or later textureIDs index past the descriptor array.
+// OxidANT drops a corrupt image's slot and renumbers the later textureIDs, so none indexes past the descriptor array.
 TEST(GoldenRender, CorruptEmbeddedImageKeepsTextureSlotsAligned)
 {
     SKIP_WITHOUT_GPU();
@@ -3274,8 +3274,7 @@ TEST(GoldenRender, CorruptEmbeddedImageKeepsTextureSlotsAligned)
     ASSERT_FALSE(harness.renderer->hasDeviceLost())
       << "Device lost loading a model with a corrupt embedded image - the failed decode was not handled.";
 
-    EXPECT_EQ(harness.scene->getTextureCount(0), 2U)
-      << "a skipped slot would shift material 1's textureID down and index past the descriptor array";
+    EXPECT_EQ(harness.scene->getTextureCount(0), 1U) << "the corrupt image has no slot, the valid one its own";
 }
 
 // A 50/50 checkerboard changes about half its bounding box when discard works; KATAGLYPHIS_MASK_DUMP dumps PNGs.
@@ -4787,6 +4786,58 @@ TEST(GoldenRender, TracedSecondModelResolvesItsOwnMeshAndTextures)
     EXPECT_GT(path_traced.green, 0.05) << "path traced: the second cube shades with the first's grey - its object "
                                           "index lost CommittedInstanceID()'s mesh base, or its texture its offset";
     EXPECT_GT(path_traced.magenta, 0.05) << "path traced: the second cube's magenta checker cells are missing";
+}
+
+// OxidANT's cube whose only base colour is a KHR_texture_basisu UASTC ramp: red rises with u, blue falls with u + v.
+std::string basisu_cube_model() { return Kataglyphis::TestSupport::oxidantGltfFixture("cube_basisu.gltf"); }
+
+// A KTX2-only texture drew the cube white: the bridge had no encoded image for stb, so the slot was dropped.
+TEST(GoldenRender, BasisuOnlyTextureDrawsItsRampInEveryMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    const std::string model = basisu_cube_model();
+    ScopedModelOverride cube(model.c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.6F, 2.2F));
+    harness.camera->set_orientation(-90.0F, -15.0F);
+
+    // Red minus blue over the centre crop's left and right fifths: about -200 and +100 on the ramp, 0 on a white cube.
+    const auto ramp_spread = [&](const char *mode, int frames) {
+        harness.render_frames(frames);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        EXPECT_FALSE(harness.renderer->hasDeviceLost());
+        if (frame.empty()) { return 0.0; }
+        const auto mean_red_minus_blue = [&](uint32_t x0, uint32_t x1) {
+            double sum = 0.0;
+            size_t count = 0;
+            for (uint32_t y = height / 2U - 60U; y < height / 2U + 60U; ++y) {
+                for (uint32_t x = x0; x < x1; ++x) {
+                    const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+                    sum += static_cast<double>(frame[base]) - static_cast<double>(frame[base + 2U]);
+                    ++count;
+                }
+            }
+            return sum / static_cast<double>(count);
+        };
+        const double left = mean_red_minus_blue(width / 2U - 150U, width / 2U - 90U);
+        const double right = mean_red_minus_blue(width / 2U + 90U, width / 2U + 150U);
+        GTEST_LOG_(INFO) << mode << ": red minus blue " << left << " left, " << right << " right";
+        return std::abs(right - left);
+    };
+
+    EXPECT_GT(ramp_spread("forward", SETTLE_FRAMES), 80.0) << "forward: the cube shows no ramp - the KTX2 is lost";
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    EXPECT_GT(ramp_spread("deferred", SETTLE_FRAMES), 80.0) << "deferred: the cube shows no ramp";
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        renderer_vars.raytracing = true;
+        EXPECT_GT(ramp_spread("ray traced", SETTLE_FRAMES), 80.0) << "ray traced: the cube shows no ramp";
+    }
 }
 
 // The library marks what the startup load opened; it once marked the default scene whatever the override said.

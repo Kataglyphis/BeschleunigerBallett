@@ -11,9 +11,11 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <stb_image.h>
 #include <string>
 #include <type_traits>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.texture;
@@ -138,7 +140,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
 
     // Color texels are sRGB-encoded and must decode to linear at sample time; normal maps are already linear, so UNORM.
     const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
-    mip_levels = mipLevelCount(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
+    uint32_t levels = mipLevelCount(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
         vk::FormatFeatureFlags optimal_tiling_features =
           device->getPhysicalDevice().getFormatProperties(texture_format).optimalTilingFeatures;
@@ -148,33 +150,92 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
           !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eSampledImageFilterLinear),
           !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eBlitSrc),
           !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eBlitDst));
-        mip_levels = 1;
+        levels = 1;
     }
 
+    const ChainLevel base{ static_cast<uint32_t>(width), static_cast<uint32_t>(height), 0 };
+    return uploadLevels(device, commandPool, texture_format, levels, { rgba, static_cast<size_t>(size) }, { &base, 1 });
+}
+
+auto Kataglyphis::Texture::createFromLevels(const std::shared_ptr<VulkanDevice> &in_device,
+  vk::CommandPool commandPool,
+  uint32_t width,
+  uint32_t height,
+  uint32_t levelCount,
+  std::span<const unsigned char> rgba8,
+  bool srgb) -> bool
+{
+    if (width == 0 || height == 0 || levelCount == 0 || levelCount > mipLevelCount(width, height)) { return false; }
+
+    // The chain holds the halvings uploadRgba would compute, so a level past maxImageDimension2D is skipped instead.
+    const uint32_t side_limit = in_device->getMaxImageDimension2D();
+    const ChainPlan plan = planChainUpload(width, height, levelCount, side_limit);
+    if (plan.totalBytes > rgba8.size()) {
+        spdlog::warn("Texture chain of {} levels over {}x{} needs {} bytes but holds {}; skipping.",
+          levelCount,
+          width,
+          height,
+          plan.totalBytes,
+          rgba8.size());
+        return false;
+    }
+    if (plan.levels.empty()) {
+        spdlog::warn("Texture {}x{}: none of its {} levels fits the device's {}-texel side; skipping.",
+          width,
+          height,
+          levelCount,
+          side_limit);
+        return false;
+    }
+    if (plan.levels.size() < levelCount) {
+        spdlog::warn("Texture {}x{} exceeds the device's {}-texel side; uploaded from level {} at {}x{}.",
+          width,
+          height,
+          side_limit,
+          levelCount - plan.levels.size(),
+          plan.levels.front().width,
+          plan.levels.front().height);
+    }
+
+    const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+    const std::span<const unsigned char> uploaded = rgba8.subspan(plan.firstOffset, plan.totalBytes - plan.firstOffset);
+    return uploadLevels(
+      in_device, commandPool, texture_format, static_cast<uint32_t>(plan.levels.size()), uploaded, plan.levels);
+}
+
+auto Kataglyphis::Texture::uploadLevels(const std::shared_ptr<VulkanDevice> &in_device,
+  vk::CommandPool commandPool,
+  vk::Format texture_format,
+  uint32_t level_count,
+  std::span<const unsigned char> texels,
+  std::span<const ChainLevel> stored) -> bool
+{
+    if (stored.empty() || texels.empty()) { return false; }
+    const ChainLevel &base = stored.front();
     VulkanBuffer stagingBuffer;
-    stagingBuffer.create(device,
-      size,
+    stagingBuffer.create(in_device,
+      texels.size(),
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     // Host-visible buffers are persistently mapped by VMA.
-    memcpy(stagingBuffer.getMappedData(), rgba, static_cast<size_t>(size));
+    memcpy(stagingBuffer.getMappedData(), texels.data(), texels.size());
 
     // VUID-vkDestroyImage-image-01000: the old view must go before createImage() replaces its image.
     vulkanImageView.cleanUp();
 
-    createImage(device,
-      static_cast<uint32_t>(width),
-      static_cast<uint32_t>(height),
-      mip_levels,
+    createImage(in_device,
+      base.width,
+      base.height,
+      level_count,
       texture_format,
       vk::ImageTiling::eOptimal,
       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    // One submit for transition, copy and mips instead of three fence-waited ones.
+    // One submit for transition, copies and mips instead of three fence-waited ones.
     vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
-      device->getLogicalDevice(), commandPool);
+      in_device->getLogicalDevice(), commandPool);
     if (!command_buffer) {
         spdlog::error("Skipping texture upload due to invalid command buffer.");
         stagingBuffer.cleanUp();
@@ -188,35 +249,41 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
       mip_levels,
       vk::ImageAspectFlagBits::eColor);
 
-    VulkanBufferManager::copyImageBuffer(command_buffer,
-      stagingBuffer.getBuffer(),
-      vulkanImage.getImage(),
-      static_cast<uint32_t>(width),
-      static_cast<uint32_t>(height));
+    for (uint32_t level = 0; level < stored.size(); ++level) {
+        VulkanBufferManager::copyImageBuffer(command_buffer,
+          stagingBuffer.getBuffer(),
+          vulkanImage.getImage(),
+          stored[level].width,
+          stored[level].height,
+          level,
+          stored[level].offset);
+    }
 
-    if (mip_levels > 1) {
-        generateMipMaps(command_buffer, vulkanImage.getImage(), width, height);
+    // uploadRgba hands over level 0 alone; the device blits the rest of its chain.
+    if (mip_levels > 1 && stored.size() == 1) {
+        generateMipMaps(
+          command_buffer, vulkanImage.getImage(), static_cast<int32_t>(base.width), static_cast<int32_t>(base.height));
     } else {
         vulkanImage.transitionImageLayout(command_buffer,
           vk::ImageLayout::eTransferDstOptimal,
           vk::ImageLayout::eShaderReadOnlyOptimal,
-          1,
+          mip_levels,
           vk::ImageAspectFlagBits::eColor);
     }
 
     const bool upload_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+      in_device->getLogicalDevice(), commandPool, in_device->getGraphicsQueue(), command_buffer);
 
     stagingBuffer.cleanUp();
 
     if (!upload_submitted) {
-        spdlog::error("Texture upload submit failed ({}x{}); leaving texture unwritten.", width, height);
+        spdlog::error("Texture upload submit failed ({}x{}); leaving texture unwritten.", base.width, base.height);
         cleanUp();
         return false;
     }
 
     // clang-format off: BuildIntegrity wants the call, its eColor aspect and the marker on one line.
-    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);// COLOR_ATTACHMENT_CHAIN_OK: real-mip-chain
+    createImageView(in_device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);// COLOR_ATTACHMENT_CHAIN_OK: real-mip-chain
     // clang-format on
 
     return true;

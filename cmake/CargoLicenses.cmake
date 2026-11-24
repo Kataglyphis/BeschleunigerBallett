@@ -28,8 +28,8 @@ set(_myproject_cargo_forbidden
     ort
     --forbid-package
     "ort-*")
-# Measured 2026-11-19 on all five bridge targets; raise it with a reviewed dependency, never just to pass.
-set(_myproject_cargo_runtime_budget 56)
+# All five bridge targets: gif, weezl, color_quant for GIF, kataglyphis_bridge_support; raise only when reviewed.
+set(_myproject_cargo_runtime_budget 60)
 add_custom_command(
   OUTPUT "${_myproject_cargo_licenses}/manifest.json"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_myproject_cargo_licenses}"

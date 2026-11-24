@@ -27,11 +27,14 @@ class VulkanBufferManager
       VulkanBuffer &dst_buffer,
       vk::DeviceSize buffer_size);
 
+    /// Copies one `width` x `height` mip level, tightly packed at `buffer_offset`, into `image`'s `mip_level`.
     static void copyImageBuffer(vk::CommandBuffer command_buffer,
       vk::Buffer src_buffer,
       vk::Image image,
       uint32_t width,
-      uint32_t height);
+      uint32_t height,
+      uint32_t mip_level = 0,
+      vk::DeviceSize buffer_offset = 0);
 
     // `fill` writes the `byteCount` bytes straight into the mapped staging memory, so a caller stages without a copy.
     template<typename Fill>

@@ -169,7 +169,11 @@ bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptio
     materialIndex = { model.material_index.data(), model.material_index.size() };
     for (const ox::GltfMaterial &material : model.materials) { materials.push_back(toObjMaterial(material)); }
     for (const ox::GltfTexture &texture : model.textures) {
-        textureImages.emplace_back(texture.encoded.data(), texture.encoded.size());
+        textures.push_back(ParsedTexture{ .width = texture.width,
+          .height = texture.height,
+          .levelCount = texture.level_count,
+          .rgba8 = { texture.rgba8.data(), texture.rgba8.size() },
+          .encoded = { texture.encoded.data(), texture.encoded.size() } });
         textureSamplerDescs.push_back(toSamplerDesc(texture.sampler));
         textureSrgb.push_back(texture.srgb ? 1 : 0);
     }

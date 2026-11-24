@@ -182,13 +182,17 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
           } },
         { "cube_basisu.gltf",
           [](const GltfLoader &loader) {
-              EXPECT_TRUE(loader.getTextureImages().empty()) << "a KTX2-only image has no encoded slot";
-              EXPECT_EQ(loader.getMaterials().at(0).textureID, -1);
+              ASSERT_EQ(loader.getTextures().size(), 1U) << "a KTX2-only image is the slot, transcoded by OxidANT";
+              EXPECT_EQ(loader.getMaterials().at(0).textureID, 0);
+              const Kataglyphis::ParsedTexture &texture = loader.getTextures()[0];
+              EXPECT_EQ(texture.width, 32U);
+              EXPECT_EQ(texture.levelCount, 6U) << "the KTX2's own six levels";
           } },
         { "cube_basisu_fallback.gltf",
           [](const GltfLoader &loader) {
-              ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the PNG fallback is the slot";
+              ASSERT_EQ(loader.getTextures().size(), 1U) << "the PNG fallback is the slot";
               EXPECT_EQ(loader.getMaterials().at(0).textureID, 0);
+              EXPECT_EQ(loader.getTextures()[0].width, 2U) << "the 2x2 PNG, not the broken KTX2";
           } },
         { "cube_normal_transform.gltf",
           [](const GltfLoader &loader) {
@@ -207,7 +211,7 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
           } },
         { "cube_textured.gltf",
           [](const GltfLoader &loader) {
-              ASSERT_EQ(loader.getTextureImages().size(), 1U);
+              ASSERT_EQ(loader.getTextures().size(), 1U);
               const ObjMaterial &material = loader.getMaterials().at(0);
               EXPECT_EQ(material.textureID, 0);
               EXPECT_FALSE(isIdentityRow(material.uv_transform_row0, material.uv_transform_row1))
@@ -276,11 +280,18 @@ TEST_P(GltfFixtureRoundTrip, ReachesVertexMeshRangeAndObjMaterialAsTheBridgeRetu
     expectMaterialsAsBridged(loader.getMaterials(), bridged);
     expectRangesTileTheArrays(loader, bridged);
 
-    ASSERT_EQ(loader.getTextureImages().size(), bridged.textures.size());
+    ASSERT_EQ(loader.getTextures().size(), bridged.textures.size());
     for (std::size_t t = 0; t < bridged.textures.size(); ++t) {
-        const std::span<const unsigned char> encoded = loader.getTextureImages()[t];
-        EXPECT_TRUE(std::equal(
-          encoded.begin(), encoded.end(), bridged.textures[t].encoded.begin(), bridged.textures[t].encoded.end()))
+        const Kataglyphis::ParsedTexture &texture = loader.getTextures()[t];
+        const ox::GltfTexture &expected = bridged.textures[t];
+        EXPECT_EQ(texture.width, expected.width) << "texture " << t;
+        EXPECT_EQ(texture.height, expected.height) << "texture " << t;
+        EXPECT_EQ(texture.levelCount, expected.level_count) << "texture " << t;
+        EXPECT_TRUE(
+          std::equal(texture.rgba8.begin(), texture.rgba8.end(), expected.rgba8.begin(), expected.rgba8.end()))
+          << "texture " << t;
+        EXPECT_TRUE(
+          std::equal(texture.encoded.begin(), texture.encoded.end(), expected.encoded.begin(), expected.encoded.end()))
           << "texture " << t;
         EXPECT_EQ(loader.getTextureSrgbFlags()[t] != 0, bridged.textures[t].srgb) << "texture " << t;
         EXPECT_EQ(loader.getTextureSamplerDescs()[t].mipmaps, bridged.textures[t].sampler.mipmaps) << "texture " << t;

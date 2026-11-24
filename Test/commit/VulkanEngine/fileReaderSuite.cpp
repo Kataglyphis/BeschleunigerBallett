@@ -266,6 +266,30 @@ TEST(TextureLoadUnit, AnOversizedTextureIsHalvedUntilItFitsTheDeviceLimit)
     EXPECT_EQ(odd_fitted.halvings, 1U);
 }
 
+// createFromLevels uploads the planned levels; a chain no level of which fits once read front() of nothing.
+TEST(TextureLoadUnit, AChainPlanKeepsTheLevelsThatFitAndNoneWhenNothingFits)
+{
+    const Kataglyphis::ChainPlan all = Kataglyphis::planChainUpload(4, 2, 3, 16);
+    ASSERT_EQ(all.levels.size(), 3U);
+    EXPECT_EQ(all.totalBytes, 32U + 8U + 4U);
+    EXPECT_EQ(all.firstOffset, 0U);
+    EXPECT_EQ(all.levels[1].offset, 32U);
+    EXPECT_EQ(all.levels[2].width, 1U);
+
+    const Kataglyphis::ChainPlan fitted = Kataglyphis::planChainUpload(4, 2, 3, 2);
+    ASSERT_EQ(fitted.levels.size(), 2U) << "the 4x2 base is over a 2-texel side";
+    EXPECT_EQ(fitted.firstOffset, 32U);
+    EXPECT_EQ(fitted.levels[0].offset, 0U);
+    EXPECT_EQ(fitted.levels[0].width, 2U);
+
+    const Kataglyphis::ChainPlan none = Kataglyphis::planChainUpload(4, 2, 3, 0);
+    EXPECT_TRUE(none.levels.empty());
+    EXPECT_EQ(none.totalBytes, 44U);
+
+    const Kataglyphis::ChainPlan deep = Kataglyphis::planChainUpload(2, 2, 40, 16);
+    EXPECT_EQ(deep.levels.size(), 32U) << "no shift past a 32-bit side";
+}
+
 TEST(TextureLoadUnit, ATextureWithinTheDeviceLimitKeepsItsTexels)
 {
     std::vector<unsigned char> rgba(4U * 4U * 4U);

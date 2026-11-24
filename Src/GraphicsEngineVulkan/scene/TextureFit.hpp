@@ -92,4 +92,36 @@ inline auto fitRgba8ToLimit(const unsigned char *rgba, uint32_t width, uint32_t 
     return fitted;
 }
 
+/// One level of a packed RGBA8 chain to upload: its size and where its texels start in the staged bytes.
+struct ChainLevel
+{
+    uint32_t width = 0;
+    uint32_t height = 0;
+    uint64_t offset = 0;
+};
+
+/// The levels of a `levelCount`-level chain over `width` x `height` that fit `limit`, offsets from the first of them,
+/// the bytes the whole chain holds and where the kept levels start; no level is kept when none fits.
+struct ChainPlan
+{
+    std::vector<ChainLevel> levels;
+    uint64_t firstOffset = 0;
+    uint64_t totalBytes = 0;
+};
+
+inline auto planChainUpload(uint32_t width, uint32_t height, uint32_t levelCount, uint32_t limit) -> ChainPlan
+{
+    ChainPlan plan;
+    for (uint32_t level = 0; level < levelCount && level < 32U; ++level) {
+        const uint32_t level_width = std::max(width >> level, 1U);
+        const uint32_t level_height = std::max(height >> level, 1U);
+        if (std::max(level_width, level_height) <= limit) {
+            if (plan.levels.empty()) { plan.firstOffset = plan.totalBytes; }
+            plan.levels.push_back({ level_width, level_height, plan.totalBytes - plan.firstOffset });
+        }
+        plan.totalBytes += static_cast<uint64_t>(level_width) * level_height * 4U;
+    }
+    return plan;
+}
+
 }// namespace Kataglyphis

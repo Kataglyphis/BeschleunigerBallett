@@ -1405,7 +1405,7 @@ TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
         std::string create_needle;
     };
     const std::array<Target, 2> targets = {
-        Target{ scene_dir / "Texture.cpp", "vulkanImageView.cleanUp();", "createImage(device," },
+        Target{ scene_dir / "Texture.cpp", "vulkanImageView.cleanUp();", "createImage(in_device," },
         Target{ scene_dir / "sky_box" / "SkyBox.cpp",
           "cubeMapTexture->releaseImageView();",
           "cubeMapTexture->createImage(device," },
@@ -3287,10 +3287,13 @@ TEST(BuildIntegrity, OversizedTexturesAreFittedBeforeTheirImageIsCreated)
         const char *function;
         std::vector<std::string> inOrder;
     };
-    const std::array<UploadSite, 2> sites{ {
+    const std::array<UploadSite, 3> sites{ {
       { "Src/GraphicsEngineVulkan/scene/Texture.cpp",
         "Kataglyphis::Texture::uploadRgba",
-        { "getMaxImageDimension2D()", "fitRgba8ToLimit(", "mipLevelCount(", "createImage(" } },
+        { "getMaxImageDimension2D()", "fitRgba8ToLimit(", "mipLevelCount(", "uploadLevels(" } },
+      { "Src/GraphicsEngineVulkan/scene/Texture.cpp",
+        "Kataglyphis::Texture::createFromLevels",
+        { "getMaxImageDimension2D()", "uploadLevels(" } },
       { "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
         "SkyBox::loadCubeMap",
         { "getMaxImageDimensionCube()", "fitCubemapFacesToLimit(", "uploadCubeMapFaces(" } },

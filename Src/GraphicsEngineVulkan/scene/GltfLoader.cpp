@@ -66,7 +66,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     indices = other.indices;
     materials = std::move(other.materials);
     materialIndex = other.materialIndex;
-    textureImages = std::move(other.textureImages);
+    textures = std::move(other.textures);
     textureSamplerDescs = std::move(other.textureSamplerDescs);
     textureSrgb = std::move(other.textureSrgb);
     meshRanges = std::move(other.meshRanges);
@@ -83,11 +83,16 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     std::shared_ptr<Model> model = std::make_shared<Model>(device);
 
     // Upload order must match the textureIDs parseCpu assigned.
-    for (std::size_t i = 0; i < textureImages.size(); ++i) {
-        const std::span<const unsigned char> encoded = textureImages[i];
+    for (std::size_t i = 0; i < textures.size(); ++i) {
+        const ParsedTexture &parsed = textures[i];
+        const bool srgb = textureSrgb[i] != 0;
         Texture texture;
+        // levelCount 0 is a format only stb reads, its file's bytes.
         const bool created =
-          texture.createFromMemory(device, command_pool, encoded.data(), encoded.size(), textureSrgb[i] != 0);
+          parsed.levelCount > 0
+            ? texture.createFromLevels(
+                device, command_pool, parsed.width, parsed.height, parsed.levelCount, parsed.rgba8, srgb)
+            : texture.createFromMemory(device, command_pool, parsed.encoded.data(), parsed.encoded.size(), srgb);
         addTextureOrDefault(*model, device, command_pool, created, std::move(texture), textureSamplerDescs[i]);
     }
     ensureAtLeastOneTexture(*model, device, command_pool);
@@ -106,7 +111,7 @@ void GltfLoader::clearParsed()
     indices = {};
     materials.clear();
     materialIndex = {};
-    textureImages.clear();
+    textures.clear();
     textureSamplerDescs.clear();
     textureSrgb.clear();
     meshRanges.clear();

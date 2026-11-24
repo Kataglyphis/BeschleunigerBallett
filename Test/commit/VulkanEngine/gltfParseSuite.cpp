@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -40,6 +41,25 @@ std::string test_punctual_gltf() { return oxidantGltfFixture("point_light.gltf")
 
 std::string test_directional_gltf() { return sceneConfig::resolveModelPath("Models/GltfTest/directional_light.gltf"); }
 
+// Levels from width x height down to 1x1 over the longer side.
+uint32_t fullChainLevels(uint32_t width, uint32_t height)
+{
+    uint32_t levels = 1;
+    for (uint32_t side = std::max(width, height); side > 1U; side /= 2U) { ++levels; }
+    return levels;
+}
+
+// The bytes a packed chain holds: each level halves its sides, never below 1.
+std::size_t chainBytes(const Kataglyphis::ParsedTexture &texture)
+{
+    std::size_t bytes = 0;
+    for (uint32_t level = 0; level < texture.levelCount; ++level) {
+        bytes +=
+          static_cast<std::size_t>(std::max(texture.width >> level, 1U)) * std::max(texture.height >> level, 1U) * 4U;
+    }
+    return bytes;
+}
+
 }// namespace
 
 TEST(GltfParseUnit, ParsesACubeWithoutAVulkanDevice)
@@ -63,13 +83,13 @@ TEST(GltfParseUnit, LoadersShareTheBridgeArraysInsteadOfCopyingThem)
     Kataglyphis::GltfLoader loader;
     ASSERT_TRUE(loader.parseCpu(test_textured_gltf()));
     ASSERT_FALSE(loader.getVertices().empty());
-    ASSERT_FALSE(loader.getTextureImages().empty());
+    ASSERT_FALSE(loader.getTextures().empty());
 
     const Kataglyphis::GltfLoader copy = loader;
     EXPECT_EQ(copy.getVertices().data(), loader.getVertices().data());
     EXPECT_EQ(copy.getIndices().data(), loader.getIndices().data());
     EXPECT_EQ(copy.getMaterialIndices().data(), loader.getMaterialIndices().data());
-    EXPECT_EQ(copy.getTextureImages()[0].data(), loader.getTextureImages()[0].data());
+    EXPECT_EQ(copy.getTextures()[0].rgba8.data(), loader.getTextures()[0].rgba8.data());
 
     // The device-owning uploader takes the worker's parse the same way, and the worker reads as unparsed after.
     const Vertex *parsed_vertices = loader.getVertices().data();
@@ -79,7 +99,7 @@ TEST(GltfParseUnit, LoadersShareTheBridgeArraysInsteadOfCopyingThem)
         uploader.adoptParsed(std::move(loader));
         EXPECT_EQ(uploader.getVertices().data(), parsed_vertices);
         EXPECT_TRUE(loader.getVertices().empty());
-        EXPECT_TRUE(loader.getTextureImages().empty());
+        EXPECT_TRUE(loader.getTextures().empty());
     }
     // ASan reports this read if the uploader freed what the copy still views.
     EXPECT_EQ(copy.getVertices()[0].position, first_position);
@@ -99,7 +119,7 @@ TEST(GltfParseUnit, AMovedFromLoaderReadsAsUnparsed)
         EXPECT_TRUE(loader.getIndices().empty()) << how;
         EXPECT_TRUE(loader.getMaterialIndices().empty()) << how;
         EXPECT_TRUE(loader.getMaterials().empty()) << how;
-        EXPECT_TRUE(loader.getTextureImages().empty()) << how;
+        EXPECT_TRUE(loader.getTextures().empty()) << how;
         EXPECT_TRUE(loader.getMeshRanges().empty()) << how;
     };
 
@@ -126,7 +146,7 @@ TEST(GltfParseUnit, AMissingFileFailsInsteadOfCrashing)
 
 TEST(GltfParseUnit, ReadsSamplerWrapAndFilterFromTheDocument)
 {
-    // getTextureSamplerDescs() is index-parallel with getTextureImages().
+    // getTextureSamplerDescs() is index-parallel with getTextures().
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [
@@ -255,7 +275,7 @@ TEST(GltfParseUnit, OneImageWithTwoSamplersGetsTwoSlots)
     ASSERT_TRUE(loader.parseCpu(tmp.string()));
     std::filesystem::remove(tmp);
 
-    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "same image, different sampler must still get two slots";
+    ASSERT_EQ(loader.getTextures().size(), 2U) << "same image, different sampler must still get two slots";
     ASSERT_EQ(loader.getTextureSamplerDescs().size(), 2U);
     ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
     EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
@@ -327,11 +347,26 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     EXPECT_NEAR(loader.getMaterials()[0].alphaCutoff, 0.5F, 1e-6F)
       << "the fixture's MASK cutoff must reach ObjMaterial";
 
-    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the one cut-out base-colour texture";
-    const std::span<const unsigned char> png = loader.getTextureImages()[0];
-    ASSERT_GE(png.size(), 8U);
-    const unsigned char png_magic[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
-    for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
+    ASSERT_EQ(loader.getTextures().size(), 1U) << "the one cut-out base-colour texture";
+    const Kataglyphis::ParsedTexture &texture = loader.getTextures()[0];
+    EXPECT_TRUE(texture.encoded.empty()) << "OxidANT decodes the PNG; nothing is left for stb";
+    ASSERT_GT(texture.levelCount, 0U);
+    EXPECT_EQ(texture.levelCount, fullChainLevels(texture.width, texture.height)) << "a full chain";
+    EXPECT_EQ(texture.rgba8.size(), chainBytes(texture));
+}
+
+// The corrupt image gets no slot, and the valid image's material is renumbered onto slot 0 instead of slot 1.
+TEST(GltfParseUnit, ACorruptImageGetsNoSlotAndLaterIdsAreRenumbered)
+{
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/corrupt_embedded_image.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "corrupt-image fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_EQ(loader.getTextures().size(), 1U);
+    EXPECT_EQ(loader.getMaterials().at(0).textureID, -1) << "the corrupt image's material draws untextured";
+    EXPECT_EQ(loader.getMaterials().at(1).textureID, 0) << "the valid image's material is renumbered";
+    EXPECT_GT(loader.getTextures()[0].levelCount, 0U);
 }
 
 TEST(GltfParseUnit, ReparsingTheSameLoaderDoesNotAccumulateMeshRanges)

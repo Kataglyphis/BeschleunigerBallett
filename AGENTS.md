@@ -257,7 +257,7 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
 - Every package installs third-party license texts under `share/licenses/GraphicsEngine/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
 - The C++ bridge's crate texts come from the hub's `stage-cargo-licenses.py` with OxidANT's reviewed policy (`cmake/CargoLicenses.cmake`); never write a notice for a crate that lacks one, add the original text to OxidANT's policy.
-- The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 56 runtime packages (measured 2026-11-19 on all five bridge targets); raise the budget only with a reviewed dependency.
+- The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 60 runtime packages (counted on all five bridge targets); raise the budget only with a reviewed dependency.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
   keep Ballett's shader list, mutation and path assertions in this repo.
 

@@ -92,6 +92,25 @@ the GitHub releases themselves.
 
 ### Changed
 
+- **Textures are decoded in Rust, off the render thread** (BACKLOG "Texture ingest in Rust" steps 1-2, plan B5;
+  OxidANT pin `d83dca1`). The bridge hands every texture slot over as a full RGBA8 mip chain, level 0 first and packed
+  back to back, which `Texture::createFromLevels` uploads in one submit without a blit (a level over
+  `maxImageDimension2D` is skipped, and a chain none of whose levels fits gets the default texture). OxidANT decodes
+  PNG, JPEG, BMP, TGA, GIF, PNM and Radiance HDR on up to eight cores of the parse thread under a 1 GiB budget of
+  decodes in flight and box-filters them with the WebGPU renderer's filter, so both renderers sample the same chains;
+  channels expand and HDR is gamma-encoded as stb did. A `KHR_texture_basisu` KTX2 is preferred over the core image
+  and transcoded level by level, a short KTX2 chain completed by halving, so a basisu-only glTF, which drew
+  untextured, is textured: `GoldenRender.BasisuOnlyTextureDrawsItsRampInEveryMode` reads OxidANT's UASTC ramp across
+  the cube in forward, deferred and ray-traced frames, and `GltfFixtureRoundTrip` its six levels. An image over
+  16384x16384 pixels, read from its header, gets no slot; `Texture::createFromMemory`'s stb is left with PSD and PIC
+  under the same cap, and anything else that does not decode gets no slot either instead of reaching stb.
+  `Colosseum-gltf`'s 69 images make 760 MB of chains, held from the parse until the upload; OxidANT's `load_flat`
+  peaks at 1.28-1.30 GiB resident there (745 MiB with the encoded files) and takes 1.44-1.49 s on 8 cores, against 0.8-1.1 s, before
+  the render thread decoded each image with stb and blitted its mips. `GltfLoader::getTextures()` replaces
+  `getTextureImages()`; `VulkanBufferManager::copyImageBuffer` takes a mip level and a buffer offset;
+  `planChainUpload` (`scene/TextureFit.hpp`) picks the levels that fit (`TextureLoadUnit.AChainPlan*`). The bridge's
+  crate budget moves from 56 to 60: GIF's `gif`, `weezl` and `color_quant` (owner), and OxidANT's new
+  `kataglyphis_bridge_support`.
 - **One OBJ reader, OxidANT's** (BACKLOG "One OBJ reader, in kataglyphis_assets", plan B6; OxidANT pin `7d1bea4`).
   `GltfLoader` loads `.obj` too: the bridge's `load_gltf_flat` dispatches it by extension to
   `kataglyphis_assets::obj::load_obj_flat`, the reader the WebGPU renderer opens OBJ through. It is tolerant like
