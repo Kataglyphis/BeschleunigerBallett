@@ -93,14 +93,12 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Loader:
 
-- [ ] `Assets` **Texture ingest in Rust** (L, plan B5). Step 1: prefer `KHR_texture_basisu` sources and
-  deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with `Texture::createFromLevels` in C++ (basisu-only
-  glTFs draw untextured in C++ today). Step 2: PNG and JPEG through the image crate with the shared
-  `generate_mips`, which takes the Colosseum's 69-image decode off the render thread; measure the peak first,
-  the RGBA8 chains likely exceed 1 GB, or stream per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new
-  work. Formats (owner 2026-11-19): PNG, JPEG, BMP and TGA plus GIF, PNM and HDR through the image crate's
-  features; PSD and PIC go with stb. Since Phase 9 OBJ textures reach C++ as their files' own bytes, and the
-  Rust renderer's GLB still re-encodes BMP and TGA to PNG until its decoder reads them.
+- [ ] `Assets` **Texture ingest in Rust, step 3** (M-L, plan B5; steps 1-2 are in since Phase 10). Upload BC7, ETC2
+  or ASTC natively where the device samples them (KTX2 as stored, Basis transcoded to the device's format), so the C++
+  engine stops holding RGBA8 chains: Colosseum's 760 MB of chains put `load_flat`'s peak at 1.3 GiB (745 MiB with the
+  encoded files). WebP is new work. Streaming chains per slot from the parse thread to the upload is the fallback if a
+  scene's chains pass the 1 GiB decode budget. The WebGPU renderer still copies each base once to build its chain
+  (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
 - [ ] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9). Frame
   only a scene with its own glTF camera or one whose fixed pose would need a too large far plane; the
   other scenes keep their poses (owner 2026-11-19). Cameras, the active one and `asset.copyright` in
