@@ -68,7 +68,6 @@ kataglyphis_append_prefixed_files(
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
   "${PROJECT_SRC_DIR}scene/"
-  ObjLoader.cpp
   Model.cpp
   Mesh.cpp
   Scene.cpp

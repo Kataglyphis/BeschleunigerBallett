@@ -93,23 +93,14 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Loader:
 
-- [ ] `Assets` **One OBJ reader, in kataglyphis_assets** (L, plan B6). Tolerant like tinyobjloader (a bad line
-  is skipped and reported) with one mesh per `usemtl` group, and Rust's material rules (owner 2026-11-19): d
-  below 1 or Tr above 0 is BLEND, map_Ke without Ke glows at factor 1, no Kd is white 1.0, no Pr and no Ns is
-  roughness 1.0. No shipped scene changes (all have d 1, Kd and Ns, none map_Ke). Move `obj_to_gltf` and
-  `obj_glb` into assets, relax the parser to tinyobjloader's tolerance, dispatch `.obj` in the bridge by
-  extension and fold `ObjLoader` into `GltfLoader`, the cgltf way (switch, field-by-field diff suite over the
-  fixtures and scenes, flip, delete). Deletes ObjLoader, tinyobjloader's 13,865-line header and its submodule,
-  `computeTangents`, `fillMissingFlatNormals`, `vertexTangentSuite`, `obj_parsing_fuzz_test` and
-  `BM_ObjParse_*`. Pass through texture bytes stb can read instead of re-encoding them; keep parse time
-  against `BM_ObjLoaderParseCpu_Suzanne`.
-- [ ] `Assets` **Texture ingest in Rust** (L, plan B5). Step 1: prefer
-  `KHR_texture_basisu` sources and deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with
-  `Texture::createFromLevels` in C++ (basisu-only glTFs draw untextured in C++ today). Step 2: PNG and
-  JPEG through the image crate with the shared `generate_mips`, which takes the Colosseum's 69-image
-  decode off the render thread; measure the peak first, the RGBA8 chains likely exceed 1 GB, or stream
-  per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new work. Formats (owner 2026-11-19): PNG, JPEG,
-  BMP and TGA plus GIF, PNM and HDR through the image crate's features; PSD and PIC go with stb.
+- [ ] `Assets` **Texture ingest in Rust** (L, plan B5). Step 1: prefer `KHR_texture_basisu` sources and
+  deliver KTX2/Basis as RGBA8 levels through `bc_decode`, with `Texture::createFromLevels` in C++ (basisu-only
+  glTFs draw untextured in C++ today). Step 2: PNG and JPEG through the image crate with the shared
+  `generate_mips`, which takes the Colosseum's 69-image decode off the render thread; measure the peak first,
+  the RGBA8 chains likely exceed 1 GB, or stream per slot. Step 3: BC7, ETC2 or ASTC natively. WebP is new
+  work. Formats (owner 2026-11-19): PNG, JPEG, BMP and TGA plus GIF, PNM and HDR through the image crate's
+  features; PSD and PIC go with stb. Since Phase 9 OBJ textures reach C++ as their files' own bytes, and the
+  Rust renderer's GLB still re-encodes BMP and TGA to PNG until its decoder reads them.
 - [ ] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9). Frame
   only a scene with its own glTF camera or one whose fixed pose would need a too large far plane; the
   other scenes keep their poses (owner 2026-11-19). Cameras, the active one and `asset.copyright` in

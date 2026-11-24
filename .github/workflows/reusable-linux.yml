@@ -151,7 +151,7 @@ jobs:
           image="$(bash ./scripts/linux/ci-image-ref.sh)"
           echo "fuzz seeds run in ${image}"
           failed=""
-          for t in first_fuzz_test example_fuzz_test obj_parsing_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
+          for t in first_fuzz_test example_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
             exe="build-asan-clang/$t"
             test -x "$exe" || { echo "missing $exe"; exit 1; }
             echo "--- $t"

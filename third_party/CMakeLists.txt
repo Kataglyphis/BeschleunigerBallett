@@ -371,7 +371,6 @@ _myproject_force_cache_bool(GLFW_INSTALL OFF "")
 
 # These wrappers keep third-party headers as SYSTEM includes so our analysis and
 # warning settings stay focused on project code.
-_myproject_add_system_interface_library(tinyobjloader TINY_OBJ_LOADER)
 _myproject_add_system_interface_library(stb STB)
 _myproject_add_system_interface_library(imgui IMGUI IMGUI/backends)
 _myproject_add_system_interface_library(glm GLM)

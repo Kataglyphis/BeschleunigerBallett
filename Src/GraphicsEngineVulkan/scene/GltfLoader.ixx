@@ -36,11 +36,11 @@ struct GltfLoadOptions
 /// `KATAGLYPHIS_MIKKTSPACE_TANGENTS` set and not empty means MikkTSpace; App::run reads it once, no loader does.
 GltfLoadOptions gltfLoadOptionsFromEnvironment();
 
-/// Loads `.gltf`/`.glb` geometry into the same flat CPU-side layout `ObjLoader`
-/// produces, so it plugs into `Model`/`Mesh` and the `AsyncModelParse` worker
-/// unchanged. Touches no Vulkan - that is the point, the parse is the expensive
-/// part worth moving off the render thread. The parse is OxidANT's Rust
-/// loader over the cxx bridge, the WebGPU renderer's own.
+/// Loads `.gltf`, `.glb` and `.obj` geometry into flat CPU-side arrays that plug
+/// into `Model`/`Mesh` and the `AsyncModelParse` worker. Touches no Vulkan - that
+/// is the point, the parse is the expensive part worth moving off the render
+/// thread. The parse is OxidANT's Rust readers over the cxx bridge, the WebGPU
+/// renderer's own; the bridge picks one by the file's extension.
 class GltfLoader
 {
   public:
@@ -64,7 +64,6 @@ class GltfLoader
     /// separated so a device-free worker can parse and a device-owning loader
     /// upload (the async split). Must run on the thread owning the device;
     /// returns nullptr on a device-free loader or before a successful parse.
-    /// Mirrors ObjLoader so AsyncModelParse can drive glTF the same way.
     std::shared_ptr<Model> uploadParsed();
 
     /// Moves another loader's parse results in, so a device-owning loader can
@@ -139,7 +138,7 @@ class GltfLoader
     std::span<const Vertex> vertices;
     IndexView indices;
     std::vector<ObjMaterial> materials;
-    // Per-face (per-triangle) material id, exactly like the OBJ path.
+    // Per-face (per-triangle) material id.
     IndexView materialIndex;
     // One encoded image per textured material (see getTextureImages).
     std::vector<std::span<const unsigned char>> textureImages;

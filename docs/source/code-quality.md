@@ -119,10 +119,10 @@ reads no clang 23 module file), and writes `logs/code-quality/iwyu.txt`. The
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 251 -->
+<!-- format-drift-denominator: 247 -->
 
-**0 of 251** own sources under `Src/` and `Test/` differ from `.clang-format`
-(0 of 252 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
+**0 of 247** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 248 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
 2026-11-21), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM
 commit `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin`

@@ -92,6 +92,24 @@ the GitHub releases themselves.
 
 ### Changed
 
+- **One OBJ reader, OxidANT's** (BACKLOG "One OBJ reader, in kataglyphis_assets", plan B6; OxidANT pin `7d1bea4`).
+  `GltfLoader` loads `.obj` too: the bridge's `load_gltf_flat` dispatches it by extension to
+  `kataglyphis_assets::obj::load_obj_flat`, the reader the WebGPU renderer opens OBJ through. It is tolerant like
+  tinyobjloader (a malformed line is skipped and logged, a number that is not finite reads 0, relative indices
+  resolve, a face over 2048 corners is skipped, only a file without a drawable face fails), splits polygons as
+  tinyobjloader did, makes one mesh per `usemtl` run, ended by its `o`/`g` group or its material (owner
+  2026-11-24), and hands every texture over as the file's bytes for stb, so BMP and TGA reach the engine without a
+  re-encode; `map_d` crosses as `GltfMaterial::alpha_texture`. Every `mtllib` and texture is confined to the OBJ's
+  folder like a glTF's buffers and images (owner 2026-11-24), and a texture resolves beside its `.mtl`. A corner
+  without `vn` takes its own face's flat normal. The owner's material rules (2026-11-19) apply: `d` below 1 or `Tr`
+  above 0 blends, a `map_Ke` without any `Ke` glows at factor 1, no `Kd` (or no `.mtl`) is white, no `Pr` and no
+  `Ns` is roughness 1. Before the switch `ObjLoaderDiff` compared tinyobjloader's `ObjLoader` with the bridged
+  reader triangle by triangle on all 33 OBJ files under `Resources/Models` with every AssetANT scene fetched, plus
+  OxidANT's mask card: equal triangle counts everywhere; the differences were the owner's rules, tinyobjloader's
+  aarch64 build fusing its quad-diagonal test (440 of Wolf-Stahl's 338794 triangles split along the other
+  near-equal diagonal), `ObjLoader` sharing a corner without `vn` between the faces of a group, so it took another
+  face's normal (CornellBox's boxes, sibenik, the Sulo v2 lamp; both readers' first versions did), and its merge of
+  equal-valued vertices. Mesh counts: Sponza 385 (was 373 per group), Dinosaurs 3, sibenik 1087 (was 1).
 - The ANTfrastructure pin moves 734ab966 -> 04981676 (renovate-local.sh): IWYU's report helpers (CON295 (a)), PIE on a
   real target (CON297), quality-report without a docs table (CON298) and the sixth workflow convention, `run-filter`,
   which grades every `workflow_run` filter as a GitHub pattern and is armed from the start (BB: 0 findings).
@@ -245,6 +263,13 @@ the GitHub releases themselves.
 
 ### Removed
 
+- tinyobjloader (`third_party/TINY_OBJ_LOADER`, its licence row) and `ObjLoader` with it, `computeTangents`,
+  `fillMissingFlatNormals`, `sliceMeshRange`, `addMeshesForRanges`, `isGltfModelPath`, `vertexTangentSuite`, the
+  `obj_parsing_fuzz_test` target (OxidANT's `tests/obj_flat.rs` proptest fuzzes the reader now), `BM_ObjParse_*`,
+  `BM_ObjLoaderParseCpu_Suzanne`, `BM_ComputeTangents` and `BM_FillMissingFlatNormals`, and `obj_parsing_fuzz_test`
+  from `reusable-linux.yml`'s fuzz-seed loop, whose stale entry `BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi`
+  now fails as it did for the Windows lists. `ObjParseUnit` tests the OBJ mapping through `GltfLoader`;
+  `BM_GltfLoaderParseCpu_SuzanneObj` times the bridged parse (5.99 ms against `ObjLoader`'s 8.68 on `linux-profile-clang`, aarch64 WSL, medians of five).
 - 66 `GltfParseUnit` cases that tested OxidANT's parser rather than the mapping into `Vertex`, `MeshRange` and
   `ObjMaterial` (plan X5): each has its twin in OxidANT's `crates/assets/tests/flat.rs`, 18 of them new there.
   `gltfParseSuite.cpp` keeps the 18 cases the C++ side decides (the loader's views and moves, the parse result, the

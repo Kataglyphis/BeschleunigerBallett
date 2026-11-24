@@ -1987,6 +1987,17 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
          "in kNotRunInCi with a reason: "
       << joinViolations(missing);
 
+    // A stale Linux entry fails the sanitizers job on its missing executable, so check both directions there too.
+    std::vector<std::string> dead_linux_entries;
+    for (const auto &target : *linux_targets_opt) {
+        if (!declared_set.contains(target)) { dead_linux_entries.push_back(target); }
+    }
+    EXPECT_TRUE(dead_linux_entries.empty())
+      << dead_linux_entries.size()
+      << " entry/entries in reusable-linux.yml's fuzz-seed for-loop do not correspond to any target declared in "
+         "Test/fuzz/CMakeLists.txt (renamed or deleted?): "
+      << joinViolations(dead_linux_entries);
+
     // Nothing else catches a stale local-runner entry, so check both directions here.
     std::vector<std::string> dead_local_entries;
     for (const auto &target : *local_targets_opt) {
@@ -9147,15 +9158,11 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
     ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
 
     // The wrapped functions' own definitions, and the two loaders as the shared guard's intended callers.
-    static const std::array<const char *, 6> kExemptFiles = { "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
-        "Src/GraphicsEngineVulkan/scene/MeshRange.ixx",
+    static const std::array<const char *, 4> kExemptFiles = { "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
         "Src/GraphicsEngineVulkan/scene/Texture.ixx",
         "Src/GraphicsEngineVulkan/scene/Texture.cpp",
-        "Src/GraphicsEngineVulkan/scene/ObjLoader.cpp",
         "Src/GraphicsEngineVulkan/scene/GltfLoader.cpp" };
-    static const std::array<const char *, 3> kBannedCalls = {
-        "sliceMeshRange(", "createDefaultTexture(", "uploadPreconditionsMet("
-    };
+    static const std::array<const char *, 2> kBannedCalls = { "createDefaultTexture(", "uploadPreconditionsMet(" };
 
     std::vector<std::string> violations;
     std::error_code error;
@@ -9182,9 +9189,9 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " call(s) to sliceMeshRange/createDefaultTexture/uploadPreconditionsMet found outside their sanctioned "
+      << " call(s) to createDefaultTexture/uploadPreconditionsMet found outside their sanctioned "
          "callers under Src/ - build meshes and texture slots through "
-         "addMeshesForRanges/addTextureOrDefault/ensureAtLeastOneTexture and check upload preconditions through "
+         "addMeshesForRangesInPlace/addTextureOrDefault/ensureAtLeastOneTexture and check upload preconditions through "
          "uploadPreconditionsMet (kataglyphis.vulkan.model_assembly) instead:"
       << joinViolations(violations);
 }

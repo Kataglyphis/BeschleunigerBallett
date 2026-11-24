@@ -61,7 +61,6 @@ them; the wording is the hub's draft
 
 | Project | URL | Pin | Licence (per licence file) | File checked |
 |---|---|---|---|---|
-| tinyobjloader | https://github.com/tinyobjloader/tinyobjloader | v2.0.0rc10-73-g45636bd | MIT | `third_party/TINY_OBJ_LOADER/LICENSE` |
 | glm | https://github.com/g-truc/glm | 6f14f479 | Dual: "The Happy Bunny License or MIT License" | `third_party/GLM/copying.txt` |
 | imgui | https://github.com/ocornut/imgui | v1.93.0-72-g8c36ecfb6 | MIT | `third_party/IMGUI/LICENSE.txt` |
 | stb | https://github.com/nothings/stb | 9600522d | Public domain, most libraries also MIT (your choice); `stb_image.h` v2.32 and `stb_image_write.h` v1.18 carry the MIT-or-public-domain block | `third_party/STB/LICENSE`; the licence blocks at the end of `third_party/STB/stb_image.h` and `third_party/STB/stb_image_write.h` |

@@ -13,7 +13,6 @@ export module kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.model;
-import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.frustum;

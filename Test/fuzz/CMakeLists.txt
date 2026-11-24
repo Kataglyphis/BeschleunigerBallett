@@ -85,9 +85,6 @@ endfunction()
 
 kataglyphis_add_fuzz_test(first_fuzz_test dummy.cpp)
 kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)
-# Real engine surface: OBJ parsing (mirrors ObjLoader::loadVertices).
-kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
-target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 
 # Never link VulkanEngineCore: its PUBLIC -fsanitize=address would build this TU against uninstrumented abseil.
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
