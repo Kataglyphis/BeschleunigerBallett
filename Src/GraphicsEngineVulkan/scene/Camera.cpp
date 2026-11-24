@@ -32,6 +32,9 @@ auto controllerState(Kataglyphis::Frontend::CameraState &s) -> Kataglyphis::Fron
         .turn_speed = s.turn_speed };
 }
 
+// GUISceneSharedVars::shadow_distance's default, which every fixed pose was tuned with.
+constexpr float kFixedShadowDistance = 60.0F;
+
 }// namespace
 
 // Debug frames the Dinosaurs scene; its far_plane must stay above shadowDistance, as shadowFar = min(both).
@@ -65,7 +68,10 @@ Camera::Camera()
         .far_plane = 150.F,
         .fov = 45.F }
 #endif
-{ update(); }
+{
+    update();
+    fixedPose = pose(kFixedShadowDistance);
+}
 
 void Camera::key_control(std::span<const bool> keys, float delta_time)
 {
@@ -75,6 +81,28 @@ void Camera::key_control(std::span<const bool> keys, float delta_time)
 
 void Camera::mouse_control(float x_change, float y_change)
 { Kataglyphis::Frontend::apply_mouse_input(controllerState(camera_state), x_change, y_change); }
+
+auto Camera::pose(float shadowDistance) const -> Kataglyphis::CameraPose
+{
+    return Kataglyphis::CameraPose{ .eye = camera_state.position,
+        .yaw = camera_state.yaw,
+        .pitch = camera_state.pitch,
+        .fov = camera_state.fov,
+        .nearPlane = camera_state.near_plane,
+        .farPlane = camera_state.far_plane,
+        .movementSpeed = camera_state.movement_speed,
+        .shadowDistance = shadowDistance };
+}
+
+void Camera::apply_pose(const Kataglyphis::CameraPose &newPose)
+{
+    camera_state.position = newPose.eye;
+    camera_state.fov = newPose.fov;
+    camera_state.near_plane = newPose.nearPlane;
+    camera_state.far_plane = newPose.farPlane;
+    camera_state.movement_speed = newPose.movementSpeed;
+    set_orientation(newPose.yaw, newPose.pitch);
+}
 
 void Camera::set_near_plane(float near_plane) { camera_state.near_plane = near_plane; }
 

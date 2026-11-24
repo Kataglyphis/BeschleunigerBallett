@@ -50,6 +50,22 @@ namespace {
 
     glm::vec3 toVec3(const std::array<float, 3> &value) { return { value[0], value[1], value[2] }; }
 
+    SceneMetadata toMetadata(const ox::GltfModel &model)
+    {
+        SceneMetadata metadata{ .cameras = {},
+            .activeCamera = model.active_camera,
+            .credit = std::string(model.credit),
+            .bounds = SceneBounds{
+              .valid = model.bounds.valid, .min = toVec3(model.bounds.min), .max = toVec3(model.bounds.max) } };
+        for (const ox::GltfCamera &camera : model.cameras) {
+            metadata.cameras.push_back(SceneCamera{ .name = std::string(camera.name),
+              .eye = toVec3(camera.eye),
+              .forward = toVec3(camera.forward),
+              .yfovRadians = camera.yfov_rad });
+        }
+        return metadata;
+    }
+
     ObjMaterial toObjMaterial(const ox::GltfMaterial &material)
     {
         return ObjMaterial{
@@ -180,6 +196,7 @@ bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptio
     for (const ox::GltfMeshRange &range : model.mesh_ranges) { meshRanges.push_back(toMeshRange(range)); }
     for (const ox::GltfLight &light : model.lights) { punctualLights.push_back(toPunctualLight(light)); }
     if (model.has_sun) { sun = toSun(model.sun); }
+    metadata = toMetadata(model);
     bridge = std::move(parsed);
     return !vertices.empty();
 }

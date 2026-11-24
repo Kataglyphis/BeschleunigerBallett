@@ -10949,6 +10949,8 @@ TEST(BuildIntegrity, EveryRendererFeedbackFieldReachesTheEditor)
     const std::map<std::string, std::string> kExempt{
         { "publishedModelIndex", "applyRendererFeedback moves the editor's selection to it; nothing displays it" },
         { "publishedSun", "applyRendererFeedback writes it into the editor's Sun, which the Sun inspector shows" },
+        { "publishedShadowDistance", "applyRendererFeedback writes it into the Sun tab's shadow Distance slider" },
+        { "publishedFov", "applyRendererFeedback writes it into the Camera tab's Field of view slider" },
     };
     expect_every_member_has_a_gui_control("RendererFeedback",
       "Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx",

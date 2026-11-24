@@ -126,6 +126,9 @@ class GltfLoader
     /// The first directional light, with a unit direction: the editor adopts it as its Sun instead of shading it.
     const std::optional<PunctualLight> &getSun() const { return sun; }
 
+    /// The file's cameras, its credit and the vertices' world-space box.
+    const SceneMetadata &getMetadata() const { return metadata; }
+
   private:
     void clearParsed();
 
@@ -160,6 +163,7 @@ class GltfLoader
     std::vector<MeshRange> meshRanges;
     std::vector<PunctualLight> punctualLights;
     std::optional<PunctualLight> sun;
+    SceneMetadata metadata;
 };
 
 }// namespace Kataglyphis

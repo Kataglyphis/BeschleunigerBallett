@@ -16,6 +16,8 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.vertex;
 export import kataglyphis.vulkan.punctual_light;
+// Re-exported: SceneMetadata is getMetadata()'s return type.
+export import kataglyphis.vulkan.scene_framing;
 // Re-exported: GltfSamplerDesc appears in addTexture()'s parameter type, so
 // consumers that import this module can pass one without a second import.
 export import kataglyphis.vulkan.sampler_builder;
@@ -61,6 +63,9 @@ class Model
     /// The document's first directional light, which the editor adopts as its Sun; none for an OBJ.
     const std::optional<PunctualLight> &getSun() const { return sun; }
     void setSun(const std::optional<PunctualLight> &newSun) { sun = newSun; }
+    /// The file's cameras, credit and bounds, which frame the camera when the model becomes the scene's.
+    const SceneMetadata &getMetadata() const { return metadata; }
+    void setMetadata(SceneMetadata newMetadata) { metadata = std::move(newMetadata); }
     void addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc = {});
 
     ~Model();
@@ -76,6 +81,7 @@ class Model
     glm::mat4 model{};
     std::vector<PunctualLight> punctualLights;
     std::optional<PunctualLight> sun;
+    SceneMetadata metadata;
 
     std::vector<Texture> modelTextures;
     std::vector<vk::Sampler> modelTextureSamplers;

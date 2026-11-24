@@ -186,7 +186,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
     float const aspect_ratio = viewportAspectRatio(extent.width, extent.height, viewport);
 
     // Clamped here: tests and config loads write the settings too. Readers use get_fov(), not the settings value.
-    camera_data->set_fov(std::clamp(sceneSettings.camera_fov, 20.0F, 110.0F));
+    camera_data->set_fov(std::clamp(sceneSettings.camera_fov, kMinCameraFov, kMaxCameraFov));
 
     globalUBO.view = camera_data->calculate_viewmatrix();
     globalUBO.projection =
@@ -285,10 +285,13 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
     frameSettings = settings;
     output.publishedModelIndex.reset();
     output.publishedSun.reset();
+    output.publishedShadowDistance.reset();
+    output.publishedFov.reset();
     const GUISceneSharedVars &sceneSettings = settings.scene;
 
     // Polled first, so the rest of the frame sees a model on the frame it arrives.
     bool published_load = false;
+    const bool load_was_pending = scene->isModelLoadPending();
     if (scene->pollModelLoad(device, graphics_command_pool.get())) {
         finishModelLoad();
         // A reload requested this frame replaces the model below and publishes its own.
@@ -296,6 +299,9 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
             publishLoadedModel();
             published_load = true;
         }
+    } else if (load_was_pending && !scene->isModelLoadPending()) {
+        // A failed load leaves no model, so no credit may outlive the scene it named.
+        output.loadedModelCredit.clear();
     }
 
     handleShaderHotReloadRequest(settings.renderer);
@@ -327,6 +333,16 @@ void Kataglyphis::VulkanRenderer::publishLoadedModel()
             { -sun->direction.x, -sun->direction.y, -sun->direction.z }, { sun->color.r, sun->color.g, sun->color.b }
         };
     }
+    const SceneMetadata metadata = scene->getLoadedModelMetadata();
+    output.loadedModelCredit = metadata.credit;
+    const CameraPose &fixed = camera->fixed_pose();
+    const SceneFraming framing = frameScene(metadata, fixed);
+    if (const std::optional<CameraPose> start = startPose(framing, fixed, lastLoadFramed); start.has_value()) {
+        camera->apply_pose(*start);
+        output.publishedShadowDistance = start->shadowDistance;
+        output.publishedFov = start->fov;
+    }
+    lastLoadFramed = framing.framed;
 }
 
 auto Kataglyphis::VulkanRenderer::cloudDepthSourceForThisFrame() const -> CloudDepthSource

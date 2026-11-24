@@ -150,6 +150,12 @@ class Scene
         const Model *model = loadedModelPath.empty() ? nullptr : findModel(0);
         return model != nullptr ? model->getSun() : std::nullopt;
     }
+    /// The primary model's cameras, credit and bounds; empty while nothing has loaded.
+    [[nodiscard]] SceneMetadata getLoadedModelMetadata() const
+    {
+        const Model *model = loadedModelPath.empty() ? nullptr : findModel(0);
+        return model != nullptr ? model->getMetadata() : SceneMetadata{};
+    }
     std::vector<std::shared_ptr<Model>> const &get_model_list() const { return model_list; };
 
     /// Every model's punctual lights placed by its matrix, packed for the punctual-light buffer.

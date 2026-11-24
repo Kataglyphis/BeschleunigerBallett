@@ -19,6 +19,9 @@ export inline constexpr int kShadowMapResolutionCount = static_cast<int>(std::si
 // the same way kShadowMapResolutions is the one owner of the resolution control.
 export inline constexpr float kMinShadowDistance = 5.0F;
 export inline constexpr float kMaxShadowDistance = 500.0F;
+// The Camera tab's field-of-view slider, which the renderer and a framed load hold the camera to.
+export inline constexpr float kMinCameraFov = 20.0F;
+export inline constexpr float kMaxCameraFov = 110.0F;
 
 // The other editor bounds OxidANT's setting_ranges() also reports; SceneSettingsDrift holds the two to each other.
 // The lower cloud bounds are the marshal's floors (kMinCloudDensityMultiplier, kMinCloudMeshExtent).

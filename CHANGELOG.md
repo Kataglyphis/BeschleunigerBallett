@@ -14,6 +14,20 @@ the GitHub releases themselves.
 
 ### Added
 
+- A scene starts at its own glTF camera, and its credit is in the About window (plan B9, owner rule 2026-11-19):
+  OxidANT's framing moved out of the WebGPU renderer into `kataglyphis_render_core` (`framing.rs`, with
+  `OrbitCamera` and the fly speed), and the bridge's `frame_scene` hands it the loaded file's cameras, its active one,
+  its world-space box and the camera's fixed pose. A scene with a camera starts at the one
+  `scenes[scene].extras.active_camera` names, else at its first; a scene without one is fitted to its bounds only
+  when the fixed pose would need a far plane past 50 000 near planes (an 8 km Colosseum), and every other scene keeps
+  the fixed pose, as before. A framing sets the eye, yaw and pitch (the orbit's yaw + 180 and -pitch), both clip
+  planes and the fly speed, and the Camera tab's field of view and the Sun tab's shadow distance, which the renderer
+  reads every frame; the next load of an unframed scene restores the fixed pose. The credit is `asset.copyright`, else the `Attribution:` and `License:` lines of AssetANT's
+  `ATTRIBUTION.txt` beside the model (its first 64 KiB, a regular file only), so crytek-sponza is credited too, and a
+  failed load clears it; the About window shows it under the facts,
+  as OxidANT's does. `GoldenRender.ASceneWithItsOwnCameraIsDrawnFromIt` draws an unlit red card at x = 100 that only
+  its camera sees, and `SceneFramingUnit` holds the rule, the convention and the credit's source.
+
 - An analytic ambient term (BACKLOG "An analytic ambient term with an Ambient slider", plan C4 stage 1): forward,
   deferred and the closest-hit shader add OxidANT's `analytic_ambient` (`common/ambient.slang`) after the sun's
   shadow, the procedural sky's hemisphere irradiance and its reflected gradient blurred towards it by roughness

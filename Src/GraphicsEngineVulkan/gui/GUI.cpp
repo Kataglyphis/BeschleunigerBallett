@@ -1183,7 +1183,7 @@ void GUI::renderCameraInspector()
 {
     if (beginStudioProperties("##lens", propertyLabelWidth())) {
         studioPropertyLabel("Field of view", "Vertical, in degrees");
-        studioSlider("##fov", &guiSceneSharedVars.camera_fov, 20.0F, 110.0F, "%.0f\xC2\xB0");
+        studioSlider("##fov", &guiSceneSharedVars.camera_fov, kMinCameraFov, kMaxCameraFov, "%.0f\xC2\xB0");
         endStudioProperties();
     }
 
@@ -1581,6 +1581,14 @@ void GUI::renderFloatingWindows()
         about_row("GPU", studio->deviceName.c_str());
         about_row("API", api.data());
         about_row("Dear ImGui", IMGUI_VERSION);
+        // CC BY asks for the credit wherever the scene is shown; OxidANT's About shows it the same way.
+        if (!rendererFeedback.loadedModelCredit.empty()) {
+            mutedText("Scene");
+            ImGui::SameLine(value_x);
+            ImGui::PushTextWrapPos(value_x + font_size * 22.0F);
+            ImGui::TextUnformatted(rendererFeedback.loadedModelCredit.c_str());
+            ImGui::PopTextWrapPos();
+        }
         ImGui::Spacing();
         ImGui::TextLinkOpenURL("github.com/Kataglyphis/BeschleunigerBallett", kRepositoryUrl);
         ImGui::Spacing();

@@ -224,6 +224,13 @@ struct RendererFeedback
     /// Set with publishedModelIndex when the loaded model has a Sun, which becomes the editor's: OxidANT's rule.
     std::optional<PublishedSun> publishedSun;
 
+    /// The loaded model's credit, which its licence asks the About window to show; empty for none.
+    std::string loadedModelCredit;
+    /// Set by the update a load moved the camera in: the framing's shadow distance becomes the editor's.
+    std::optional<float> publishedShadowDistance;
+    /// Set with publishedShadowDistance: the framing's field of view becomes the Camera tab's, which the camera reads.
+    std::optional<float> publishedFov;
+
     /// Frames in the path tracer's running mean after the last frame it traced; a restart begins at 1.
     unsigned int pathTracingAccumulatedFrames = 0;
 };

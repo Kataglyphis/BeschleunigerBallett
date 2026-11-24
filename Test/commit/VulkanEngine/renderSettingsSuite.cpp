@@ -120,6 +120,40 @@ TEST(RenderSettingsUnit, FeedbackWithoutASunKeepsTheEditorsSun)
     EXPECT_FLOAT_EQ(settings.scene.directional_light_color[2], 0.5F);
 }
 
+// A load the framing moved the camera for hands its shadow distance to the editor, held to the slider's range.
+TEST(RenderSettingsUnit, APublishedShadowDistanceBecomesTheEditorsWithinTheSliderRange)
+{
+    RenderSettings settings;
+    settings.scene.shadow_distance = 42.0F;
+    applyRendererFeedback(settings, RendererFeedback{});
+    EXPECT_FLOAT_EQ(settings.scene.shadow_distance, 42.0F) << "a frame without a framing keeps the editor's";
+
+    RendererFeedback feedback;
+    feedback.publishedShadowDistance = 260.0F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.shadow_distance, 260.0F);
+    feedback.publishedShadowDistance = 9000.0F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.shadow_distance, kMaxShadowDistance);
+}
+
+// The renderer sets the lens from the Camera tab every frame, so a framing's field of view must land there.
+TEST(RenderSettingsUnit, APublishedFovBecomesTheCameraTabsWithinTheSliderRange)
+{
+    RenderSettings settings;
+    settings.scene.camera_fov = 60.0F;
+    applyRendererFeedback(settings, RendererFeedback{});
+    EXPECT_FLOAT_EQ(settings.scene.camera_fov, 60.0F) << "a frame without a framing keeps the editor's";
+
+    RendererFeedback feedback;
+    feedback.publishedFov = 22.9F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.camera_fov, 22.9F);
+    feedback.publishedFov = 5.0F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.camera_fov, kMinCameraFov);
+}
+
 // Owner 2026-11-19: VSync on by default, as the Rust renderer and the browser present; a feedback never turns it off.
 TEST(RenderSettingsUnit, VsyncIsOnByDefaultAndSurvivesFeedback)
 {

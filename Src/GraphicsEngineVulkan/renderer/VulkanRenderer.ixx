@@ -196,6 +196,8 @@ class VulkanRenderer
     Kataglyphis::Frontend::Window *window;
     Scene *scene;
     Camera *camera;
+    // Whether the last load moved the camera, so a scene that keeps the fixed pose after it gets that pose back.
+    bool lastLoadFramed = false;
 
     // A copy of the settings the last per-frame call passed, for the paths that run outside one (addModel, resizes).
     RenderSettings frameSettings;

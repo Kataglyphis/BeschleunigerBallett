@@ -72,6 +72,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     meshRanges = std::move(other.meshRanges);
     punctualLights = std::move(other.punctualLights);
     sun = other.sun;
+    metadata = std::move(other.metadata);
     // The moved-from loader reads as unparsed, not as a second view of these arrays.
     other.clearParsed();
 }
@@ -102,6 +103,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
       *model, device, command_pool, vertices, getIndices(), getMaterialIndices(), materials, meshRanges);
     model->setPunctualLights(punctualLights);
     model->setSun(sun);
+    model->setMetadata(metadata);
     return model;
 }
 
@@ -117,6 +119,7 @@ void GltfLoader::clearParsed()
     meshRanges.clear();
     punctualLights.clear();
     sun.reset();
+    metadata = {};
     bridge.reset();
 }
 

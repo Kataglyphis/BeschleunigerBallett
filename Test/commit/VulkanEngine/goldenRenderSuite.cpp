@@ -7085,3 +7085,71 @@ TEST(GoldenRender, RaytracedLargeMeshDoesNotLoseTheDevice)
       << "Captured frame looks blank - the large-mesh RT diagnostic needs a real image to "
          "trust the no-device-lost result.";
 }
+
+// A scene with its own camera starts at it (owner rule), and its credit reaches the About window's feedback.
+TEST(GoldenRender, ASceneWithItsOwnCameraIsDrawnFromIt)
+{
+    SKIP_WITHOUT_GPU();
+
+    // An unlit red card at x = 100, which the golden view never sees, and a narrow camera ten units in front of it.
+    const std::filesystem::path dir = std::filesystem::temp_directory_path() / "kat_golden_scene_camera";
+    std::error_code ignored;
+    std::filesystem::remove_all(dir, ignored);
+    std::filesystem::create_directories(dir);
+    const std::filesystem::path model = dir / "card_camera.gltf";
+    {
+        std::ofstream out(model, std::ios::binary);
+        out << R"GLTF({
+          "asset": { "version": "2.0", "copyright": "Card by Somebody, CC0" },
+          "extensionsUsed": [ "KHR_materials_unlit" ],
+          "scene": 0,
+          "scenes": [ { "nodes": [ 0, 1 ], "extras": { "active_camera": "Front" } } ],
+          "nodes": [ { "mesh": 0 }, { "name": "Front", "camera": 0, "translation": [101, 1, 10] } ],
+          "cameras": [ { "type": "perspective", "perspective": { "yfov": 0.4, "znear": 0.1 } } ],
+          "materials": [ { "doubleSided": true, "extensions": { "KHR_materials_unlit": {} },
+                           "pbrMetallicRoughness": { "baseColorFactor": [1, 0, 0, 1] } } ],
+          "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 }, "material": 0 } ] } ],
+          "accessors": [ { "componentType": 5126, "count": 6, "type": "VEC3",
+                           "min": [100, 0, 0], "max": [102, 2, 0], "bufferView": 0 } ],
+          "bufferViews": [ { "buffer": 0, "byteLength": 72 } ],
+          "buffers": [ { "byteLength": 72, "uri": "data:application/octet-stream;base64,AADIQgAAAAAAAAAAAADMQgAAAAAAAAAAAADMQgAAAEAAAAAAAADIQgAAAAAAAAAAAADMQgAAAEAAAAAAAADIQgAAAEAAAAAA" } ]
+        })GLTF";
+    }
+    {
+        ScopedModelOverride card(model.string().c_str());
+        EngineHarness harness;
+        SKIP_WITHOUT_FRAME_CAPTURE(harness);
+        harness.useForwardRaster();
+        harness.render_frames(SETTLE_FRAMES);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        ASSERT_EQ(harness.scene->getModelCount(), 1U) << "the card did not load";
+
+        EXPECT_NEAR(glm::distance(harness.camera->get_camera_position(), glm::vec3(101.0F, 1.0F, 10.0F)), 0.0F, 1e-3F);
+        EXPECT_NEAR(glm::dot(harness.camera->get_camera_direction(), glm::vec3(0.0F, 0.0F, -1.0F)), 1.0F, 1e-5F);
+        EXPECT_EQ(harness.feedback.loadedModelCredit, "Card by Somebody, CC0");
+        // The renderer sets the lens from the Camera tab every frame, so the framing's must reach the tab.
+        EXPECT_NEAR(harness.settings.scene.camera_fov, glm::degrees(0.4F), 1e-3F);
+        EXPECT_NEAR(harness.camera->get_fov(), glm::degrees(0.4F), 1e-3F);
+
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> rgba = harness.capture_frame(width, height);
+        ASSERT_EQ(rgba.size(), static_cast<size_t>(width) * height * 4U);
+        // The card fills the middle of the frame only when it is drawn from its own camera.
+        const size_t centre = (static_cast<size_t>(height / 2U) * width + width / 2U) * 4U;
+        const int red = rgba[centre];
+        const int green = rgba[centre + 1U];
+        const int blue = rgba[centre + 2U];
+        EXPECT_GT(red, 2 * green + 40) << "centre " << red << ", " << green << ", " << blue;
+        EXPECT_GT(red, 2 * blue + 40) << "centre " << red << ", " << green << ", " << blue;
+        // The 2-unit card at 10 units spans 2 / (20 tan 0.2) = 0.493 of a 0.4 rad frame, 0.241 of a 45 degree one.
+        size_t card_rows = 0;
+        for (uint32_t y = 0; y < height; ++y) {
+            const size_t pixel = (static_cast<size_t>(y) * width + width / 2U) * 4U;
+            if (rgba[pixel] > 2 * rgba[pixel + 1U] + 40 && rgba[pixel] > 2 * rgba[pixel + 2U] + 40) { ++card_rows; }
+        }
+        const double share = static_cast<double>(card_rows) / static_cast<double>(height);
+        EXPECT_NEAR(share, 2.0 / (20.0 * std::tan(0.2)), 0.02) << card_rows << " of " << height << " rows";
+    }
+    std::filesystem::remove_all(dir, ignored);
+}
