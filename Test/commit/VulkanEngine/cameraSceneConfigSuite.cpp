@@ -210,16 +210,10 @@ TEST(SceneConfigUnit, ModelExtensionDispatchIsCaseInsensitive)
     EXPECT_FALSE(Kataglyphis::isSupportedModelPath("a.png"));
     EXPECT_FALSE(Kataglyphis::isSupportedModelPath("a"));
     EXPECT_FALSE(Kataglyphis::isSupportedModelPath(""));
-
-    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.gltf"));
-    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.GLTF"));
-    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.glb"));
-    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.GLB"));
-    EXPECT_FALSE(Kataglyphis::isGltfModelPath("a.obj"));
 }
 
 TEST(SceneConfigUnit, ModelExtensionDispatchUsesTheExtensionNotTheWholePath)
-{ EXPECT_FALSE(Kataglyphis::isGltfModelPath("C:/assets.glb/model.obj")); }
+{ EXPECT_FALSE(Kataglyphis::isSupportedModelPath("C:/assets.glb/model.png")); }
 
 TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
 {

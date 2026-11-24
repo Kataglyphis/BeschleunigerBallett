@@ -13,7 +13,7 @@ module;
 
 module kataglyphis.vulkan.cascaded_shadow_map;
 
-// Own TU of the module, so pure-math callers (perfSuite) never link Scene and its duplicate tinyobj implementation.
+// Own TU of the module, so pure-math callers (perfSuite) never link Scene.
 
 namespace Kataglyphis {
 

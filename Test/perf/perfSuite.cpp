@@ -29,8 +29,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-// The engine's tinyobj build (ObjLoader.cpp); a second copy here would clash.
-#include "tiny_obj_loader.h"
 
 #include "oxidant_bridge/gltf.h"
 #include "oxidant_bridge/parity.h"
@@ -45,7 +43,6 @@ import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.mesh_range;
-import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
@@ -219,7 +216,7 @@ void BM_AvailableModelPaths(benchmark::State &state)
 }
 BENCHMARK(BM_AvailableModelPaths);
 
-// OBJ load: mirrors ObjLoader::loadVertices' parse and guarded walk, which dominates model load time.
+// The models the loader benchmarks parse, found from the repo root or a build directory.
 
 std::string find_model(const char *name)
 {
@@ -243,147 +240,6 @@ std::string find_oxidant_fixture(const char *name)
     return {};
 }
 
-void parse_and_walk(const std::string &path, benchmark::State &state)
-{
-    if (path.empty()) {
-        skipWithError(state, "model not found (run from the repo root)");
-        return;
-    }
-
-    for (auto _ : state) {
-        tinyobj::ObjReader reader;
-        tinyobj::ObjReaderConfig config;
-        config.triangulate = true;
-        if (!reader.ParseFromFile(path, config)) {
-            skipWithError(state, "failed to parse model");
-            return;
-        }
-
-        const auto &attrib = reader.GetAttrib();
-        double checksum = 0.0;
-        for (const auto &shape : reader.GetShapes()) {
-            size_t index_offset = 0;
-            for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
-                const auto fv = static_cast<size_t>(shape.mesh.num_face_vertices[f]);
-                for (size_t v = 0; v < fv; v++) {
-                    if (index_offset + v >= shape.mesh.indices.size()) { break; }
-                    const tinyobj::index_t idx = shape.mesh.indices[index_offset + v];
-                    const auto vertex_index = static_cast<size_t>(idx.vertex_index);
-                    if (idx.vertex_index < 0 || (3 * vertex_index) + 2 >= attrib.vertices.size()) { continue; }
-                    checksum += attrib.vertices[3 * vertex_index];
-                }
-                index_offset += fv;
-            }
-        }
-        benchmark::DoNotOptimize(checksum);
-    }
-}
-
-void BM_ObjParse_Plane(benchmark::State &state) { parse_and_walk(find_model("plane.obj"), state); }
-BENCHMARK(BM_ObjParse_Plane)->Unit(benchmark::kMicrosecond);
-
-void BM_ObjParse_Suzanne(benchmark::State &state) { parse_and_walk(find_model("suzanne.obj"), state); }
-BENCHMARK(BM_ObjParse_Suzanne)->Unit(benchmark::kMillisecond);
-
-// Tangent gen: one call per primitive over a growing array, where whole-array accumulators turn quadratic.
-
-void BM_ComputeTangents(benchmark::State &state)
-{
-    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
-    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
-
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
-    std::vector<std::size_t> firstIndices;
-    // Slice to the counts at each call, as GltfLoader::processPrimitive sees them, or every call pays for all.
-    std::vector<std::size_t> vertexCountSoFar;
-    std::vector<std::size_t> indexCountSoFar;
-    vertices.reserve(primitiveCount * 4);
-    indices.reserve(primitiveCount * 6);
-    firstIndices.reserve(primitiveCount);
-    vertexCountSoFar.reserve(primitiveCount);
-    indexCountSoFar.reserve(primitiveCount);
-
-    for (std::size_t p = 0; p < primitiveCount; ++p) {
-        const auto base = static_cast<unsigned int>(vertices.size());
-        const float ox = static_cast<float>(p) * 2.0F;
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
-
-        firstIndices.push_back(indices.size());
-        indices.push_back(base + 0);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-        indices.push_back(base + 0);
-        indices.push_back(base + 2);
-        indices.push_back(base + 3);
-
-        vertexCountSoFar.push_back(vertices.size());
-        indexCountSoFar.push_back(indices.size());
-    }
-
-    for (auto _ : state) {
-        for (std::size_t p = 0; p < primitiveCount; ++p) {
-            vertex::computeTangents(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
-              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
-              firstIndices[p]);
-        }
-        benchmark::DoNotOptimize(vertices.data());
-    }
-}
-BENCHMARK(BM_ComputeTangents)->Arg(1)->Arg(64)->Arg(512);
-
-// BM_ComputeTangents' per-primitive shape and fixture, so the two compare; zeroed normals make it fill corners.
-void BM_FillMissingFlatNormals(benchmark::State &state)
-{
-    const auto primitiveCount = static_cast<std::size_t>(state.range(0));
-    const glm::vec3 normal(0.0F, 0.0F, 1.0F);
-
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
-    std::vector<std::size_t> firstIndices;
-    std::vector<std::size_t> vertexCountSoFar;
-    std::vector<std::size_t> indexCountSoFar;
-    vertices.reserve(primitiveCount * 4);
-    indices.reserve(primitiveCount * 6);
-    firstIndices.reserve(primitiveCount);
-    vertexCountSoFar.reserve(primitiveCount);
-    indexCountSoFar.reserve(primitiveCount);
-
-    for (std::size_t p = 0; p < primitiveCount; ++p) {
-        const auto base = static_cast<unsigned int>(vertices.size());
-        const float ox = static_cast<float>(p) * 2.0F;
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 0.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 0.0F));
-        vertices.emplace_back(glm::vec3(ox + 1.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(1.0F, 1.0F));
-        vertices.emplace_back(glm::vec3(ox + 0.0F, 1.0F, 0.0F), normal, glm::vec4(1.0F), glm::vec2(0.0F, 1.0F));
-
-        firstIndices.push_back(indices.size());
-        indices.push_back(base + 0);
-        indices.push_back(base + 1);
-        indices.push_back(base + 2);
-        indices.push_back(base + 0);
-        indices.push_back(base + 2);
-        indices.push_back(base + 3);
-
-        vertexCountSoFar.push_back(vertices.size());
-        indexCountSoFar.push_back(indices.size());
-    }
-    for (std::size_t i = 0; i < vertices.size(); i += 3) { vertices[i].normal = glm::vec3(0.0F); }
-
-    for (auto _ : state) {
-        for (std::size_t p = 0; p < primitiveCount; ++p) {
-            vertex::fillMissingFlatNormals(std::span<Vertex>(vertices.data(), vertexCountSoFar[p]),
-              std::span<const unsigned int>(indices.data(), indexCountSoFar[p]),
-              firstIndices[p]);
-        }
-        benchmark::DoNotOptimize(vertices.data());
-    }
-}
-BENCHMARK(BM_FillMissingFlatNormals)->Arg(1)->Arg(64)->Arg(512);
-
 // transformAABB: runs per mesh in both the camera and shadow passes; a non-trivial matrix denies compiler shortcuts.
 
 void BM_TransformAABB(benchmark::State &state)
@@ -401,25 +257,7 @@ void BM_TransformAABB(benchmark::State &state)
 }
 BENCHMARK(BM_TransformAABB)->Arg(64)->Arg(512);
 
-// Engine loaders: the raw parse above plus dedup, materials and ranges, i.e. what AsyncModelParse runs off-thread.
-
-void BM_ObjLoaderParseCpu_Suzanne(benchmark::State &state)
-{
-    const std::string path = find_model("suzanne.obj");
-    if (path.empty()) {
-        skipWithError(state, "model not found (run from the repo root)");
-        return;
-    }
-    for (auto _ : state) {
-        Kataglyphis::ObjLoader loader;
-        if (!loader.parseCpu(path)) {
-            skipWithError(state, "ObjLoader::parseCpu failed");
-            return;
-        }
-        benchmark::DoNotOptimize(loader.getVertices().data());
-    }
-}
-BENCHMARK(BM_ObjLoaderParseCpu_Suzanne)->Unit(benchmark::kMillisecond);
+// The engine's loader: the whole CPU parse AsyncModelParse runs off-thread.
 
 // The loader's whole CPU parse (OxidANT's Rust loader): .glb and base64 .gltf take different buffer decode paths.
 void gltfLoaderParseCpu(benchmark::State &state, const std::string &path)

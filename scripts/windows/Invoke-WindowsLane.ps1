@@ -58,7 +58,7 @@ if (-not (Test-Path -LiteralPath $perfSuite)) { $failed.Add("missing $perfSuite"
 }
 
 # Seed corpora (CPU-only); BuildIntegrity parses this one-line list; ten minutes makes a hang fail, not stall.
-foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
+foreach ($t in @('first_fuzz_test','example_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
   $exe = Join-Path $debugDir "$t.exe"
   if (-not (Test-Path -LiteralPath $exe)) { $failed.Add("missing $exe (fuzz targets are Debug + clang-cl only)"); continue }
   Write-Host "--- $t"

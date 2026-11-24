@@ -12,7 +12,6 @@
 
 import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.gltf_loader;
-import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.scene_config;
 
 namespace {
@@ -48,7 +47,7 @@ TEST(AsyncModelParseUnit, ParsesOffThreadAndHandsBackTheResult)
 {
     if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
 
-    Kataglyphis::ObjLoader reference;
+    Kataglyphis::GltfLoader reference;
     ASSERT_TRUE(reference.parseCpu(test_model()));
 
     Kataglyphis::AsyncModelParse parse;
@@ -56,17 +55,15 @@ TEST(AsyncModelParseUnit, ParsesOffThreadAndHandsBackTheResult)
     spinUntilFinished(parse);
     ASSERT_TRUE(parse.isFinished()) << "the parse never completed";
     ASSERT_TRUE(parse.wasSuccessful());
-    EXPECT_FALSE(parse.parsedGltf());
 
-    const std::unique_ptr<Kataglyphis::ObjLoader> result = parse.takeResult();
+    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeResult();
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
     EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
 }
 
-TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
+TEST(AsyncModelParseUnit, ParsesAGlbOffThreadThroughTheSameLoader)
 {
-    // parsedGltf() tells the caller which of the two results to take.
     if (!std::filesystem::exists(test_gltf())) { GTEST_SKIP() << "test glb not present"; }
 
     Kataglyphis::GltfLoader reference;
@@ -77,10 +74,8 @@ TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
     spinUntilFinished(parse);
     ASSERT_TRUE(parse.isFinished()) << "the parse never completed";
     ASSERT_TRUE(parse.wasSuccessful());
-    ASSERT_TRUE(parse.parsedGltf()) << "a .glb must route to the glTF loader, not ObjLoader";
-    EXPECT_EQ(parse.takeResult(), nullptr) << "the OBJ getter must not also hand back a glTF result";
 
-    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeGltfResult();
+    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeResult();
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
     EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
@@ -96,7 +91,7 @@ TEST(AsyncModelParseUnit, TheWorkerParsesWithTheLoadOptionsItStartedWith)
     parse.start(quad, Kataglyphis::GltfLoadOptions{ .mikktspaceTangents = true });
     spinUntilFinished(parse);
     ASSERT_TRUE(parse.wasSuccessful());
-    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeGltfResult();
+    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeResult();
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->getVertices().size(), 6U) << "the worker dropped the MikkTSpace option";
 }
@@ -111,7 +106,6 @@ TEST(AsyncModelParseUnit, AFailedParseReportsFailureRatherThanEmptyGeometry)
     EXPECT_FALSE(parse.wasSuccessful());
     // Failed must differ from "loaded nothing", or a bad path silently empties the scene.
     EXPECT_EQ(parse.takeResult(), nullptr);
-    EXPECT_EQ(parse.takeGltfResult(), nullptr);
 }
 
 TEST(AsyncModelParseUnit, StartingASecondParseSupersedesTheFirst)

@@ -52,7 +52,7 @@ jobs:
       - name: Fetch the hub and the license sources
         run: >-
           git submodule update --init --depth 1 third_party/ANTfrastructure third_party/OxidANT
-          third_party/GLFW third_party/IMGUI third_party/STB third_party/GLM third_party/TINY_OBJ_LOADER
+          third_party/GLFW third_party/IMGUI third_party/STB third_party/GLM
           third_party/VULKAN_MEMORY_ALLOCATOR third_party/SPDLOG third_party/NLOHMANN_JSON
 
       - name: check-deb-layout.sh against synthetic .debs

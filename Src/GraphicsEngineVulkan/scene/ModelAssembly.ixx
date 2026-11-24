@@ -20,10 +20,8 @@ import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
-/// Shared tail of ObjLoader::uploadParsed and GltfLoader::uploadParsed: both
-/// loaders differ only in how a texture's bytes reach them (file vs. memory)
-/// and in shape-specific parse-time skips, not in what happens to the result.
-/// This is that shared shape.
+/// The upload helpers GltfLoader::uploadParsed builds a Model with, kept apart
+/// so BuildIntegrity can hold every texture slot and mesh to them.
 
 /// The two guards both uploadParsed overrides check before touching the
 /// device: device-first, then empty-parse, so a device-free loader that also
@@ -83,37 +81,7 @@ void ensureAtLeastOneTexture(Model &model, const std::shared_ptr<VulkanDevice> &
     model.addTexture(std::move(defaultTexture));
 }
 
-/// The OBJ upload: the empty-ranges single-mesh case plus the per-range
-/// sliceMeshRange -> add_new_mesh loop. Always forwards range.doubleSided and
-/// range.alphaBlended - MeshRange.ixx documents both as always false for OBJ, so
-/// forwarding them is behaviour-identical to the default it used to rely on.
-void addMeshesForRanges(Model &model,
-  const std::shared_ptr<VulkanDevice> &device,
-  vk::CommandPool pool,
-  const std::vector<Vertex> &vertices,
-  const std::vector<unsigned int> &indices,
-  const std::vector<unsigned int> &materialIndex,
-  const std::vector<ObjMaterial> &materials,
-  const std::vector<MeshRange> &ranges)
-{
-    if (ranges.empty()) {
-        model.add_new_mesh(device, pool, vertices, indices, materialIndex, materials);
-        return;
-    }
-    for (const MeshRange &range : ranges) {
-        MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
-        model.add_new_mesh(device,
-          pool,
-          slice.vertices,
-          slice.indices,
-          slice.materialIndex,
-          materials,
-          range.doubleSided,
-          range.alphaBlended);
-    }
-}
-
-/// The glTF upload: addMeshesForRanges without the slice, each range staged from views of the flat arrays.
+/// The upload of every format: each range staged from views of the flat arrays, without a copy.
 void addMeshesForRangesInPlace(Model &model,
   const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool pool,

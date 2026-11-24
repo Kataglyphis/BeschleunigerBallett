@@ -63,7 +63,7 @@ directories; after, 116 MiB, 62 of them the vendored `third_party/KTX` tree, whi
 and which went on 2026-11-19 with the toml++ submodule (owner decision 2026-11-18).
 
 - **A configure fetches two**: `crytek-sponza` (the Release default, the one scene the packages
-  install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, four `ObjParseUnit`
+  install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, two `ObjParseUnit`
   fixtures, the renderer comparisons), named by `KATAGLYPHIS_DEFAULT_ASSETS` in the module.
   `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other fourteen for the model picker, among them
   `Colosseum-gltf` (117 MiB) and `Colosseum-web`;
@@ -746,7 +746,7 @@ On `windows-11-arm` the commit suite runs whole, in two halves:
 
 - `-StageTests` builds the Release commit suite with `KATAGLYPHIS_RELEASE_COMMIT_TESTS` and stages it
   with compiled and local Slang sources, OxidANT's pinned sources at their canonical `third_party`
-  path, and test models (`Dinosaurs` included, which four `ObjParseUnit` tests parse) in
+  path, and test models (`Dinosaurs` included, which two `ObjParseUnit` tests parse) in
   `dist\windows-arm64-tests`. The hub's run job runs `tests.json` through its
   `Invoke-StagedTests.ps1` (hub CON43): the CPU suites (the commit suite minus the GPU suites and
   the source-reading `BuildIntegrity.*` checks), `perfTestSuite.exe` (the Profile perf suite) as an

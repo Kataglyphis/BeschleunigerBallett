@@ -97,7 +97,6 @@ target_link_libraries(
          imgui
          stb
          glm
-         tinyobjloader
          vma
          # enable compiler warnings
          myproject_warnings

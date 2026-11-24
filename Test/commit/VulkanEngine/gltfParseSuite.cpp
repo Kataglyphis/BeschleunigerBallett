@@ -412,17 +412,30 @@ TEST(GltfParseUnit, GeneratedTangentsFollowTheNormalTexturesUvSet)
       parse_document(dual_uv_triangle(R"({ "normalTexture": { "index": 0, "texCoord": 1 } })"), "kat_tangent_uv1.gltf");
     ASSERT_TRUE(on_uv0.has_value() && on_uv1.has_value());
 
-    std::vector<Vertex> expected_uv0(on_uv0->getVertices().begin(), on_uv0->getVertices().end());
-    std::vector<Vertex> expected_uv1(on_uv1->getVertices().begin(), on_uv1->getVertices().end());
-    const std::vector<unsigned int> indices(on_uv0->getIndices().begin(), on_uv0->getIndices().end());
-    vertex::computeTangents(expected_uv0, indices, 0, 0U);
-    vertex::computeTangents(expected_uv1, indices, 0, 1U);
-    ASSERT_EQ(expected_uv1.size(), 3U);
-    EXPECT_GT(glm::length(glm::vec3(expected_uv0[0].tangent) - glm::vec3(expected_uv1[0].tangent)), 0.1F)
+    // One triangle: its frame is dP/du of the chosen set, orthogonal to the normal, with the sign of dP/dv.
+    const auto frame = [](const Kataglyphis::GltfLoader &loader, bool uv1) {
+        const auto vertices = loader.getVertices();
+        const auto uv = [&](std::size_t i) { return uv1 ? vertices[i].texture_coords1 : vertices[i].texture_coords; };
+        const glm::vec3 e1 = vertices[1].position - vertices[0].position;
+        const glm::vec3 e2 = vertices[2].position - vertices[0].position;
+        const glm::vec2 d1 = uv(1) - uv(0);
+        const glm::vec2 d2 = uv(2) - uv(0);
+        const float r = 1.0F / ((d1.x * d2.y) - (d2.x * d1.y));
+        const glm::vec3 t = ((e1 * d2.y) - (e2 * d1.y)) * r;
+        const glm::vec3 b = ((e2 * d1.x) - (e1 * d2.x)) * r;
+        const glm::vec3 n = vertices[0].normal;
+        const glm::vec3 tangent = glm::normalize(t - (n * glm::dot(n, t)));
+        return glm::vec4(tangent, glm::dot(glm::cross(n, tangent), b) < 0.0F ? -1.0F : 1.0F);
+    };
+    ASSERT_EQ(on_uv0->getVertices().size(), 3U);
+    ASSERT_EQ(on_uv1->getVertices().size(), 3U);
+    const glm::vec4 expected_uv0 = frame(*on_uv0, false);
+    const glm::vec4 expected_uv1 = frame(*on_uv1, true);
+    EXPECT_GT(glm::length(glm::vec3(expected_uv0) - glm::vec3(expected_uv1)), 0.1F)
       << "the fixture's two UV sets must give different frames, or this test proves nothing";
     for (size_t i = 0; i < 3U; ++i) {
-        EXPECT_EQ(on_uv0->getVertices()[i].tangent, expected_uv0[i].tangent) << "vertex " << i << ", UV0 normal map";
-        EXPECT_EQ(on_uv1->getVertices()[i].tangent, expected_uv1[i].tangent) << "vertex " << i << ", UV1 normal map";
+        EXPECT_LT(glm::length(on_uv0->getVertices()[i].tangent - expected_uv0), 1e-5F) << "vertex " << i << ", UV0";
+        EXPECT_LT(glm::length(on_uv1->getVertices()[i].tangent - expected_uv1), 1e-5F) << "vertex " << i << ", UV1";
     }
 }
 

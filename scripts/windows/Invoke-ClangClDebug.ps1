@@ -94,7 +94,7 @@ try {
             if (Test-Path $FuzzDir) {
                 Write-BuildLog -Context $context -Message "Running local fuzz executables in $FuzzDir..."
 
-                foreach ($fuzzExecutable in @('first_fuzz_test.exe', 'example_fuzz_test.exe', 'obj_parsing_fuzz_test.exe', 'scene_config_fuzz_test.exe', 'shader_file_reader_fuzz_test.exe', 'texture_loading_fuzz_test.exe')) {
+                foreach ($fuzzExecutable in @('first_fuzz_test.exe', 'example_fuzz_test.exe', 'scene_config_fuzz_test.exe', 'shader_file_reader_fuzz_test.exe', 'texture_loading_fuzz_test.exe')) {
                     $resolvedFuzzExecutable = Resolve-TestExecutable -BuildRoot $FuzzDir -ExecutableName $fuzzExecutable
                     if (-not $resolvedFuzzExecutable) {
                         throw "Expected fuzz executable '$fuzzExecutable' was not found inside $FuzzDir."
