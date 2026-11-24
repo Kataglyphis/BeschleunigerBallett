@@ -390,6 +390,21 @@
       "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
     },
     {
+      "name": "BM_GltfLoaderParseCpu_SuzanneObj",
+      "family_index": 18,
+      "per_family_instance_index": 0,
+      "run_name": "BM_GltfLoaderParseCpu_SuzanneObj",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 120,
+      "real_time": 5.82,
+      "cpu_time": 5.82,
+      "time_unit": "ms",
+      "label": "placeholder from linux-profile-clang on an 8-core aarch64 WSL host; refresh on the RX 9070 XT host"
+    },
+    {
       "name": "BM_GltfLoaderParseCpu_CubeTextured",
       "family_index": 19,
       "per_family_instance_index": 0,

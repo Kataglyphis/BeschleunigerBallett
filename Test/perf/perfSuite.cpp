@@ -456,6 +456,18 @@ void BM_GltfLoaderParseCpu_CubeTextured(benchmark::State &state)
 }
 BENCHMARK(BM_GltfLoaderParseCpu_CubeTextured)->Unit(benchmark::kMicrosecond);
 
+// An OBJ through the same bridge call: OxidANT's OBJ reader, parse, tangents and flat arrays.
+void BM_GltfLoaderParseCpu_SuzanneObj(benchmark::State &state)
+{
+    const std::string path = find_model("suzanne.obj");
+    if (path.empty()) {
+        skipWithError(state, "model not found (run from the repo root)");
+        return;
+    }
+    gltfLoaderParseCpu(state, path);
+}
+BENCHMARK(BM_GltfLoaderParseCpu_SuzanneObj)->Unit(benchmark::kMillisecond);
+
 // Colosseum-gltf is fetched only with KATAGLYPHIS_FETCH_ALL_ASSETS, so its absence skips rather than errs.
 void BM_GltfLoaderParseCpu_Colosseum(benchmark::State &state)
 {
