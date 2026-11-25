@@ -9,6 +9,7 @@ import push_constants;
 import raster_geometry;
 import material_textures;
 import fullscreen;
+import gbuffer;
 import hdr_safe;
 import punctual_lights;
 
@@ -18,6 +19,7 @@ import punctual_lights;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 
+// OxidANT's gbuffer.slang texels at their attachments.
 struct GBufferOut
 {
     float4 outNormal : SV_Target0;
@@ -66,18 +68,23 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
 
     texColor.rgb *= In.fragmentColor.rgb;
 
-    GBufferOut g;
     // Only doubleSided materials disable culling; resolved here, since the lighting pass has no SV_IsFrontFace.
-    float3 N = resolved_normal(normalize(In.shadingNormal), In.worldTangent, isFrontFace, obj, material, In.texCoords);
+    SurfacePoint surface;
+    surface.position = In.worldPosition;
+    surface.n = resolved_normal(normalize(In.shadingNormal), In.worldTangent, isFrontFace, obj, material, In.texCoords);
     float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
-    float metallic = metallicRoughness.x;
-    float roughness = metallicRoughness.y;
-    // Metallic rides in the normal's unused .w channel instead of its own attachment.
-    g.outNormal = float4(N, metallic);
-    // .a carries KHR_materials_unlit, not alpha: sRGB encodes RGB only, so 0.0/1.0 round-trip exactly.
-    g.outAlbedo = float4(texColor.rgb, material.unlit != 0 ? 1.0 : 0.0);
-    // r = roughness, gba = emissive; the float16 format keeps emissive strength above 1.0, short of +Inf.
-    g.outMaterial = float4(roughness, hdr_safe(resolved_emission(obj, material, In.texCoords)));
+    surface.albedo = texColor.rgb;
+    surface.metallic = metallicRoughness.x;
+    surface.roughness = metallicRoughness.y;
+    // No occlusion map reaches this engine yet, so ambient stays unoccluded.
+    surface.occlusion = 1.0;
+    // The float16 format keeps emissive strength above 1.0, short of +Inf.
+    surface.emissive = hdr_safe(resolved_emission(obj, material, In.texCoords));
+    GBufferTexels t = gbuffer_pack(surface, material.unlit != 0);
+    GBufferOut g;
+    g.outNormal = t.normalMetallic;
+    g.outAlbedo = t.albedoOcclusion;
+    g.outMaterial = t.roughnessEmissive;
     return g;
 }
 
@@ -111,41 +118,35 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     float4 worldPos = mul(globalUBO.inv_view, mul(globalUBO.inv_projection, clipPos));
     worldPos /= worldPos.w;
 
-    float4 normal = inNormal.Load(texel);
-    float4 albedo = inAlbedo.Load(texel);
-    float4 material = inMaterial.Load(texel);
+    GBufferTexels t;
+    t.normalMetallic = inNormal.Load(texel);
+    t.albedoOcclusion = inAlbedo.Load(texel);
+    // KHR_materials_unlit: skip lighting, shadowing and emissive alike.
+    if (gbuffer_unlit(t.normalMetallic)) return float4(hdr_safe(t.albedoOcclusion.rgb), 1.0);
+    t.roughnessEmissive = inMaterial.Load(texel);
+    SurfacePoint s = gbuffer_unpack(t, worldPos.xyz);
 
-    // KHR_materials_unlit (outAlbedo.a): skip lighting, shadowing and emissive alike.
-    if (albedo.a > 0.5) return float4(hdr_safe(albedo.rgb), 1.0);
-
-    float3 N = normalize(normal.xyz);
     float3 L = normalize(-sceneUBO_lighting.dirLight.direction.xyz);
-    float3 V = normalize(sceneUBO_lighting.cam_pos.xyz - worldPos.xyz);
-
-    float roughness = material.r;
-    float metallic = normal.w;
+    float3 V = normalize(sceneUBO_lighting.cam_pos.xyz - s.position);
     float3 lightColor = sceneUBO_lighting.dirLight.color.rgb;
     float lightIntensity = sceneUBO_lighting.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), albedo.rgb, metallic);
+    float3 f0 = surface_f0(s.albedo, s.metallic);
     // The fit once per pixel, not once per light: the sun, every punctual light and the ambient share it.
-    float2 energy = ggx_energy(dot(N, V), roughness);
-    float3 color = brdf_direct(N, V, L, albedo.rgb, metallic, roughness, f0,
-                               lightColor * lightIntensity, energy);
-
-    float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
-    color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
+    float2 energy = ggx_energy(dot(s.n, V), s.roughness);
+    float3 sunDirect =
+        brdf_direct(s.n, V, L, s.albedo, s.metallic, s.roughness, f0, lightColor * lightIntensity, energy);
+    float sunVisibility = 1.0 - calc_cascaded_shadow(s.position, s.n, L, sceneUBO_lighting);
 
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
-    color += punctual_lighting(
-        worldPos.xyz, N, V, albedo.rgb, metallic, roughness, f0, energy, sceneUBO_lighting.punctualShadowCount);
+    float3 punctual = punctual_lighting(s.position, s.n, V, s.albedo, s.metallic, s.roughness, f0, energy,
+                                        sceneUBO_lighting.punctualShadowCount);
+    // The sky lights what the sun cannot reach, as far as the surface's occlusion lets it.
+    float3 ambient = sceneUBO_lighting.dirLight.direction.w * s.occlusion
+                     * analytic_ambient(s.n, V, s.albedo, s.metallic, s.roughness, f0, energy);
 
-    // After the sun's shadow: the sky lights what the sun cannot reach.
-    float skyAmbient = sceneUBO_lighting.dirLight.direction.w;
-    color += skyAmbient * analytic_ambient(N, V, albedo.rgb, metallic, roughness, f0, energy);
-
-    // Emissive is added after shadowing: emitted light is not shadowed.
-    color += material.gba;
-
-    return float4(hdr_safe(color), 1.0);
+    // Emitted light is not shadowed.
+    return float4(surface_lighting(sunDirect, sunVisibility, sceneUBO_lighting.cascadedShadowIntensity, punctual,
+                                   ambient, s.emissive),
+                  1.0);
 }

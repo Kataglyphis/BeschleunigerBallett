@@ -12,6 +12,7 @@ import path_estimator;
 import skybox_radiance;
 import punctual_light;
 import punctual_lights;
+import surface_lighting;
 import trace_constants;
 
 // Ray-query path tracer, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
@@ -287,7 +288,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float metallic = metallicRoughness.x;
             float roughness = metallicRoughness.y;
             // NEE's brdf_direct takes it; sample_bounce derives the same one.
-            float3 f0 = lerp(float3(0.04), albedo, metallic);
+            float3 f0 = surface_f0(albedo, metallic);
 
             float3 V = -rayDirection;
             // A map or a vertex normal tilted away from the viewer leaves no lobe to sample, so the face normal shades.

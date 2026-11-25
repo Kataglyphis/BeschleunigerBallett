@@ -14,6 +14,11 @@ the GitHub releases themselves.
 
 ### Added
 
+- The C++ engine's shadows, lighting composition, G-buffer and cloud upsample come from OxidANT's shared Slang (plan
+  I10): `cascade_visibility.slang`, `punctual_shadow.slang`'s `punctual_shadow_visibility`, `surface_lighting.slang`,
+  `gbuffer.slang` and `cloud_upsample.slang`, each with a vector kernel both renderers check. `cascaded_shadow.slang`,
+  `punctual_lights.slang` and `compute/clouds.slang` keep only their bindings and taps;
+  `BuildIntegrity.NoShaderCopiesASharedLeafModule` fails a private copy, generic definitions included.
 - The C++ engine and its shaders share one copy of every limit and binding slot (plan I7):
   `Resources/ShadersSlang/common/shared_constants.slang` (the descriptor bindings, `MAX_TEXTURE_COUNT`) and
   `uv1_slots.slang` hold only `static const int` lines, which `scene_types.slang` and `base_color.slang` import and
@@ -114,6 +119,10 @@ the GitHub releases themselves.
   for the load) until the RX 9070 XT host refreshes them.
 
 ### Changed
+
+- The deferred G-buffer takes the Rust renderer's packing (owner rule 2026-11-19): metallic in the normal's .w, -1 for
+  unlit; occlusion in the albedo's alpha. The shadow maps' uv and depth-slope sign follow each target's NDC rows
+  through `fullscreen.slang`.
 
 - Both renderers sample materials through one Slang source (plan I9, owner rules 2026-11-19): OxidANT's
   `common/gltf_material.slang` holds `transform_uv` (KHR_texture_transform), `tangent_space_normal` (z rebuilt from

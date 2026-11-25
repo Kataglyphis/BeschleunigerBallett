@@ -3171,18 +3171,17 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto rasterizer_text_opt = readFileText(rasterizer_path);
     ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
     const std::string &rasterizer_text = *rasterizer_text_opt;
-    EXPECT_NE(rasterizer_text.find("color += resolved_emission(obj, material, In.texCoords)"), std::string::npos)
+    EXPECT_NE(rasterizer_text.find("resolved_emission(obj, material, In.texCoords)),"), std::string::npos)
       << "rasterizer.slang no longer uses resolved_emission(). " << kFailureMessage;
 
     const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(
-      deferred_text.find("outMaterial = float4(roughness, hdr_safe(resolved_emission(obj, material, In.texCoords)))"),
+    EXPECT_NE(deferred_text.find("surface.emissive = hdr_safe(resolved_emission(obj, material, In.texCoords))"),
       std::string::npos)
-      << "deferred.slang's geometry pass no longer packs resolved_emission() into outMaterial.gba. " << kFailureMessage;
-    EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
+      << "deferred.slang's geometry pass no longer packs resolved_emission() into the G-buffer. " << kFailureMessage;
+    EXPECT_NE(deferred_text.find("ambient, s.emissive),"), std::string::npos)
       << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
 
     const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
@@ -4741,7 +4740,7 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
       << " - update this count if a new PCF kernel was intentionally added, and confirm it also "
          "bounds-checks its tap coordinate";
     EXPECT_EQ(cube_occurrences, 2)
-      << "punctual_lights.slang's cube taps and OxidANT's punctual_shadow_tap should sample through one call site each";
+      << "punctual_lights.slang's CubeTaps and OxidANT's FaceTaps should sample through one call site each";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
@@ -4881,11 +4880,23 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
             continue;
         }
 
-        if (depth == 0 && t + 2 < tokens.size() && tokens[t + 1].is_identifier && !tokens[t + 2].is_identifier
-            && tokens[t + 2].text == "(") {
+        // A generic's `<T : I>` stands between its name and its parameters; the tokens drop the brackets.
+        std::size_t open = t + 2;
+        if (depth == 0 && open < tokens.size() && tokens[t + 1].is_identifier) {
+            std::size_t after_name = tokens[t + 1].offset + tokens[t + 1].text.size();
+            while (after_name < text.size() && std::isspace(static_cast<unsigned char>(text[after_name])) != 0) {
+                ++after_name;
+            }
+            if (after_name < text.size() && text[after_name] == '<') {
+                const std::size_t close = text.find('>', after_name);
+                while (close != std::string::npos && open < tokens.size() && tokens[open].offset < close) { ++open; }
+            }
+        }
+        if (depth == 0 && open < tokens.size() && tokens[t + 1].is_identifier && !tokens[open].is_identifier
+            && tokens[open].text == "(") {
             // Find the parameter list's matching ')'.
             int paren_depth = 1;
-            std::size_t j = t + 3;
+            std::size_t j = open + 1;
             while (j < tokens.size() && paren_depth > 0) {
                 if (!tokens[j].is_identifier && tokens[j].text == "(") {
                     ++paren_depth;
@@ -6827,9 +6838,11 @@ TEST(BuildIntegrity, CppCloudsMarchThroughTheSharedModule)
       << clouds_path.string() << " must march through volumetric_clouds.slang's march_clouds";
     EXPECT_NE(contents->find("cloud_unpack("), std::string::npos)
       << clouds_path.string() << " must unpack the SceneUBO through volumetric_clouds.slang's cloud_unpack";
-    // The half-resolution upsample weighs its texels by OxidANT's depth weight, so both renderers fill alike.
-    EXPECT_NE(contents->find("cloud_upsample_depth_weight("), std::string::npos)
-      << clouds_path.string() << " must upsample through volumetric_clouds.slang's cloud_upsample_depth_weight";
+    // The half-resolution upsample is OxidANT's cloud_upsample.slang, so both renderers fill alike.
+    EXPECT_NE(contents->find("cloud_upsample(texels,"), std::string::npos)
+      << clouds_path.string() << " must upsample through OxidANT's cloud_upsample.slang";
+    EXPECT_NE(contents->find("half_texel_depth(texels,"), std::string::npos)
+      << clouds_path.string() << " must take a half texel's depth from OxidANT's cloud_upsample.slang";
     for (const char *local : { "float sample_density(",
            "float phase_HG(",
            "bool box_intersect(",
@@ -10374,7 +10387,7 @@ TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
             const std::string line = strip_line_comment((*lines)[i]);
             if (line.find(writer.needle) == std::string::npos) { continue; }
             ++writes;
-            if (line.find("hdr_safe(") == std::string::npos) {
+            if (line.find("hdr_safe(") == std::string::npos && line.find("surface_lighting(") == std::string::npos) {
                 violations.push_back(std::string(writer.file) + ":" + std::to_string(i + 1) + " writes unclamped HDR");
             }
         }
@@ -10384,6 +10397,11 @@ TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
                                  + " - did a write move?");
         }
     }
+    // A write through surface_lighting() is clamped there.
+    const auto surface_text = readFileText(sharedSlangRoot() / "common" / "surface_lighting.slang");
+    ASSERT_TRUE(surface_text.has_value()) << "missing OxidANT's common/surface_lighting.slang";
+    EXPECT_NE(surface_text->find("    return hdr_safe(sunDirect * lerp("), std::string::npos)
+      << "surface_lighting.slang's surface_lighting() no longer returns through hdr_safe()";
     EXPECT_TRUE(violations.empty()) << "HDR writes that bypass hdr_safe():" << joinViolations(violations);
 }
 
@@ -10421,6 +10439,8 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
         std::string what;
     };
     static const std::string kDefines = R"(^\s*(?!return\b)\w+\s+)";
+    // A generic's `<T : I>` stands between its name and its parameters.
+    static const std::string kGeneric = R"(\s*(<[^>(]*>)?\s*\()";
     static const std::vector<Rule> kRules = {
         { "common/constants.slang",
           std::regex(R"(\bstatic\s+const\s+\w+\s+(\w*PI|MIN_\w*ROUGHNESS)\s*=)"),
@@ -10446,8 +10466,12 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
             R"(\b[Tt][Mm](in|ax)\s*=\s*[0-9.]*[1-9]|\b10000\.0\b|\b0\.0001\s*\*|\*\s*0\.0001\b|\b1\.0\s*-\s*1e-4\b)"),
           "a ray-bound literal" },
         { "common/fullscreen.slang",
-          std::regex(kDefines + R"((fullscreen_vs|fullscreen_uv_to_ndc|fullscreen_ndc_to_uv)\s*\()"),
+          std::regex(
+            kDefines + R"((fullscreen_vs|fullscreen_uv_to_ndc|fullscreen_ndc_to_uv|fullscreen_ndc_uv_y_sign)\s*\()"),
           "a fullscreen mapping" },
+        { "common/fullscreen.slang",
+          std::regex(R"(\b0\.5\s*-\s*[\w.\[\]]+\.y\s*\*\s*0\.5\b|\.xy\s*\*\s*0\.5\s*\+\s*0\.5\b)"),
+          "an NDC-to-uv conversion" },
         { "common/camera_ray.slang",
           std::regex(kDefines + R"((camera_ray|camera_ray_through_pixel)\s*\()"),
           "a camera ray" },
@@ -10475,6 +10499,30 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
                      R"(|\.x\s*\*\s*\w+\.x\s*\+\s*\w+\.y\s*\*\s*\w+\.y\s*\+\s*\w+\.z\b)"),
           "a texture transform" },
         { "common/gltf_material.slang", std::regex(R"(\bfloat3x3\(\s*t\s*,\s*b\s*,)"), "a tangent frame" },
+        { "common/cascade_visibility.slang",
+          std::regex(kDefines + R"((select_cascade|cascade_hit|cascade_bias|cascade_depth_slope|cascade_visibility))"
+                     + kGeneric),
+          "a cascade lookup" },
+        { "common/cascade_visibility.slang", std::regex(R"(\bmax\(\s*0\.002\s*\*)"), "the cascades' depth bias" },
+        { "common/punctual_shadow.slang",
+          std::regex(kDefines
+                     + R"((unpack_punctual_shadow|fetch_punctual_shadow|punctual_shadow_depth|punctual_shadow_face)"
+                       R"(|punctual_shadow_face_coord|punctual_shadow_visibility))"
+                     + kGeneric),
+          "a punctual shadow lookup" },
+        { "common/punctual_shadow.slang", std::regex(R"(\bstruct\s+PunctualShadow\b)"), "the punctual shadow record" },
+        { "common/surface_lighting.slang",
+          std::regex(kDefines + R"((surface_f0|surface_lighting)\s*\()"),
+          "a surface lighting rule" },
+        { "common/surface_lighting.slang", std::regex(R"(\bstruct\s+SurfacePoint\b)"), "the surface point" },
+        { "common/surface_lighting.slang", std::regex(R"(\blerp\(\s*float3\(\s*0\.04\s*\))"), "a dielectric f0" },
+        { "common/gbuffer.slang",
+          std::regex(kDefines + R"((gbuffer_pack|gbuffer_unlit|gbuffer_unpack)\s*\()"),
+          "a G-buffer packing" },
+        { "common/gbuffer.slang", std::regex(R"(\.w\s*<\s*-0\.5\b)"), "the G-buffer's unlit sign" },
+        { "common/cloud_upsample.slang",
+          std::regex(kDefines + R"((half_texel_depth|cloud_upsample))" + kGeneric),
+          "a cloud upsample" },
     };
 
     std::vector<std::string> violations;

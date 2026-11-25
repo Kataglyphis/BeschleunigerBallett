@@ -8,6 +8,7 @@ import material_textures;
 import gltf_material;
 import punctual_light;
 import punctual_lights;
+import surface_lighting;
 import trace_constants;
 
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
@@ -131,7 +132,7 @@ void rchit_main(
     payload.is_hit = 1.0;
     // The fit once per hit, not once per light: the sun, every punctual light and the ambient share it.
     float2 energy = ggx_energy(dot(N, V), roughness);
-    float3 f0 = lerp(float3(0.04), albedo, metallic);
+    float3 f0 = surface_f0(albedo, metallic);
 
     if (!shadowed)
     {

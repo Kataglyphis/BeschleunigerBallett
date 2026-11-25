@@ -14,8 +14,9 @@ their `include_str!` calls are unchanged and now read Slang-emitted text,
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
 shared modules under `shaders/common/`: `aces`, `brdf`, `brdf_energy_fit`,
-`camera_ray`, `constants`, `fullscreen`, `hdr_safe`, `noise`, `path_estimator`,
-`punctual_light`, `punctual_shadow`, `shadow_pcf`, `sky_model`,
+`camera_ray`, `cascade_visibility`, `cloud_upsample`, `constants`, `fullscreen`,
+`gbuffer`, `hdr_safe`, `noise`, `path_estimator`, `punctual_light`,
+`punctual_shadow`, `shadow_pcf`, `sky_model`, `surface_lighting`,
 `trace_constants` and `volumetric_clouds`. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
 Vulkan-specific material modules stay in `Resources/ShadersSlang/`. OxidANT
@@ -55,8 +56,7 @@ be emitted to GLSL/WGSL text, and imported functions are name-mangled in the
 emit, so sharing goes through Slang's module system, not textual `#include`:
 
 - **Shared math** lives under `third_party/OxidANT/shaders/common/`. All of
-  its fifteen modules but `punctual_shadow.slang`, WebGPU's alone, are imported
-  on both targets. The C++-only modules sit under
+  its modules are imported on both targets. The C++-only modules sit under
   `Resources/ShadersSlang/common/`, shared across the raster, deferred,
   shadow-map, ray tracing and path tracing paths. The shared-module-targets
   table below is the exact, gated mapping.
@@ -147,11 +147,26 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   spot lights by their cubes and add the rest unshadowed, the closest-hit
   shader traces one shadow ray per light, and the path tracer samples one
   light per bounce. Both.
-- `common/punctual_shadow.slang` — the WebGPU renderer's cube shadows as
-  layers of one 2D depth array (slot * 6 + face): the row-3 unpack, the
-  cube-map face selection and the depth formula `punctual_lights.slang`
-  also holds. Its face-picked uv cannot leave [0,1], so its tap needs no
-  range check. wgsl.
+- `common/punctual_shadow.slang` — both renderers' cube shadows: the row-3
+  unpack, the depth formula and `punctual_shadow_visibility`, five taps
+  through the `IPunctualShadowTaps` interface. This engine taps its cube
+  array (`punctual_lights.slang`'s `CubeTaps`); the WebGPU renderer keeps its
+  cubes as layers of one 2D depth array (slot * 6 + face) and taps them through
+  the face selection and `punctual_shadow_face_coord`. A face-picked uv cannot
+  leave [0,1], so neither tap needs a range check. Both.
+- `common/cascade_visibility.slang` — the sun's cascades for both: the split
+  selection, a cascade's hit (map uv through `fullscreen_ndc_to_uv`, depth and
+  whether its box holds the point), the slope bias and `cascade_visibility`'s
+  PCF over `shadow_pcf.slang`. This engine's `cascaded_shadow.slang` takes the
+  selected cascade; the WebGPU renderer retries coarser ones on a miss. Both.
+- `common/surface_lighting.slang` and `common/gbuffer.slang` — the
+  `SurfacePoint`, its f0, how a lit point combines the shadowed sun with the
+  punctual, ambient and emissive terms, and the G-buffer both deferred paths
+  write and read: rgba16f normal and metallic, whose sign -1 marks unlit;
+  rgba8 sRGB albedo and occlusion; rgba16f roughness and emissive. Both.
+- `common/cloud_upsample.slang` — the half-resolution cloud march's nearest
+  half-texel depth and its depth-weighted four-texel upsample, behind
+  `ICloudUpsampleTexels`, which each renderer's pass implements. Both.
 - `common/noise.slang` — 3D simplex noise + fractal Brownian motion, checked
   on both targets by OxidANT's `tests/noise_test.slang`; no production shader
   imports it yet.
@@ -206,9 +221,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (the entry-point table below). OxidANT's twin of the bounce, `bounce_sky`
   in `tracer/trace_shading.slang`, reads its own bindings and sky, so the C++
   kernel matches its rule, not its code ([`path-tracing.md`](path-tracing.md)).
-- `common/cascaded_shadow.slang` — PCF cascaded shadow-map sampling
-  (`calc_cascaded_shadow`). Spirv only: the raster and deferred lighting paths
-  (`rasterizer.slang`, `deferred.slang`).
+- `common/cascaded_shadow.slang` — this engine's map binding and
+  `calc_cascaded_shadow` over OxidANT's `cascade_visibility.slang`. Spirv only:
+  the raster and deferred lighting paths (`rasterizer.slang`, `deferred.slang`).
 - `common/base_color.slang` — `base_color` (glTF base colour =
   `baseColorFactor * sampled texture`) and the per-slot UV accessors over
   `gltf_material.slang`'s `transform_uv` (KHR_texture_transform), in a
@@ -331,7 +346,8 @@ tonemap shader.
 
 **CI guards:** OxidANT's vector kernels, `tests/<module>_test.slang` for
 `brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces`, `fullscreen`,
-`camera_ray`, `ambient` and `gltf_material`, run every
+`camera_ray`, `ambient`, `gltf_material`, `cascade_visibility`,
+`punctual_shadow`, `surface_lighting`, `gbuffer` and `cloud_upsample`, run every
 public function of their `common/` module once per case of
 `tests/vectors/<module>.json` (inputs, f64 references, a tolerance per output;
 OxidANT's `docs/shaders.md` § Vector kernels). Both targets are checked on a
@@ -381,10 +397,13 @@ imports.
 | `common/brdf.slang` | both |
 | `common/brdf_energy_fit.slang` | both |
 | `common/camera_ray.slang` | both |
+| `common/cascade_visibility.slang` | both |
 | `common/cascaded_shadow.slang` | spirv |
+| `common/cloud_upsample.slang` | both |
 | `common/constants.slang` | both |
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
+| `common/gbuffer.slang` | both |
 | `common/gltf_material.slang` | both |
 | `common/hdr_safe.slang` | both |
 | `common/limits.slang` | both |
@@ -394,7 +413,7 @@ imports.
 | `common/noise.slang` | both |
 | `common/path_estimator.slang` | both |
 | `common/punctual_light.slang` | both |
-| `common/punctual_shadow.slang` | wgsl |
+| `common/punctual_shadow.slang` | both |
 | `common/punctual_lights.slang` | spirv |
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |
@@ -403,6 +422,7 @@ imports.
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |
 | `common/skybox_radiance.slang` | spirv |
+| `common/surface_lighting.slang` | both |
 | `common/trace_constants.slang` | both |
 | `common/uv1_slots.slang` | spirv |
 | `common/volumetric_clouds.slang` | both |

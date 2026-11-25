@@ -1,5 +1,5 @@
+import cascade_visibility;
 import scene_types;
-import shadow_pcf;
 
 // Imports scene_types, not rt_types, to keep ray tracing capabilities out of rasterization shaders.
 
@@ -28,32 +28,16 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
     if (cascadeCount <= 0) return 0.0;
 
     float fragDistance = dot(worldPos - sceneUBO.cam_pos.xyz, normalize(sceneUBO.view_dir.xyz));
-    int cascadeIndex = cascadeCount - 1;
-    for (int i = 0; i < cascadeCount; i++)
-    {
-        if (fragDistance < sceneUBO.cascadeSplits[i])
-        {
-            cascadeIndex = i;
-            break;
-        }
-    }
+    int cascadeIndex = select_cascade(fragDistance, sceneUBO.cascadeSplits.xy, cascadeCount);
+    float4x4 lightSpace = sceneUBO.cascadeLightSpaceMatrices[cascadeIndex];
+    CascadeHit hit = cascade_hit(lightSpace, worldPos);
+    if (!hit.inside) return 0.0;
 
-    float4 lightSpacePos = mul(sceneUBO.cascadeLightSpaceMatrices[cascadeIndex], float4(worldPos, 1.0));
-    float3 proj = lightSpacePos.xyz / lightSpacePos.w;
-    float2 shadowUV = proj.xy * 0.5 + 0.5;
-    float currentDepth = proj.z;
-    if (currentDepth > 1.0 || currentDepth < 0.0 ||
-        shadowUV.x < 0.0 || shadowUV.x > 1.0 || shadowUV.y < 0.0 || shadowUV.y > 1.0)
-        return 0.0;
-
-    float bias = max(0.002 * (1.0 - dot(N, L)), 0.0005);
     // Second clamp after the host's: zero iterations would read as fully shadowed.
     int radius = clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS);
     uint shadowWidth, shadowHeight, shadowLayers;
     directionalShadowMaps.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float2 texelSize = 1.0 / float2(float(shadowWidth), float(shadowHeight));
-    // Each tap compares at the receiver plane's depth beneath it; shadowUV.y follows NDC y, so the sign is +1.
-    float2 slope = receiver_plane_depth_slope(sceneUBO.cascadeLightSpaceMatrices[cascadeIndex], N, 1.0);
     CombinedTaps taps = { float(cascadeIndex) };
-    return 1.0 - pcf_visibility(taps, shadowUV, texelSize, currentDepth - bias, slope, radius);
+    return 1.0 - cascade_visibility(taps, lightSpace, hit, N, max(dot(N, L), 0.0), 1.0, texelSize, radius);
 }

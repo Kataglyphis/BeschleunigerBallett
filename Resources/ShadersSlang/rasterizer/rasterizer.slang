@@ -10,6 +10,7 @@ import raster_geometry;
 import material_textures;
 import hdr_safe;
 import punctual_lights;
+import surface_lighting;
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
@@ -75,23 +76,20 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), albedo, metallic);
+    float3 f0 = surface_f0(albedo, metallic);
     // The fit once per fragment, not once per light: the sun, every punctual light and the ambient share it.
     float2 energy = ggx_energy(dot(N, V), roughness);
-    float3 color = brdf_direct(N, V, L, albedo, metallic, roughness, f0,
-                               lightColor * lightIntensity, energy);
-
-    float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
-    color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
+    float3 sunDirect = brdf_direct(N, V, L, albedo, metallic, roughness, f0, lightColor * lightIntensity, energy);
+    float sunVisibility = 1.0 - calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
 
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
-    color += punctual_lighting(In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
+    float3 punctual = punctual_lighting(
+        In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
+    // The sky lights what the sun cannot reach.
+    float3 ambient = sceneUBO.dirLight.direction.w * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
 
-    // After the sun's shadow: the sky lights what the sun cannot reach.
-    color += sceneUBO.dirLight.direction.w * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
-
-    // Emissive is added after shadowing: emitted light is not shadowed.
-    color += resolved_emission(obj, material, In.texCoords);
-
-    return float4(hdr_safe(color), coverage);
+    // Emitted light is not shadowed.
+    return float4(surface_lighting(sunDirect, sunVisibility, sceneUBO.cascadedShadowIntensity, punctual, ambient,
+                                   resolved_emission(obj, material, In.texCoords)),
+                  coverage);
 }
