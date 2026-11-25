@@ -99,14 +99,6 @@ Loader:
   encoded files). WebP is new work. Streaming chains per slot from the parse thread to the upload is the fallback if a
   scene's chains pass the 1 GiB decode budget. The WebGPU renderer still copies each base once to build its chain
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
-- [ ] `Assets` **glTF cameras, scene framing and the credit through the bridge** (L, plan B9). Frame
-  only a scene with its own glTF camera or one whose fixed pose would need a too large far plane; the
-  other scenes keep their poses (owner 2026-11-19). Cameras, the active one and `asset.copyright` in
-  FlatModel; a bridged `frame_scene` returns eye, yaw and pitch in the C++ convention (yaw + 180,
-  -pitch), clip planes, fly speed and shadow distance. Shows the credit with an `ATTRIBUTION.txt`
-  fallback, or Sponza shows none. `framing.rs` must first lose its ties to `OrbitCamera` and `fly.rs`
-  (winit).
-
 Shaders:
 
 - [ ] `Shared` **Single-source constants and complete layout gates** (M, plan I7; the leaf modules are in
@@ -214,6 +206,9 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `Assets` **Credit and framing polish** (S). The Rust renderer credits from `asset.copyright` only; give it
+  `scene_meta::credit`'s ATTRIBUTION.txt fallback, so its OBJ scenes are credited as the engine's are. C++ shows the
+  credit in About only; a library-row tooltip as Rust's would show it before a load.
 - [ ] `C++` **Editor parity, part 2: adapter by name, orbit and wheel zoom, one key table** (M, plan C9).
   `--adapter` or `KATAGLYPHIS_ADAPTER` by name substring with the list in the Renderer tab; orbit and
   zoom with Rust's constants; one table drives the handlers and the key panel.
