@@ -48,10 +48,17 @@ for required in "./${licenses}/third_party/gsl/LICENSE" "./${licenses}/third_par
   fi
 done
 
-# A relative usr/share under the /usr prefix, and a vendored library's install rules.
-stray="$(grep -E '^\./usr/(usr/|include/|lib/cmake/|lib/pkgconfig/|lib/[^/]+\.a$)' <<< "${listing}" || true)"
+# A relative usr/share under the /usr prefix doubles it.
+stray="$(grep -E '^\./usr/usr/' <<< "${listing}" || true)"
 if [[ -n "${stray}" ]]; then
-  printf 'FAIL  files no package should carry:\n%s\n' "${stray}"
+  printf 'FAIL  files under /usr/usr:\n%s\n' "${stray}"
+  fails=$((fails + 1))
+fi
+# A vendored library's install rules: the hub's install-tree rule, which Build-Windows.ps1's bundle takes too.
+tree="$(mktemp -d)"
+trap 'rm -rf "${tree}"' EXIT
+dpkg-deb -x "${deb}" "${tree}"
+if ! bash "$(antfrastructure_path linux/scripts/06-packaging/check-install-tree.sh)" "${tree}"; then
   fails=$((fails + 1))
 fi
 

@@ -75,13 +75,11 @@ takes UTF-8 paths and runs inside `guarded()`.
   suggestions), and no spdlog `-Wstringop-overflow` in the profiling job since spdlog builds without LTO;
   `SCCACHE_CACHE_SIZE` is 1200M per key. Left: watch the next few runs' clang-tests and sanitizer build times
   and the cache total (under 10 GB); 1200M sits at or below the debug working set (about 1.5 GB at zlib-1),
-  and the owner keeps it there even if some keys miss (2026-11-23). At the next hub pin (d2aaa551 or later)
-  drop BB's own `: fatal error:` count in `run-static-analysis-format.sh`, which the hub's IWYU count now has,
-  and once hub CON299 lands, replace `Build-Windows.ps1`'s inline "Bundle layout" step with its install-tree
-  check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product targets. From hub
-  ff32348c on, `run-in-ci-image.sh` takes `--memory`/`--cpus`: link its § Sizing the VM for container builds
-  (`rancher-desktop-linux-containers.md`) from AGENTS.md's ANTfrastructure table, after two local builds froze the
-  owner's PC (2026-11-25).
+  and the owner keeps it there even if some keys miss (2026-11-23). Then CON295 (c) steps 2-3, which the hub ships
+  since 2026-11-23 (`verify_warning_census.py`; AccelerANTgine went through all three): hold the GCC and clang jobs'
+  own warnings in a census file (37 GCC warnings over six flags at hub 04981676), fix them, and build the product
+  targets with `-Werror` (`/WX` under clang-cl), minding the hub's two lessons (an imported module's BMI takes the
+  importer's flags; Abseil is SYSTEM outside clang-cl only).
 
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the

@@ -128,6 +128,14 @@
     "why": "The DEB gate requires the crate manifest."
   },
   {
+    "id": "deb.install-tree-rule",
+    "target": "scripts/linux/check-deb-layout.sh",
+    "find": "if ! bash \"$(antfrastructure_path linux/scripts/06-packaging/check-install-tree.sh)\" \"${tree}\"; then",
+    "replace": "if false; then",
+    "test": "bash scripts/linux/tests/test-check-deb-layout.sh",
+    "why": "The DEB gate refuses headers, CMake packages and static libraries through the hub's install-tree rule."
+  },
+  {
     "id": "msix.third-party-map",
     "target": "scripts/windows/Build-Windows.ps1",
     "find": "    $texts[\"$licenses/third_party/$installed\"] = Join-Path $WorkspacePath $source",

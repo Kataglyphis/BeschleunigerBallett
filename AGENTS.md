@@ -148,6 +148,7 @@ This repo's own pages are in [Docs](#docs).
 | sccache shared with the other build hosts: this host's dufs plus an S3 bucket, handed to the reusable container's `docker exec` by name so the key reaches no command line, and the fallback when the bucket stalls; the bucket's server | [`windows-build-resources.md` § Two cache levels](third_party/ANTfrastructure/docs/windows-build-resources.md#two-cache-levels), [`linux/sccache-s3/README.md`](third_party/ANTfrastructure/linux/sccache-s3/README.md) |
 | Windows arm64 cross builds: the `:winarm64` bundle, the arch gate, why Release, Profile and the Debug (ASan) build, the `container-ci-windows.yml` caller contract | [`windows-cross-builds.md`](third_party/ANTfrastructure/docs/windows-cross-builds.md) |
 | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules | [`rancher-desktop-linux-containers.md`](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md) |
+| Sizing the WSL VM for container builds: `.wslconfig`, earlyoom, `run-in-ci-image.sh --memory/--cpus`, one heavy job at a time; a Windows-on-Arm laptop as the build host | [`rancher-desktop-linux-containers.md` § Sizing the VM](third_party/ANTfrastructure/docs/rancher-desktop-linux-containers.md#sizing-the-vm-for-container-builds), [`windows-on-arm-dev-host.md`](third_party/ANTfrastructure/docs/windows-on-arm-dev-host.md) |
 | Which CI lanes run when: Linux x64 on every push, the rest on request, the release on `main`; which repository follows it | [`branch-and-release-strategy.md`](third_party/ANTfrastructure/docs/branch-and-release-strategy.md), [`ci-build-triggers.md`](third_party/ANTfrastructure/docs/ci-build-triggers.md) |
 | Dependency upgrades family-wide: Renovate as a local CLI, what `--apply` moves and what it refuses | [`dependency-updates.md`](third_party/ANTfrastructure/docs/dependency-updates.md) |
 | Moving every checkout to its branch tip; adopting a rewritten history | [adopting § Submodule maintenance](third_party/ANTfrastructure/docs/adopting-in-a-new-project.md#submodule-maintenance) |
@@ -247,7 +248,7 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
 - The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/GraphicsEngine/LICENSE`.
-- The Windows bundle has its twin: `Build-Windows.ps1`'s *Bundle layout* step fails a `dist/windows-<arch>/bundle` with `include/`, `lib/cmake/`, `lib/pkgconfig/` or a `.lib` (googletest installed all four until `INSTALL_GTEST` went OFF).
+- No package ships a build-time file: `check-deb-layout.sh` and `Build-Windows.ps1`'s `New-PortableBundle -ForbidBuildTimeFiles` apply the hub's install-tree rule (headers, CMake and pkg-config packages, `.lib` and `.a`; googletest installed them until `INSTALL_GTEST` went OFF).
 - The hub's hardening gates (CON294) read the shipped binaries: the Linux release job runs `verify-elf-hardening.sh`
   on the .deb's `usr/lib/graphicsengine/GraphicsEngine` (PIE, RELRO, BIND_NOW, stack protector, `_FORTIFY_SOURCE`),
   and `Build-Windows.ps1` runs `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP,

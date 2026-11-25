@@ -366,21 +366,12 @@ try {
       }
     } | Out-Null
 
-    # The install tree plus its imported DLL closure runs on a clean machine; vulkan-1.dll is the GPU driver's, never shipped.
+    # The install tree, with no build-time file, plus its imported DLL closure runs on a clean machine; vulkan-1.dll is the GPU driver's.
     Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {
       # packages\ gets the NSIS .exe too; arm64's is the same x86 stub, installed by the device job.
-      $result = New-PortableBundle -BuildDir $buildPathClangRelease -DistDir $distArch -Arch $TargetArch `
+      $result = New-PortableBundle -BuildDir $buildPathClangRelease -DistDir $distArch -Arch $TargetArch -ForbidBuildTimeFiles `
         -Runner { param($File, [string[]]$Arguments) Invoke-BuildExternal -Context $context -File $File -Parameters $Arguments | Out-Null }
       Write-BuildLog -Context $context -Message "Portable bundle $($result.Bundle); DLL closure: $($result.Added -join ', '); packages: $($result.Installers -join ', ')"
-    } | Out-Null
-
-    # check-deb-layout.sh's rule for the Windows install tree, which CPack packs into the ZIP, MSI and NSIS too.
-    Invoke-BuildStep -Context $context -StepName "Bundle layout ($TargetArch)" -Critical -Script {
-      $bundle = Join-Path $distArch 'bundle'
-      $stray = @(Get-ChildItem -LiteralPath $bundle -Recurse -File | ForEach-Object { [IO.Path]::GetRelativePath($bundle, $_.FullName) -replace '\\', '/' } |
-          Where-Object { $_ -match '^(include/|lib/cmake/|lib/pkgconfig/)|\.lib$' })
-      if ($stray.Count -gt 0) { throw "The bundle ships $($stray.Count) build-time file(s): $($stray -join ', ')" }
-      Write-BuildLog -Context $context -Message 'Bundle layout: no include\, lib\cmake\, lib\pkgconfig\ or .lib'
     } | Out-Null
 
     # The hub's PE gate (CON294): every shipped .exe and .dll, the redist DLLs included, has ASLR, DEP and CFG.

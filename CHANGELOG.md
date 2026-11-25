@@ -128,6 +128,10 @@ the GitHub releases themselves.
 
 ### Changed
 
+- Both package layouts take the hub's install-tree rule (CON299): `check-deb-layout.sh` runs `check-install-tree.sh` over
+  the extracted .deb, and `Build-Windows.ps1` passes `-ForbidBuildTimeFiles` to `New-PortableBundle` instead of its own
+  *Bundle layout* step, so both also refuse `share/pkgconfig` and a `.a` anywhere. The static-analysis IWYU step drops its
+  own `: fatal error:` count, which the hub's `code_quality_run_iwyu` has had since 2026-11-23.
 - One path tracer for both renderers (plan I11, owner decisions 2026-11-19): `path_tracing.slang` runs OxidANT's
   new `common/path_integrator.slang` over ray queries, as OxidANT's tracer runs it over its compute BVH. A camera ray
   that misses shows the drawn sky (`common/drawn_sky.slang`, which `sky.slang` draws with), not a half-intensity
