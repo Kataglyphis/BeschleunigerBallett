@@ -101,11 +101,6 @@ Loader:
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
 Shaders:
 
-- [ ] `Shared` **Shared shadow and lighting Slang** (L, plan I10; the leaf modules are in since Phase 6). C++
-  takes Rust's G-buffer packing (owner 2026-11-19); the cascade retry comes with C11. Dual-target punctual
-  shadows, `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
-  `forward_lighting.slang`'s two shadow-map NDC-to-uv conversions and its `uv_y_sign` of -1 are still WebGPU's
-  alone.
 - [ ] `Shared` **The analytic ambient in Rust's ray-traced mode** (S-M). Since Phase 7 Rust's forward pass and
   every C++ raster and ray-traced frame add `ambient.slang`'s `analytic_ambient`, but Rust's tracer does not:
   with no environment the analytic term, with one the IBL maps bound in `TRACE_LIGHTS_GROUP`. OxidANT's
