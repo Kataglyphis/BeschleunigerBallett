@@ -60,11 +60,16 @@ struct ObjMaterial
     int alphaBlend{ 0 };
 };
 
-// Bit positions of ObjMaterial::uv1SlotMask, mirrored by material_textures.slang.
-inline constexpr int UV1_SLOT_BASE_COLOR = 0;
-inline constexpr int UV1_SLOT_METALLIC_ROUGHNESS = 1;
-inline constexpr int UV1_SLOT_NORMAL = 2;
-inline constexpr int UV1_SLOT_EMISSIVE = 3;
+namespace Kataglyphis::ShaderSlots {
+// The shaders' own file; a namespace, as its internal-linkage constants cannot be exported from a module.
+#include "../../../Resources/ShadersSlang/common/uv1_slots.slang"
+}// namespace Kataglyphis::ShaderSlots
+
+// Bit positions of ObjMaterial::uv1SlotMask, with external linkage for kataglyphis.vulkan.obj_material's export.
+inline constexpr int UV1_SLOT_BASE_COLOR = Kataglyphis::ShaderSlots::UV1_SLOT_BASE_COLOR;
+inline constexpr int UV1_SLOT_METALLIC_ROUGHNESS = Kataglyphis::ShaderSlots::UV1_SLOT_METALLIC_ROUGHNESS;
+inline constexpr int UV1_SLOT_NORMAL = Kataglyphis::ShaderSlots::UV1_SLOT_NORMAL;
+inline constexpr int UV1_SLOT_EMISSIVE = Kataglyphis::ShaderSlots::UV1_SLOT_EMISSIVE;
 
 // A constructor or base class would silently break designated initializers and the offsetof layout gates.
 static_assert(std::is_aggregate_v<ObjMaterial>,

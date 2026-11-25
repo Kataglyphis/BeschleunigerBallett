@@ -281,9 +281,9 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
     castersConsidered = 0;
 
     // Multiview culls against the union of cascade frusta: only geometry outside every cascade's box is skipped.
-    if (numCascades > MAX_CASCADES) {
+    if (numCascades > CASCADE_COUNT) {
         spdlog::error(
-          "CascadedShadowMap::recordCommands: numCascades ({}) exceeds MAX_CASCADES ({})", numCascades, MAX_CASCADES);
+          "CascadedShadowMap::recordCommands: numCascades ({}) exceeds CASCADE_COUNT ({})", numCascades, CASCADE_COUNT);
         return;
     }
     if (image_index >= lightMatricesDescriptors.sets().size()) {
@@ -292,7 +292,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer,
           lightMatricesDescriptors.sets().size());
         return;
     }
-    std::array<FrustumPlanes, MAX_CASCADES> cascadeFrusta{};
+    std::array<FrustumPlanes, CASCADE_COUNT> cascadeFrusta{};
     if (cullingEnabled) {
         for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
             cascadeFrusta[cascade] = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);

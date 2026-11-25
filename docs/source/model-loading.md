@@ -269,8 +269,8 @@ field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 
 Every texture from every loaded model lands in one flat, fixed-size global
 array bound at `TEXTURES_BINDING`/`SAMPLER_BINDING`, sized by
-`common/host_device_shared_vars.hpp`'s `MAX_TEXTURE_COUNT` constant:
-`const int MAX_TEXTURE_COUNT = 128;`. The loader economises against that
+`Resources/ShadersSlang/common/shared_constants.slang`'s `MAX_TEXTURE_COUNT`, which
+`common/host_device_shared_vars.hpp` includes: `static const int MAX_TEXTURE_COUNT = 128;`. The loader economises against that
 budget:
 
 - **glTF dedup by image, sampler settings and colour space** —

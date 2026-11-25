@@ -227,9 +227,9 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
     globalUBO.inv_view = glm::inverse(globalUBO.view);
 
     const auto &cascadeData = dirShadowMap.getCascadeData();
-    const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES));
-    std::array<float, MAX_CASCADES> cascadeSplitDepths{};
-    std::array<glm::mat4, MAX_CASCADES> cascadeViewProjMatrices{};
+    const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(CASCADE_COUNT));
+    std::array<float, CASCADE_COUNT> cascadeSplitDepths{};
+    std::array<glm::mat4, CASCADE_COUNT> cascadeViewProjMatrices{};
     for (size_t i = 0; i < active_cascades; ++i) {
         cascadeSplitDepths[i] = cascadeData[i].splitDepth;
         cascadeViewProjMatrices[i] = cascadeData[i].viewProjMatrix;
@@ -410,11 +410,12 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
 
     const uint32_t shadow_res = shadowResolutionForIndex(sceneSettings.shadow_map_res_index);
 
-    // Clamp to the SceneUBO's MAX_CASCADES and to maxMultiviewViewCount, which bounds the shadow pass's viewMask.
+    // Clamp to the SceneUBO's CASCADE_COUNT and to maxMultiviewViewCount, which bounds the shadow pass's viewMask.
     const auto device_view_limit = device->getMaxMultiviewViewCount();
-    const auto cascade_count = clampCascadeCount(
-      static_cast<uint32_t>(sceneSettings.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
-    if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(MAX_CASCADES)) {
+    const auto cascade_count = clampCascadeCount(static_cast<uint32_t>(sceneSettings.num_shadow_cascades),
+      static_cast<uint32_t>(CASCADE_COUNT),
+      device_view_limit);
+    if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(CASCADE_COUNT)) {
         spdlog::warn("Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
           device_view_limit,
           cascade_count);

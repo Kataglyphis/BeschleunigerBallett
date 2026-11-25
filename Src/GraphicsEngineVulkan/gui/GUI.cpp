@@ -160,7 +160,7 @@ constexpr std::array<const char *, kUiScaleSteps.size()> kUiScaleLabels = { "85 
 // Segment labels for the small integer controls; both bounds come from host_device_shared_vars.hpp.
 constexpr std::array<const char *, 9> kDigitLabels = { "0", "1", "2", "3", "4", "5", "6", "7", "8" };
 static_assert(
-  MAX_CASCADES < static_cast<int>(kDigitLabels.size()) && MAX_PCF_RADIUS < static_cast<int>(kDigitLabels.size()),
+  CASCADE_COUNT < static_cast<int>(kDigitLabels.size()) && MAX_PCF_RADIUS < static_cast<int>(kDigitLabels.size()),
   "one digit label per cascade count and PCF radius");
 
 struct TabInfo
@@ -1147,7 +1147,7 @@ void GUI::renderLightInspector()
         studioPropertyLabel("Cascades", "Shadow maps along the view; more keep near shadows sharp");
         int cascades = guiSceneSharedVars.num_shadow_cascades - 1;
         const auto cascade_labels =
-          std::span<const char *const>(kDigitLabels).subspan(1, static_cast<std::size_t>(MAX_CASCADES));
+          std::span<const char *const>(kDigitLabels).subspan(1, static_cast<std::size_t>(CASCADE_COUNT));
         if (studioSegmented("##cascades", &cascades, cascade_labels, {}, -1.0F)) {
             guiSceneSharedVars.num_shadow_cascades = cascades + 1;
             guiSceneSharedVars.shadow_resolution_changed = true;

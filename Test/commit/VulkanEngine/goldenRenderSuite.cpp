@@ -5774,7 +5774,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         for (float &d : s.directional_light_direction) { d = rng.uf(-1.0F, 1.0F); }
 
         s.shadows_enabled = rng.ub();
-        s.num_shadow_cascades = rng.ui(1, 8);// slider allows 1..8 (clamped to MAX_CASCADES in use)
+        s.num_shadow_cascades = rng.ui(1, 8);// slider allows 1..8 (clamped to CASCADE_COUNT in use)
         s.shadow_map_res_index = rng.ui(0, 3);// combo: 512 / 1024 / 2048 / 4096
         s.pcf_radius = rng.ui(1, MAX_PCF_RADIUS);
         s.cascaded_shadow_intensity = rng.uf(0.0F, 1.0F);

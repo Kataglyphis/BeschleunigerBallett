@@ -12,11 +12,8 @@ float2 transform_uv(float2 uv, float3 row0, float3 row1)
     return float2(dot(float3(uv, 1.0), row0), dot(float3(uv, 1.0), row1));
 }
 
-// Bit positions of ObjMaterial.uv1SlotMask (ObjMaterial.hpp).
-static const int UV1_SLOT_BASE_COLOR = 0;
-static const int UV1_SLOT_METALLIC_ROUGHNESS = 1;
-static const int UV1_SLOT_NORMAL = 2;
-static const int UV1_SLOT_EMISSIVE = 3;
+// Bit positions of ObjMaterial.uv1SlotMask, which C++ includes too.
+__exported import uv1_slots;
 
 // Both UV sets of a surface point: xy = TEXCOORD_0, zw = TEXCOORD_1.
 float4 uv_sets(float2 uv0, float2 uv1)

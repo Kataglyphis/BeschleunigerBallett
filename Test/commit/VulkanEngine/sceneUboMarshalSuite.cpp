@@ -160,8 +160,8 @@ TEST(SceneUboMarshalUnit, ProjectionFlipsYForVulkan)
 
 TEST(SceneUboMarshalUnit, CascadeFillClampsToMaxCascades)
 {
-    std::array<float, MAX_CASCADES + 2> splitDepths{};
-    std::array<glm::mat4, MAX_CASCADES + 2> viewProjMatrices{};
+    std::array<float, CASCADE_COUNT + 2> splitDepths{};
+    std::array<glm::mat4, CASCADE_COUNT + 2> viewProjMatrices{};
     for (size_t i = 0; i < splitDepths.size(); ++i) {
         splitDepths[i] = static_cast<float>(i) + 1.0F;
         viewProjMatrices[i] = glm::mat4(static_cast<float>(i) + 1.0F);
@@ -176,11 +176,11 @@ TEST(SceneUboMarshalUnit, CascadeFillClampsToMaxCascades)
       std::span<const glm::mat4>(viewProjMatrices),
       /*shadowsEnabled=*/true);
 
-    EXPECT_EQ(written, static_cast<uint32_t>(MAX_CASCADES));
-    EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(MAX_CASCADES));
-    for (int i = 0; i < MAX_CASCADES; ++i) { EXPECT_FLOAT_EQ(ubo.cascadeSplits[i], splitDepths[i]); }
-    EXPECT_FLOAT_EQ(ubo.cascadeSplits[MAX_CASCADES], kSentinel)
-      << "no write may land past cascadeSplits[MAX_CASCADES - 1]";
+    EXPECT_EQ(written, static_cast<uint32_t>(CASCADE_COUNT));
+    EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(CASCADE_COUNT));
+    for (int i = 0; i < CASCADE_COUNT; ++i) { EXPECT_FLOAT_EQ(ubo.cascadeSplits[i], splitDepths[i]); }
+    EXPECT_FLOAT_EQ(ubo.cascadeSplits[CASCADE_COUNT], kSentinel)
+      << "no write may land past cascadeSplits[CASCADE_COUNT - 1]";
 }
 
 TEST(SceneUboMarshalUnit, ShadowsDisabledZeroesTheCascadeCountButKeepsTheMatrices)
@@ -241,8 +241,8 @@ TEST(SceneUboMarshalUnit, FillCascadesTruncatesToTheShorterSpan)
 
 TEST(SceneUboMarshalUnit, FillCascadesNeverExceedsMaxCascades)
 {
-    std::array<float, MAX_CASCADES + 5> splitDepths{};
-    std::array<glm::mat4, MAX_CASCADES + 5> viewProjMatrices{};
+    std::array<float, CASCADE_COUNT + 5> splitDepths{};
+    std::array<glm::mat4, CASCADE_COUNT + 5> viewProjMatrices{};
 
     SceneUBO ubo{};
 
@@ -251,9 +251,9 @@ TEST(SceneUboMarshalUnit, FillCascadesNeverExceedsMaxCascades)
       std::span<const glm::mat4>(viewProjMatrices),
       /*shadowsEnabled=*/true);
 
-    EXPECT_EQ(written, static_cast<uint32_t>(MAX_CASCADES))
-      << "both spans exceed MAX_CASCADES; the write must still stop at MAX_CASCADES";
-    EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(MAX_CASCADES));
+    EXPECT_EQ(written, static_cast<uint32_t>(CASCADE_COUNT))
+      << "both spans exceed CASCADE_COUNT; the write must still stop at CASCADE_COUNT";
+    EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(CASCADE_COUNT));
 }
 
 TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)

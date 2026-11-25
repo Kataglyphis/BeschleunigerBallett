@@ -81,7 +81,7 @@ export struct GUISceneSharedVars
     // needing a measurement of the 4x memory jump index 3 would cost.
     int shadow_map_res_index = 2;
     bool shadow_resolution_changed = false;
-    int num_shadow_cascades = 3;// must stay <= MAX_CASCADES (SceneUBO array size)
+    int num_shadow_cascades = 3;// must stay <= CASCADE_COUNT (SceneUBO array size)
     int pcf_radius = 2;
     float cascaded_shadow_intensity = 0.65f;
     // How far shadows are fitted, independent of the camera far plane. The

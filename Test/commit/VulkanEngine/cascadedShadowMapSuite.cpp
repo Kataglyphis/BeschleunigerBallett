@@ -478,8 +478,8 @@ TEST(CascadedShadowMapUnit, ClampCascadeCountRespectsBothLimits)
 {
     EXPECT_EQ(clampCascadeCount(3U, 3U, 8U), 3U) << "neither limit is binding";
     EXPECT_EQ(clampCascadeCount(3U, 8U, 3U), 3U) << "neither limit is binding, order swapped";
-    EXPECT_EQ(clampCascadeCount(3U, 3U, 2U), 2U) << "device limit below MAX_CASCADES must bind";
-    EXPECT_EQ(clampCascadeCount(8U, 3U, 8U), 3U) << "GUI slider value above MAX_CASCADES must clamp to it";
+    EXPECT_EQ(clampCascadeCount(3U, 3U, 2U), 2U) << "device limit below CASCADE_COUNT must bind";
+    EXPECT_EQ(clampCascadeCount(8U, 3U, 8U), 3U) << "GUI slider value above CASCADE_COUNT must clamp to it";
 }
 
 TEST(CascadedShadowMapUnit, ClampCascadeCountFloorsToOne)

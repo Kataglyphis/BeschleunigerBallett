@@ -28,7 +28,7 @@ TEST(SceneUboLayoutUnit, MatchesTheCompiledStd140Block)
     EXPECT_EQ(offsetof(SceneUBO, cloudMeshScale), 304U);
     EXPECT_EQ(offsetof(SceneUBO, cloudMeshOffset), 320U);
     EXPECT_EQ(offsetof(SceneUBO, cloudParameters), 336U);
-    EXPECT_EQ(sizeof(glm::mat4) * MAX_CASCADES, 192U);
+    EXPECT_EQ(sizeof(glm::mat4) * CASCADE_COUNT, 192U);
     EXPECT_EQ(offsetof(SceneUBO, cloudAmbientTop), 352U);
     EXPECT_EQ(offsetof(SceneUBO, cloudAmbientBottom), 368U);
     EXPECT_EQ(sizeof(SceneUBO), 384U);

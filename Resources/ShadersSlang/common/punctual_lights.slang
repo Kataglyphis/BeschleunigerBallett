@@ -1,4 +1,4 @@
-import scene_types;
+import shared_constants;
 import brdf;
 import punctual_light;
 

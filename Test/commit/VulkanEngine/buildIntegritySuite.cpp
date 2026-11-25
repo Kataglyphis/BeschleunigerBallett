@@ -17,6 +17,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <initializer_list>
 #include <iterator>
 #include <map>
@@ -103,7 +104,7 @@ void collect_import_closure(const fs::path &slang_root,
     const auto lines = readFileLines(source);
     if (!lines) { return; }
 
-    static const std::regex import_pattern(R"(^\s*import\s+([A-Za-z_][A-Za-z0-9_]*)\s*;)");
+    static const std::regex import_pattern(R"(^\s*(?:__exported\s+)?import\s+([A-Za-z_][A-Za-z0-9_]*)\s*;)");
     for (const auto &raw_line : *lines) {
         const std::string line = strip_line_comment(raw_line);
         std::smatch match;
@@ -296,9 +297,9 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
     return false;
 }
 
-// Binding constants hand-mirrored between host_device_shared_vars.hpp and scene_types.slang.
+// Limits and binding slots of shared_constants.slang and OxidANT's limits.slang, which C++ and the shaders compile.
 const std::vector<std::string> kSharedConstantNames = { "MAX_TEXTURE_COUNT",
-    "MAX_CASCADES",
+    "CASCADE_COUNT",
     "MAX_PCF_RADIUS",
     "globalUBO_BINDING",
     "sceneUBO_BINDING",
@@ -363,6 +364,18 @@ std::map<std::string, int> parse_int_constants(const fs::path &path)
         }
     }
     return result;
+}
+
+// The files host_device_shared_vars.hpp includes, in its include order.
+std::vector<fs::path> shared_constant_files()
+{ return { slangRoot() / "common" / "shared_constants.slang", sharedSlangRoot() / "common" / "limits.slang" }; }
+
+// kSharedConstantNames as both shared files declare them.
+std::map<std::string, int> parse_shared_constants()
+{
+    std::map<std::string, int> merged;
+    for (const auto &path : shared_constant_files()) { merged.merge(parse_int_constants(path)); }
+    return merged;
 }
 
 // Every GTest suite name under tests_dir; anchored at line start, so comments and string literals do not count.
@@ -805,54 +818,168 @@ std::string spirv_literal_string(const std::vector<uint32_t> &words, std::size_t
     return text;
 }
 
-// Emitted struct name -> member -> Offset decoration; std::nullopt if unreadable or not a SPIR-V module.
-std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spirv_member_offsets(
-  const fs::path &spv_path)
+// One emitted struct as the shader sees it: member offsets, its size, its arrays' strides and its strides as an element.
+struct SpirvStructLayout
 {
-    const auto text = readFileText(spv_path);
-    if (!text) { return std::nullopt; }
-    const std::vector<char> raw(text->begin(), text->end());
-    if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
-        return std::nullopt;
-    }
+    std::map<std::string, uint32_t> member_offsets;
+    std::set<uint32_t> sizes;// one per distinct emission; two mean two shaders disagree
+    std::map<std::string, std::set<uint32_t>> member_array_strides;
+    std::set<uint32_t> element_strides;// ArrayStride of every array of it and every buffer-address pointer to it
+};
 
-    std::vector<uint32_t> words(raw.size() / sizeof(uint32_t));
-    std::memcpy(words.data(), raw.data(), raw.size());
-    if (words[0] != kSpirvMagicNumber) { return std::nullopt; }
+// Every named struct of every .spv under spirv_root, merged by its emitted name.
+std::map<std::string, SpirvStructLayout> parse_spirv_struct_layouts(const fs::path &spirv_root)
+{
+    constexpr uint32_t kOpTypeBool = 20;
+    constexpr uint32_t kOpTypeInt = 21;
+    constexpr uint32_t kOpTypeFloat = 22;
+    constexpr uint32_t kOpTypeVector = 23;
+    constexpr uint32_t kOpTypeMatrix = 24;
+    constexpr uint32_t kOpTypeArray = 28;
+    constexpr uint32_t kOpTypeRuntimeArray = 29;
+    constexpr uint32_t kOpTypeStruct = 30;
+    constexpr uint32_t kOpTypePointer = 32;
+    constexpr uint32_t kOpConstant = 43;
+    constexpr uint32_t kOpDecorate = 71;
+    constexpr uint32_t kDecorationArrayStride = 6;
+    constexpr uint32_t kDecorationMatrixStride = 7;
+    constexpr uint32_t kStorageClassPhysicalStorageBuffer = 5349;
 
-    std::map<uint32_t, std::string> type_names;// OpName: id -> name
-    std::map<std::pair<uint32_t, uint32_t>, std::string> member_names;// OpMemberName: (type id, member) -> name
-    std::map<std::pair<uint32_t, uint32_t>, uint32_t>
-      member_offsets;// OpMemberDecorate Offset: (type id, member) -> offset
+    std::map<std::string, SpirvStructLayout> layouts;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
+        const auto text = readFileText(it->path());
+        if (!text || text->size() < kSpirvHeaderWordCount * sizeof(uint32_t) || text->size() % sizeof(uint32_t) != 0) {
+            continue;
+        }
+        std::vector<uint32_t> words(text->size() / sizeof(uint32_t));
+        std::memcpy(words.data(), text->data(), text->size());
+        if (words[0] != kSpirvMagicNumber) { continue; }
 
-    std::size_t pos = kSpirvHeaderWordCount;
-    while (pos < words.size()) {
-        const uint32_t instruction_word = words[pos];
-        const uint32_t word_count = instruction_word >> 16U;
-        const uint32_t opcode = instruction_word & 0xFFFFU;
-        if (word_count == 0 || pos + word_count > words.size()) { break; }// malformed stream - stop, do not read OOB
-
-        if (opcode == kOpName && word_count >= 2) {
-            type_names[words[pos + 1]] = spirv_literal_string(words, pos + 2, word_count - 2);
-        } else if (opcode == kOpMemberName && word_count >= 3) {
-            member_names[{ words[pos + 1], words[pos + 2] }] = spirv_literal_string(words, pos + 3, word_count - 3);
-        } else if (opcode == kOpMemberDecorate && word_count >= 4) {
-            if (words[pos + 3] == kDecorationOffset && word_count >= 5) {
-                member_offsets[{ words[pos + 1], words[pos + 2] }] = words[pos + 4];
+        std::map<uint32_t, std::string> names;
+        std::map<std::pair<uint32_t, uint32_t>, std::string> member_names;
+        std::map<std::pair<uint32_t, uint32_t>, uint32_t> offsets;
+        std::map<std::pair<uint32_t, uint32_t>, uint32_t> matrix_strides;
+        std::map<uint32_t, uint32_t> array_strides;
+        std::map<uint32_t, std::pair<uint32_t, std::vector<uint32_t>>> types;// id -> (opcode, operands)
+        std::map<uint32_t, uint32_t> constants;
+        for (std::size_t pos = kSpirvHeaderWordCount; pos < words.size();) {
+            const uint32_t word_count = words[pos] >> 16U;
+            const uint32_t opcode = words[pos] & 0xFFFFU;
+            if (word_count == 0 || pos + word_count > words.size()) { break; }
+            const std::vector<uint32_t> args(words.begin() + static_cast<std::ptrdiff_t>(pos) + 1,
+              words.begin() + static_cast<std::ptrdiff_t>(pos + word_count));
+            if (opcode == kOpName && !args.empty()) {
+                names[args[0]] = spirv_literal_string(words, pos + 2, word_count - 2);
+            } else if (opcode == kOpMemberName && args.size() >= 2) {
+                member_names[{ args[0], args[1] }] = spirv_literal_string(words, pos + 3, word_count - 3);
+            } else if (opcode == kOpMemberDecorate && args.size() >= 4 && args[2] == kDecorationOffset) {
+                offsets[{ args[0], args[1] }] = args[3];
+            } else if (opcode == kOpMemberDecorate && args.size() >= 4 && args[2] == kDecorationMatrixStride) {
+                matrix_strides[{ args[0], args[1] }] = args[3];
+            } else if (opcode == kOpDecorate && args.size() >= 3 && args[1] == kDecorationArrayStride) {
+                array_strides[args[0]] = args[2];
+            } else if (opcode == kOpConstant && args.size() >= 3) {
+                constants[args[1]] = args[2];
+            } else if ((opcode >= kOpTypeBool && opcode <= kOpTypeMatrix) || opcode == kOpTypeArray
+                       || opcode == kOpTypeRuntimeArray || opcode == kOpTypeStruct || opcode == kOpTypePointer) {
+                if (!args.empty()) { types[args[0]] = { opcode, std::vector<uint32_t>(args.begin() + 1, args.end()) }; }
             }
+            pos += word_count;
         }
 
-        pos += word_count;
-    }
+        // Bytes a value of `type` spans; a matrix member takes its parent's MatrixStride, a runtime array spans none.
+        std::function<uint32_t(uint32_t, uint32_t)> size_of = [&](uint32_t type, uint32_t matrix_stride) -> uint32_t {
+            const auto found = types.find(type);
+            if (found == types.end()) { return 0; }
+            const auto &[opcode, operands] = found->second;
+            switch (opcode) {
+            case kOpTypeBool:
+                return 4;
+            case kOpTypeInt:
+            case kOpTypeFloat:
+                return operands.empty() ? 0 : operands[0] / 8U;
+            case kOpTypeVector:
+                return operands.size() < 2 ? 0 : operands[1] * size_of(operands[0], 0);
+            case kOpTypeMatrix:
+                if (operands.size() < 2) { return 0; }
+                return operands[1] * (matrix_stride != 0 ? matrix_stride : size_of(operands[0], 0));
+            case kOpTypeArray: {
+                const auto stride = array_strides.find(type);
+                const auto length = operands.size() < 2 ? constants.end() : constants.find(operands[1]);
+                if (stride == array_strides.end() || length == constants.end()) { return 0; }
+                return stride->second * length->second;
+            }
+            case kOpTypePointer:
+                return 8;
+            case kOpTypeStruct: {
+                uint32_t extent = 0;
+                for (uint32_t member = 0; member < operands.size(); ++member) {
+                    const auto offset = offsets.find({ type, member });
+                    if (offset == offsets.end()) { continue; }
+                    const auto stride = matrix_strides.find({ type, member });
+                    const uint32_t member_size =
+                      size_of(operands[member], stride == matrix_strides.end() ? 0 : stride->second);
+                    extent = std::max(extent, offset->second + member_size);
+                }
+                return extent;
+            }
+            default:
+                return 0;
+            }
+        };
+        // An array member's stride, also through the one-member struct Slang wraps a std140 array in.
+        const auto array_stride_of = [&](uint32_t type) -> std::optional<uint32_t> {
+            for (int depth = 0; depth < 2; ++depth) {
+                const auto found = types.find(type);
+                if (found == types.end()) { return std::nullopt; }
+                const auto &[opcode, operands] = found->second;
+                if (opcode == kOpTypeArray || opcode == kOpTypeRuntimeArray) {
+                    const auto stride = array_strides.find(type);
+                    if (stride == array_strides.end()) { return std::nullopt; }
+                    return stride->second;
+                }
+                const auto wrapper = names.find(type);
+                if (opcode != kOpTypeStruct || operands.size() != 1 || wrapper == names.end()
+                    || !wrapper->second.starts_with("_Array_")) {
+                    return std::nullopt;
+                }
+                type = operands[0];
+            }
+            return std::nullopt;
+        };
 
-    std::map<std::string, std::map<std::string, uint32_t>> result;
-    for (const auto &[ids, offset] : member_offsets) {
-        const auto type_it = type_names.find(ids.first);
-        const auto member_it = member_names.find(ids);
-        if (type_it == type_names.end() || member_it == member_names.end()) { continue; }
-        result[type_it->second][member_it->second] = offset;
+        for (const auto &[type, entry] : types) {
+            const auto &[opcode, operands] = entry;
+            const auto name = names.find(type);
+            if (opcode == kOpTypeStruct && name != names.end() && !name->second.starts_with("_")) {
+                auto &layout = layouts[name->second];
+                for (uint32_t member = 0; member < operands.size(); ++member) {
+                    const auto member_name = member_names.find({ type, member });
+                    const auto offset = offsets.find({ type, member });
+                    if (member_name == member_names.end() || offset == offsets.end()) { continue; }
+                    layout.member_offsets[member_name->second] = offset->second;
+                    if (const auto stride = array_stride_of(operands[member])) {
+                        layout.member_array_strides[member_name->second].insert(*stride);
+                    }
+                }
+                layout.sizes.insert(size_of(type, 0));
+            }
+            const bool is_array = opcode == kOpTypeArray || opcode == kOpTypeRuntimeArray;
+            const bool is_address =
+              opcode == kOpTypePointer && operands.size() >= 2 && operands[0] == kStorageClassPhysicalStorageBuffer;
+            const uint32_t element = is_address ? operands[1] : (operands.empty() ? 0 : operands[0]);
+            const auto element_name = names.find(element);
+            const auto stride = array_strides.find(type);
+            if ((is_array || is_address) && element_name != names.end() && stride != array_strides.end()
+                && types.contains(element) && types.at(element).first == kOpTypeStruct) {
+                layouts[element_name->second].element_strides.insert(stride->second);
+            }
+        }
     }
-    return result;
+    return layouts;
 }
 
 constexpr uint32_t kOpEntryPoint = 15;
@@ -1001,11 +1128,14 @@ std::optional<std::set<uint32_t>> parse_spirv_builtin_decorations(const fs::path
     return builtins;
 }
 
-// Emitted struct name plus member offsets; strides live on the array types and are deliberately out of scope.
+// Emitted struct name, every member's host offset, the host size and alignment, and each array member's element size.
 struct SpirvStructContract
 {
     std::string spirv_name;
     std::map<std::string, std::size_t> member_offsets;
+    std::size_t host_size;
+    std::size_t host_alignment;
+    std::map<std::string, std::size_t> member_array_strides;
 };
 
 std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
@@ -1024,26 +1154,39 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "cloudLightMarch", offsetof(SceneUBO, cloudLightMarch) },
             { "cloudMeshScale", offsetof(SceneUBO, cloudMeshScale) },
             { "cloudMeshOffset", offsetof(SceneUBO, cloudMeshOffset) },
-            { "cloudParameters", offsetof(SceneUBO, cloudParameters) } } },
+            { "cloudParameters", offsetof(SceneUBO, cloudParameters) },
+            { "cloudAmbientTop", offsetof(SceneUBO, cloudAmbientTop) },
+            { "cloudAmbientBottom", offsetof(SceneUBO, cloudAmbientBottom) } },
+          sizeof(SceneUBO),
+          alignof(SceneUBO),
+          { { "cascadeLightSpaceMatrices", sizeof(SceneUBO::cascadeLightSpaceMatrices[0]) } } },
         { "GlobalUBO_std140",
           { { "projection", offsetof(GlobalUBO, projection) },
             { "view", offsetof(GlobalUBO, view) },
             { "inv_projection", offsetof(GlobalUBO, inv_projection) },
-            { "inv_view", offsetof(GlobalUBO, inv_view) } } },
+            { "inv_view", offsetof(GlobalUBO, inv_view) } },
+          sizeof(GlobalUBO),
+          alignof(GlobalUBO) },
         // OxidANT's sky.slang, which the C++ renderer fills from SkyUniforms.hpp.
         { "SkyUniforms_std140",
           { { "inv_view_proj", offsetof(Kataglyphis::SkyUniforms, inv_view_proj) },
             { "light_dir_intensity", offsetof(Kataglyphis::SkyUniforms, light_dir_intensity) },
-            { "mode", offsetof(Kataglyphis::SkyUniforms, mode) } } },
+            { "mode", offsetof(Kataglyphis::SkyUniforms, mode) } },
+          sizeof(Kataglyphis::SkyUniforms),
+          alignof(Kataglyphis::SkyUniforms) },
         { "DirectionalLightData_std140",
           { { "direction", offsetof(DirectionalLightData, direction) },
-            { "color", offsetof(DirectionalLightData, color) } } },
+            { "color", offsetof(DirectionalLightData, color) } },
+          sizeof(DirectionalLightData),
+          alignof(DirectionalLightData) },
         { "ObjectDescription_std430",
           { { "vertex_address", offsetof(ObjectDescription, vertex_address) },
             { "index_address", offsetof(ObjectDescription, index_address) },
             { "material_index_address", offsetof(ObjectDescription, material_index_address) },
             { "material_address", offsetof(ObjectDescription, material_address) },
-            { "texture_offset", offsetof(ObjectDescription, texture_offset) } } },
+            { "texture_offset", offsetof(ObjectDescription, texture_offset) } },
+          sizeof(ObjectDescription),
+          alignof(ObjectDescription) },
         { "ObjMaterial_natural",
           { { "diffuse", offsetof(ObjMaterial, diffuse) },
             { "emission", offsetof(ObjMaterial, emission) },
@@ -1068,18 +1211,25 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "unlit", offsetof(ObjMaterial, unlit) },
             { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) },
             { "uv1SlotMask", offsetof(ObjMaterial, uv1SlotMask) },
-            { "alphaBlend", offsetof(ObjMaterial, alphaBlend) } } },
+            { "alphaBlend", offsetof(ObjMaterial, alphaBlend) } },
+          sizeof(ObjMaterial),
+          alignof(ObjMaterial) },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
             { "color", offsetof(Vertex, color) },
             { "texture_coords", offsetof(Vertex, texture_coords) },
             { "tangent", offsetof(Vertex, tangent) },
-            { "texture_coords1", offsetof(Vertex, texture_coords1) } } },
+            { "texture_coords1", offsetof(Vertex, texture_coords1) } },
+          sizeof(Vertex),
+          alignof(Vertex) },
         { "PushConstantRasterizer_std430",
           { { "model", offsetof(PushConstantRasterizer, model) },
             { "invModelRows", offsetof(PushConstantRasterizer, invModelRows) },
-            { "objectIndex", offsetof(PushConstantRasterizer, objectIndex) } } },
+            { "objectIndex", offsetof(PushConstantRasterizer, objectIndex) } },
+          sizeof(PushConstantRasterizer),
+          alignof(PushConstantRasterizer),
+          { { "invModelRows", sizeof(PushConstantRasterizer::invModelRows[0]) } } },
         { "PushConstantPathTracing_std430",
           { { "clearColor", offsetof(PushConstantPathTracing, clearColor) },
             { "width", offsetof(PushConstantPathTracing, width) },
@@ -1090,16 +1240,28 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "furnace_metallic", offsetof(PushConstantPathTracing, furnace_metallic) },
             { "furnace_roughness", offsetof(PushConstantPathTracing, furnace_roughness) },
             { "trace_cloud_depth", offsetof(PushConstantPathTracing, trace_cloud_depth) },
-            { "skybox_enabled", offsetof(PushConstantPathTracing, skybox_enabled) } } },
-        { "PushConstantPost_std430", { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } } },
+            { "skybox_enabled", offsetof(PushConstantPathTracing, skybox_enabled) } },
+          sizeof(PushConstantPathTracing),
+          alignof(PushConstantPathTracing) },
+        { "PushConstantPost_std430",
+          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } },
+          sizeof(PushConstantPost),
+          alignof(PushConstantPost) },
         // OxidANT's fxaa.slang, which FxaaStage fills from FxaaUniforms.hpp.
         { "FxaaUniforms_std140",
-          { { "params", offsetof(Kataglyphis::VulkanRendererInternals::FxaaUniforms, params) } } },
-        { "PushConstantRaytracing_std430", { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
+          { { "params", offsetof(Kataglyphis::VulkanRendererInternals::FxaaUniforms, params) } },
+          sizeof(Kataglyphis::VulkanRendererInternals::FxaaUniforms),
+          alignof(Kataglyphis::VulkanRendererInternals::FxaaUniforms) },
+        { "PushConstantRaytracing_std430",
+          { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } },
+          sizeof(PushConstantRaytracing),
+          alignof(PushConstantRaytracing) },
         { "ShadowPushConstants_std430",
           // The host's cascadeIndex carries the shader's objectIndex (makeShadowPush); what must agree is the offset.
           { { "model", offsetof(ShadowPushConstants, model) },
-            { "objectIndex", offsetof(ShadowPushConstants, cascadeIndex) } } },
+            { "objectIndex", offsetof(ShadowPushConstants, cascadeIndex) } },
+          sizeof(ShadowPushConstants),
+          alignof(ShadowPushConstants) },
     };
 }
 
@@ -1289,6 +1451,10 @@ TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
     const auto rasterizer_closure = relative_closure(slang_root / "rasterizer" / "rasterizer.slang");
     EXPECT_TRUE(rasterizer_closure.contains("common/material_fetch.slang"));
     EXPECT_TRUE(rasterizer_closure.contains("common/scene_types.slang"));
+
+    const auto scene_types_closure = relative_closure(slang_root / "common" / "scene_types.slang");
+    EXPECT_TRUE(scene_types_closure.contains("common/shared_constants.slang"))
+      << "an `__exported import` must count as an import";
 }
 
 // Implicit LOD needs derivatives, which only Fragment has; outside it the sample is illegal and can lose the device.
@@ -1563,23 +1729,93 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
                                  << joinViolations(missing);
 }
 
-// A divergence corrupts every binding without a validation error; each name must exist in both files, not just match.
-TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
+// A divergence corrupts every binding without a validation error, so the header includes the shaders' file, no copy.
+TEST(BuildIntegrity, HostHeaderIncludesTheShaderConstants)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto host =
-      parse_int_constants(repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp");
-    const auto shader = parse_int_constants(slangRoot() / "common" / "scene_types.slang");
-
-    for (const auto &name : kSharedConstantNames) {
-        ASSERT_TRUE(host.contains(name)) << name << " not found (or not parseable) in host_device_shared_vars.hpp";
-        ASSERT_TRUE(shader.contains(name)) << name << " not found (or not parseable) in scene_types.slang";
-        EXPECT_EQ(host.at(name), shader.at(name))
-          << name << " differs between host_device_shared_vars.hpp (" << host.at(name) << ") and scene_types.slang ("
-          << shader.at(name) << ')';
+    const fs::path header = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp";
+    const auto text = readFileText(header);
+    ASSERT_TRUE(text.has_value()) << "missing " << header.string();
+    for (const auto *include : { "#include \"../../../Resources/ShadersSlang/common/shared_constants.slang\"",
+           "#include \"../../../third_party/OxidANT/shaders/common/limits.slang\"" }) {
+        EXPECT_NE(text->find(include), std::string::npos) << header.string() << " lacks " << include;
     }
+    EXPECT_TRUE(parse_int_constants(header).empty()) << header.string() << " defines a shared constant itself";
+
+    const auto shader = parse_shared_constants();
+    for (const auto &name : kSharedConstantNames) {
+        EXPECT_TRUE(shader.contains(name)) << name << " not found in shared_constants.slang or limits.slang";
+    }
+}
+
+// The files both C++ and the shaders compile; only constant lines, so the C++ include stays valid.
+TEST(BuildIntegrity, SharedShaderConstantsHaveOneHome)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const std::vector<fs::path> homes = { slangRoot() / "common" / "shared_constants.slang",
+        slangRoot() / "common" / "uv1_slots.slang",
+        sharedSlangRoot() / "common" / "limits.slang" };
+    static const std::regex kDeclaration(R"(^static const int ([A-Za-z_][A-Za-z0-9_]*) = -?[0-9]+;$)");
+    std::set<std::string> names;
+    std::vector<std::string> violations;
+    for (const auto &home : homes) {
+        const auto lines = readFileLines(home);
+        ASSERT_TRUE(lines.has_value()) << "missing " << home.string();
+        for (const auto &line : *lines) {
+            std::smatch match;
+            if (std::regex_match(line, match, kDeclaration)) {
+                names.insert(match[1].str());
+            } else if (!line.empty() && !line.starts_with("//")) {
+                violations.push_back(home.filename().string() + " holds a line C++ cannot include: " + line);
+            }
+        }
+    }
+    ASSERT_GE(names.size(), 24U) << "the scan found too few shared constants - did a home file move?";
+
+    const auto declares_with_literal = [&names](const std::string &line, const std::regex &shape) {
+        std::smatch match;
+        return std::regex_search(line, match, shape) && names.contains(match[1].str());
+    };
+    static const std::regex kCppDefine(R"(^\s*#\s*define\s+([A-Za-z_][A-Za-z0-9_]*)\s+-?[0-9])");
+    static const std::regex kCppConstant(R"(\b(?:const|constexpr)\b[^=;(]*\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*-?[0-9])");
+    static const std::regex kSlangConstant(R"(\bstatic\s+const\s+\w+\s+([A-Za-z_][A-Za-z0-9_]*)\s*=)");
+
+    std::error_code error;
+    for (const auto &root : { repo_root / "Src", repo_root / "Test" }) {
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const auto extension = it->path().extension();
+            if (!it->is_regular_file(error) || (extension != ".cpp" && extension != ".hpp" && extension != ".ixx")) {
+                continue;
+            }
+            const auto lines = readFileLines(it->path());
+            if (!lines) { continue; }
+            for (const auto &raw_line : *lines) {
+                const std::string line = strip_line_comment(raw_line);
+                if (declares_with_literal(line, kCppDefine) || declares_with_literal(line, kCppConstant)) {
+                    violations.push_back(fs::relative(it->path(), repo_root).generic_string() + ": " + raw_line);
+                }
+            }
+        }
+    }
+    for (const auto &path : shaderSourceFiles(slangRoot(), error)) {
+        if (std::find(homes.begin(), homes.end(), shaderSourcePath(path)) != homes.end()) { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        for (const auto &raw_line : *lines) {
+            if (declares_with_literal(strip_line_comment(raw_line), kSlangConstant)) {
+                violations.push_back(path.generic_string() + ": " + raw_line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " second home(s) of a shared constant - include or import its file instead: "
+                                    << joinViolations(violations);
 }
 
 // Compares against the compiled header, since a text parse can agree with an edit the build never sees.
@@ -1588,13 +1824,13 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto shader = parse_int_constants(slangRoot() / "common" / "scene_types.slang");
+    const auto shader = parse_shared_constants();
     for (const auto &name : kSharedConstantNames) {
-        ASSERT_TRUE(shader.contains(name)) << name << " not found (or not parseable) in scene_types.slang";
+        ASSERT_TRUE(shader.contains(name)) << name << " not found in shared_constants.slang or limits.slang";
     }
 
     EXPECT_EQ(shader.at("MAX_TEXTURE_COUNT"), MAX_TEXTURE_COUNT);
-    EXPECT_EQ(shader.at("MAX_CASCADES"), MAX_CASCADES);
+    EXPECT_EQ(shader.at("CASCADE_COUNT"), CASCADE_COUNT);
     EXPECT_EQ(shader.at("MAX_PCF_RADIUS"), MAX_PCF_RADIUS);
     EXPECT_EQ(shader.at("globalUBO_BINDING"), globalUBO_BINDING);
     EXPECT_EQ(shader.at("sceneUBO_BINDING"), sceneUBO_BINDING);
@@ -3583,7 +3819,7 @@ TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
       << "path_tracing.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
 }
 
-// A local cascade-count copy survives a MAX_CASCADES bump; WGSL-only shaders pin theirs on the Rust side, so skip them.
+// A local cascade-count copy survives a CASCADE_COUNT bump; WGSL-only shaders pin theirs on the Rust side, so skip them.
 TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 {
     const fs::path repo_root = repoRoot();
@@ -3592,11 +3828,9 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
-    const fs::path scene_types_relative = fs::path("common") / "scene_types.slang";
-    const auto scene_types_constants = parse_int_constants(slang_root / scene_types_relative);
-    ASSERT_TRUE(scene_types_constants.contains("MAX_CASCADES"))
-      << "MAX_CASCADES not found (or not parseable) in " << (slang_root / scene_types_relative).string();
-    const int max_cascades = scene_types_constants.at("MAX_CASCADES");
+    const auto shared_constants = parse_shared_constants();
+    ASSERT_TRUE(shared_constants.contains("CASCADE_COUNT")) << "CASCADE_COUNT not found in limits.slang";
+    const int max_cascades = shared_constants.at("CASCADE_COUNT");
 
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
@@ -3614,7 +3848,7 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
         if (!isReadableRegularFile(shader_path) || path.extension() != ".slang") { continue; }
         const std::string relative_path = shaderRelativePath(path, slang_root).generic_string();
         if (relative_path.starts_with("build/")) { continue; }
-        if (relative_path == scene_types_relative.generic_string()) { continue; }
+        if (relative_path == "common/limits.slang") { continue; }
         if (!vulkan_consumed_sources.contains(relative_path)) { continue; }
 
         const auto lines = readFileLines(path);
@@ -3648,8 +3882,8 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
     }
 
     EXPECT_TRUE(violations.empty()) << violations.size()
-                                    << " shader-local cascade-count constant(s) redeclare MAX_CASCADES ("
-                                    << max_cascades << ") outside scene_types.slang - import MAX_CASCADES instead: "
+                                    << " shader-local cascade-count constant(s) redeclare CASCADE_COUNT ("
+                                    << max_cascades << ") outside limits.slang - import CASCADE_COUNT instead: "
                                     << joinViolations(violations);
 }
 
@@ -3817,8 +4051,8 @@ TEST(BuildIntegrity, SharedDescriptorSetBindingsUseTheNamedConstants)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " shared render descriptor set binding(s) use a bare integer literal - "
-      << "use scene_types.slang's named binding constant - host_device_shared_vars.hpp and "
-      << "HostAndShaderSharedConstantsAgree already pin these: " << joinViolations(violations);
+      << "use shared_constants.slang's named binding constant, which host_device_shared_vars.hpp includes: "
+      << joinViolations(violations);
 }
 
 // A traced object-index source and how many instance-plus-geometry index pairs it must contain.
@@ -4023,8 +4257,8 @@ TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
     ASSERT_TRUE(contentOpt.has_value()) << "missing " << shadow_path.string();
     const std::string &content = *contentOpt;
 
-    EXPECT_NE(content.find("clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES)"), std::string::npos)
-      << "cascaded_shadow.slang must clamp numCascades to MAX_CASCADES before indexing "
+    EXPECT_NE(content.find("clamp(int(sceneUBO.numCascades), 0, CASCADE_COUNT)"), std::string::npos)
+      << "cascaded_shadow.slang must clamp numCascades to CASCADE_COUNT before indexing "
          "cascadeLightSpaceMatrices[]";
     EXPECT_NE(content.find("clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS)"), std::string::npos)
       << "cascaded_shadow.slang must clamp pcfRadius to MAX_PCF_RADIUS before the tap loop";
@@ -6004,7 +6238,7 @@ std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
     return std::nullopt;
 }
 
-// Plain file I/O, not an include: the point is to catch the header changing under the doc.
+// Plain file I/O, not an include: the point is to catch the constant changing under the doc.
 std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
 {
     const auto lines = readFileLines(header_path);
@@ -6036,10 +6270,10 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
       << " is missing its '<!-- max-texture-count: N -->' marker line - a deleted marker must "
          "fail this test, not silently pass";
 
-    const fs::path header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp";
+    const fs::path header_path = slangRoot() / "common" / "shared_constants.slang";
     const auto header_value = parse_max_texture_count_header(header_path);
     ASSERT_TRUE(header_value.has_value())
-      << header_path.string() << " does not define 'const int MAX_TEXTURE_COUNT = <N>;'";
+      << header_path.string() << " does not define 'static const int MAX_TEXTURE_COUNT = <N>;'";
 
     EXPECT_EQ(*doc_value, *header_value) << doc_path.string() << "'s max-texture-count marker says " << *doc_value
                                          << " but " << header_path.string()
@@ -7647,7 +7881,7 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
       << joinViolations(offenders);
 }
 
-// The compiled SPIR-V is the layout truth: each contracted member's Offset must equal the host offsetof().
+// The compiled SPIR-V is the layout truth: offsets, size, array strides and every emitted member must match the host.
 TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
 {
     const fs::path repo_root = repoRoot();
@@ -7656,44 +7890,62 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
     const fs::path spirv_root = spirvRoot();
     ASSERT_TRUE(sourceExists(spirv_root)) << "missing " << spirv_root.string();
 
-    std::map<std::string, std::map<std::string, uint32_t>> compiled;// union across every .spv
-    std::error_code error;
-    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
-
-        const auto parsed = parse_spirv_member_offsets(it->path());
-        if (!parsed.has_value()) {
-            continue;
-        }// unreadable/invalid SPIR-V - CompiledShadersAreNotOlderThan* catches that
-
-        for (const auto &[struct_name, members] : *parsed) {
-            for (const auto &[member_name, offset] : members) { compiled[struct_name][member_name] = offset; }
-        }
-    }
-
-    const auto contracts = build_shared_struct_offset_contracts();
+    const auto compiled = parse_spirv_struct_layouts(spirv_root);
     std::vector<std::string> not_found_in_any_spv;
-    std::vector<std::string> offset_mismatches;
+    std::vector<std::string> mismatches;
+    const auto round_up = [](std::size_t value, std::size_t alignment) {
+        return (value + alignment - 1) / alignment * alignment;
+    };
 
-    for (const auto &contract : contracts) {
+    for (const auto &contract : build_shared_struct_offset_contracts()) {
         const auto struct_it = compiled.find(contract.spirv_name);
         if (struct_it == compiled.end()) {
             not_found_in_any_spv.push_back(contract.spirv_name);
             continue;
         }
+        const auto &layout = struct_it->second;
+        const std::string &name = contract.spirv_name;
 
         for (const auto &[member_name, host_offset] : contract.member_offsets) {
-            const auto member_it = struct_it->second.find(member_name);
-            if (member_it == struct_it->second.end()) {
-                offset_mismatches.push_back(
-                  contract.spirv_name + "." + member_name + ": not emitted as a member by any compiled .spv");
+            const auto member_it = layout.member_offsets.find(member_name);
+            if (member_it == layout.member_offsets.end()) {
+                mismatches.push_back(name + "." + member_name + ": not emitted as a member by any compiled .spv");
+            } else if (member_it->second != host_offset) {
+                mismatches.push_back(name + "." + member_name + ": compiled SPIR-V offset "
+                                     + std::to_string(member_it->second) + " != host offsetof "
+                                     + std::to_string(host_offset));
+            }
+        }
+        for (const auto &[member_name, offset] : layout.member_offsets) {
+            if (!contract.member_offsets.contains(member_name)) {
+                mismatches.push_back(name + "." + member_name + " (offset " + std::to_string(offset)
+                                     + "): emitted by the shader but missing from the contract");
+            }
+        }
+        for (const auto size : layout.sizes) {
+            if (round_up(size, contract.host_alignment) != contract.host_size) {
+                mismatches.push_back(name + ": compiled size " + std::to_string(size) + " != host sizeof "
+                                     + std::to_string(contract.host_size) + " (alignment "
+                                     + std::to_string(contract.host_alignment) + ")");
+            }
+        }
+        for (const auto stride : layout.element_strides) {
+            if (stride != contract.host_size) {
+                mismatches.push_back(name + ": ArrayStride " + std::to_string(stride)
+                                     + " of an array of it != host sizeof " + std::to_string(contract.host_size));
+            }
+        }
+        for (const auto &[member_name, strides] : layout.member_array_strides) {
+            const auto host = contract.member_array_strides.find(member_name);
+            if (host == contract.member_array_strides.end()) {
+                mismatches.push_back(name + "." + member_name + ": an array without a contracted element size");
                 continue;
             }
-            if (member_it->second != host_offset) {
-                offset_mismatches.push_back(contract.spirv_name + "." + member_name + ": compiled SPIR-V offset "
-                                            + std::to_string(member_it->second) + " != host offsetof "
-                                            + std::to_string(host_offset));
+            for (const auto stride : strides) {
+                if (stride != host->second) {
+                    mismatches.push_back(name + "." + member_name + ": ArrayStride " + std::to_string(stride)
+                                         + " != host element size " + std::to_string(host->second));
+                }
             }
         }
     }
@@ -7702,8 +7954,8 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
       << not_found_in_any_spv.size() << " struct(s) expected in the compiled SPIR-V were not emitted by ANY .spv under "
       << spirv_root.string() << " - renamed or deleted shader struct: " << joinViolations(not_found_in_any_spv);
 
-    EXPECT_TRUE(offset_mismatches.empty())
-      << offset_mismatches.size() << " host/SPIR-V struct-offset mismatch(es):" << joinViolations(offset_mismatches);
+    EXPECT_TRUE(mismatches.empty()) << mismatches.size()
+                                    << " host/SPIR-V layout mismatch(es):" << joinViolations(mismatches);
 }
 
 // Only C++ compiles the shared headers now, so the GLSL dual-compile shim (`#ifdef __cplusplus`, KTG_VEC*) is dead.

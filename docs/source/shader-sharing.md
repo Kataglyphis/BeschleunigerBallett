@@ -377,6 +377,7 @@ imports.
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
 | `common/hdr_safe.slang` | both |
+| `common/limits.slang` | both |
 | `common/material_fetch.slang` | spirv |
 | `common/material_rules.slang` | spirv |
 | `common/material_textures.slang` | spirv |
@@ -389,10 +390,12 @@ imports.
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
+| `common/shared_constants.slang` | spirv |
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |
 | `common/skybox_radiance.slang` | spirv |
 | `common/trace_constants.slang` | both |
+| `common/uv1_slots.slang` | spirv |
 | `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->
 

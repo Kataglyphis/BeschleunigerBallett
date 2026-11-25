@@ -161,7 +161,7 @@ inline auto fillSceneUboCascades(VulkanRendererInternals::SceneUBO &ubo,
     assert(splitDepths.size() == viewProjMatrices.size());
 
     const size_t activeCascades =
-      std::min({ splitDepths.size(), viewProjMatrices.size(), static_cast<size_t>(MAX_CASCADES) });
+      std::min({ splitDepths.size(), viewProjMatrices.size(), static_cast<size_t>(CASCADE_COUNT) });
     for (size_t i = 0; i < activeCascades; ++i) {
         ubo.cascadeSplits[static_cast<int>(i)] = splitDepths[i];
         ubo.cascadeLightSpaceMatrices[i] = viewProjMatrices[i];

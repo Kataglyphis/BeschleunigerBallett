@@ -14,6 +14,15 @@ the GitHub releases themselves.
 
 ### Added
 
+- The C++ engine and its shaders share one copy of every limit and binding slot (plan I7):
+  `Resources/ShadersSlang/common/shared_constants.slang` (the descriptor bindings, `MAX_TEXTURE_COUNT`) and
+  `uv1_slots.slang` hold only `static const int` lines, which `scene_types.slang` and `base_color.slang` import and
+  `host_device_shared_vars.hpp` and `ObjMaterial.hpp` include; the cascade count and PCF radius come from OxidANT's
+  new `limits.slang` the same way, so `MAX_CASCADES` is `CASCADE_COUNT` now. `BuildIntegrity.SharedShaderConstantsHaveOneHome`
+  fails a second definition in C++ or Slang. `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv` also compares
+  each contracted struct's size, the ArrayStride of every array of it and of every buffer-address pointer to it, its
+  array members' strides, and fails a member the shader emits that the contract lacks (it lacked
+  `cloudAmbientTop`/`cloudAmbientBottom`).
 - A scene starts at its own glTF camera, and its credit is in the About window (plan B9, owner rule 2026-11-19):
   OxidANT's framing moved out of the WebGPU renderer into `kataglyphis_render_core` (`framing.rs`, with
   `OrbitCamera` and the fly speed), and the bridge's `frame_scene` hands it the loaded file's cameras, its active one,

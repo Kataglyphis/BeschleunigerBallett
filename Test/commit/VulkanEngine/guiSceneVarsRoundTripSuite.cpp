@@ -147,16 +147,16 @@ TEST(GuiSceneVarsRoundTrip, ShippedDefaultsAreTheMeasuredOnes)
       << "lambda defaults to uniform splits deliberately; raising it needs a measurement, not a hunch";
     EXPECT_FLOAT_EQ(defaults.shadow_distance, 60.0F) << "a non-positive shadow distance silently disables the clamp";
     EXPECT_GT(defaults.num_shadow_cascades, 0);
-    EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES) << "must stay <= MAX_CASCADES (SceneUBO array size)";
+    EXPECT_LE(defaults.num_shadow_cascades, CASCADE_COUNT) << "must stay <= CASCADE_COUNT (SceneUBO array size)";
     EXPECT_TRUE(defaults.shadows_enabled) << "the debug scene exists to show shadows";
 }
 
-// The slider offers exactly 1..MAX_CASCADES.
+// The slider offers exactly 1..CASCADE_COUNT.
 TEST(GuiSceneVarsRoundTrip, CascadeCountDefaultIsWithinTheSliderRange)
 {
     const GUISceneSharedVars defaults;
 
-    EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES);
+    EXPECT_LE(defaults.num_shadow_cascades, CASCADE_COUNT);
 }
 
 // The GUI and Camera each hold a fov default, which would otherwise drift apart silently.

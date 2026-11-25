@@ -104,9 +104,9 @@ TEST(SceneSettingsDrift, RangesMatchTheEditorsBounds)
     for (std::size_t i = 0; i < rust.shadows.resolutions.size(); ++i) {
         EXPECT_EQ(rust.shadows.resolutions[i], kShadowMapResolutions[i]) << "resolution " << i;
     }
-    // The editor's cascade and PCF controls offer 1..MAX_CASCADES and 0..MAX_PCF_RADIUS.
+    // The editor's cascade and PCF controls offer 1..CASCADE_COUNT and 0..MAX_PCF_RADIUS.
     EXPECT_EQ(rust.shadows.cascade_count.min, 1U);
-    EXPECT_EQ(rust.shadows.cascade_count.max, static_cast<std::uint32_t>(MAX_CASCADES));
+    EXPECT_EQ(rust.shadows.cascade_count.max, static_cast<std::uint32_t>(CASCADE_COUNT));
     EXPECT_EQ(rust.shadows.pcf_radius.min, 0U);
     EXPECT_EQ(rust.shadows.pcf_radius.max, static_cast<std::uint32_t>(MAX_PCF_RADIUS));
     expectRange(rust.shadows.strength, kMinUnitSetting, kMaxUnitSetting, "strength");

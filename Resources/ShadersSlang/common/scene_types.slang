@@ -1,29 +1,8 @@
 // No ray-tracing types here (see rt_types.slang): their capabilities conflict with `discard` in fragment shaders.
 
-static const int MAX_TEXTURE_COUNT = 128;
-
-// ----- MAIN RENDER DESCRIPTOR SET (shared between rasterizer and raytracer)
-static const int globalUBO_BINDING = 0;
-static const int sceneUBO_BINDING = 1;
-static const int OBJECT_DESCRIPTION_BINDING = 2;
-static const int TEXTURES_BINDING = 3;
-static const int SAMPLER_BINDING = 4;
-static const int SHADOW_MAP_BINDING = 5;
-static const int PUNCTUAL_LIGHTS_BINDING = 6;
-static const int PUNCTUAL_SHADOW_MAP_BINDING = 7;
-
-// ---- RAYTRACING BINDING (only used by RT/path-tracing shaders)
-static const int TLAS_BINDING = 0;
-static const int OUT_IMAGE_BINDING = 1;
-static const int ACCUMULATION_IMAGE_BINDING = 2;
-static const int TRACED_DEPTH_IMAGE_BINDING = 3;
-static const int SKYBOX_CUBEMAP_BINDING = 4;
-
-// G-buffer textures (set 1), sampled by the deferred lighting pass.
-static const int GBUFFER_NORMAL_BINDING = 0;
-static const int GBUFFER_ALBEDO_BINDING = 1;
-static const int GBUFFER_MATERIAL_BINDING = 2;
-static const int GBUFFER_DEPTH_BINDING = 3;
+// The limits and binding slots, which C++ includes too.
+__exported import limits;
+__exported import shared_constants;
 
 // Vertex layout (matches Src/shared/scene/Vertex.hpp).
 struct Vertex
@@ -94,8 +73,6 @@ int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)
     return resolve_texture_slot(obj, material.textureID);
 }
 
-static const int MAX_CASCADES = 3;
-static const int MAX_PCF_RADIUS = 5;
 
 struct DirectionalLightData
 {
@@ -125,7 +102,7 @@ struct SceneUBO
     uint numCascades;
     uint punctualShadowCount;
     float4 cascadeSplits;
-    float4x4 cascadeLightSpaceMatrices[MAX_CASCADES];
+    float4x4 cascadeLightSpaceMatrices[CASCADE_COUNT];
     float4 view_dir;
     float4 cam_pos;
     float4 cloudLightMarch;

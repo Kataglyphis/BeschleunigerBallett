@@ -24,7 +24,7 @@ struct CombinedTaps : IShadowTaps
 float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<SceneUBO> sceneUBO)
 {
     // Second clamp after the host's, so a stray write cannot index cascadeLightSpaceMatrices out of bounds.
-    int cascadeCount = clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES);
+    int cascadeCount = clamp(int(sceneUBO.numCascades), 0, CASCADE_COUNT);
     if (cascadeCount <= 0) return 0.0;
 
     float fragDistance = dot(worldPos - sceneUBO.cam_pos.xyz, normalize(sceneUBO.view_dir.xyz));
