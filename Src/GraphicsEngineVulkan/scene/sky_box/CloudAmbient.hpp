@@ -23,7 +23,7 @@ struct CloudAmbient
 // At most this many texels per face edge are averaged; OxidANT's CloudAmbient::of_cubemap takes the same.
 inline constexpr uint32_t kCloudAmbientMaxEdgeTexels = 64;
 
-// skybox_radiance.slang's SKYBOX_DISABLED_RADIANCE, the linear navy the switched-off sky shows.
+// OxidANT drawn_sky.slang's SKYBOX_DISABLED, the linear navy the switched-off sky shows.
 inline constexpr glm::vec3 kSkyboxDisabledRadiance{ 0.0F, 0.0F, 0.5F };
 
 // aces.slang's ACES_A to ACES_E, x (a x + b) / (x (c x + d) + e); BuildIntegrity pins them to the shader's.

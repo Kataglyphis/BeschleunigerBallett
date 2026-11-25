@@ -6,7 +6,10 @@ Everything here is **shipped** behaviour; the PT survey's status is at the end.
 ## Pipeline shape
 
 One compute kernel, `Resources/ShadersSlang/path_tracing/path_tracing.slang`,
-dispatched by `PathTracing::recordCommands` between two image barriers that
+over OxidANT's `common/path_integrator.slang`, the path tracer both renderers
+run: `trace_path` walks a path over an `ITracedScene`, which this kernel
+implements with ray queries (`EnginePathScene`) and OxidANT's tracer over its
+compute BVH. It is dispatched by `PathTracing::recordCommands` between two image barriers that
 move the rasterizer's offscreen target (`rgba16f` since the HDR unit,
 `OUT_IMAGE_BINDING`) to `eGeneral` for the compute write and on to
 `eShaderReadOnlyOptimal` for the post pass. Both sit in the frame's graphics
@@ -27,7 +30,11 @@ kernel also traces one ray through each pixel centre and writes that primary
 hit's NDC depth to `tracedDepth` (`TRACED_DEPTH_IMAGE_BINDING`, `1.0` on a
 miss); see [`clouds.md`](clouds.md). That ray runs only while clouds are on
 (the push constants' `trace_cloud_depth`, set from the frame's
-`clouds_enabled`); until 2026-11 every frame paid for it.
+`clouds_enabled`); until 2026-11 every frame paid for it. It is the first
+sample's first loop pass (`PathDepth`), not a traversal of its own: each kernel
+has one closest-hit and one shadow-ray call site, because SwiftShader inlines a
+whole traversal per call site. OxidANT's `cs_path_trace` fell from 8640 to 7457
+SPIR-V instructions with it, 1446 of them the depth ray's own traversal.
 
 Rays traverse with `GL_EXT_ray_query` against the RT mode's TLAS;
 geometry/material data arrive via buffer-device-address (`ObjectDescription`
@@ -36,9 +43,10 @@ when a TLAS exists: during the async model load there is nothing to trace
 against, and dispatching anyway used to consume never-written descriptor sets.
 
 Neither the bounce ray nor the NEE shadow ray traces `RAY_FLAG_FORCE_OPAQUE`.
-A ray query has no any-hit stage, so glTF MASK cut-outs are alpha-tested inline
-in each query's candidate loop, via the `ray_hit_masked_out` helper shared with
-`raytracing/raytrace.rahit.slang` (`Resources/ShadersSlang/common/alpha_test.slang`).
+A ray query has no any-hit stage, so glTF MASK cut-outs are alpha-tested in
+the queries' one candidate loop, `commit_unmasked_candidates`
+(`Resources/ShadersSlang/common/traced_hit.slang`), via the `ray_hit_masked_out`
+helper shared with `raytracing/raytrace.rahit.slang` (`common/alpha_test.slang`).
 A candidate triangle is committed with `CommitNonOpaqueTriangleHit()` only when
 the test passes; not committing is the discard. The shadow ray keeps
 `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`: it ends the search at the first
@@ -62,7 +70,8 @@ estimators is biased).
   pixel's unit square (a box filter) instead of always through the exact centre,
   so `samples_per_pixel` and the temporal running mean anti-alias geometric edges
   rather than just denoise a point-sampled image.
-- **Hit**: the albedo (texture, or `material.diffuse` when `textureID` is
+- **Hit**: `traced_surface` (`common/traced_hit.slang`), the one fetch
+  `raytrace.rchit.slang` reads too: the albedo (texture, or `material.diffuse` when `textureID` is
   -1, times the vertex colour), metallic and roughness as every raster path
   reads them: the factors times the metallic-roughness texture's B and G
   channels (`resolved_metallic_roughness_lod0`), the roughness product
@@ -138,27 +147,28 @@ estimators is biased).
   length. From the fourth segment on, **Russian
   roulette** terminates low-throughput paths and reweights survivors
   (unbiased).
-- **Miss**: ends the path. A camera ray keeps the soft RTIOW gradient at
-  half intensity, as OxidANT's path tracer keeps its procedural sky. A bounce
-  sees the sky the raster draws (owner decision 2026-11-16), as OxidANT's
-  `bounce_sky` (`shaders/tracer/trace_shading.slang`) lights it: the
-  skybox's cube map at LOD 0 while the skybox is on
-  (`skybox_radiance_lod0` in `common/skybox_radiance.slang`, its sRGB
-  decode), the disabled sky's navy otherwise, times 0.35. Rust scales by
-  its ambient strength times its environment intensity; the C++ engine has
-  the ambient since 2026-11-23 (the Sky tab's slider, which the raster paths
-  and the closest-hit shader read) but no environment intensity, and its path
-  tracer keeps the two defaults' product (0.35 and 1) as a constant. The cube
-  map is `SKYBOX_CUBEMAP_BINDING` in the ray-tracing set, compute only; it is
-  uploaded once and stays `eShaderReadOnlyOptimal`, so no barrier guards it.
-  The push constants' `skybox_enabled` carries the switch, and toggling it
-  restarts the running mean (`PathTracingHistoryKey::skyboxEnabled`).
+- **Miss**: ends the path (`path_miss`). A camera ray sees the sky the sky
+  pass draws (owner decision 2026-11-19): OxidANT's `drawn_sky`
+  (`common/drawn_sky.slang`, which `sky/sky.slang` draws with), the skybox's
+  cube map untonemapped while it is on, the disabled sky's navy otherwise. A
+  bounce gets the light the raster's ambient term gets: the baked IBL's
+  prefiltered map at its sharpest level while the skybox lights the scene
+  (`iblParams.x`), the analytic `sky_gradient` otherwise, times the Sun's
+  Ambient slider (`dirLight.direction.w`), as Rust's bounce takes its ambient
+  strength. The fixed 0.35 is gone. The cube map is `SKYBOX_CUBEMAP_BINDING`
+  in the ray-tracing set, compute only, and the IBL maps are the scene set's
+  `AmbientMaps` bindings, now visible to compute; both stay
+  `eShaderReadOnlyOptimal` after their upload or bake. The push constants'
+  `skybox_enabled` carries the switch; toggling it or moving the Ambient
+  restarts the running mean (`PathTracingHistoryKey::skyboxEnabled`, the
+  light's direction with the ambient in `.w`).
 
 Self-intersection is guarded by a 1e-4 offset along the face normal **and**
 ray-query `t_min = 0.001` (matches the RT path).
 
 `KATAGLYPHIS_PT_FURNACE=<radiance>` gives every hit one white surface (albedo
-1) and replaces both skies with a uniform `<radiance>` environment; the
+1) and replaces both skies with a uniform `<radiance>` environment, with no
+next-event estimation (a furnace has no lights, in both renderers); the
 shader gates on `pc_ray.clearColor.w > 0.5`. `KATAGLYPHIS_PT_FURNACE_METALLIC`
 (default 0) and `KATAGLYPHIS_PT_FURNACE_ROUGHNESS` (default 0.5, clamped to
 `material_roughness`'s 0.045 floor) pick that surface, through the push
@@ -316,16 +326,23 @@ dramatically.
   which the closest-hit shader adds since 2026-11-23, gives 43.4 vs 229 at
   the default 0.35, so the test zeroes it.
 
-Seven more goldens cover the kernel without the `PathTracing` prefix the
+Eight more goldens cover the kernel without the `PathTracing` prefix the
 marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at
 roughness 0.3 mirrors the sky at 200 luma, 219 under the old gradient, and,
 tilted halfway to the sun, a white highlight; without the lobe 0 and 71),
 `PathTracedMirrorReflectsTheSkyboxItDraws` (a white metal card at the
-roughness floor, sun off: with the skybox off it returns 0.35 times the navy,
-measured (0, 0, 0.1749); with it on, 0.35 times the sky the raster draws
-behind the camera, sRGB-decoded from the swapchain, within 5 % plus 0.001
-per channel, measured (0.0234, 0.0209, 0.0240) against (0.0232, 0.0206,
-0.0236) on aarch64 llvmpipe; the old gradient on bounces fails both),
+roughness floor, sun off, Ambient 0.35: with the skybox off it returns the
+analytic sky along each crop pixel's reflected ray times the Ambient, within
+5 % plus 0.002, measured (0.1859, 0.2098, 0.2447) against (0.1863, 0.2102,
+0.2452); with it on, the Ambient times the sky the raster draws behind the
+camera in HDR, within 8 % plus 0.002, measured (0.0767, 0.0792, 0.0856)
+against (0.0768, 0.0792, 0.0855); at Ambient 0.7 twice that within 5 %,
+measured (0.1534, 0.1583, 0.1712) on aarch64 llvmpipe; the fixed 0.35 fails
+the last, the navy the first),
+`PathTracedCameraMissShowsTheDrawnSky` (facing away from a card, the crop's
+path-traced HDR mean matches forward's within 2 % plus 0.002, skybox on
+(0.1593, 0.2069, 0.2918) and off (0, 0, 0.3562), forward's to four digits; the
+old half-intensity gradient fails both),
 `PathTracedUnlitCardKeepsItsAlbedo` (an unlit card's HDR value matches
 forward's to 0.01; metallic first gave 0),
 `HdrTargetStaysBelowTheHalfFloatMaximum`,

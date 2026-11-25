@@ -901,17 +901,18 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
   tests timed below to 82 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
-  pipeline, and eleven more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
+  pipeline, and twelve more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
   deferred and ray-traced ones), `TracedSecondModelResolvesItsOwnMeshAndTextures` (a lone cube,
   2 spp for 8 frames),
   `TracedHitsTakeTheirSideFromTheTriangleWinding` (a lone card, 4 spp for three 8-frame
   histories), `EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode` (three lone cards, 1 spp
-  and one bounce for 4 frames), `PathTracedMirrorReflectsTheSkyboxItDraws` (a lone card, 4 spp for two
+  and one bounce for 4 frames), `PathTracedMirrorReflectsTheSkyboxItDraws` (a lone card, 4 spp for three
   8-frame histories, 4 in the light variant), `HdrTargetStaysBelowTheHalfFloatMaximum`, `PathTracedUnlitCardKeepsItsAlbedo`,
   `TracedFramesSkipTheShadowPass` and `PunctualLightsPoolOnThePlaneWhenPathTraced` (a lone plane, 2 spp and
-  two bounces for two 17-frame histories, 2026-11-17), and `TracedCameraRaysStartAtTheNearPlane` (two cards over the rig,
-  1 spp and one bounce for 3 frames, 2026-11-23). The rewritten `PathTracingPassesTheWhiteFurnaceTest` adds four
+  two bounces for two 17-frame histories, 2026-11-17), `TracedCameraRaysStartAtTheNearPlane` (two cards over the rig,
+  1 spp and one bounce for 3 frames, 2026-11-23), and `PathTracedCameraMissShowsTheDrawnSky` (sky
+  alone, 1 spp and one bounce for 4 frames, once per sky mode). The rewritten `PathTracingPassesTheWhiteFurnaceTest` adds four
   lone-card histories to the rig's (below), and every path-traced frame now pays for a GGX lobe;
   only a frame with clouds on still traces the extra cloud-depth ray.
 

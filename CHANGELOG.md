@@ -128,6 +128,16 @@ the GitHub releases themselves.
 
 ### Changed
 
+- One path tracer for both renderers (plan I11, owner decisions 2026-11-19): `path_tracing.slang` runs OxidANT's
+  new `common/path_integrator.slang` over ray queries, as OxidANT's tracer runs it over its compute BVH. A camera ray
+  that misses shows the drawn sky (`common/drawn_sky.slang`, which `sky.slang` draws with), not a half-intensity
+  gradient; a bounce that misses gets the ambient term's light, the IBL's prefiltered map or the analytic sky, times
+  the Sun's Ambient slider instead of a fixed 0.35, and an Ambient change restarts the running mean. The clouds'
+  depth ray takes the first sample's first pass, so each kernel keeps one closest-hit and one shadow-ray call site.
+  BB's new `common/traced_hit.slang` holds the hit fetch `raytrace.rchit.slang` and the path tracer share and the
+  ray queries' one MASK loop; `common/skybox_radiance.slang` is gone. The closest-hit shader's shadow rays now leave
+  along the face normal and test a light's side on the shading normal, as the path tracer's do. OxidANT's new
+  `drawn_sky` and `path_integrator` vector kernels run here on SPIR-V too. OxidANT pin `3570724`.
 - OxidANT pin 2e8688b: the Rust renderer's ray-traced mode adds the raster's ambient term, as this engine's
   ray-traced mode does since Phase 7 (`analytic_ambient`, or the baked IBL with an environment), so its shadows are
   sky-lit instead of black. No C++ change; the bridge crates are untouched.

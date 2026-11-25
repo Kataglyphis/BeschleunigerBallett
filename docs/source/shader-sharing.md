@@ -14,10 +14,10 @@ their `include_str!` calls are unchanged and now read Slang-emitted text,
 
 **Ownership:** OxidANT's `shaders/` owns all WebGPU Slang entry points and the
 shared modules under `shaders/common/`: `aces`, `brdf`, `brdf_energy_fit`,
-`camera_ray`, `cascade_visibility`, `cloud_upsample`, `constants`, `fullscreen`,
-`gbuffer`, `hdr_safe`, `noise`, `path_estimator`, `punctual_light`,
-`punctual_shadow`, `shadow_pcf`, `sky_model`, `surface_lighting`,
-`trace_constants` and `volumetric_clouds`. This repo
+`camera_ray`, `cascade_visibility`, `cloud_upsample`, `constants`, `drawn_sky`,
+`fullscreen`, `gbuffer`, `hdr_safe`, `noise`, `path_estimator`,
+`path_integrator`, `punctual_light`, `punctual_shadow`, `shadow_pcf`,
+`sky_model`, `surface_lighting`, `trace_constants` and `volumetric_clouds`. This repo
 consumes them through `third_party/OxidANT/shaders`; Vulkan entry points and
 Vulkan-specific material modules stay in `Resources/ShadersSlang/`. OxidANT
 can compile and check its generated WGSL without a superproject checkout.
@@ -218,14 +218,26 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   `rasterizer/shadows/shadow_map.slang`, `raytrace.rchit.slang` and
   `alpha_test.slang`; `path_tracing.slang` gets it through `alpha_test.slang`
   and also imports it directly for its own base-colour sample.
-- `common/skybox_radiance.slang` — the skybox's linear radiance per
-  direction for the path tracer (`skybox_radiance_lod0`, compute has no
-  derivatives) and the disabled-sky navy, which
+- `common/path_integrator.slang` — both renderers' path tracer: `trace_path`
+  walks one path over an `ITracedScene`, which gives the closest hit, the
+  shadow ray, the camera and bounce skies, the sun, the punctual lights and the
+  furnace. `path_tracing.slang` implements it over ray queries
+  (`EnginePathScene`), OxidANT's `tracer/trace_shading.slang` over
+  `bvh_traverse` (`TracerScene`). One closest-hit and one shadow-ray call site
+  per kernel, because SwiftShader inlines a whole traversal per site; the
+  clouds' depth ray takes the path loop's first pass (`PathDepth`). Both.
+- `common/drawn_sky.slang` — the sky both renderers draw per direction:
+  `sky/sky.slang`'s fragment and both path tracers' camera misses read it,
+  with the disabled sky's navy (`SKYBOX_DISABLED`), which
   `BuildIntegrity.CloudAmbientNavyIsTheDisabledSkyRadiance` holds to
-  `sky/sky.slang`'s. Spirv only. The drawn sky is OxidANT's `sky/sky.slang`
-  (the entry-point table below). OxidANT's twin of the bounce, `bounce_sky`
-  in `tracer/trace_shading.slang`, reads its own bindings and sky, so the C++
-  kernel matches its rule, not its code ([`path-tracing.md`](path-tracing.md)).
+  `CloudAmbient.hpp`'s. Both.
+- `common/traced_hit.slang` — this engine's ray-traced hit:
+  `traced_surface` fetches a committed triangle's vertices and material at
+  level 0 for both `raytrace.rchit.slang` and `path_tracing.slang`, and
+  `commit_unmasked_candidates` is the ray queries' MASK test, which an any-hit
+  stage does for the ray-tracing pipeline. Spirv only;
+  `BuildIntegrity.TracedModesShareOneHitFetchAndOneIntegrator` keeps both
+  callers on it.
 - `common/cascaded_shadow.slang` — this engine's map binding and
   `calc_cascaded_shadow` over OxidANT's `cascade_visibility.slang`. Spirv only:
   the raster and deferred lighting paths (`rasterizer.slang`, `deferred.slang`).
@@ -407,6 +419,7 @@ imports.
 | `common/cascaded_shadow.slang` | spirv |
 | `common/cloud_upsample.slang` | both |
 | `common/constants.slang` | both |
+| `common/drawn_sky.slang` | both |
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
 | `common/gbuffer.slang` | both |
@@ -418,6 +431,7 @@ imports.
 | `common/material_textures.slang` | spirv |
 | `common/noise.slang` | both |
 | `common/path_estimator.slang` | both |
+| `common/path_integrator.slang` | both |
 | `common/punctual_light.slang` | both |
 | `common/punctual_shadow.slang` | both |
 | `common/punctual_lights.slang` | spirv |
@@ -427,9 +441,9 @@ imports.
 | `common/shared_constants.slang` | spirv |
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |
-| `common/skybox_radiance.slang` | spirv |
 | `common/surface_lighting.slang` | both |
 | `common/trace_constants.slang` | both |
+| `common/traced_hit.slang` | spirv |
 | `common/uv1_slots.slang` | spirv |
 | `common/volumetric_clouds.slang` | both |
 <!-- shared-module-targets:end -->

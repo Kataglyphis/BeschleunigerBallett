@@ -61,7 +61,8 @@ forward or the deferred raster path's depth buffer (both stored and left in
 owns the frame, `tracedDepth`, an `r32f` image both tracers write at
 `TRACED_DEPTH_IMAGE_BINDING` (the primary hit through the pixel centre, `1.0` on
 a miss, like a cleared depth buffer). The path tracer traces that extra ray only
-on a frame with clouds on (`trace_cloud_depth`). The RT closest-hit shader records the
+on a frame with clouds on (`trace_cloud_depth`), as the first sample's first loop
+pass (`path_integrator.slang`'s `PathDepth`), so its traversal is the path's own. The RT closest-hit shader records the
 hit distance before its `KHR_materials_unlit` early return: after it, an unlit
 hit kept distance 0, which projected the eye itself, so the march stopped at
 once and a cloud in front of an unlit surface vanished in RT alone. The

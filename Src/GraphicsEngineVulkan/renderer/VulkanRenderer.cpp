@@ -1669,7 +1669,8 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
         textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
                            | vk::ShaderStageFlagBits::eCompute;
         punctual_light_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
-        ambient_map_stages |= vk::ShaderStageFlagBits::eClosestHitKHR;
+        // eCompute: a path-traced bounce that misses reads the prefiltered map's sharpest level.
+        ambient_map_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
     }
 
     sharedRenderDescriptors.addBinding(globalUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1, global_ubo_stages)
@@ -1685,7 +1686,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       // The punctual lights' cube shadow maps, sampled by the forward and deferred lighting shaders.
       .addBinding(
         PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      // The skybox's baked environment, read by the raster and ray-traced modes' ambient term.
+      // The skybox's baked environment, read by the raster and traced modes' ambient term and the path tracer's bounce sky.
       .addBinding(IBL_IRRADIANCE_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
       .addBinding(IBL_PREFILTERED_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
       .addBinding(IBL_BRDF_LUT_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages);

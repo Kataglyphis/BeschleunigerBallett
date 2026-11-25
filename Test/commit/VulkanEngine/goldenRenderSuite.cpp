@@ -5563,7 +5563,24 @@ TEST(GoldenRender, PathTracedMetalCardReflectsTheSkyAndTheSun)
     EXPECT_GT(highlight_mean, plain_mean + 30.0) << "the highlight is not brighter than the reflected sky";
 }
 
-// A bounce that misses sees the sky the raster draws, scaled as OxidANT's bounce_sky: the cube map, or the navy.
+namespace {
+
+// The mean of `pixels` over the centred square of side 2 * half, in linear RGB.
+glm::dvec3 centre_mean_rgb(const std::vector<float> &pixels, uint32_t width, uint32_t height, uint32_t half)
+{
+    glm::dvec3 sum(0.0);
+    for (uint32_t y = height / 2U - half; y < height / 2U + half; ++y) {
+        for (uint32_t x = width / 2U - half; x < width / 2U + half; ++x) {
+            const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+            for (int c = 0; c < 3; ++c) { sum[c] += static_cast<double>(pixels[base + static_cast<size_t>(c)]); }
+        }
+    }
+    return sum / static_cast<double>(4U * half * half);
+}
+
+}// namespace
+
+// A bounce that misses gets the ambient term's light, the IBL or the analytic sky, times the Sun's Ambient slider.
 TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
 {
     SKIP_WITHOUT_GPU();
@@ -5591,60 +5608,121 @@ TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
     renderer_vars.pathTracingSamplesPerPixel = 4;
     renderer_vars.pathTracingMaxBounces = 2;
     harness.render_frames(WARMUP_FRAMES);
-    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 2.0F));
+    const glm::vec3 eye(0.0F, 0.0F, 2.0F);
+    harness.camera->set_camera_position(eye);
     harness.camera->set_orientation(-90.0F, 0.0F);
 
     constexpr uint32_t HALF = 24U;
     uint32_t width = 0;
     uint32_t height = 0;
-    const auto mean_rgb = [&](const auto &pixels, const auto &to_linear) {
-        glm::dvec3 sum(0.0);
-        for (uint32_t y = height / 2U - HALF; y < height / 2U + HALF; ++y) {
-            for (uint32_t x = width / 2U - HALF; x < width / 2U + HALF; ++x) {
-                const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
-                for (int c = 0; c < 3; ++c) { sum[c] += to_linear(pixels[base + static_cast<size_t>(c)]); }
-            }
-        }
-        return sum / static_cast<double>(4U * HALF * HALF);
-    };
-    const auto radiance = [](float value) { return static_cast<double>(value); };
-    const auto traced_mirror = [&](bool skybox) {
+    const auto traced_mirror = [&](bool skybox, float ambient) {
         scene_vars.skybox_enabled = skybox;
+        scene_vars.directional_light_ambient = ambient;
         harness.render_frames(path_traced_history(8, 4));
         const std::vector<float> hdr = harness.capture_hdr_frame(width, height);
         EXPECT_FALSE(hdr.empty());
-        return hdr.empty() ? glm::dvec3(-1.0) : mean_rgb(hdr, radiance);
+        return hdr.empty() ? glm::dvec3(-1.0) : centre_mean_rgb(hdr, width, height, HALF);
     };
-    const glm::dvec3 navy = traced_mirror(false);
-    const glm::dvec3 cubemap = traced_mirror(true);
+    constexpr float AMBIENT = 0.35F;
+    const glm::dvec3 analytic = traced_mirror(false, AMBIENT);
+    const glm::dvec3 cubemap = traced_mirror(true, AMBIENT);
+    const glm::dvec3 doubled = traced_mirror(true, 2.0F * AMBIENT);
+    ASSERT_GT(width, 2U * HALF);
+    ASSERT_GT(height, 2U * HALF);
 
-    // The sky the raster draws where the mirror points: sky.slang untonemaps the cube map, so post shows its sRGB.
+    // The analytic sky along each crop pixel's ray as the card at z = 0, facing +z, reflects it.
+    const glm::mat4 clip_to_world = harness_inverse_view_projection(harness, width, height);
+    glm::dvec3 gradient(0.0);
+    for (uint32_t y = height / 2U - HALF; y < height / 2U + HALF; ++y) {
+        for (uint32_t x = width / 2U - HALF; x < width / 2U + HALF; ++x) {
+            const glm::vec2 ndc((static_cast<float>(x) + 0.5F) / static_cast<float>(width) * 2.0F - 1.0F,
+              (static_cast<float>(y) + 0.5F) / static_cast<float>(height) * 2.0F - 1.0F);
+            const glm::vec4 point = clip_to_world * glm::vec4(ndc, 0.5F, 1.0F);
+            const glm::vec3 view = glm::normalize(glm::vec3(point) / point.w - eye);
+            gradient += glm::dvec3(Kataglyphis::analyticSkyRadiance(glm::reflect(view, glm::vec3(0.0F, 0.0F, 1.0F))));
+        }
+    }
+    gradient /= static_cast<double>(4U * HALF * HALF);
+
+    // The sky the raster draws where the mirror points, in HDR: sky.slang untonemaps the cube map, as the bake does.
     harness.useForwardRaster();
     harness.camera->set_orientation(90.0F, 0.0F);
     harness.render_frames(SETTLE_FRAMES);
-    const std::vector<uint8_t> drawn = harness.capture_frame(width, height);
+    const std::vector<float> drawn_hdr = harness.capture_hdr_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
-    ASSERT_FALSE(drawn.empty());
-    const glm::dvec3 sky = mean_rgb(drawn, [](uint8_t byte) {
-        const double encoded = static_cast<double>(byte) / 255.0;
-        return encoded <= 0.04045 ? encoded / 12.92 : std::pow((encoded + 0.055) / 1.055, 2.4);
-    });
+    ASSERT_FALSE(drawn_hdr.empty());
+    const glm::dvec3 sky = centre_mean_rgb(drawn_hdr, width, height, HALF);
 
-    // OxidANT's defaults, ambient strength 0.35 times environment intensity 1; a white metal at mu 1 returns all of it.
-    constexpr double SKY_LIGHT = 0.35;
-    GTEST_LOG_(INFO) << "mirror card, skybox off: (" << navy.r << ", " << navy.g << ", " << navy.b << "); skybox on: ("
-                     << cubemap.r << ", " << cubemap.g << ", " << cubemap.b
-                     << "); the drawn sky behind the camera times " << SKY_LIGHT << ": (" << SKY_LIGHT * sky.r << ", "
-                     << SKY_LIGHT * sky.g << ", " << SKY_LIGHT * sky.b << ")";
+    GTEST_LOG_(INFO) << "mirror card at ambient " << AMBIENT << ", skybox off: (" << analytic.r << ", " << analytic.g
+                     << ", " << analytic.b << ") against the analytic sky it reflects times it ("
+                     << AMBIENT * gradient.r << ", " << AMBIENT * gradient.g << ", " << AMBIENT * gradient.b
+                     << "); skybox on: (" << cubemap.r << ", " << cubemap.g << ", " << cubemap.b
+                     << ") against the drawn sky times it (" << AMBIENT * sky.r << ", " << AMBIENT * sky.g << ", "
+                     << AMBIENT * sky.b << "); at twice the ambient (" << doubled.r << ", " << doubled.g << ", "
+                     << doubled.b << ")";
 
-    // The disabled sky is linear (0, 0, 0.5); the old gradient was white to light blue in every channel.
-    EXPECT_LT(navy.r, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
-    EXPECT_LT(navy.g, 0.005) << "with the skybox off a bounce that misses is not the navy the raster draws";
-    EXPECT_NEAR(navy.b, SKY_LIGHT * 0.5, 0.01) << "the navy a bounce sees is not scaled by the sky light";
     for (int c = 0; c < 3; ++c) {
-        EXPECT_NEAR(cubemap[c], SKY_LIGHT * sky[c], 0.05 * SKY_LIGHT * sky[c] + 0.001)
-          << "the mirror does not reflect the cube map the raster draws, channel " << c;
+        // The switched-off skybox lights with the analytic sky, as the raster's ambient term does; the navy is no light.
+        EXPECT_NEAR(analytic[c], AMBIENT * gradient[c], 0.05 * AMBIENT * gradient[c] + 0.002)
+          << "with the skybox off a bounce that misses is not the analytic sky times the ambient, channel " << c;
+        EXPECT_NEAR(cubemap[c], AMBIENT * sky[c], 0.08 * AMBIENT * sky[c] + 0.002)
+          << "the mirror does not reflect the IBL baked from the drawn skybox, channel " << c;
+        EXPECT_NEAR(doubled[c], 2.0 * cubemap[c], 0.05 * cubemap[c] + 0.002)
+          << "the bounce sky does not follow the Ambient slider, channel " << c;
     }
+}
+
+// A camera ray that misses sees what the sky pass draws, in either sky mode: both read OxidANT's drawn_sky.slang.
+TEST(GoldenRender, PathTracedCameraMissShowsTheDrawnSky)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride card(METALLIC_CARD_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.settings.renderer;
+    auto &scene_vars = harness.settings.scene;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+    // Facing away from the card, at z = 0 behind the camera, so the crop holds sky alone.
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 2.0F));
+    harness.camera->set_orientation(90.0F, 10.0F);
+
+    constexpr uint32_t HALF = 24U;
+    const auto sky_in = [&](bool path_traced) {
+        harness.useForwardRaster();
+        renderer_vars.pathTracing = path_traced;
+        harness.render_frames(path_traced ? path_traced_history(4, 2) : SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> hdr = harness.capture_hdr_frame(width, height);
+        EXPECT_FALSE(hdr.empty());
+        return hdr.empty() ? glm::dvec3(-1.0) : centre_mean_rgb(hdr, width, height, HALF);
+    };
+
+    std::vector<glm::dvec3> drawn;
+    for (const bool skybox : { true, false }) {
+        scene_vars.skybox_enabled = skybox;
+        const glm::dvec3 raster = sky_in(false);
+        const glm::dvec3 traced = sky_in(true);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost());
+        GTEST_LOG_(INFO) << "skybox " << (skybox ? "on" : "off") << ": raster (" << raster.r << ", " << raster.g << ", "
+                         << raster.b << "), path traced (" << traced.r << ", " << traced.g << ", " << traced.b << ")";
+        for (int c = 0; c < 3; ++c) {
+            // The path tracer jitters its rays inside the pixel, which barely moves the crop's mean.
+            EXPECT_NEAR(traced[c], raster[c], 0.02 * raster[c] + 0.002)
+              << "skybox " << (skybox ? "on" : "off") << ": a path-traced camera miss is not the drawn sky, channel "
+              << c;
+        }
+        drawn.push_back(raster);
+    }
+    // The cube map and the navy differ, so the check above saw both modes.
+    EXPECT_GT(glm::length(drawn[0] - drawn[1]), 0.05) << "the two skies are alike, so the test proves nothing";
 }
 
 // An unlit glTF material that omits metallicFactor (1 by the spec) once went black in PT: metallic darkened it first.
@@ -6755,8 +6833,8 @@ TEST(GoldenRender, WithoutSkyboxFacesTheSkyIsTheAnalyticGradient)
     EXPECT_GT(blue_minus_red, 10.0) << "the analytic sky is not blue overhead";
 }
 
-// The sky is radiance in the HDR target in every raster and ray-traced frame; a path-traced frame keeps its own miss.
-TEST(GoldenRender, SkyFillsTheHdrTargetInEveryModeButPathTracing)
+// The sky is radiance in the HDR target in every mode: drawn by the sky pass, or the path tracer's camera miss.
+TEST(GoldenRender, SkyFillsTheHdrTargetInEveryMode)
 {
     SKIP_WITHOUT_GPU();
 
@@ -6812,11 +6890,6 @@ TEST(GoldenRender, SkyFillsTheHdrTargetInEveryModeButPathTracing)
         }
         GTEST_LOG_(INFO) << mode.name << ": " << transparent << " transparent HDR texels, " << sky_texels
                          << " at the navy's radiance " << navy << ", " << sky_shown << " of them shown as the navy";
-        if (mode.pathTracing) {
-            // Its camera rays that miss see the soft gradient, which has red; the sky drawn over it would be navy.
-            EXPECT_LT(sky_texels, 100U) << mode.name << ": the sky drew over the path tracer's frame";
-            continue;
-        }
         // Before the sky drew into the HDR target, every sky texel here was alpha 0 and post blended over a sky pass.
         EXPECT_EQ(transparent, 0U) << mode.name << ": the sky left part of the HDR target unfilled";
         EXPECT_GT(sky_texels, 5000U) << mode.name << ": the HDR target holds no sky radiance - check the framing";

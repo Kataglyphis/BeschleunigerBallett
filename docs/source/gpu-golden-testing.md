@@ -339,7 +339,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=99 runnable=97 integration=15 total=112 excluded=3 -->
+<!-- golden-counts: defined=100 runnable=98 integration=15 total=113 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -472,10 +472,10 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   brightest sky radiance, the horizon's 0.72, and at least 0.2 in blue. Measured on aarch64
   llvmpipe at Ambient 2: (0.277, 0.403, 0.722), a gain of (0.139, 0.202, 0.361), deferred within
   0.5 %. With OxidANT's sun disk back in `analytic_ambient` the card reads (87.7, 83.5, 75.1) at Ambient 2 and fails in every mode.
-- **`SkyFillsTheHdrTargetInEveryModeButPathTracing`**: on the shadow rig with the navy sky, the
-  forward, deferred and ray-traced HDR targets hold no transparent texel and more than 5000
-  texels at the navy's untonemapped radiance, which post shows as the navy; the path-traced
-  frame keeps its own camera-miss gradient (fewer than 100 navy texels).
+- **`SkyFillsTheHdrTargetInEveryMode`**: on the shadow rig with the navy sky, the forward,
+  deferred, ray-traced and path-traced HDR targets hold no transparent texel and more than 5000
+  texels at the navy's untonemapped radiance, which post shows as the navy; the path tracer's
+  camera miss draws it through `drawn_sky.slang`, as the sky pass does.
 
 The controls, one-line edits each run on the three and reverted (`ShadowsDarkenSomePixels`, run
 beside them, failed only the first):

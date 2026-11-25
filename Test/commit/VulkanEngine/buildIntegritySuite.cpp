@@ -2968,12 +2968,24 @@ TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
               "path_tracing.slang: still contains RAY_FLAG_FORCE_OPAQUE - ray queries have no any-hit stage, "
               "so this forces MASK cut-outs to be solid again");
         }
+        if (text.find("commit_unmasked_candidates(query)") == std::string::npos) {
+            violations.push_back(
+              "path_tracing.slang: its ray queries no longer run traced_hit.slang's commit_unmasked_candidates()");
+        }
+    }
+
+    {
+        const fs::path path = repo_root / "Resources/ShadersSlang/common/traced_hit.slang";
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
+
         if (text.find("ray_hit_masked_out(") == std::string::npos) {
-            violations.push_back("path_tracing.slang: does not call the shared ray_hit_masked_out() alpha test");
+            violations.push_back("traced_hit.slang: does not call the shared ray_hit_masked_out() alpha test");
         }
         if (text.find("CommitNonOpaqueTriangleHit()") == std::string::npos) {
             violations.push_back(
-              "path_tracing.slang: does not call CommitNonOpaqueTriangleHit() - without it, no candidate "
+              "traced_hit.slang: does not call CommitNonOpaqueTriangleHit() - without it, no candidate "
               "triangle is ever committed and every ray reports a miss");
         }
     }
@@ -3011,11 +3023,10 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    static const std::array<const char *, 4> kShaders = {
+    static const std::array<const char *, 3> kShaders = {
         "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         "Resources/ShadersSlang/deferred/deferred.slang",
-        "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+        "Resources/ShadersSlang/common/traced_hit.slang",
     };
     static const std::string kGuard = "material.textureID >= 0)";
     static const std::string kSample = ".Sample";// covers both .Sample( and .SampleLevel(
@@ -3105,13 +3116,12 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    static const std::array<const char *, 6> kShaders = {
+    static const std::array<const char *, 5> kShaders = {
         "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         "Resources/ShadersSlang/deferred/deferred.slang",
         "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
-        "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        "Resources/ShadersSlang/common/traced_hit.slang",
         "Resources/ShadersSlang/common/alpha_test.slang",
-        "Resources/ShadersSlang/path_tracing/path_tracing.slang",
     };
     static const std::string kTextures = "textures[";
     static const std::string kSamplers = "textureSamplers[";
@@ -3189,20 +3199,25 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     EXPECT_NE(deferred_text.find("ambient, s.emissive),"), std::string::npos)
       << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
 
+    // Both traced modes read emission through traced_hit.slang's one fetch; each adds the fetched term.
+    const fs::path traced_hit_path = repo_root / "Resources/ShadersSlang/common/traced_hit.slang";
+    const auto traced_hit_text_opt = readFileText(traced_hit_path);
+    ASSERT_TRUE(traced_hit_text_opt.has_value()) << "could not open " << traced_hit_path.string();
+    EXPECT_NE(
+      traced_hit_text_opt->find("s.emissive = resolved_emission_lod0(obj, material, texCoords)"), std::string::npos)
+      << "traced_hit.slang no longer reads resolved_emission_lod0() into the surface. " << kFailureMessage;
+
     const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
     const auto rchit_text_opt = readFileText(rchit_path);
     ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
-    const std::string &rchit_text = *rchit_text_opt;
-    EXPECT_NE(rchit_text.find("resolved_emission_lod0(obj, material, texCoords)"), std::string::npos)
-      << "raytrace.rchit.slang no longer uses resolved_emission_lod0(). " << kFailureMessage;
+    EXPECT_NE(rchit_text_opt->find("payload.hit_value += s.emissive"), std::string::npos)
+      << "raytrace.rchit.slang no longer adds the hit's emission. " << kFailureMessage;
 
-    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
-    const auto path_tracing_text_opt = readFileText(path_tracing_path);
-    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
-    const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_NE(path_tracing_text.find("radiance += throughput * resolved_emission_lod0(obj, material, texCoords)"),
-      std::string::npos)
-      << "path_tracing.slang no longer adds throughput * resolved_emission_lod0() at the hit. " << kFailureMessage;
+    const fs::path integrator_path = sharedSlangRoot() / "common" / "path_integrator.slang";
+    const auto integrator_text_opt = readFileText(integrator_path);
+    ASSERT_TRUE(integrator_text_opt.has_value()) << "could not open " << integrator_path.string();
+    EXPECT_NE(integrator_text_opt->find("radiance += throughput * (s.emissive + "), std::string::npos)
+      << "path_integrator.slang no longer adds throughput * the hit's emission. " << kFailureMessage;
 }
 
 // The emissive texture lights only through emission.slang's shared helper, which must multiply it into the factor.
@@ -3239,8 +3254,7 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
-        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+        repo_root / "Resources/ShadersSlang/common/traced_hit.slang",
     };
     for (const fs::path &path : shading_paths) {
         const auto text_opt = readFileText(path);
@@ -3312,8 +3326,7 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
-        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+        repo_root / "Resources/ShadersSlang/common/traced_hit.slang",
     };
     for (const fs::path &path : shading_paths) {
         const auto text_opt = readFileText(path);
@@ -3430,9 +3443,8 @@ TEST(BuildIntegrity, TextureSlotSamplingHasOneOwner)
         slang_root / "rasterizer/rasterizer.slang",
         slang_root / "deferred/deferred.slang",
         slang_root / "rasterizer/shadows/shadow_map.slang",
-        slang_root / "raytracing/raytrace.rchit.slang",
+        slang_root / "common/traced_hit.slang",
         slang_root / "common/alpha_test.slang",
-        slang_root / "path_tracing/path_tracing.slang",
     };
 
     // The base-colour overload of resolve_texture_slot stays inline at each path, so it is not listed.
@@ -3699,8 +3711,7 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
     const std::vector<fs::path> brdf_shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
-        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+        repo_root / "Resources/ShadersSlang/common/traced_hit.slang",
     };
     for (const fs::path &path : brdf_shading_paths) {
         const auto text_opt = readFileText(path);
@@ -3740,8 +3751,7 @@ TEST(BuildIntegrity, UnlitIsHonouredByEveryShadingPath)
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
-        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+        repo_root / "Resources/ShadersSlang/common/traced_hit.slang",
     };
     for (const fs::path &path : shading_paths) {
         const auto text_opt = readFileText(path);
@@ -3784,19 +3794,13 @@ TEST(BuildIntegrity, VertexColourIsConsumedByEveryShadingPath)
     EXPECT_NE(deferred_text.find("fragmentColor"), std::string::npos)
       << "deferred.slang no longer uses In.fragmentColor. " << kFailureMessage;
 
-    const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
-    const auto rchit_text_opt = readFileText(rchit_path);
-    ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
-    const std::string &rchit_text = *rchit_text_opt;
-    EXPECT_NE(rchit_text.find(".color"), std::string::npos)
-      << "raytrace.rchit.slang no longer uses Vertex.color. " << kFailureMessage;
-
-    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
-    const auto path_tracing_text_opt = readFileText(path_tracing_path);
-    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
-    const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_NE(path_tracing_text.find(".color"), std::string::npos)
-      << "path_tracing.slang no longer uses Vertex.color. " << kFailureMessage;
+    // The closest-hit shader and the path tracer read their hit through traced_hit.slang's one fetch.
+    const fs::path traced_hit_path = repo_root / "Resources/ShadersSlang/common/traced_hit.slang";
+    const auto traced_hit_text_opt = readFileText(traced_hit_path);
+    ASSERT_TRUE(traced_hit_text_opt.has_value()) << "could not open " << traced_hit_path.string();
+    const std::string &traced_hit_text = *traced_hit_text_opt;
+    EXPECT_NE(traced_hit_text.find("albedo *= vertexColor.rgb"), std::string::npos)
+      << "traced_hit.slang no longer multiplies Vertex.color into the albedo. " << kFailureMessage;
 }
 
 // Normals take WorldToObject as a row multiply, mul(v, M); the column form agrees only for orthonormal models.
@@ -3811,23 +3815,17 @@ TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
       "with the correct transform when the model matrix has no rotation/scale, which the default scene never "
       "exercises";
 
-    const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
-    const auto rchit_text_opt = readFileText(rchit_path);
-    ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
-    const std::string &rchit_text = *rchit_text_opt;
-    EXPECT_EQ(rchit_text.find("mul((float3x3)WorldToObject()"), std::string::npos)
-      << "raytrace.rchit.slang column-multiplies WorldToObject for the normal again. " << kFailureMessage;
-    EXPECT_NE(rchit_text.find("mul(normalHit,"), std::string::npos)
-      << "raytrace.rchit.slang no longer row-multiplies WorldToObject for the normal. " << kFailureMessage;
-
-    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
-    const auto path_tracing_text_opt = readFileText(path_tracing_path);
-    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
-    const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_EQ(path_tracing_text.find("mul(worldToObject, float4(normalHit"), std::string::npos)
-      << "path_tracing.slang column-multiplies worldToObject for the normal again. " << kFailureMessage;
-    EXPECT_NE(path_tracing_text.find("mul(normalHit,"), std::string::npos)
-      << "path_tracing.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
+    // Both traced modes take their normal from traced_hit.slang's one fetch.
+    const fs::path traced_hit_path = repo_root / "Resources/ShadersSlang/common/traced_hit.slang";
+    const auto traced_hit_text_opt = readFileText(traced_hit_path);
+    ASSERT_TRUE(traced_hit_text_opt.has_value()) << "could not open " << traced_hit_path.string();
+    const std::string &traced_hit_text = *traced_hit_text_opt;
+    EXPECT_EQ(traced_hit_text.find("mul((float3x3)worldToObject, normalHit"), std::string::npos)
+      << "traced_hit.slang column-multiplies worldToObject for the normal again. " << kFailureMessage;
+    EXPECT_EQ(traced_hit_text.find("mul(worldToObject, float4(normalHit"), std::string::npos)
+      << "traced_hit.slang column-multiplies worldToObject for the normal again. " << kFailureMessage;
+    EXPECT_NE(traced_hit_text.find("mul(normalHit, (float3x3)worldToObject)"), std::string::npos)
+      << "traced_hit.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
 }
 
 // A local cascade-count copy survives a CASCADE_COUNT bump; WGSL-only shaders pin theirs on the Rust side, so skip them.
@@ -4075,7 +4073,8 @@ struct TracedObjectIndexFile
 
 // Update these counts when a traced object-index site is added, removed or moved.
 const std::vector<TracedObjectIndexFile> kTracedObjectIndexFiles = {
-    { "path_tracing/path_tracing.slang", 4 },
+    { "path_tracing/path_tracing.slang", 1 },
+    { "common/traced_hit.slang", 1 },
     { "raytracing/raytrace.rchit.slang", 1 },
     { "raytracing/raytrace.rahit.slang", 1 },
 };
@@ -4128,7 +4127,8 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
       << joinViolations(violations);
 
     constexpr uint32_t kOpRayQueryGetIntersectionGeometryIndexKHR = 6022;
-    constexpr std::size_t kMinGeometryIndexOpcodeCount = 3;// 2 candidate loops + 1 committed-hit block
+    // traced_hit.slang's one candidate loop, which both queries run, and the committed-hit block.
+    constexpr std::size_t kMinGeometryIndexOpcodeCount = 2;
 
     const fs::path spv_path = spirvRoot() / "path_tracing" / "path_tracing.path_tracing_main.spv";
     if (!sourceExists(spv_path)) {
@@ -4146,6 +4146,50 @@ TEST(BuildIntegrity, TracedObjectIndexAddsTheGeometryIndex)
       << actual_count
       << " - path_tracing.slang may have regressed to a bare instance index, or the compiled .spv is "
          "stale (recompile with Build-SlangShaders.ps1)";
+}
+
+// One hit fetch for the closest-hit shader and the path tracer, and one integrator for both renderers' path tracers.
+TEST(BuildIntegrity, TracedModesShareOneHitFetchAndOneIntegrator)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
+    const auto read = [](const fs::path &path) {
+        const auto text = readFileText(path);
+        EXPECT_TRUE(text.has_value()) << "missing " << path.string();
+        return text.value_or(std::string{});
+    };
+    const std::string traced_hit = read(slang_root / "common" / "traced_hit.slang");
+    EXPECT_NE(traced_hit.find("TracedSurface traced_surface("), std::string::npos)
+      << "traced_hit.slang no longer defines the one hit fetch, traced_surface()";
+    EXPECT_NE(traced_hit.find("void commit_unmasked_candidates(inout RayQuery<0> query)"), std::string::npos)
+      << "traced_hit.slang no longer owns the ray queries' one MASK candidate loop";
+
+    for (const char *relative : { "raytracing/raytrace.rchit.slang", "path_tracing/path_tracing.slang" }) {
+        const std::string text = read(slang_root / relative);
+        EXPECT_NE(text.find("import traced_hit;"), std::string::npos) << relative << " no longer imports traced_hit";
+        EXPECT_NE(text.find("traced_surface("), std::string::npos)
+          << relative << " no longer reads its hit through traced_surface()";
+        // A second copy of the fetch is what this module replaced: rchit and the path tracer drifted apart twice.
+        EXPECT_EQ(text.find("vertices->v["), std::string::npos) << relative << " reads hit vertices itself again";
+        EXPECT_EQ(text.find("Proceed()"), std::string::npos) << relative << " runs a candidate loop of its own again";
+    }
+
+    const std::string path_tracing = read(slang_root / "path_tracing" / "path_tracing.slang");
+    EXPECT_NE(path_tracing.find("import path_integrator;"), std::string::npos)
+      << "path_tracing.slang no longer imports OxidANT's path_integrator.slang";
+    EXPECT_NE(path_tracing.find(": ITracedScene"), std::string::npos)
+      << "path_tracing.slang no longer gives the integrator an ITracedScene";
+    EXPECT_NE(path_tracing.find("trace_path(scene, segment,"), std::string::npos)
+      << "path_tracing.slang no longer walks its paths with the shared trace_path()";
+    // The Sun's Ambient slider scales a bounce's sky, as the raster's ambient term; a fixed 0.35 once ignored it.
+    EXPECT_NE(path_tracing.find("return sky * sceneUBO.dirLight.direction.w;"), std::string::npos)
+      << "path_tracing.slang's bounce sky no longer follows the Ambient slider";
+    EXPECT_EQ(path_tracing.find("BOUNCE_SKY_SCALE"), std::string::npos)
+      << "path_tracing.slang scales its bounce sky by a fixed constant again";
+
+    const std::string integrator = read(sharedSlangRoot() / "common" / "path_integrator.slang");
+    EXPECT_NE(integrator.find("float3 trace_path<S : ITracedScene>("), std::string::npos)
+      << "path_integrator.slang no longer defines the shared trace_path";
 }
 
 // InstanceIndex() is the TLAS instance index, not the stamped custom one; presence only, as counts move with inlining.
@@ -4438,8 +4482,11 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
       << "expected exactly 5 shader sites reading dirLight.direction, found " << occurrences_checked
       << " - update this count if a consumer was intentionally added or removed, and confirm the new "
          "site also negates the field";
-    EXPECT_EQ(ambient_readers, (std::set<std::string>{ "deferred.slang", "rasterizer.slang", "raytrace.rchit.slang" }))
-      << "the shaders that read the ambient in dirLight.direction.w: forward, deferred and closest-hit add the sky";
+    EXPECT_EQ(ambient_readers,
+      (std::set<std::string>{ "deferred.slang", "path_tracing.slang", "rasterizer.slang", "raytrace.rchit.slang" }))
+      << "the shaders that read the ambient in dirLight.direction.w: forward, deferred and closest-hit add the sky, "
+         "and "
+         "the path tracer scales its bounce sky by it";
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
@@ -4499,7 +4546,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
     static const std::array<const char *, 3> kShadingShaders = {
         "rasterizer/rasterizer.slang",
         "deferred/deferred.slang",
-        "raytracing/raytrace.rchit.slang",
+        "common/traced_hit.slang",
     };
 
     for (const char *relative : kShadingShaders) {
@@ -4825,7 +4872,9 @@ bool is_attribute_line(const std::string &line)
 }
 
 // Walks the whole attribute run above a definition, since [shader(...)] may sit under other stacked attributes.
-bool preceded_by_shader_attribute(const std::vector<std::string> &stripped_lines, std::size_t def_line_index)
+bool preceded_by_attribute(const std::vector<std::string> &stripped_lines,
+  std::size_t def_line_index,
+  std::string_view attribute)
 {
     std::size_t i = def_line_index;
     while (i > 0) {
@@ -4833,23 +4882,28 @@ bool preceded_by_shader_attribute(const std::vector<std::string> &stripped_lines
         const std::string &line = stripped_lines[i];
         if (is_blank_line(line)) { continue; }
         if (!is_attribute_line(line)) { break; }
-        if (line.find("[shader(") != std::string::npos) { return true; }
+        if (line.find(attribute) != std::string::npos) { return true; }
     }
     return false;
 }
+
+bool preceded_by_shader_attribute(const std::vector<std::string> &stripped_lines, std::size_t def_line_index)
+{ return preceded_by_attribute(stripped_lines, def_line_index, "[shader("); }
 
 // One function definition found somewhere under Resources/ShadersSlang.
 struct SlangFunctionDef
 {
     std::string name;
+    std::string owner;// the struct a method belongs to, empty for a free function
     std::string relative_file;// relative to Resources/ShadersSlang, forward slashes
     int line = 0;// 1-based, the line the return type starts on
     bool is_root = false;// preceded by a [shader("...")] attribute
+    bool force_inline = false;// preceded by [ForceInline], so no generated code keeps it as a function
     std::string body;// comment/string-stripped body text, for call-graph edges
     std::string raw_def_line;// original (unstripped) text of `line`, for allowlist marker lookup
 };
 
-// A definition is type, name, '(' at depth 0, the matching ')', an optional semantic, then '{', never ';'.
+// A definition is type, name, '(' at depth 0 or in a struct's body, the matching ')', an optional semantic, then '{'.
 void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
   const std::vector<std::string> &raw_lines,
   const std::string &relative_file,
@@ -4872,22 +4926,35 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
     const std::vector<SlangToken> tokens = tokenize_slang(text);
 
     int depth = 0;
+    // A struct's methods are call sites too: a generic reaches them by name, through its interface.
+    std::string pending_struct;
+    std::string current_struct;
     std::size_t t = 0;
     while (t < tokens.size()) {
         const SlangToken &tok = tokens[t];
         if (!tok.is_identifier) {
             if (tok.text == "{") {
                 ++depth;
+                if (depth == 1 && !pending_struct.empty()) { current_struct = std::exchange(pending_struct, {}); }
             } else if (tok.text == "}") {
                 --depth;
+                if (depth == 0) { current_struct.clear(); }
+            } else if (tok.text == ";" && depth == 0) {
+                pending_struct.clear();
             }
             ++t;
             continue;
         }
+        if (depth == 0 && tok.text == "struct" && t + 1 < tokens.size() && tokens[t + 1].is_identifier) {
+            pending_struct = tokens[t + 1].text;
+            t += 2;
+            continue;
+        }
+        const bool definition_scope = depth == 0 || (depth == 1 && !current_struct.empty());
 
         // A generic's `<T : I>` stands between its name and its parameters; the tokens drop the brackets.
         std::size_t open = t + 2;
-        if (depth == 0 && open < tokens.size() && tokens[t + 1].is_identifier) {
+        if (definition_scope && open < tokens.size() && tokens[t + 1].is_identifier) {
             std::size_t after_name = tokens[t + 1].offset + tokens[t + 1].text.size();
             while (after_name < text.size() && std::isspace(static_cast<unsigned char>(text[after_name])) != 0) {
                 ++after_name;
@@ -4897,7 +4964,7 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
                 while (close != std::string::npos && open < tokens.size() && tokens[open].offset < close) { ++open; }
             }
         }
-        if (depth == 0 && open < tokens.size() && tokens[t + 1].is_identifier && !tokens[open].is_identifier
+        if (definition_scope && open < tokens.size() && tokens[t + 1].is_identifier && !tokens[open].is_identifier
             && tokens[open].text == "(") {
             // Find the parameter list's matching ')'.
             int paren_depth = 1;
@@ -4935,16 +5002,19 @@ void collect_functions_from_file(const std::vector<std::string> &stripped_lines,
 
                     SlangFunctionDef fn;
                     fn.name = tokens[t + 1].text;
+                    fn.owner = depth == 0 ? std::string() : current_struct;
                     fn.relative_file = relative_file;
                     fn.line = line_for_offset(tok.offset);
                     fn.is_root = preceded_by_shader_attribute(stripped_lines, static_cast<std::size_t>(fn.line - 1));
+                    fn.force_inline =
+                      preceded_by_attribute(stripped_lines, static_cast<std::size_t>(fn.line - 1), "[ForceInline]");
                     fn.body = text.substr(body_begin_offset, body_end_offset - body_begin_offset);
                     fn.raw_def_line = (fn.line >= 1 && static_cast<std::size_t>(fn.line - 1) < raw_lines.size())
                                         ? raw_lines[static_cast<std::size_t>(fn.line - 1)]
                                         : std::string();
                     out.push_back(std::move(fn));
 
-                    depth = 0;// back to top level once the function's own body has closed
+                    // Back to the scope the definition sat in once its own body has closed.
                     t = m;
                     continue;
                 }
@@ -5120,7 +5190,7 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
     return file_set;
 }
 
-// Names reachable from `entry_relative`'s entry points within `file_set`: its WGSL holds only its own call graph.
+// WGSL names reachable from `entry_relative`'s entry points within `file_set`: its WGSL holds only its own call graph.
 std::set<std::string> slang_function_names_reachable_from_source(const std::vector<SlangFunctionDef> &all_functions,
   const std::set<std::string> &file_set,
   const std::string &entry_relative)
@@ -5160,8 +5230,13 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
         }
     }
 
+    // As Slang names them in WGSL: a method under its struct's name; a [ForceInline] one leaves no function behind.
     std::set<std::string> names;
-    for (const std::size_t idx : reachable) { names.insert(all_functions[idx].name); }
+    for (const std::size_t idx : reachable) {
+        const SlangFunctionDef &fn = all_functions[idx];
+        if (fn.force_inline) { continue; }
+        names.insert(fn.owner.empty() ? fn.name : fn.owner + "_" + fn.name);
+    }
     return names;
 }
 
@@ -5341,17 +5416,22 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
     const std::vector<SlangStructDef> structs = collect_slang_structs(slang_root);
 
     std::map<std::string, std::vector<std::string>> exported_names_by_file;
-    for (const auto &fn : functions) { exported_names_by_file[fn.relative_file].push_back(fn.name); }
+    for (const auto &fn : functions) {
+        // A method is reached through its struct, which the struct list exports.
+        if (fn.owner.empty()) { exported_names_by_file[fn.relative_file].push_back(fn.name); }
+    }
     for (const auto &st : structs) { exported_names_by_file[st.relative_file].push_back(st.name); }
     // A module-scope constant is an export too: material_rules.slang imports constants for MIN_ROUGHNESS alone.
     static const std::regex kConstantRe(R"(^static\s+const\s+\w+\s+([A-Za-z_]\w*)\s*=)");
+    // So is a bound resource: path_tracing.slang imports ambient_maps for iblPrefiltered as well.
+    static const std::regex kBindingRe(R"(^\[vk::binding\([^)]*\)\]\s*[\w<>, ]*[\w>]\s+([A-Za-z_]\w*)\s*;)");
     for (const auto &relative_path : all_relative_paths) {
         const auto lines = readFileLines(slang_root / relative_path);
         if (!lines) { continue; }
         for (const auto &raw_line : *lines) {
             const std::string stripped = strip_line_comment(raw_line);
             std::smatch match;
-            if (std::regex_search(stripped, match, kConstantRe)) {
+            if (std::regex_search(stripped, match, kConstantRe) || std::regex_search(stripped, match, kBindingRe)) {
                 exported_names_by_file[relative_path].push_back(match[1].str());
             }
         }
@@ -7387,12 +7467,11 @@ TEST(BuildIntegrity, CloudWindWrapsAtTheNoisePeriod)
     }
 }
 
-// CloudAmbient.hpp's navy feeds the cloud ambient with the sky off; it must be the navy the sky and a bounce show.
+// CloudAmbient.hpp's navy feeds the cloud ambient with the sky off; it must be the navy the sky and a camera miss show.
 TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
 {
-    const std::array<std::pair<fs::path, const char *>, 2> sources = {
-        std::pair{ slangRoot() / "common" / "skybox_radiance.slang", "SKYBOX_DISABLED_RADIANCE" },
-        std::pair{ sharedSlangRoot() / "sky" / "sky.slang", "SKYBOX_DISABLED" },
+    const std::array<std::pair<fs::path, const char *>, 1> sources = {
+        std::pair{ sharedSlangRoot() / "common" / "drawn_sky.slang", "SKYBOX_DISABLED" },
     };
     for (const auto &[path, name] : sources) {
         const auto contents = readFileText(path);
@@ -7409,23 +7488,32 @@ TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
     }
 }
 
-// SkyUniforms.hpp's modes must land in the branches sky.slang takes for them.
+// SkyUniforms.hpp's modes must land in the branches drawn_sky.slang takes for them, which sky.slang hands its mode.
 TEST(BuildIntegrity, SkyModesSelectTheCubeMapAndTheNavyInSkySlang)
 {
-    const fs::path sky_path = sharedSlangRoot() / "sky" / "sky.slang";
+    const fs::path sky_slang_path = sharedSlangRoot() / "sky" / "sky.slang";
+    const auto sky_slang = readFileText(sky_slang_path);
+    ASSERT_TRUE(sky_slang.has_value()) << "missing " << sky_slang_path.string()
+                                       << " - is the OxidANT submodule checked out?";
+    EXPECT_NE(sky_slang->find("drawn_sky(sky.mode.x, cube,"), std::string::npos)
+      << sky_slang_path.string() << " no longer draws drawn_sky() with its mode and its cube map's sample";
+    EXPECT_NE(sky_slang->find("float3 cube = skyboxTex.SampleLevel("), std::string::npos)
+      << sky_slang_path.string() << " no longer samples skyboxTex for drawn_sky()";
+    const fs::path sky_path = sharedSlangRoot() / "common" / "drawn_sky.slang";
     const auto contents = readFileText(sky_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << sky_path.string() << " - is the OxidANT submodule checked out?";
     std::vector<float> thresholds;
-    static const std::regex kBranch(R"(if\s*\(\s*sky\.mode\.x\s*>\s*([0-9.]+)\s*\)\s*\n\s*return\s+([^;]*);)");
+    static const std::regex kBranch(
+      R"(if\s*\(\s*mode\s*>\s*([0-9.]+)\s*\)\s*\n(?:\s*//[^\n]*\n)*\s*return\s+([^;]*);)");
     std::vector<std::string> returns;
     for (std::sregex_iterator it(contents->begin(), contents->end(), kBranch), end; it != end; ++it) {
         thresholds.push_back(std::stof((*it)[1].str()));
         returns.push_back((*it)[2].str());
     }
-    ASSERT_EQ(thresholds.size(), 2U) << sky_path.string() << " no longer branches twice on sky.mode.x";
-    // The higher threshold comes first and draws the navy; the lower one samples the cube map.
+    ASSERT_EQ(thresholds.size(), 2U) << sky_path.string() << " no longer branches twice on mode";
+    // The higher threshold comes first and draws the navy; the lower one decodes the cube map's sample.
     EXPECT_NE(returns[0].find("SKYBOX_DISABLED"), std::string::npos) << returns[0];
-    EXPECT_NE(returns[1].find("skyboxTex"), std::string::npos) << returns[1];
+    EXPECT_NE(returns[1].find("aces_tonemap_inverse(cube)"), std::string::npos) << returns[1];
     EXPECT_GT(Kataglyphis::kSkyModeSwitchedOff, thresholds[0]);
     EXPECT_GT(Kataglyphis::kSkyModeCubeMap, thresholds[1]);
     EXPECT_LE(Kataglyphis::kSkyModeCubeMap, thresholds[0]);
@@ -10325,20 +10413,19 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
         EXPECT_EQ(text.find("N = -N"), std::string::npos)
           << relative << " negates N before resolving the normal map. " << kFailureMessage;
     }
-    for (const char *relative : { "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-           "Resources/ShadersSlang/path_tracing/path_tracing.slang" }) {
-        const fs::path path = repo_root / relative;
-        const auto text_opt = readFileText(path);
-        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+    // Both traced modes resolve the normal in traced_hit.slang's one fetch, which takes the side from its caller.
+    {
+        const char *relative = "Resources/ShadersSlang/common/traced_hit.slang";
+        const auto text_opt = readFileText(repo_root / relative);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << relative;
         EXPECT_NE(text_opt->find("frontFace, obj, material, texCoords)"), std::string::npos)
           << relative << " no longer passes its face-forward side into resolved_normal_lod0(). " << kFailureMessage;
     }
     // Like SV_IsFrontFace, the traced side comes from the winding; the interpolated normal can disagree near silhouettes.
     const std::array<std::pair<const char *, const char *>, 2> traced_sides = {
-        std::pair{ "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-          "bool frontFace = HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE;" },
-        std::pair{ "Resources/ShadersSlang/path_tracing/path_tracing.slang",
-          "bool frontFace = rayQuery.CommittedTriangleFrontFace();" }
+        std::pair{
+          "Resources/ShadersSlang/raytracing/raytrace.rchit.slang", "HitKind() == HIT_KIND_TRIANGLE_FRONT_FACE" },
+        std::pair{ "Resources/ShadersSlang/path_tracing/path_tracing.slang", "query.CommittedTriangleFrontFace()" }
     };
     for (const auto &[relative, needle] : traced_sides) {
         const auto text_opt = readFileText(repo_root / relative);
@@ -10389,7 +10476,7 @@ TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
       { "deferred/deferred.slang", "return float4(", 2U },
       { "raytracing/raytrace.rgen.slang", "image[", 1U },
       { "path_tracing/path_tracing.slang", "image[tid.xy] =", 2U },
-      { "path_tracing/path_tracing.slang", "summedColor +=", 1U },
+      { "path_tracing/path_tracing.slang", "summedColor += hdr_safe(", 1U },
     } };
 
     std::vector<std::string> violations;
@@ -10854,14 +10941,15 @@ TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
     EXPECT_NE(estimator->find("o.direction = normalize(direction);"), std::string::npos)
       << estimator_path.string() << " no longer normalizes the bounce direction. " << kFailureMessage;
 
-    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
-    const auto contentsOpt = readFileText(path_tracing_path);
-    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << path_tracing_path.string();
+    // The shared integrator walks the path for both renderers.
+    const fs::path integrator_path = sharedSlangRoot() / "common" / "path_integrator.slang";
+    const auto contentsOpt = readFileText(integrator_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << integrator_path.string();
     const std::string &contents = *contentsOpt;
-    EXPECT_NE(contents.find("rayDirection = next.direction;"), std::string::npos)
-      << path_tracing_path.string() << " no longer takes the shared sample_bounce()'s direction. " << kFailureMessage;
-    EXPECT_EQ(contents.find("rayDirection = newDirection;"), std::string::npos)
-      << path_tracing_path.string() << " assigns a bounce direction of its own without normalizing it. "
+    EXPECT_NE(contents.find("ray.direction = next.direction;"), std::string::npos)
+      << integrator_path.string() << " no longer takes the shared sample_bounce()'s direction. " << kFailureMessage;
+    EXPECT_EQ(contents.find("ray.direction = newDirection;"), std::string::npos)
+      << integrator_path.string() << " assigns a bounce direction of its own without normalizing it. "
       << kFailureMessage;
 }
 
@@ -10872,13 +10960,16 @@ TEST(BuildIntegrity, PathTracedCloudDepthIsTracedOnlyForTheClouds)
     const fs::path shader_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto shader = readFileText(shader_path);
     ASSERT_TRUE(shader.has_value()) << "could not open " << shader_path.string();
+    // The depth probe rides the first sample's closest-hit pass, wanted only when the clouds read it.
+    EXPECT_NE(shader->find("probe.wanted = pc_ray.trace_cloud_depth != 0u;"), std::string::npos)
+      << shader_path.string() << " probes the cloud depth whether or not clouds are on";
     const std::size_t gate = shader->find("if (pc_ray.trace_cloud_depth != 0u)");
-    const std::size_t trace = shader->find("tracedDepth[tid.xy] = primary_hit_depth(");
-    ASSERT_NE(trace, std::string::npos) << shader_path.string() << " no longer writes the traced depth";
+    const std::size_t write = shader->find("tracedDepth[tid.xy] = probe.hit");
+    ASSERT_NE(write, std::string::npos) << shader_path.string() << " no longer writes the probed depth";
     ASSERT_NE(gate, std::string::npos) << shader_path.string()
-                                       << " traces the cloud depth whether or not clouds are on";
-    EXPECT_TRUE(gate < trace && trace - gate < 160U)
-      << shader_path.string() << " does not guard its primary_hit_depth() write with trace_cloud_depth";
+                                       << " writes the cloud depth whether or not clouds are on";
+    EXPECT_TRUE(gate < write && write - gate < 240U)
+      << shader_path.string() << " does not guard its depth write with trace_cloud_depth";
 
     const fs::path renderer_path = repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
     const auto renderer = readFileText(renderer_path);
@@ -10994,8 +11085,11 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
         const std::array<std::vector<const char *>, 5> kColumnFiles{ {
           { "Resources/ShadersSlang/rasterizer/rasterizer.slang" },
           { "Resources/ShadersSlang/deferred/deferred.slang" },
-          { "Resources/ShadersSlang/raytracing/raytrace.rchit.slang" },
-          { "Resources/ShadersSlang/path_tracing/path_tracing.slang" },
+          // Both traced columns read their hit through traced_hit.slang's one fetch.
+          { "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+            "Resources/ShadersSlang/common/traced_hit.slang" },
+          { "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+            "Resources/ShadersSlang/common/traced_hit.slang" },
           { "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
             "Resources/ShadersSlang/common/alpha_test.slang" },
         } };

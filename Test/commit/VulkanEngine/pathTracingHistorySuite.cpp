@@ -81,14 +81,13 @@ TEST(PathTracingHistoryUnit, ASkyboxToggleInvalidatesTheHistory)
     EXPECT_TRUE(a != b);
 }
 
-// The Ambient slider moves dirLight.direction.w, which the path tracer never reads, so its mean must survive it.
-TEST(PathTracingHistoryUnit, TheAmbientInTheLightsWDoesNotInvalidateTheHistory)
+// The Ambient slider moves dirLight.direction.w, which scales the sky a path-traced bounce sees, so it restarts the mean.
+TEST(PathTracingHistoryUnit, TheAmbientInTheLightsWInvalidatesTheHistory)
 {
     const DirectionalLightData dim{ .direction = glm::vec4(0.0F, -1.0F, 0.0F, 0.35F),
         .color = glm::vec4(1.0F, 1.0F, 1.0F, 2.0F) };
     DirectionalLightData bright = dim;
     bright.direction.w = 2.0F;
 
-    EXPECT_TRUE(key_for(dim) == key_for(bright)) << "an Ambient change restarted the path-traced mean";
-    EXPECT_TRUE(key_for(dim) == make_key());
+    EXPECT_TRUE(key_for(dim) != key_for(bright)) << "an Ambient change kept the path-traced mean";
 }
