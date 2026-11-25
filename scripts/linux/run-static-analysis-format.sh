@@ -118,7 +118,8 @@ run_iwyu() {
   require_tools iwyu_tool
   [[ -f "${BUILD_DIR}/compile_commands.json" ]] || err "Missing ${BUILD_DIR}/compile_commands.json; configure ${BUILD_DIR} first"
   local files=() status=0
-  mapfile -t files < <(code_quality_find_iwyu_files "${CPP_SOURCE_ROOTS[@]}" | sed "s#^#$(pwd)/#")
+  # The analysis build leaves KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND off, so the playground has no compile-DB entry to read.
+  mapfile -t files < <(code_quality_find_iwyu_files "${CPP_SOURCE_ROOTS[@]}" | grep -v '^Src/KomputePlayground/' | sed "s#^#$(pwd)/#")
   code_quality_prepare_compile_db "${BUILD_DIR}"
   code_quality_run_iwyu "${CODE_QUALITY_COMPILE_DB_DIR}" "${IWYU_LOG}" "${files[@]}" || status=$?
   code_quality_cleanup_compile_db
