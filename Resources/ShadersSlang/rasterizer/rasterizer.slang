@@ -1,5 +1,5 @@
 import scene_types;
-import ambient;
+import ambient_maps;
 import brdf;
 import material_fetch;
 import material_rules;
@@ -85,8 +85,9 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
     float3 punctual = punctual_lighting(
         In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
-    // The sky lights what the sun cannot reach.
-    float3 ambient = sceneUBO.dirLight.direction.w * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
+    // The sky lights what the sun cannot reach, as far as the surface's occlusion lets it.
+    float3 ambient = sceneUBO.dirLight.direction.w * resolved_occlusion(obj, material, In.texCoords)
+                     * scene_sky_ambient(sceneUBO, N, V, albedo, metallic, roughness, f0, energy);
 
     // Emitted light is not shadowed.
     return float4(surface_lighting(sunDirect, sunVisibility, sceneUBO.cascadedShadowIntensity, punctual, ambient,

@@ -1156,7 +1156,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "cloudMeshOffset", offsetof(SceneUBO, cloudMeshOffset) },
             { "cloudParameters", offsetof(SceneUBO, cloudParameters) },
             { "cloudAmbientTop", offsetof(SceneUBO, cloudAmbientTop) },
-            { "cloudAmbientBottom", offsetof(SceneUBO, cloudAmbientBottom) } },
+            { "cloudAmbientBottom", offsetof(SceneUBO, cloudAmbientBottom) },
+            { "iblParams", offsetof(SceneUBO, iblParams) } },
           sizeof(SceneUBO),
           alignof(SceneUBO),
           { { "cascadeLightSpaceMatrices", sizeof(SceneUBO::cascadeLightSpaceMatrices[0]) } } },
@@ -1211,7 +1212,11 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "unlit", offsetof(ObjMaterial, unlit) },
             { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) },
             { "uv1SlotMask", offsetof(ObjMaterial, uv1SlotMask) },
-            { "alphaMode", offsetof(ObjMaterial, alphaMode) } },
+            { "alphaMode", offsetof(ObjMaterial, alphaMode) },
+            { "occlusionTextureID", offsetof(ObjMaterial, occlusionTextureID) },
+            { "occlusionStrength", offsetof(ObjMaterial, occlusionStrength) },
+            { "occlusion_uv_transform_row0", offsetof(ObjMaterial, occlusion_uv_transform_row0) },
+            { "occlusion_uv_transform_row1", offsetof(ObjMaterial, occlusion_uv_transform_row1) } },
           sizeof(ObjMaterial),
           alignof(ObjMaterial) },
         { "Vertex_natural",
@@ -9871,26 +9876,35 @@ TEST(BuildIntegrity, AppRunTearsDownByScopeAlone)
          "LossEndsTheRunAsAFailureAndTearsDownCleanly).";
 }
 
-// The device-loss seam is test instrumentation: no engine code may arm it.
+// The device-loss and failed-bake seams are test instrumentation: no engine code may arm them.
 TEST(BuildIntegrity, DeviceLossSimulationIsArmedOnlyByTests)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path declaring_file = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx";
+    const fs::path renderer_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer";
+    const std::array<std::pair<std::string_view, std::set<fs::path>>, 2> seams = {
+        std::pair<std::string_view, std::set<fs::path>>{
+          "simulateDeviceLossForTesting", { renderer_dir / "VulkanRenderer.ixx" } },
+        std::pair<std::string_view, std::set<fs::path>>{ "simulateFailedAmbientBakeForTesting",
+          { renderer_dir / "VulkanRenderer.ixx", renderer_dir / "VulkanRenderer.cpp" } },
+    };
     std::vector<std::string> violations;
     std::error_code error;
     for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
         if (error) { break; }
         const fs::path &path = it->path();
-        if (!it->is_regular_file(error) || path == declaring_file) { continue; }
+        if (!it->is_regular_file(error)) { continue; }
         const auto contents = readFileText(path);
-        if (contents && contents->find("simulateDeviceLossForTesting") != std::string::npos) {
-            violations.push_back(fs::relative(path, repo_root).generic_string());
+        if (!contents) { continue; }
+        for (const auto &[seam, declaring_files] : seams) {
+            if (!declaring_files.contains(path) && contents->find(seam) != std::string::npos) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + " arms " + std::string(seam));
+            }
         }
     }
 
-    EXPECT_TRUE(violations.empty()) << "engine source arms the simulated device loss:" << joinViolations(violations);
+    EXPECT_TRUE(violations.empty()) << "engine source arms a test seam:" << joinViolations(violations);
 }
 
 // The benchmark seam records without submitting, so a frame of engine code that called it would never be presented.
@@ -11009,6 +11023,12 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
             "metallic_roughness_uv_transform_row1" } },
         { "resolved_normal",
           { "normalTextureID", "normalScale", "normal_uv_transform_row0", "normal_uv_transform_row1" } },
+        { "resolved_occlusion",
+          { "occlusionTextureID",
+            "occlusionStrength",
+            "occlusion_uv_transform_row0",
+            "occlusion_uv_transform_row1",
+            "uv1SlotMask" } },
         { "material_masked_out", { "alphaMode", "alphaCutoff", "dissolve" } },
         { "roughness_factor", { "roughness", "shininess" } },
         { "base_color", { "diffuse" } },

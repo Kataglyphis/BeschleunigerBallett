@@ -109,11 +109,16 @@ void expectMaterialsAsBridged(const std::vector<ObjMaterial> &materials, const o
         EXPECT_EQ(material.unlit, source.unlit ? 1 : 0) << "material " << i;
         EXPECT_EQ(material.alphaMode, static_cast<int>(source.alpha_mode)) << "material " << i;
         EXPECT_EQ(material.uv1SlotMask, static_cast<int>(source.uv1_slot_mask)) << "material " << i;
+        EXPECT_EQ(material.occlusionTextureID, source.occlusion_texture) << "material " << i;
+        EXPECT_EQ(material.occlusionStrength, source.occlusion_strength) << "material " << i;
+        EXPECT_EQ(material.occlusion_uv_transform_row0, vec3(source.occlusion_uv_row0)) << "material " << i;
+        EXPECT_EQ(material.occlusion_uv_transform_row1, vec3(source.occlusion_uv_row1)) << "material " << i;
         const int textures = static_cast<int>(bridged.textures.size());
         for (const int id : { material.textureID,
                material.metallicRoughnessTextureID,
                material.normalTextureID,
-               material.emissiveTextureID }) {
+               material.emissiveTextureID,
+               material.occlusionTextureID }) {
             EXPECT_TRUE(id >= -1 && id < textures) << "material " << i << " names texture " << id;
         }
     }

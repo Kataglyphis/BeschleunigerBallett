@@ -93,6 +93,10 @@ namespace {
             .alphaTextureID = material.alpha_texture,
             .uv1SlotMask = static_cast<int>(material.uv1_slot_mask),
             .alphaMode = static_cast<int>(material.alpha_mode),
+            .occlusionTextureID = material.occlusion_texture,
+            .occlusionStrength = material.occlusion_strength,
+            .occlusion_uv_transform_row0 = toVec3(material.occlusion_uv_row0),
+            .occlusion_uv_transform_row1 = toVec3(material.occlusion_uv_row1),
         };
     }
 

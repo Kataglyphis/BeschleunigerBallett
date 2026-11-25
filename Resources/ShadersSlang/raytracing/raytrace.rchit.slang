@@ -1,6 +1,6 @@
 import scene_types;
 import rt_types;
-import ambient;
+import ambient_maps;
 import brdf;
 import base_color;
 import material_fetch;
@@ -155,9 +155,9 @@ void rchit_main(
             light.radiance * incidence.attenuation, energy);
     }
 
-    // As the raster passes add it, unshadowed: the sky lights what the sun cannot reach.
-    float skyAmbient = sceneUBO.dirLight.direction.w;
-    payload.hit_value += skyAmbient * analytic_ambient(N, V, albedo, metallic, roughness, f0, energy);
+    // As the raster passes add it, unshadowed: the sky lights what the sun cannot reach, as far as occlusion lets it.
+    float skyAmbient = sceneUBO.dirLight.direction.w * resolved_occlusion_lod0(obj, material, texCoords);
+    payload.hit_value += skyAmbient * scene_sky_ambient(sceneUBO, N, V, albedo, metallic, roughness, f0, energy);
 
     // Emissive is added after shadowing (emitted light is not shadowed); explicit LOD as above.
     payload.hit_value += resolved_emission_lod0(obj, material, texCoords);

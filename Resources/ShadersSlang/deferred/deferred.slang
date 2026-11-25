@@ -1,5 +1,5 @@
 import scene_types;
-import ambient;
+import ambient_maps;
 import material_fetch;
 import material_rules;
 import base_color;
@@ -76,8 +76,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     surface.albedo = texColor.rgb;
     surface.metallic = metallicRoughness.x;
     surface.roughness = metallicRoughness.y;
-    // No occlusion map reaches this engine yet, so ambient stays unoccluded.
-    surface.occlusion = 1.0;
+    surface.occlusion = resolved_occlusion(obj, material, In.texCoords);
     // The float16 format keeps emissive strength above 1.0, short of +Inf.
     surface.emissive = hdr_safe(resolved_emission(obj, material, In.texCoords));
     GBufferTexels t = gbuffer_pack(surface, material.unlit != 0);
@@ -143,7 +142,7 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
                                         sceneUBO_lighting.punctualShadowCount);
     // The sky lights what the sun cannot reach, as far as the surface's occlusion lets it.
     float3 ambient = sceneUBO_lighting.dirLight.direction.w * s.occlusion
-                     * analytic_ambient(s.n, V, s.albedo, s.metallic, s.roughness, f0, energy);
+                     * scene_sky_ambient(sceneUBO_lighting, s.n, V, s.albedo, s.metallic, s.roughness, f0, energy);
 
     // Emitted light is not shadowed.
     return float4(surface_lighting(sunDirect, sunVisibility, sceneUBO_lighting.cascadedShadowIntensity, punctual,

@@ -14,6 +14,14 @@ the GitHub releases themselves.
 
 ### Added
 
+- The C++ engine lights its scenes with the skybox it draws and reads the glTF occlusion map (plan C4 stages 2-3,
+  owner decision 2026-11-19): `AmbientMaps` bakes OxidANT's `ibl.slang` from the skybox's cube map, whose new
+  `fs_skybox_to_cube` untonemaps the faces as `sky.slang` draws them, into the Rust renderer's maps (an irradiance
+  cube, a prefiltered cube of five roughness mips and the split sum's table), after the skybox loads and on F5; the
+  maps start zeroed and sampleable, so a bake that bails leaves the analytic sky. Forward, deferred and ray tracing
+  read them through OxidANT's new `sky_ambient`, which Rust's forward pass and tracer share; a switched-off skybox
+  lights with the analytic sky. The occlusion slot crosses the bridge (`ObjMaterial` is 208 bytes, uv1 bit 4), and
+  `resolved_occlusion()` scales the ambient term only. OxidANT pin `e965d1e`.
 - The C++ engine's shadows, lighting composition, G-buffer and cloud upsample come from OxidANT's shared Slang (plan
   I10): `cascade_visibility.slang`, `punctual_shadow.slang`'s `punctual_shadow_visibility`, `surface_lighting.slang`,
   `gbuffer.slang` and `cloud_upsample.slang`, each with a vector kernel both renderers check. `cascaded_shadow.slang`,

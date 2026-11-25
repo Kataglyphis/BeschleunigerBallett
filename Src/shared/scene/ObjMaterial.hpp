@@ -64,11 +64,20 @@ struct ObjMaterial
     // OBJ map_d opacity slot; -1 = none, always for glTF, which keeps opacity in baseColorTexture.a.
     int alphaTextureID{ -1 };
 
-    // Slots sampling TEXCOORD_1, one bit each: 0 base colour (and map_d), 1 metallic-roughness, 2 normal, 3 emissive.
+    // TEXCOORD_1 slots, a bit each: 0 base colour (and map_d), 1 metallic-roughness, 2 normal, 3 emissive, 4 occlusion.
     int uv1SlotMask{ 0 };
 
     // glTF alphaMode; BLEND draws after the opaque meshes, sorted and alpha-composited, and the tracers keep it opaque.
     int alphaMode{ ALPHA_OPAQUE };
+
+    // glTF occlusionTexture slot, uploaded linear; its R darkens the ambient term only. -1 = none.
+    int occlusionTextureID{ -1 };
+
+    // occlusionTexture's strength: lerp(1, R, strength); 1 when unauthored.
+    float occlusionStrength{ 1.0F };
+
+    glm::vec3 occlusion_uv_transform_row0{ 1.0F, 0.0F, 0.0F };
+    glm::vec3 occlusion_uv_transform_row1{ 0.0F, 1.0F, 0.0F };
 };
 
 // Bit positions of ObjMaterial::uv1SlotMask, with external linkage for kataglyphis.vulkan.obj_material's export.
@@ -76,6 +85,7 @@ inline constexpr int UV1_SLOT_BASE_COLOR = Kataglyphis::ShaderSlots::UV1_SLOT_BA
 inline constexpr int UV1_SLOT_METALLIC_ROUGHNESS = Kataglyphis::ShaderSlots::UV1_SLOT_METALLIC_ROUGHNESS;
 inline constexpr int UV1_SLOT_NORMAL = Kataglyphis::ShaderSlots::UV1_SLOT_NORMAL;
 inline constexpr int UV1_SLOT_EMISSIVE = Kataglyphis::ShaderSlots::UV1_SLOT_EMISSIVE;
+inline constexpr int UV1_SLOT_OCCLUSION = Kataglyphis::ShaderSlots::UV1_SLOT_OCCLUSION;
 
 // A constructor or base class would silently break designated initializers and the offsetof layout gates.
 static_assert(std::is_aggregate_v<ObjMaterial>,

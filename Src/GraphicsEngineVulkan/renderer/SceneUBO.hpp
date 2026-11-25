@@ -42,5 +42,7 @@ struct SceneUBO
     // The sky's hemisphere means the clouds scatter; both .w are filler.
     vec4 cloudAmbientTop;
     vec4 cloudAmbientBottom;
+    // x: 1 when the skybox's baked maps light the scene (AmbientMaps), y: the prefiltered map's top mip.
+    vec4 iblParams;
 };
 }// namespace Kataglyphis::VulkanRendererInternals

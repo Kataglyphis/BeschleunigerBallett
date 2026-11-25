@@ -15,6 +15,10 @@ static const int SHADOW_MAP_BINDING = 5;
 static const int PUNCTUAL_LIGHTS_BINDING = 6;
 // Point and spot light shadows: a cube-array depth map, one cube per shadowed light.
 static const int PUNCTUAL_SHADOW_MAP_BINDING = 7;
+// The skybox's baked environment (AmbientMaps): irradiance and prefiltered cubes, then the split sum's table.
+static const int IBL_IRRADIANCE_BINDING = 8;
+static const int IBL_PREFILTERED_BINDING = 9;
+static const int IBL_BRDF_LUT_BINDING = 10;
 
 // Ray-tracing set (ray- and path-traced shaders only).
 static const int TLAS_BINDING = 0;

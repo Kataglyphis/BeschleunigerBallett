@@ -35,6 +35,7 @@ module;
 #include <memory>
 #include <span>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 #ifndef VMA_IMPLEMENTATION
@@ -159,6 +160,10 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     }
     skyBox.createGraphicsPipelines(
       Kataglyphis::VulkanRendererInternals::Rasterizer::OFFSCREEN_FORMAT, rasterizer.getDepthFormat());
+    ambientMaps.init(device, graphics_command_pool.get());
+    if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
+        (void)ambientMaps.bake(*cube_map, skyBox.getCubeFaceSize());
+    }
 
     registerBuiltInStages();
 
@@ -254,6 +259,8 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
       cloudWindOffset(glm::vec3(sceneSettings.cloud_wind[0], sceneSettings.cloud_wind[1], sceneSettings.cloud_wind[2]),
         settings.time_seconds));
     fillSceneUboCloudAmbient(sceneUBO, sceneSettings.skybox_enabled, skyBox.getCloudAmbient());
+    fillSceneUboAmbientMaps(
+      sceneUBO, sceneSettings.skybox_enabled, ambientMaps.baked(), ambientMaps.prefilteredTopMip());
 }
 
 auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
@@ -498,6 +505,17 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(const GUISceneSharedV
     }
 }
 
+void Kataglyphis::VulkanRenderer::simulateFailedAmbientBakeForTesting()
+{
+    std::ignore = device->getLogicalDevice().waitIdle();
+    ambientMaps.cleanUp();
+    ambientMaps.init(device, graphics_command_pool.get());
+    // A cube without a view, as SkyBox::uploadCubeMapFaces leaves one it could not fill.
+    Kataglyphis::Texture unuploaded;
+    (void)ambientMaps.bake(unuploaded, 0);
+    updateAllDescriptorSets();
+}
+
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
@@ -565,6 +583,9 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
         deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
         // The sky draws inside the main stage's passes.
         skyBox.shaderHotReload();
+        if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
+            ambientMaps.shaderHotReload(*cube_map, skyBox.getCubeFaceSize());
+        }
         if (device->supportsHardwareAcceleratedRRT()) {
             std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
                 raytracingDescriptors.getLayout() };
@@ -1635,6 +1656,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
     vk::ShaderStageFlags sampler_stages = vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags textures_stages = vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags punctual_light_stages = vk::ShaderStageFlagBits::eFragment;
+    vk::ShaderStageFlags ambient_map_stages = vk::ShaderStageFlagBits::eFragment;
 
     if (raytracing_available) {
         global_ubo_stages |= vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute;
@@ -1647,6 +1669,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
         textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR
                            | vk::ShaderStageFlagBits::eCompute;
         punctual_light_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
+        ambient_map_stages |= vk::ShaderStageFlagBits::eClosestHitKHR;
     }
 
     sharedRenderDescriptors.addBinding(globalUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1, global_ubo_stages)
@@ -1661,7 +1684,11 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       .addBinding(PUNCTUAL_LIGHTS_BINDING, vk::DescriptorType::eStorageBuffer, 1, punctual_light_stages)
       // The punctual lights' cube shadow maps, sampled by the forward and deferred lighting shaders.
       .addBinding(
-        PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
+        PUNCTUAL_SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
+      // The skybox's baked environment, read by the raster and ray-traced modes' ambient term.
+      .addBinding(IBL_IRRADIANCE_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
+      .addBinding(IBL_PREFILTERED_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
+      .addBinding(IBL_BRDF_LUT_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages);
 
     if (!sharedRenderDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create shared render descriptor resources!");
@@ -1764,6 +1791,23 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
               cubes->getImageView(),
               vk::ImageLayout::eShaderReadOnlyOptimal,
               cubes->getSampler());
+        }
+    }
+
+    if (ambientMaps.ready()) {
+        const std::array<std::pair<int, Kataglyphis::Texture *>, 3> maps = {
+            std::pair{ IBL_IRRADIANCE_BINDING, &ambientMaps.getIrradiance() },
+            std::pair{ IBL_PREFILTERED_BINDING, &ambientMaps.getPrefiltered() },
+            std::pair{ IBL_BRDF_LUT_BINDING, &ambientMaps.getBrdfLut() },
+        };
+        for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+            for (const auto &[binding, texture] : maps) {
+                sharedRenderDescriptors.writeImage(i,
+                  static_cast<uint32_t>(binding),
+                  texture->getImageView(),
+                  vk::ImageLayout::eShaderReadOnlyOptimal,
+                  texture->getSampler());
+            }
         }
     }
 

@@ -46,6 +46,12 @@ float2 emissive_uv(float4 uvs, ObjMaterial material)
     return transform_uv(slot_uv(uvs, material, UV1_SLOT_EMISSIVE), material.emissive_uv_transform_row0, material.emissive_uv_transform_row1);
 }
 
+// Occlusion slot's UV set and KHR_texture_transform.
+float2 occlusion_uv(float4 uvs, ObjMaterial material)
+{
+    return transform_uv(slot_uv(uvs, material, UV1_SLOT_OCCLUSION), material.occlusion_uv_transform_row0, material.occlusion_uv_transform_row1);
+}
+
 // OBJ map_d slot: it shares the base colour's UV set and rows, identity for every OBJ material.
 float2 alpha_uv(float4 uvs, ObjMaterial material)
 {

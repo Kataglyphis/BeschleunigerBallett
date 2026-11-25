@@ -51,6 +51,9 @@ class SkyBox
     // Null until init(); the path tracer's bounces sample the same cubemap.
     Kataglyphis::Texture *getCubeMapTexture() const { return cubeMapTexture.get(); }
 
+    // The uploaded faces' side in texels; 0 before an upload succeeded.
+    uint32_t getCubeFaceSize() const { return cubeFaceSize; }
+
     // The loaded faces' hemisphere means, computed once per load; the analytic sky's when no faces loaded.
     const CloudAmbient &getCloudAmbient() const { return cloudAmbient; }
 
@@ -65,6 +68,7 @@ class SkyBox
     std::unique_ptr<Kataglyphis::Texture> cubeMapTexture;
     CloudAmbient cloudAmbient{};
     bool analyticSky{ false };
+    uint32_t cubeFaceSize{ 0 };
 
     std::vector<VulkanBuffer> uniformBuffers{};
     DescriptorSetGroup descriptors;

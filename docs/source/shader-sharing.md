@@ -87,12 +87,17 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   `brdf_direct`'s compensated albedo) and `analytic_ambient` (`sky_model`'s
   hemisphere irradiance and its reflected gradient, blurred towards it by
   roughness squared; no sun disk, since `brdf_direct`'s lobe carries the sun
-  and must stay in its shadow). Here `rasterizer`, `deferred` and `raytrace.rchit`
-  add `analytic_ambient` after the sun's shadow, scaled by
-  `dirLight.direction.w` (the Sun's ambient, the Sky tab's Ambient slider); in
-  OxidANT `forward_lighting.slang`'s `ibl_ambient`, which takes the baked
-  environment instead when one is bound. The path tracer gets the sky through
-  its bounces' misses; OxidANT's ray-traced mode has no ambient term yet. Both.
+  and must stay in its shadow), and `sky_ambient<M : IAmbientMaps>`, which
+  takes the split sum from a renderer's baked maps when it has them, else
+  `analytic_ambient`. Here `rasterizer`, `deferred` and `raytrace.rchit` add it
+  after the sun's shadow through `common/ambient_maps.slang`'s
+  `scene_sky_ambient` over `AmbientMaps`'s bake of the drawn skybox (OxidANT's
+  `ibl.slang`, its `fs_skybox_to_cube` untonemapping the faces as `sky.slang`
+  draws them), scaled by `dirLight.direction.w` (the Sky tab's Ambient slider)
+  and the occlusion map; a switched-off skybox lights with the analytic sky. In
+  OxidANT `forward_lighting.slang` and the tracer's `trace_shading.slang` call
+  it over their own maps. The path tracers get the sky through their bounces'
+  misses. Both.
 - `common/constants.slang` — `PI` and `MIN_ROUGHNESS` (0.045), for `brdf`,
   `path_estimator`, `volumetric_clouds`, `material_rules.slang` and the path
   tracer's furnace card. Both.
@@ -324,7 +329,7 @@ tonemap shader.
 | `fxaa/fxaa.slang` | both |
 | `gpu_cull/gpu_cull.slang` | wgsl |
 | `histogram/histogram.slang` | wgsl |
-| `ibl/ibl.slang` | wgsl |
+| `ibl/ibl.slang` | both |
 | `occlusion_bbox/occlusion_bbox.slang` | wgsl |
 | `path_tracing/path_tracing.slang` | spirv |
 | `post/post.slang` | spirv |
@@ -393,6 +398,7 @@ imports.
 | `common/alpha_mode.slang` | both |
 | `common/alpha_test.slang` | spirv |
 | `common/ambient.slang` | both |
+| `common/ambient_maps.slang` | spirv |
 | `common/base_color.slang` | spirv |
 | `common/brdf.slang` | both |
 | `common/brdf_energy_fit.slang` | both |
@@ -441,10 +447,10 @@ and `Vertex`.
 
 | Feature | C++ `GltfLoader` | Rust `gltf_loader` | Note |
 | --- | --- | --- | --- |
-| UV sets beyond TEXCOORD_0 | `uv_set_mask`'s low four bits become `ObjMaterial::uv1SlotMask`; `TEXCOORD_1` lands in `Vertex::texture_coords1` (a copy of TEXCOORD_0 when absent) | `uv_set_bit` reads each slot's `texCoord`, which `KHR_texture_transform`'s `texCoord` overrides, into `uv_set_mask`; TEXCOORD_2+ warns and samples TEXCOORD_0; `tangent_uv_set` follows the normal texture | Parity for the four slots both read, the shadow passes included (C++'s `shadow_map.slang` takes TEXCOORD_1 at location 5). |
+| UV sets beyond TEXCOORD_0 | `uv_set_mask`'s five bits become `ObjMaterial::uv1SlotMask`; `TEXCOORD_1` lands in `Vertex::texture_coords1` (a copy of TEXCOORD_0 when absent) | `uv_set_bit` reads each slot's `texCoord`, which `KHR_texture_transform`'s `texCoord` overrides, into `uv_set_mask`; TEXCOORD_2+ warns and samples TEXCOORD_0; `tangent_uv_set` follows the normal texture | Parity for the five slots both read, the shadow passes included (C++'s `shadow_map.slang` takes TEXCOORD_1 at location 5). |
 | `KHR_materials_unlit` | the flat material's `unlit` becomes `ObjMaterial::unlit`, honoured in all four shading paths (`rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang`) | reads `material.unlit()` into `CpuMaterial::unlit` | Parity: both loaders and every shading path on both sides treat the extension identically. |
-| `occlusionTexture` + `occlusionStrength` | the flat material drops it (`flat.rs` masks off bit 4); `ObjMaterial` has no occlusion field | reads `occlusion_texture()`/`occlusion_strength` into `CpuMaterial::occlusion_texture`/`occlusion_strength` | Divergence until the C++ IBL (BACKLOG "IBL and the occlusion map for C++"): glTF scopes `occlusionTexture` to indirect light, which the C++ raster paths and `raytrace.rchit.slang` have since 2026-11-23 as `analytic_ambient`, unattenuated; the occlusion slot arrives with that item. |
-| Per-slot `KHR_texture_transform` | the flat material gives base-colour, normal, metallic-roughness and emissive each their own transform (`uv_transform_row0`/`_row1`, `normal_uv_transform_row0`/`_row1`, `metallic_roughness_uv_transform_row0`/`_row1`, `emissive_uv_transform_row0`/`_row1`); no occlusion slot, since occlusion textures are not read (previous row) | the same four slots plus `occlusion_uv_transform` | Parity wherever C++ has a texture to transform; the only gap is the occlusion gap above, not a `KHR_texture_transform` bug. |
+| `occlusionTexture` + `occlusionStrength` | the flat material carries it as a linear slot with its strength and transform (`ObjMaterial::occlusionTextureID`, `occlusionStrength`, `occlusion_uv_transform_row0`/`_row1`, uv1 bit 4); `resolved_occlusion()` scales the ambient term only, in forward, in deferred (through the G-buffer's albedo alpha) and in `raytrace.rchit.slang` | reads `occlusion_texture()`/`occlusion_strength` into `CpuMaterial::occlusion_texture`/`occlusion_strength` | Parity: both take `gltf_material.slang`'s `material_occlusion()` and scale `ambient.slang`'s `sky_ambient()` by it; neither path tracer reads it, as both gather their indirect light. |
+| Per-slot `KHR_texture_transform` | the flat material gives every slot its own transform (`uv_transform_row0`/`_row1`, `normal_uv_transform_row0`/`_row1`, `metallic_roughness_uv_transform_row0`/`_row1`, `emissive_uv_transform_row0`/`_row1`, `occlusion_uv_transform_row0`/`_row1`) | the same five slots | Parity. |
 | `alphaMode` `BLEND` | the flat model sets `ObjMaterial::alphaMode` to `ALPHA_BLEND` and `MeshRange::alphaBlended`; forward and deferred skip the mesh, then draw it last, farthest first by its bounds centre's distance to the eye, src-alpha blended with depth test on and writes off (deferred shades it forward after the lighting pass); the tracers render it opaque | `AlphaMode::Blend` drives the same sorted pass (the `alpha_blend` primitive flag and its distance sort), forward and deferred; the tracer carries `ALPHA_BLEND` but shades it opaque too | Parity in raster. Neither renderer sorts within a mesh, so a self-overlapping BLEND mesh composites in index order. |
 | Roughness default when `Pr` is unauthored (OBJ path) | OxidANT's one OBJ reader (`kataglyphis_assets::obj`, `material.rs`) sets `ObjMaterial::roughness` from `Ns` through `roughness_factor()`'s `sqrt(2/(Ns+2))` curve, clamped `[0.045, 1.0]`; without `Pr` and `Ns` it is 1 (owner, 2026-11-19) | the same reader, through the glTF it writes | Parity: one rule for both renderers. |
 | `map_d` (OBJ per-texel opacity map) | the reader's flat model hands `map_d` over as its own linear slot, `ObjMaterial::alphaTextureID`, a `MASK` cut-out at `alphaCutoff = 0.5`, honoured in `rasterizer.slang`, `deferred.slang`, `shadow_map.slang` and `common/alpha_test.slang` | the in-memory GLB the native app opens an OBJ through (`obj::obj_to_glb`, `apply_masks`) composites the mask's red channel into the base colour's alpha and emits `alphaMode: MASK` at the same 0.5 cutoff | Parity in what is cut; C++ samples the mask at its own resolution, Rust resizes it to the base colour's. |
@@ -501,6 +507,10 @@ being rediscovered one field at a time:
 | `alphaTextureID` | `material.alphaTextureID` | `material.alphaTextureID` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaTextureID` |
 | `uv1SlotMask` | `base_color_uv()` / the per-slot accessors, through `slot_uv()` | `base_color_uv()` / the per-slot accessors, through `slot_uv()` | `base_color_uv()` / the `_lod0` accessors, through `slot_uv()` | `base_color_uv()` / the `_lod0` accessors, through `slot_uv()` | `base_color_uv()` |
 | `alphaMode` | `material_masked_out()` / `blend_coverage()` (the output alpha the transparent pass blends by) | `material_masked_out()`; a BLEND mesh skips the G-buffer and is shaded by `rasterizer.slang` after the lighting pass | not read — see `dissolve`; BLEND renders opaque in ray tracing | not read — see `dissolve`; BLEND renders opaque in path tracing | `material.alphaMode` (outer guard) / `material_masked_out()` |
+| `occlusionTextureID` | `resolved_occlusion()` | `resolved_occlusion()` into the G-buffer's albedo alpha | `resolved_occlusion_lod0()` | not read — the path tracer gathers its own indirect light | not read — no lighting |
+| `occlusionStrength` | `resolved_occlusion()` | `resolved_occlusion()` | `resolved_occlusion_lod0()` | not read — see `occlusionTextureID` | not read — no lighting |
+| `occlusion_uv_transform_row0` | `resolved_occlusion()` | `resolved_occlusion()` | `resolved_occlusion_lod0()` | not read — see `occlusionTextureID` | not read — no lighting |
+| `occlusion_uv_transform_row1` | `resolved_occlusion()` | `resolved_occlusion()` | `resolved_occlusion_lod0()` | not read — see `occlusionTextureID` | not read — no lighting |
 
 ## Beyond shaders
 

@@ -46,6 +46,10 @@ struct ObjMaterial
     int alphaTextureID;
     int uv1SlotMask;
     int alphaMode;
+    int occlusionTextureID;
+    float occlusionStrength;
+    float3 occlusion_uv_transform_row0;
+    float3 occlusion_uv_transform_row1;
 };
 
 // Matches ObjectDescription.hpp; the uint64_t fields are buffer device addresses.
@@ -113,4 +117,5 @@ struct SceneUBO
     float4 cloudParameters;
     float4 cloudAmbientTop;
     float4 cloudAmbientBottom;
+    float4 iblParams; // x: 1 when the skybox's baked maps light the scene, y: the prefiltered map's top mip
 };

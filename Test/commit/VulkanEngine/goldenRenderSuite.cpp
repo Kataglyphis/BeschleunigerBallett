@@ -1600,6 +1600,8 @@ TEST(GoldenRender, AMirrorInTheSunsShadowReflectsTheSkyAndNoSun)
         material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
     });
     ASSERT_TRUE(mirror.has_value()) << "could not write the mirror card";
+    // The analytic sky's bake: it has no sun disk, and its brightest radiance, the horizon's, bounds the reflection.
+    const ScopedEnvVar analytic_sky("KATAGLYPHIS_SKYBOX_DIR", "Resources/Textures/Skybox/no-such-sky");
 
     const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
@@ -1680,6 +1682,281 @@ TEST(GoldenRender, AMirrorInTheSunsShadowReflectsTheSkyAndNoSun)
             EXPECT_LE(gain[c], 1.02 * brightest_sky) << "channel " << c << ": the ambient put the sun into its shadow";
         }
         EXPECT_GT(gain.b, 0.2) << "the mirror reflects no sky";
+    }
+}
+
+// One texel (200, 30, 30) as PNG bytes: a uniformly red skybox face, whose bake must light a card red.
+constexpr std::string_view RED_FACE_PNG{
+    "\x89\x50\x4E\x47\x0D\x0A\x1A\x0A\x00\x00\x00\x0D\x49\x48\x44\x52\x00\x00\x00\x01\x00\x00\x00"
+    "\x01\x08\x02\x00\x00\x00\x90\x77\x53\xDE\x00\x00\x00\x0C\x49\x44\x41\x54\x78\xDA\x63\x38\x21"
+    "\x27\x07\x00\x02\xB6\x01\x05\x0A\x5B\xA6\x06\x00\x00\x00\x00\x49\x45\x4E\x44\xAE\x42\x60\x82",
+    69
+};
+
+// Six faces of RED_FACE_PNG in a per-process temp folder for KATAGLYPHIS_SKYBOX_DIR, removed with the handle.
+class RedSkybox
+{
+  public:
+    RedSkybox()
+    {
+        std::error_code error;
+        dir_ = std::filesystem::temp_directory_path(error)
+               / ("kataglyphis-red-sky-" + std::to_string(Kataglyphis::TestSupport::GltfVariant::processId()));
+        if (error) { return; }
+        std::filesystem::create_directories(dir_, error);
+        for (const char *face : { "RT.png", "LF.png", "UP.png", "DN.png", "FT.png", "BK.png" }) {
+            std::ofstream out(dir_ / face, std::ios::binary | std::ios::trunc);
+            out.write(RED_FACE_PNG.data(), static_cast<std::streamsize>(RED_FACE_PNG.size()));
+            written_ = written_ && static_cast<bool>(out);
+        }
+    }
+    RedSkybox(const RedSkybox &) = delete;
+    RedSkybox &operator=(const RedSkybox &) = delete;
+    ~RedSkybox()
+    {
+        std::error_code ignored;
+        std::filesystem::remove_all(dir_, ignored);
+    }
+
+    [[nodiscard]] bool written() const { return written_ && !dir_.empty(); }
+    [[nodiscard]] std::string string() const { return dir_.string(); }
+
+  private:
+    std::filesystem::path dir_;
+    bool written_{ true };
+};
+
+// The mean HDR radiance of the 7x7 pixels around where world_point projects; nullopt when it falls off the frame.
+std::optional<glm::dvec3> mean_radiance_at(EngineHarness &harness,
+  const std::vector<float> &radiance,
+  uint32_t width,
+  uint32_t height,
+  const glm::vec3 &world_point)
+{
+    const glm::vec4 clip =
+      glm::inverse(harness_inverse_view_projection(harness, width, height)) * glm::vec4(world_point, 1.0F);
+    const auto px = static_cast<int>((clip.x / clip.w * 0.5F + 0.5F) * static_cast<float>(width));
+    const auto py = static_cast<int>((clip.y / clip.w * 0.5F + 0.5F) * static_cast<float>(height));
+    if (px < 3 || py < 3 || px + 3 >= static_cast<int>(width) || py + 3 >= static_cast<int>(height)) {
+        return std::nullopt;
+    }
+    glm::dvec3 sum(0.0);
+    for (int y = py - 3; y <= py + 3; ++y) {
+        for (int x = px - 3; x <= px + 3; ++x) {
+            const float *texel = &radiance[(static_cast<size_t>(y) * width + static_cast<size_t>(x)) * 4U];
+            sum += glm::dvec3(texel[0], texel[1], texel[2]);
+        }
+    }
+    return sum / 49.0;
+}
+
+// A white, fully rough dielectric card: what reaches the eye from it is its irradiance, nothing glossy.
+std::optional<Kataglyphis::TestSupport::GltfVariant> write_white_card(const char *file_name,
+  const std::function<void(nlohmann::json &)> &extra = {})
+{
+    return write_gltf_variant(EMISSIVE_CARD_MODEL, file_name, [&extra](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.9, 0.9, 0.9, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 1.0 }
+        };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+        if (extra) { extra(gltf); }
+    });
+}
+
+struct LitMode
+{
+    const char *name;
+    RasterizationMode raster;
+    bool raytracing;
+};
+
+std::vector<LitMode> raster_and_ray_traced_modes(EngineHarness &harness)
+{
+    std::vector<LitMode> modes = { LitMode{ "forward", RasterizationMode::Forward, false },
+        LitMode{ "deferred", RasterizationMode::Deferred, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(LitMode{ "ray traced", RasterizationMode::Forward, true });
+    }
+    return modes;
+}
+
+// The skybox's bake lights the scene, as the Rust renderer's does: a red sky lights a white card red in every mode.
+TEST(GoldenRender, TheDrawnSkyboxLightsACardThroughItsBakeInEveryMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    const RedSkybox red_sky;
+    ASSERT_TRUE(red_sky.written()) << "could not write the red skybox";
+    const ScopedEnvVar use_red_sky("KATAGLYPHIS_SKYBOX_DIR", red_sky.string().c_str());
+    const auto card = write_white_card("kataglyphis_sky_lit_card.gltf");
+    ASSERT_TRUE(card.has_value()) << "could not write the white card";
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    ASSERT_FALSE(harness.renderer->skyIsAnalytic()) << "the red faces did not load, so the test measures nothing";
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    // The sky alone: no sun, so the card shows what the ambient term gives it.
+    scene_vars.directional_light_radiance = 0.0F;
+    scene_vars.shadows_enabled = false;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    const glm::vec3 centre(0.0F, 5.0F, 18.0F);
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), centre) * glm::scale(glm::mat4(1.0F), glm::vec3(3.0F));
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.renderer->addModel(card->string(), placement).has_value()) << "adding the card failed";
+
+    const std::vector<LitMode> modes = raster_and_ray_traced_modes(harness);
+    std::array<std::vector<glm::dvec3>, 2> lit{};
+    for (size_t sky = 0; sky < 2; ++sky) {
+        // Shown, the skybox's bake lights the scene; switched off, the analytic sky does.
+        scene_vars.skybox_enabled = sky == 0U;
+        for (const LitMode &mode : modes) {
+            SCOPED_TRACE(mode.name);
+            renderer_vars.rasterizationMode = mode.raster;
+            renderer_vars.raytracing = mode.raytracing;
+            harness.render_frames(SETTLE_FRAMES);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+            ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+            const auto mean = mean_radiance_at(harness, radiance, width, height, centre);
+            ASSERT_TRUE(mean.has_value()) << "the card's centre projects outside the frame";
+            GTEST_LOG_(INFO) << mode.name << (sky == 0U ? ", red skybox" : ", skybox off") << ": card (" << mean->r
+                             << ", " << mean->g << ", " << mean->b << ")";
+            lit[sky].push_back(*mean);
+        }
+    }
+    for (size_t m = 0; m < modes.size(); ++m) {
+        SCOPED_TRACE(modes[m].name);
+        const glm::dvec3 red = lit[0][m];
+        EXPECT_GT(red.r, 0.05) << "the red sky leaves the card unlit";
+        EXPECT_GT(red.r, 5.0 * red.g) << "the card's light is not the red sky's";
+        EXPECT_GT(red.r, 5.0 * red.b) << "the card's light is not the red sky's";
+        const glm::dvec3 analytic = lit[1][m];
+        EXPECT_GT(analytic.b, analytic.r) << "with the skybox off the card should take the analytic sky's blue";
+        // One bake, one shared function: every mode puts the same light on the card.
+        for (int c = 0; c < 3; ++c) {
+            EXPECT_NEAR(red[c], lit[0][0][c], 0.05 * lit[0][0][c] + 1e-4) << "channel " << c << " unlike forward";
+        }
+    }
+}
+
+// A bake that bails, as after a failed skybox upload, leaves the maps sampleable and the scene on the analytic sky.
+TEST(GoldenRender, AFailedAmbientBakeLeavesSampleableMapsAndTheAnalyticSky)
+{
+    SKIP_WITHOUT_GPU();
+
+    const RedSkybox red_sky;
+    ASSERT_TRUE(red_sky.written()) << "could not write the red skybox";
+    const ScopedEnvVar use_red_sky("KATAGLYPHIS_SKYBOX_DIR", red_sky.string().c_str());
+    const auto card = write_white_card("kataglyphis_unbaked_card.gltf");
+    ASSERT_TRUE(card.has_value()) << "could not write the white card";
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    ASSERT_FALSE(harness.renderer->skyIsAnalytic()) << "the red faces did not load, so the test measures nothing";
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.directional_light_radiance = 0.0F;
+    scene_vars.shadows_enabled = false;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    const glm::vec3 centre(0.0F, 5.0F, 18.0F);
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), centre) * glm::scale(glm::mat4(1.0F), glm::vec3(3.0F));
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.renderer->addModel(card->string(), placement).has_value()) << "adding the card failed";
+
+    // After the harness: the arm64 runner's PowerVR ICD logs loader errors while devices are enumerated.
+    ScopedValidationErrorCounter validation_errors;
+    harness.renderer->simulateFailedAmbientBakeForTesting();
+    for (const LitMode &mode : raster_and_ray_traced_modes(harness)) {
+        SCOPED_TRACE(mode.name);
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost drawing over unbaked maps.";
+        ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+        const auto mean = mean_radiance_at(harness, radiance, width, height, centre);
+        ASSERT_TRUE(mean.has_value()) << "the card's centre projects outside the frame";
+        GTEST_LOG_(INFO) << mode.name << ", unbaked under the red skybox: card (" << mean->r << ", " << mean->g << ", "
+                         << mean->b << ")";
+        EXPECT_GT(mean->b, 0.05) << "the card is unlit: the zeroed maps lit it instead of the analytic sky";
+        EXPECT_GT(mean->b, mean->r) << "the card takes the red sky: an unbaked map lit it";
+    }
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "drawing over unbaked maps logged a validation error - VUID-vkCmdDraw-None-09600 if set 0 bound a map "
+         "that nothing moved out of UNDEFINED (AmbientMaps.cpp)";
+}
+
+// glTF scopes occlusionTexture to indirect light: it darkens the sky's share of a card and leaves the sun's alone.
+TEST(GoldenRender, TheOcclusionMapDarkensTheSkysLightAndNotTheSuns)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto plain = write_white_card("kataglyphis_plain_card.gltf");
+    // A black occlusion texel at strength 0.5: lerp(1, 0, 0.5) leaves half the sky.
+    const auto occluded = write_white_card("kataglyphis_occluded_card.gltf", [](auto &gltf) {
+        gltf["images"] = nlohmann::json::array({ { { "uri", ZERO_ROUGHNESS_PNG } } });
+        gltf["textures"] = nlohmann::json::array({ { { "source", 0 } } });
+        gltf["materials"][0]["occlusionTexture"] = { { "index", 0 }, { "strength", 0.5 } };
+    });
+    ASSERT_TRUE(plain.has_value() && occluded.has_value()) << "could not write the cards";
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = false;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 6.0F, 26.0F));
+    const glm::vec3 left(-1.8F, 5.0F, 18.0F);
+    const glm::vec3 right(1.8F, 5.0F, 18.0F);
+    const auto place = [](const glm::vec3 &at) {
+        return glm::translate(glm::mat4(1.0F), at) * glm::scale(glm::mat4(1.0F), glm::vec3(3.0F));
+    };
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.renderer->addModel(plain->string(), place(left)).has_value()) << "adding the plain card failed";
+    ASSERT_TRUE(harness.renderer->addModel(occluded->string(), place(right)).has_value())
+      << "adding the occluded card failed";
+
+    const float sun_radiance = GUISceneSharedVars{}.directional_light_radiance;
+    for (const LitMode &mode : raster_and_ray_traced_modes(harness)) {
+        SCOPED_TRACE(mode.name);
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        // 0: the sky alone; 1: the sun alone.
+        std::array<std::array<glm::dvec3, 2>, 2> cards{};
+        for (size_t light = 0; light < 2; ++light) {
+            scene_vars.directional_light_radiance = light == 0U ? 0.0F : sun_radiance;
+            scene_vars.directional_light_ambient = light == 0U ? kMaxAmbient : 0.0F;
+            harness.render_frames(SETTLE_FRAMES);
+            uint32_t width = 0;
+            uint32_t height = 0;
+            const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+            ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+            ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+            const auto plain_mean = mean_radiance_at(harness, radiance, width, height, left);
+            const auto occluded_mean = mean_radiance_at(harness, radiance, width, height, right);
+            ASSERT_TRUE(plain_mean.has_value() && occluded_mean.has_value()) << "a card projects outside the frame";
+            cards[light] = { *plain_mean, *occluded_mean };
+            GTEST_LOG_(INFO) << mode.name << (light == 0U ? ", sky only" : ", sun only") << ": plain (" << plain_mean->r
+                             << ", " << plain_mean->g << ", " << plain_mean->b << "), occluded (" << occluded_mean->r
+                             << ", " << occluded_mean->g << ", " << occluded_mean->b << ")";
+        }
+        for (int c = 0; c < 3; ++c) {
+            ASSERT_GT(cards[0][0][c], 1e-3) << "the sky leaves the plain card unlit, so the test measures nothing";
+            EXPECT_NEAR(cards[0][1][c] / cards[0][0][c], 0.5, 0.03) << "channel " << c << ": the sky's share";
+            ASSERT_GT(cards[1][0][c], 1e-3) << "the sun leaves the plain card unlit, so the test measures nothing";
+            EXPECT_NEAR(cards[1][1][c] / cards[1][0][c], 1.0, 0.01)
+              << "channel " << c << ": the occlusion map darkened the sun";
+        }
     }
 }
 

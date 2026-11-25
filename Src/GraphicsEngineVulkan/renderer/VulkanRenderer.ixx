@@ -37,6 +37,7 @@ import kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.punctual_shadow_map;
 import kataglyphis.vulkan.sky_box;
+import kataglyphis.vulkan.ambient_maps;
 import kataglyphis.vulkan.clouds;
 import kataglyphis.vulkan.scene_ubo;
 import kataglyphis.vulkan.swapchain;
@@ -88,6 +89,8 @@ class VulkanRenderer
     [[nodiscard]] bool hasFatalFrameError() const { return fatal_frame_error; }
     // Test seam, called by no production code: every later fence wait reports eErrorDeviceLost, as after a real loss.
     void simulateDeviceLossForTesting() { device_loss_simulated = true; }
+    // Test seam, called by no production code: fresh ambient maps whose bake bails, as after a failed skybox upload.
+    void simulateFailedAmbientBakeForTesting();
     // Observes the device without extending its life, so a test can see when its last owner lets go.
     [[nodiscard]] std::weak_ptr<VulkanDevice> deviceLifetime() const { return device; }
     bool supportsHardwareRaytracing() const;
@@ -289,6 +292,8 @@ class VulkanRenderer
 
     // Drawn inside the main stage, into the HDR target post reads.
     Kataglyphis::SkyBox skyBox;
+    // Baked from skyBox's cube after its init, and again on a shader reload.
+    Kataglyphis::AmbientMaps ambientMaps;
     Kataglyphis::Clouds clouds;
     // The depth image this frame's main pass writes; the clouds' descriptor is rewritten only when it changes.
     enum class CloudDepthSource : std::uint8_t { None, ForwardRaster, DeferredRaster, Traced };

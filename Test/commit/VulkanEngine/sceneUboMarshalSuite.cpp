@@ -21,6 +21,7 @@ using Kataglyphis::clampCloudMarchSteps;
 using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
 using Kataglyphis::cloudWindOffset;
+using Kataglyphis::fillSceneUboAmbientMaps;
 using Kataglyphis::fillSceneUboCamera;
 using Kataglyphis::fillSceneUboCascades;
 using Kataglyphis::fillSceneUboClouds;
@@ -47,6 +48,19 @@ static_assert(clampCloudMeshScale(glm::vec3(0.0F), 0.0F).x >= kMinCloudMeshExten
   "an all-zero cloud mesh scale/density must not survive the clamp");
 
 namespace {
+
+// The bake lights the scene only while the skybox it was baked from is shown, and only once it has baked.
+TEST(SceneUboMarshalUnit, TheBakedMapsLightTheSceneOnlyUnderTheShownSkybox)
+{
+    SceneUBO ubo{};
+    fillSceneUboAmbientMaps(ubo, true, true, 4.0F);
+    EXPECT_EQ(ubo.iblParams, glm::vec4(1.0F, 4.0F, 0.0F, 0.0F));
+    fillSceneUboAmbientMaps(ubo, false, true, 4.0F);
+    EXPECT_EQ(ubo.iblParams.x, 0.0F) << "a switched-off skybox lights with the analytic sky";
+    fillSceneUboAmbientMaps(ubo, true, false, 4.0F);
+    EXPECT_EQ(ubo.iblParams.x, 0.0F) << "an unbaked environment must not be read";
+    EXPECT_EQ(ubo.iblParams.y, 4.0F);
+}
 
 TEST(SceneUboMarshalUnit, ZeroHeightExtentDoesNotDivideByZero)
 {

@@ -59,6 +59,31 @@ float3 sample_emissive(ObjectDescription obj, ObjMaterial material, float4 texCo
     return textures[NonUniformResourceIndex(emissiveTexId)].Sample(textureSamplers[NonUniformResourceIndex(emissiveTexId)], emissive_uv(texCoords, material)).xyz;
 }
 
+float sample_occlusion_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
+{
+    int occlusionTexId = resolve_texture_slot(obj, material.occlusionTextureID);
+    return textures[NonUniformResourceIndex(occlusionTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(occlusionTexId)], occlusion_uv(texCoords, material), 0.0).r;
+}
+
+float sample_occlusion(ObjectDescription obj, ObjMaterial material, float4 texCoords)
+{
+    int occlusionTexId = resolve_texture_slot(obj, material.occlusionTextureID);
+    return textures[NonUniformResourceIndex(occlusionTexId)].Sample(textureSamplers[NonUniformResourceIndex(occlusionTexId)], occlusion_uv(texCoords, material)).r;
+}
+
+// How much of the sky reaches the point; 1 without an occlusion map.
+float resolved_occlusion_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
+{
+    if (material.occlusionTextureID < 0) { return 1.0; }
+    return material_occlusion(material.occlusionStrength, sample_occlusion_lod0(obj, material, texCoords));
+}
+
+float resolved_occlusion(ObjectDescription obj, ObjMaterial material, float4 texCoords)
+{
+    if (material.occlusionTextureID < 0) { return 1.0; }
+    return material_occlusion(material.occlusionStrength, sample_occlusion(obj, material, texCoords));
+}
+
 float3 resolved_emission_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     float3 sampled = float3(1.0);

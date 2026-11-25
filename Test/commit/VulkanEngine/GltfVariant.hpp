@@ -66,9 +66,7 @@ class GltfVariant
     [[nodiscard]] const std::filesystem::path &path() const { return path_; }
     [[nodiscard]] std::string string() const { return path_.string(); }
 
-  private:
-    explicit GltfVariant(std::filesystem::path path) : path_(std::move(path)) {}
-
+    // Names a temp file per process, so two suites on one host never share it.
     static long long processId()
     {
 #ifdef _WIN32
@@ -77,6 +75,9 @@ class GltfVariant
         return static_cast<long long>(getpid());
 #endif
     }
+
+  private:
+    explicit GltfVariant(std::filesystem::path path) : path_(std::move(path)) {}
 
     void remove()
     {

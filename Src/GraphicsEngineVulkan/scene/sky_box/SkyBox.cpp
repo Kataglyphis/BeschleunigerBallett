@@ -285,6 +285,7 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool,
     cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);// COLOR_ATTACHMENT_CHAIN_OK: cubemap-six-layers-cube-compatible
     // clang-format on
     cubeMapTexture->createTextureSampler(device);
+    cubeFaceSize = width;
     return true;
 }
 

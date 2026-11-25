@@ -111,7 +111,11 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, alphaTextureID), 164U);
     EXPECT_EQ(offsetof(ObjMaterial, uv1SlotMask), 168U);
     EXPECT_EQ(offsetof(ObjMaterial, alphaMode), 172U);
-    EXPECT_EQ(sizeof(ObjMaterial), 176U);
+    EXPECT_EQ(offsetof(ObjMaterial, occlusionTextureID), 176U);
+    EXPECT_EQ(offsetof(ObjMaterial, occlusionStrength), 180U);
+    EXPECT_EQ(offsetof(ObjMaterial, occlusion_uv_transform_row0), 184U);
+    EXPECT_EQ(offsetof(ObjMaterial, occlusion_uv_transform_row1), 196U);
+    EXPECT_EQ(sizeof(ObjMaterial), 208U);
 }
 
 // ObjMaterial is an aggregate, so only the member initializers carry its documented sentinels.
@@ -142,4 +146,8 @@ TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinel
     EXPECT_EQ(m.unlit, 0);
     EXPECT_EQ(m.alphaTextureID, -1);
     EXPECT_EQ(m.alphaMode, ALPHA_OPAQUE);
+    EXPECT_EQ(m.occlusionTextureID, -1);
+    EXPECT_FLOAT_EQ(m.occlusionStrength, 1.0F);
+    EXPECT_EQ(m.occlusion_uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
+    EXPECT_EQ(m.occlusion_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
 }

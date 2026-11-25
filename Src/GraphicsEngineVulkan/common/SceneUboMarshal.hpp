@@ -134,6 +134,13 @@ inline void
     ubo.cloudAmbientBottom = glm::vec4(ambient.bottom, 0.0F);
 }
 
+// The skybox's baked maps light the scene while it is shown; the switched-off navy is no sky, so the analytic one does.
+inline void fillSceneUboAmbientMaps(VulkanRendererInternals::SceneUBO &ubo,
+  bool skyboxEnabled,
+  bool baked,
+  float prefilteredTopMip)
+{ ubo.iblParams = glm::vec4(skyboxEnabled && baked ? 1.0F : 0.0F, prefilteredTopMip, 0.0F, 0.0F); }
+
 // Both .w are filler: shaders read only .xyz.
 inline void fillSceneUboCamera(VulkanRendererInternals::SceneUBO &ubo, glm::vec3 position, glm::vec3 direction)
 {
