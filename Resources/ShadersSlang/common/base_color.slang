@@ -1,15 +1,10 @@
 import scene_types;
+import gltf_material;
 
 // glTF base colour = baseColorFactor (material.diffuse) * sampled texture; binding-free so every path can import it.
 float3 base_color(ObjMaterial material, float3 sampled)
 {
     return sampled * material.diffuse;
-}
-
-// glTF KHR_texture_transform: applies the T*R*S UV matrix, given as its two rows.
-float2 transform_uv(float2 uv, float3 row0, float3 row1)
-{
-    return float2(dot(float3(uv, 1.0), row0), dot(float3(uv, 1.0), row1));
 }
 
 // Bit positions of ObjMaterial.uv1SlotMask, which C++ includes too.

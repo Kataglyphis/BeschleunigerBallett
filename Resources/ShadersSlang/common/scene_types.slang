@@ -3,6 +3,8 @@
 // The limits and binding slots, which C++ includes too.
 __exported import limits;
 __exported import shared_constants;
+// ObjMaterial.alphaMode's values, which C++ includes too.
+__exported import alpha_mode;
 
 // Vertex layout (matches Src/shared/scene/Vertex.hpp).
 struct Vertex
@@ -43,7 +45,7 @@ struct ObjMaterial
     int unlit;
     int alphaTextureID;
     int uv1SlotMask;
-    int alphaBlend;
+    int alphaMode;
 };
 
 // Matches ObjectDescription.hpp; the uint64_t fields are buffer device addresses.

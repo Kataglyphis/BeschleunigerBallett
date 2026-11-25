@@ -43,7 +43,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
+    // map_d alpha feeds both branches' material_masked_out(), so it is sampled once up front.
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
@@ -55,12 +55,12 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     {
         int textureId = resolve_texture_slot(obj, material);
         texColor = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material));
-        if (alpha_masked_out(material, texColor.a * In.fragmentColor.a * alphaTexSample)) discard;
+        if (material_masked_out(material, texColor.a * In.fragmentColor.a * alphaTexSample)) discard;
         texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }
     else
     {
-        if (alpha_masked_out(material, In.fragmentColor.a * alphaTexSample)) discard;
+        if (material_masked_out(material, In.fragmentColor.a * alphaTexSample)) discard;
         texColor = float4(material.diffuse, 1.0);
     }
 

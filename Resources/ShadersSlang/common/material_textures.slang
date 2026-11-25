@@ -2,7 +2,7 @@ import scene_types;
 import base_color;
 import emission;
 import material_rules;
-import normal_map;
+import gltf_material;
 
 // Ray tracing callers must use the `_lod0` helpers. See docs/source/shader-sharing.md § What is wired today.
 
@@ -83,7 +83,7 @@ float2 resolved_metallic_roughness_lod0(ObjectDescription obj, ObjMaterial mater
 {
     if (material.metallicRoughnessTextureID < 0)
     {
-        return float2(material.metallic, material_roughness(material));
+        return material_metallic_roughness(material, float4(1.0));
     }
     float4 mrSample = sample_metallic_roughness_lod0(obj, material, texCoords);
     return material_metallic_roughness(material, mrSample);
@@ -93,7 +93,7 @@ float2 resolved_metallic_roughness(ObjectDescription obj, ObjMaterial material, 
 {
     if (material.metallicRoughnessTextureID < 0)
     {
-        return float2(material.metallic, material_roughness(material));
+        return material_metallic_roughness(material, float4(1.0));
     }
     float4 mrSample = sample_metallic_roughness(obj, material, texCoords);
     return material_metallic_roughness(material, mrSample);
@@ -104,12 +104,12 @@ float3 resolved_normal_lod0(float3 geometricNormal, float4 tangent, bool frontFa
 {
     if (material.normalTextureID < 0) { return frontFace ? geometricNormal : -geometricNormal; }
     float3 sampled = sample_normal_lod0(obj, material, texCoords);
-    return apply_normal_map(geometricNormal, tangent, sampled, frontFace, material.normalScale);
+    return apply_normal_map(normalize(geometricNormal), tangent, tangent_space_normal(sampled, material.normalScale), frontFace);
 }
 
 float3 resolved_normal(float3 geometricNormal, float4 tangent, bool frontFace, ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     if (material.normalTextureID < 0) { return frontFace ? geometricNormal : -geometricNormal; }
     float3 sampled = sample_normal(obj, material, texCoords);
-    return apply_normal_map(geometricNormal, tangent, sampled, frontFace, material.normalScale);
+    return apply_normal_map(normalize(geometricNormal), tangent, tangent_space_normal(sampled, material.normalScale), frontFace);
 }

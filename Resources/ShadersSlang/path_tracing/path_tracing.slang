@@ -7,7 +7,7 @@ import constants;
 import hdr_safe;
 import material_fetch;
 import material_textures;
-import normal_map;
+import gltf_material;
 import path_estimator;
 import skybox_radiance;
 import punctual_light;
@@ -239,7 +239,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // A tangent is a surface direction: objToWorld, not the inverse-transpose.
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
                 // Explicit LOD: see the base-colour sample below for why.
-                float handedness = mirrored_handedness(tangentHit.w, (float3x3)objToWorld);
+                float handedness = tangentHit.w * mirror_sign((float3x3)objToWorld);
                 shadingNormal = resolved_normal_lod0(authoredNormal, float4(worldTangent, handedness), frontFace, obj, material, texCoords);
             }
 

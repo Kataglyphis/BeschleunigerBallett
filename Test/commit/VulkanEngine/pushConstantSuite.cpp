@@ -28,8 +28,9 @@ TEST(PushConstantRasterizerUnit, ModelMatrixComesFirstAtOffsetZero)
 
 TEST(PushConstantRasterizerUnit, ObjectIndexFollowsTheMatrixAndIsCovered)
 {
-    // model (64 bytes), then invModelRows[3] (48 bytes), then objectIndex.
-    EXPECT_EQ(offsetof(PushConstantRasterizer, objectIndex), 112U);
+    // model (64 bytes), then objectIndex: the shader derives the normal transform from model.
+    EXPECT_EQ(offsetof(PushConstantRasterizer, objectIndex), 64U);
+    EXPECT_EQ(sizeof(PushConstantRasterizer), 68U);
 
     // The layout pushes sizeof(PushConstantRasterizer) bytes, so objectIndex must fit inside it.
     EXPECT_GE(sizeof(PushConstantRasterizer), offsetof(PushConstantRasterizer, objectIndex) + sizeof(unsigned int));
@@ -50,31 +51,6 @@ TEST(PushConstantRasterizerUnit, CarriesTheValuesItIsGiven)
     EXPECT_EQ(push.objectIndex, 7U);
     EXPECT_FLOAT_EQ(push.model[0][0], 3.0F);
     EXPECT_NE(push.model, glm::mat4(1.0F));
-}
-
-TEST(PushConstantRasterizerUnit, InvModelRowsRoundTripANonUniformScale)
-{
-    // GLM is column-major, so row i is (m[0][i], m[1][i], m[2][i], 0).
-    const glm::mat4 model = glm::scale(glm::mat4(1.0F), glm::vec3(1.0F, 2.0F, 3.0F));
-    const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(model));
-
-    PushConstantRasterizer push{};
-    for (int row = 0; row < 3; ++row) {
-        push.invModelRows[row] =
-          glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
-    }
-
-    // A diagonal matrix is its own transpose, so the inverse-transpose is diag(1, 1/2, 1/3).
-    EXPECT_FLOAT_EQ(push.invModelRows[0][0], 1.0F);
-    EXPECT_FLOAT_EQ(push.invModelRows[1][1], 0.5F);
-    EXPECT_FLOAT_EQ(push.invModelRows[2][2], 1.0F / 3.0F);
-
-    // Off-diagonal entries stay zero and w is always zero (direction, not point).
-    EXPECT_FLOAT_EQ(push.invModelRows[0][1], 0.0F);
-    EXPECT_FLOAT_EQ(push.invModelRows[0][2], 0.0F);
-    EXPECT_FLOAT_EQ(push.invModelRows[0][3], 0.0F);
-    EXPECT_FLOAT_EQ(push.invModelRows[1][3], 0.0F);
-    EXPECT_FLOAT_EQ(push.invModelRows[2][3], 0.0F);
 }
 
 // Mirrored in path_tracing/path_tracing.slang; a reordered field desyncs the two silently.
@@ -134,7 +110,7 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, unlit), 160U);
     EXPECT_EQ(offsetof(ObjMaterial, alphaTextureID), 164U);
     EXPECT_EQ(offsetof(ObjMaterial, uv1SlotMask), 168U);
-    EXPECT_EQ(offsetof(ObjMaterial, alphaBlend), 172U);
+    EXPECT_EQ(offsetof(ObjMaterial, alphaMode), 172U);
     EXPECT_EQ(sizeof(ObjMaterial), 176U);
 }
 
@@ -165,4 +141,5 @@ TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinel
     EXPECT_EQ(m.emissive_uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
     EXPECT_EQ(m.unlit, 0);
     EXPECT_EQ(m.alphaTextureID, -1);
+    EXPECT_EQ(m.alphaMode, ALPHA_OPAQUE);
 }

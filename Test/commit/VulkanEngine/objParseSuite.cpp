@@ -192,7 +192,7 @@ TEST(ObjParseUnit, ADissolveBelowOneBlendsItsMesh)
     for (const Kataglyphis::MeshRange &range : loader.getMeshRanges()) {
         const ObjMaterial &material = loader.getMaterials()[loader.getMaterialIndices()[range.triStart]];
         EXPECT_EQ(range.alphaBlended, material.dissolve < 1.0F);
-        EXPECT_EQ(material.alphaBlend, material.dissolve < 1.0F ? 1 : 0);
+        EXPECT_EQ(material.alphaMode == ALPHA_BLEND, material.dissolve < 1.0F);
     }
 
     fs::remove_all(dir);
@@ -494,11 +494,11 @@ TEST(ObjParseUnit, MapDBecomesAnAlphaTextureAndAMaskCutoff)
     ASSERT_EQ(bytesOf(loader, leafy.alphaTextureID), "mask");
     EXPECT_EQ(loader.getTextureSrgbFlags()[static_cast<std::size_t>(leafy.alphaTextureID)], 0);
     EXPECT_FLOAT_EQ(leafy.alphaCutoff, 0.5F);
-    EXPECT_EQ(leafy.alphaBlend, 0);
+    EXPECT_EQ(leafy.alphaMode, ALPHA_MASK);
 
     const ObjMaterial &solid = loader.getMaterials()[1];
     EXPECT_EQ(solid.alphaTextureID, -1) << "a material without map_d must keep the sentinel";
-    EXPECT_FLOAT_EQ(solid.alphaCutoff, -1.0F) << "a material without map_d must not become a MASK material";
+    EXPECT_EQ(solid.alphaMode, ALPHA_OPAQUE) << "a material without map_d must not become a MASK material";
 
     fs::remove_all(dir);
 }

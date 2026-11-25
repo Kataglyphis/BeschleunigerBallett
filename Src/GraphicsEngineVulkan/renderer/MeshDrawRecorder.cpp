@@ -21,12 +21,6 @@ namespace {
     vk::FrontFace seedModelPushConstant(PushConstantRasterizer &pushConstant, const glm::mat4 &model_matrix)
     {
         pushConstant.model = model_matrix;
-        // Precomputed here: Slang has no inverse() for SPIR-V.
-        const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(model_matrix));
-        for (int row = 0; row < 3; ++row) {
-            pushConstant.invModelRows[row] =
-              glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
-        }
         // A mirroring model matrix reverses the screen-space winding of its front faces (glTF 3.7.4).
         return glm::determinant(glm::mat3(model_matrix)) < 0.0F ? vk::FrontFace::eClockwise
                                                                 : vk::FrontFace::eCounterClockwise;

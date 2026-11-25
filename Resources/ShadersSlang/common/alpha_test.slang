@@ -6,12 +6,12 @@ import material_textures;
 
 // glTF MASK alpha test shared by raytrace.rahit.slang and path_tracing.slang's ray-query loop (no any-hit stage).
 
-// True when the hit is a MASK material whose alpha falls below its cutoff; non-MASK (alphaCutoff < 0) never is.
+// True when the hit is a MASK material whose alpha falls below its cutoff; OPAQUE and BLEND never are.
 bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
 {
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    if (material.alphaCutoff < 0.0) { return false; }
+    if (material.alphaMode != ALPHA_MASK) { return false; }
 
     Vertices* vertices = (Vertices*)obj.vertex_address;
     Indices* indices = (Indices*)obj.index_address;
@@ -41,5 +41,5 @@ bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)
         }
     }
 
-    return alpha_masked_out(material, sampledAlpha);
+    return material_masked_out(material, sampledAlpha);
 }

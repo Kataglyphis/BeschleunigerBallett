@@ -4,6 +4,17 @@
 #include <glm/glm.hpp>
 #include <type_traits>
 
+namespace Kataglyphis::ShaderSlots {
+// The shaders' own files; a namespace, as their internal-linkage constants cannot be exported from a module.
+#include "../../../Resources/ShadersSlang/common/uv1_slots.slang"
+#include "../../../third_party/OxidANT/shaders/common/alpha_mode.slang"
+}// namespace Kataglyphis::ShaderSlots
+
+// ObjMaterial::alphaMode's values, with external linkage for kataglyphis.vulkan.obj_material's export.
+inline constexpr int ALPHA_OPAQUE = Kataglyphis::ShaderSlots::ALPHA_OPAQUE;
+inline constexpr int ALPHA_MASK = Kataglyphis::ShaderSlots::ALPHA_MASK;
+inline constexpr int ALPHA_BLEND = Kataglyphis::ShaderSlots::ALPHA_BLEND;
+
 struct ObjMaterial
 {
     glm::vec3 diffuse{ 0.7F, 0.7F, 0.7F };
@@ -14,7 +25,7 @@ struct ObjMaterial
 
     int textureID{ -1 };
 
-    // glTF MASK cutoff; negative never discards. New members go last: scalar layout mirrors the shader struct.
+    // glTF alphaCutoff, read only when alphaMode is ALPHA_MASK. New members go last: scalar layout mirrors the shader struct.
     float alphaCutoff{ -1.0F };
 
     // Base-colour KHR_texture_transform: the top two rows of T*R*S (the third is 0,0,1); identity = untransformed.
@@ -56,14 +67,9 @@ struct ObjMaterial
     // Slots sampling TEXCOORD_1, one bit each: 0 base colour (and map_d), 1 metallic-roughness, 2 normal, 3 emissive.
     int uv1SlotMask{ 0 };
 
-    // glTF BLEND: drawn after the opaque meshes, sorted and alpha-composited; the tracers keep it opaque. 0 = not.
-    int alphaBlend{ 0 };
+    // glTF alphaMode; BLEND draws after the opaque meshes, sorted and alpha-composited, and the tracers keep it opaque.
+    int alphaMode{ ALPHA_OPAQUE };
 };
-
-namespace Kataglyphis::ShaderSlots {
-// The shaders' own file; a namespace, as its internal-linkage constants cannot be exported from a module.
-#include "../../../Resources/ShadersSlang/common/uv1_slots.slang"
-}// namespace Kataglyphis::ShaderSlots
 
 // Bit positions of ObjMaterial::uv1SlotMask, with external linkage for kataglyphis.vulkan.obj_material's export.
 inline constexpr int UV1_SLOT_BASE_COLOR = Kataglyphis::ShaderSlots::UV1_SLOT_BASE_COLOR;

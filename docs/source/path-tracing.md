@@ -79,7 +79,7 @@ estimators is biased).
   triangle's winding picks the side (`CommittedTriangleFrontFace()`, as
   `SV_IsFrontFace` in raster and `HitKind()` in the RT closest-hit): a back
   face negates the interpolated normal, and a normal map's whole frame with it
-  (`common/normal_map.slang`). The face normal is the triangle's own, from its
+  (OxidANT's `common/gltf_material.slang`). The face normal is the triangle's own, from its
   three positions, turned to oppose the ray. Until 2026-11 both came from the
   interpolated normal, which near a smooth low-poly silhouette faces away from
   a camera the triangle faces. `GoldenRender.TracedHitsTakeTheirSideFromTheTriangleWinding`

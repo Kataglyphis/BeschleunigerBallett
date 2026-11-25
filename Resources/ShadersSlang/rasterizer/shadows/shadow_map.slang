@@ -62,10 +62,10 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     ObjectDescription obj = fetch_object_description(pc.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    // Only MASK materials alpha-test; OPAQUE/BLEND (alphaCutoff < 0) cast unchanged.
-    if (material.alphaCutoff >= 0.0)
+    // Only MASK materials alpha-test; OPAQUE and BLEND cast unchanged.
+    if (material.alphaMode == ALPHA_MASK)
     {
-        // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
+        // map_d alpha feeds both branches' material_masked_out(), so it is sampled once up front.
         float alphaTexSample = 1.0;
         if (material.alphaTextureID >= 0)
         {
@@ -76,11 +76,11 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
         {
             int textureId = resolve_texture_slot(obj, material);
             float alpha = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.fragUV, material)).a;
-            if (alpha_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
+            if (material_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
         }
         else
         {
-            if (alpha_masked_out(material, In.fragAlpha * alphaTexSample)) discard;
+            if (material_masked_out(material, In.fragAlpha * alphaTexSample)) discard;
         }
     }
 }

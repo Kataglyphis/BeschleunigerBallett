@@ -65,7 +65,7 @@ class Mesh
     bool isAlphaBlended() const { return alpha_blended; };
 
     /// Whether any material this mesh references is a glTF MASK material
-    /// (ObjMaterial::alphaCutoff >= 0). Derived once in the constructor from
+    /// (ObjMaterial::alphaMode ALPHA_MASK). Derived once in the constructor from
     /// the material vector the constructor already receives - unlike
     /// double_sided this needs no setter, since every loader already hands
     /// the constructor its full materials, so deriving it here can never go

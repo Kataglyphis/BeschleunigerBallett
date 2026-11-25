@@ -1,6 +1,6 @@
 import scene_types;
 import push_constants;
-import normal_map;
+import gltf_material;
 import base_color;
 
 // One vertex stage for forward and deferred: their parity golden compares the outputs pixel for pixel.
@@ -29,9 +29,9 @@ RasterVsOut raster_geometry_vs(
     RasterVsOut o;
     o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc.model), float4(position, 1.0));
     o.worldPosition = mul(pc.model, float4(position, 1.0)).xyz;
-    o.shadingNormal = transform_normal(pc, normal);
+    o.shadingNormal = mul(normal_transform((float3x3)pc.model), normal);
     // A tangent is a surface direction, so it takes the model matrix, not the inverse-transpose.
-    float handedness = mirrored_handedness(tangent.w, (float3x3)pc.model);
+    float handedness = tangent.w * mirror_sign((float3x3)pc.model);
     o.worldTangent = float4(normalize(mul(pc.model, float4(tangent.xyz, 0.0)).xyz), handedness);
     o.texCoords = uv_sets(texCoords, texCoords1);
     o.fragmentColor = color;

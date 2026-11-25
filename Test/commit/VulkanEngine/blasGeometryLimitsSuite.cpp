@@ -48,7 +48,8 @@ namespace {
             .shininess = 0.0F,
             .dissolve = 1.0F,
             .textureID = -1,
-            .alphaCutoff = 0.5F };
+            .alphaCutoff = 0.5F,
+            .alphaMode = ALPHA_MASK };
     }
 }// namespace
 
@@ -65,6 +66,18 @@ TEST(BlasGeometryLimitsUnit, AllOpaqueMaterialsKeepOpaque)
     EXPECT_FALSE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
     EXPECT_EQ(Kataglyphis::blasGeometryFlags(Kataglyphis::blasGeometryNeedsAnyHit(materials)),
       vk::GeometryFlagBitsKHR::eOpaque);
+}
+
+// The alpha mode decides, never the cutoff: an OPAQUE or BLEND material keeps any cutoff it carries out of any-hit.
+TEST(BlasGeometryLimitsUnit, ACutoffWithoutTheMaskModeKeepsOpaque)
+{
+    ObjMaterial opaque = opaqueMaterial();
+    opaque.alphaCutoff = 0.5F;
+    ObjMaterial blend = opaqueMaterial();
+    blend.alphaCutoff = 0.5F;
+    blend.alphaMode = ALPHA_BLEND;
+    const std::array<ObjMaterial, 2> materials{ opaque, blend };
+    EXPECT_FALSE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
 }
 
 TEST(BlasGeometryLimitsUnit, ASingleMaskMaterialAmongManyOpaqueOnesDropsOpaque)

@@ -107,7 +107,7 @@ void expectMaterialsAsBridged(const std::vector<ObjMaterial> &materials, const o
         EXPECT_EQ(material.emissive_uv_transform_row0, vec3(source.emissive_uv_row0)) << "material " << i;
         EXPECT_EQ(material.emissive_uv_transform_row1, vec3(source.emissive_uv_row1)) << "material " << i;
         EXPECT_EQ(material.unlit, source.unlit ? 1 : 0) << "material " << i;
-        EXPECT_EQ(material.alphaBlend, source.alpha_blend ? 1 : 0) << "material " << i;
+        EXPECT_EQ(material.alphaMode, static_cast<int>(source.alpha_mode)) << "material " << i;
         EXPECT_EQ(material.uv1SlotMask, static_cast<int>(source.uv1_slot_mask)) << "material " << i;
         const int textures = static_cast<int>(bridged.textures.size());
         for (const int id : { material.textureID,
@@ -168,11 +168,11 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
         { "cube_alpha.gltf",
           [](const GltfLoader &loader) {
               const auto &materials = loader.getMaterials();
-              EXPECT_TRUE(
-                std::any_of(materials.begin(), materials.end(), [](const ObjMaterial &m) { return m.alphaBlend == 1; }))
+              EXPECT_TRUE(std::any_of(
+                materials.begin(), materials.end(), [](const ObjMaterial &m) { return m.alphaMode == ALPHA_BLEND; }))
                 << "BLEND reached no material";
               EXPECT_TRUE(std::any_of(
-                materials.begin(), materials.end(), [](const ObjMaterial &m) { return m.alphaCutoff >= 0.0F; }))
+                materials.begin(), materials.end(), [](const ObjMaterial &m) { return m.alphaMode == ALPHA_MASK; }))
                 << "MASK reached no material";
               const auto &ranges = loader.getMeshRanges();
               EXPECT_TRUE(std::any_of(ranges.begin(),

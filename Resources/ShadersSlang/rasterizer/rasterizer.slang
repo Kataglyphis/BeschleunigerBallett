@@ -11,8 +11,6 @@ import material_textures;
 import hdr_safe;
 import punctual_lights;
 
-// The normal matrix comes precomputed in push constants: Slang has no inverse() for SPIR-V.
-
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
@@ -41,7 +39,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     float3 N = resolved_normal(normalize(In.shadingNormal), In.worldTangent, isFrontFace, obj, material, In.texCoords);
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
-    // map_d alpha feeds both branches' alpha_masked_out(), so it is sampled once up front.
+    // map_d alpha feeds both branches' material_masked_out(), so it is sampled once up front.
     float alphaTexSample = 1.0;
     if (material.alphaTextureID >= 0)
     {
@@ -61,7 +59,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     {
         albedo = material.diffuse;
     }
-    if (alpha_masked_out(material, sampledAlpha)) discard;
+    if (material_masked_out(material, sampledAlpha)) discard;
 
     albedo *= In.fragmentColor.rgb;
 

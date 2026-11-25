@@ -295,6 +295,10 @@ constexpr const char *DIELECTRIC_CUBE_MODEL = "Models/GltfTest/cube_textured.glt
 constexpr const char *TILTED_NORMAL_PNG =
   "data:image/png;base64,"
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mO41XALAARsAjUuHifuAAAAAElFTkSuQmCC";
+// TILTED_NORMAL_PNG's texel with blue 0, as a two-channel (BC5) map decodes: z must be rebuilt from x and y.
+constexpr const char *TILTED_TWO_CHANNEL_NORMAL_PNG =
+  "data:image/png;base64,"
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mO41cAAAAOSAVvHBuFyAAAAAElFTkSuQmCC";
 // One texel (128, 38, 218): a tangent-space normal tilted 45 degrees toward -B, as a glTF data URI.
 constexpr const char *TILTED_AGAINST_BITANGENT_PNG =
   "data:image/png;base64,"
@@ -6968,6 +6972,85 @@ TEST(GoldenRender, NormalMappedBackFaceFlipsItsWholeTangentFrame)
         // A back face that kept the front's tangent turns its relief away from this light: N.L 0 against 0.98.
         EXPECT_GT(back_luma, 0.85 * front_luma)
           << mode.name << ": the back face's normal map is mirrored along its tangent - only N and B were flipped";
+    }
+}
+
+// gltf_material.slang's tangent_space_normal: a texel with blue 0 (BC5) has its z rebuilt, so it shades as the full texel.
+TEST(GoldenRender, TwoChannelNormalMapShadesAsItsThreeChannelTwin)
+{
+    SKIP_WITHOUT_GPU();
+
+    const auto card = [](const char *file_name, const char *png) {
+        return write_gltf_variant(NORMAL_MAP_CARD_MODEL, file_name, [png](auto &gltf) {
+            auto &material = gltf["materials"][0];
+            material["normalTexture"] = { { "index", 0 } };
+            material["pbrMetallicRoughness"] = {
+                { "baseColorFactor", { 1.0, 1.0, 1.0, 1.0 } }, { "metallicFactor", 0.0 }, { "roughnessFactor", 1.0 }
+            };
+            gltf["images"][0]["uri"] = png;
+        });
+    };
+    const auto full = card("kataglyphis_three_channel_normal_card.gltf", TILTED_NORMAL_PNG);
+    const auto two = card("kataglyphis_two_channel_normal_card.gltf", TILTED_TWO_CHANNEL_NORMAL_PNG);
+    ASSERT_TRUE(full.has_value() && two.has_value()) << "could not write the normal cards";
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = false;
+    // As NormalMappedBackFaceFlipsItsWholeTangentFrame: the mapped normal (0.71, 0, 0.71) faces this light.
+    scene_vars.directional_light_direction[0] = 1.0F;
+    scene_vars.directional_light_direction[1] = 0.3F;
+    scene_vars.directional_light_direction[2] = 1.0F;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+
+    const auto placed = [](float x) {
+        return glm::translate(glm::mat4(1.0F), glm::vec3(x, 4.0F, 15.0F))
+               * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    };
+    ASSERT_TRUE(harness.renderer->addModel(full->string(), placed(-2.5F)).has_value()) << "adding the full card failed";
+    ASSERT_TRUE(harness.renderer->addModel(two->string(), placed(2.5F)).has_value()) << "adding the BC5 card failed";
+
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode raster;
+        bool raytracing;
+        bool pathTracing;
+        int frames;
+    };
+    std::vector<Mode> modes = { Mode{ "forward", RasterizationMode::Forward, false, false, SETTLE_FRAMES },
+        Mode{ "deferred", RasterizationMode::Deferred, false, false, SETTLE_FRAMES } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(Mode{ "ray traced", RasterizationMode::Forward, true, false, SETTLE_FRAMES });
+        modes.push_back(Mode{ "path traced", RasterizationMode::Forward, false, true, 12 });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = mode.pathTracing;
+        harness.render_frames(mode.frames);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+        ASSERT_FALSE(frame.empty()) << mode.name;
+
+        const uint32_t offset = (width * 207U) / WINDOW_WIDTH;
+        const double full_luma = mean_luminance_in_square(frame, width, width / 2U - offset, height / 2U, 30U);
+        const double two_luma = mean_luminance_in_square(frame, width, width / 2U + offset, height / 2U, 30U);
+        GTEST_LOG_(INFO) << mode.name << ": three-channel card " << full_luma << ", two-channel card " << two_luma;
+
+        ASSERT_GT(full_luma, 80.0) << mode.name
+                                   << ": the three-channel card is unlit - check the light or the placement";
+        // Without the rebuild the texel decodes to z = -1, a normal behind the surface that this light cannot reach.
+        EXPECT_NEAR(two_luma, full_luma, 0.1 * full_luma)
+          << mode.name << ": the two-channel normal map did not rebuild z from x and y";
     }
 }
 

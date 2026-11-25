@@ -17,11 +17,11 @@ struct BlasTriangleLimits
 constexpr BlasTriangleLimits blasTriangleLimits(uint32_t vertexCount, uint32_t indexCount)
 { return { vertexCount == 0 ? 0 : vertexCount - 1, indexCount / 3 }; }
 
-// One MASK material (alphaCutoff >= 0) suffices: a mesh's geometry shares one BLAS entry and one flag.
+// One MASK material suffices: a mesh's geometry shares one BLAS entry and one flag.
 constexpr bool blasGeometryNeedsAnyHit(std::span<const ObjMaterial> materials)
 {
     for (const ObjMaterial &material : materials) {
-        if (material.alphaCutoff >= 0.0F) { return true; }
+        if (material.alphaMode == ALPHA_MASK) { return true; }
     }
     return false;
 }

@@ -1211,7 +1211,7 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "unlit", offsetof(ObjMaterial, unlit) },
             { "alphaTextureID", offsetof(ObjMaterial, alphaTextureID) },
             { "uv1SlotMask", offsetof(ObjMaterial, uv1SlotMask) },
-            { "alphaBlend", offsetof(ObjMaterial, alphaBlend) } },
+            { "alphaMode", offsetof(ObjMaterial, alphaMode) } },
           sizeof(ObjMaterial),
           alignof(ObjMaterial) },
         { "Vertex_natural",
@@ -1225,11 +1225,9 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
           alignof(Vertex) },
         { "PushConstantRasterizer_std430",
           { { "model", offsetof(PushConstantRasterizer, model) },
-            { "invModelRows", offsetof(PushConstantRasterizer, invModelRows) },
             { "objectIndex", offsetof(PushConstantRasterizer, objectIndex) } },
           sizeof(PushConstantRasterizer),
-          alignof(PushConstantRasterizer),
-          { { "invModelRows", sizeof(PushConstantRasterizer::invModelRows[0]) } } },
+          alignof(PushConstantRasterizer) },
         { "PushConstantPathTracing_std430",
           { { "clearColor", offsetof(PushConstantPathTracing, clearColor) },
             { "width", offsetof(PushConstantPathTracing, width) },
@@ -1758,7 +1756,8 @@ TEST(BuildIntegrity, SharedShaderConstantsHaveOneHome)
 
     const std::vector<fs::path> homes = { slangRoot() / "common" / "shared_constants.slang",
         slangRoot() / "common" / "uv1_slots.slang",
-        sharedSlangRoot() / "common" / "limits.slang" };
+        sharedSlangRoot() / "common" / "limits.slang",
+        sharedSlangRoot() / "common" / "alpha_mode.slang" };
     static const std::regex kDeclaration(R"(^static const int ([A-Za-z_][A-Za-z0-9_]*) = -?[0-9]+;$)");
     std::set<std::string> names;
     std::vector<std::string> violations;
@@ -2792,7 +2791,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
       << joinViolations(violations);
 }
 
-// All three raster shaders share alpha_masked_out(); a negative alphaCutoff never discards.
+// All three raster shaders share material_masked_out(), where the alpha mode decides, never the cutoff's sign.
 TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
 {
     const fs::path repo_root = repoRoot();
@@ -2803,8 +2802,8 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
     };
-    static const std::string kSharedPredicate = "alpha_masked_out(";
-    static const std::string kBannedFallback = "alphaCutoff >= 0.0) ?";
+    static const std::string kSharedPredicate = "material_masked_out(";
+    static const std::array<const char *, 2> kBannedFallbacks = { "alphaCutoff >=", "alphaCutoff <" };
     static const std::string kTextureGuard = "textureID >= 0";
 
     std::vector<std::string> violations;
@@ -2817,9 +2816,11 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         if (text.find(kSharedPredicate) == std::string::npos) {
             violations.push_back(std::string(relative_path) + ": does not call " + kSharedPredicate);
         }
-        if (text.find(kBannedFallback) != std::string::npos) {
-            violations.push_back(std::string(relative_path) + ": still contains the hand-rolled '" + kBannedFallback
-                                 + "' alpha-cutoff fallback");
+        for (const char *fallback : kBannedFallbacks) {
+            if (text.find(fallback) != std::string::npos) {
+                violations.push_back(std::string(relative_path) + ": tests the cutoff's sign ('" + fallback
+                                     + "') instead of material.alphaMode");
+            }
         }
 
         // An untextured MASK material still alpha-tests its factor, so both sides of the textureID branch call it.
@@ -2842,17 +2843,23 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
         const std::string &text = *textOpt;
 
-        const std::size_t fn_start = text.find("bool alpha_masked_out(");
-        ASSERT_NE(fn_start, std::string::npos) << "alpha_masked_out() definition not found in " << path.string();
+        const std::size_t fn_start = text.find("bool material_masked_out(");
+        ASSERT_NE(fn_start, std::string::npos) << "material_masked_out() definition not found in " << path.string();
         // A fixed window covers the short body without brace matching.
         const std::string body = text.substr(fn_start, 400);
         if (body.find("material.dissolve") == std::string::npos) {
-            violations.push_back("material_rules.slang: alpha_masked_out() no longer multiplies by material.dissolve");
+            violations.push_back(
+              "material_rules.slang: material_masked_out() no longer multiplies by material.dissolve");
+        }
+        if (body.find("alpha_masked_out(material.alphaMode") == std::string::npos) {
+            violations.push_back(
+              "material_rules.slang: material_masked_out() no longer hands gltf_material.slang's "
+              "alpha_masked_out() the alpha mode");
         }
     }
 
     EXPECT_TRUE(violations.empty()) << violations.size()
-                                    << " raster shader(s) do not share the single alpha_masked_out() MASK rule:"
+                                    << " raster shader(s) do not share the single material_masked_out() MASK rule:"
                                     << joinViolations(violations);
 }
 
@@ -2916,25 +2923,25 @@ TEST(BuildIntegrity, MaterialRulesModuleStaysBindingFree)
     EXPECT_EQ(material_rules_text.find("[vk::binding"), std::string::npos)
       << "material_rules.slang declares a binding - it must stay binding-free so every shading path, including "
          "the ray-query kernels that declare their own objectDescription, can import it";
-    EXPECT_NE(material_rules_text.find("float material_roughness("), std::string::npos)
-      << "material_rules.slang no longer defines material_roughness()";
+    EXPECT_NE(material_rules_text.find("float roughness_factor("), std::string::npos)
+      << "material_rules.slang no longer defines roughness_factor()";
     EXPECT_NE(material_rules_text.find("float2 material_metallic_roughness("), std::string::npos)
       << "material_rules.slang no longer defines material_metallic_roughness()";
-    EXPECT_NE(material_rules_text.find("bool alpha_masked_out("), std::string::npos)
-      << "material_rules.slang no longer defines alpha_masked_out()";
+    EXPECT_NE(material_rules_text.find("bool material_masked_out("), std::string::npos)
+      << "material_rules.slang no longer defines material_masked_out()";
 
     const fs::path material_fetch_path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
     const auto material_fetch_text_opt = readFileText(material_fetch_path);
     ASSERT_TRUE(material_fetch_text_opt.has_value()) << "missing " << material_fetch_path.string();
     const std::string &material_fetch_text = *material_fetch_text_opt;
 
-    EXPECT_EQ(material_fetch_text.find("float material_roughness("), std::string::npos)
-      << "material_fetch.slang re-defines material_roughness() - it should live only in material_rules.slang";
+    EXPECT_EQ(material_fetch_text.find("float roughness_factor("), std::string::npos)
+      << "material_fetch.slang re-defines roughness_factor() - it should live only in material_rules.slang";
     EXPECT_EQ(material_fetch_text.find("float2 material_metallic_roughness("), std::string::npos)
       << "material_fetch.slang re-defines material_metallic_roughness() - it should live only in "
          "material_rules.slang";
-    EXPECT_EQ(material_fetch_text.find("bool alpha_masked_out("), std::string::npos)
-      << "material_fetch.slang re-defines alpha_masked_out() - it should live only in material_rules.slang";
+    EXPECT_EQ(material_fetch_text.find("bool material_masked_out("), std::string::npos)
+      << "material_fetch.slang re-defines material_masked_out() - it should live only in material_rules.slang";
 }
 
 // Ray queries have no any-hit stage, so under FORCE_OPAQUE a MASK cut-out hits and shadows as a solid quad.
@@ -3244,58 +3251,58 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
     }
 }
 
-// Normal maps perturb shading only through normal_map.slang's shared helper, which must use the sampled normal.
+// Normal maps perturb shading only through gltf_material.slang's shared helpers, which every path in both renderers calls.
 TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
-      "apply_normal_map() in common/normal_map.slang is the sole place the tangent-space normalTexture sample is "
-      "turned into a world-space shading normal; a shading path that hand-rolls it instead risks silently "
-      "diverging from the other three, or never lighting normal maps at all";
+      "tangent_space_normal() and apply_normal_map() in OxidANT's common/gltf_material.slang are the sole place the "
+      "tangent-space normalTexture sample is turned into a world-space shading normal; a shading path that "
+      "hand-rolls it instead risks silently diverging from the others, or never lighting normal maps at all";
 
-    const fs::path normal_map_path = repo_root / "Resources/ShadersSlang/common/normal_map.slang";
-    const auto normal_map_text_opt = readFileText(normal_map_path);
-    ASSERT_TRUE(normal_map_text_opt.has_value()) << "could not open " << normal_map_path.string();
-    const std::string &normal_map_text = *normal_map_text_opt;
-    EXPECT_NE(normal_map_text.find("sampledNormal * 2.0 - 1.0"), std::string::npos)
-      << "normal_map.slang's apply_normal_map() no longer unpacks the sampled tangent-space normal from [0,1] to "
-         "[-1,1]. "
+    const fs::path gltf_material_path = sharedSlangRoot() / "common" / "gltf_material.slang";
+    const auto gltf_material_text_opt = readFileText(gltf_material_path);
+    ASSERT_TRUE(gltf_material_text_opt.has_value()) << "could not open " << gltf_material_path.string();
+    const std::string &gltf_material_text = *gltf_material_text_opt;
+    EXPECT_NE(gltf_material_text.find("texel * 2.0 - 1.0"), std::string::npos)
+      << "gltf_material.slang's tangent_space_normal() no longer unpacks the sampled tangent-space normal from "
+         "[0,1] to [-1,1]. "
       << kFailureMessage;
-    EXPECT_NE(normal_map_text.find("mul(nTs, float3x3("), std::string::npos)
-      << "normal_map.slang's apply_normal_map() must right-multiply the row-built (t, b, n) basis by nTs "
-         "(mul(nTs, float3x3(t, b, n))) to apply the tangent-to-world transform; mul(float3x3(t, b, n), nTs) is "
-         "the inverse (world-to-tangent) transform and produces an inverted shading normal.";
-    EXPECT_EQ(normal_map_text.find("mul(float3x3("), std::string::npos)
-      << "normal_map.slang's apply_normal_map() must not left-multiply the row-built (t, b, n) basis - that is "
+    EXPECT_NE(gltf_material_text.find("mul(tangent_normal, float3x3("), std::string::npos)
+      << "gltf_material.slang's apply_normal_map() must right-multiply the row-built (t, b, n) basis by the "
+         "tangent-space normal to apply the tangent-to-world transform; mul(float3x3(t, b, n), v) is the inverse "
+         "(world-to-tangent) transform and produces an inverted shading normal.";
+    EXPECT_EQ(gltf_material_text.find("mul(float3x3("), std::string::npos)
+      << "gltf_material.slang's apply_normal_map() must not left-multiply the row-built (t, b, n) basis - that is "
          "the world-to-tangent transform, not tangent-to-world.";
 
-    const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    const fs::path forward_path = sharedSlangRoot() / "forward" / "forward.slang";
     const auto forward_text_opt = readFileText(forward_path);
     ASSERT_TRUE(forward_text_opt.has_value()) << "could not open " << forward_path.string();
     const std::string &forward_text = *forward_text_opt;
-    EXPECT_NE(forward_text.find("mul(nTs, float3x3("), std::string::npos)
-      << "forward.slang's fs_main is normal_map.slang's wgsl-target inline twin and must right-multiply the "
-         "row-built (t, b, nGeom) basis by nTs (mul(nTs, float3x3(t, b, nGeom))), same as apply_normal_map().";
-    EXPECT_EQ(forward_text.find("mul(float3x3("), std::string::npos)
-      << "forward.slang's fs_main must not left-multiply the row-built (t, b, nGeom) basis - that is the "
-         "world-to-tangent transform, not tangent-to-world.";
+    EXPECT_NE(forward_text.find("apply_normal_map("), std::string::npos)
+      << "forward.slang, the Rust renderer's raster pass, no longer calls apply_normal_map(). " << kFailureMessage;
+    EXPECT_NE(forward_text.find("tangent_space_normal("), std::string::npos)
+      << "forward.slang no longer calls tangent_space_normal(). " << kFailureMessage;
 
     // material_textures.slang is the sole caller of apply_normal_map() and folds in normalScale.
     const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
     const auto material_textures_text_opt = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
     const std::string &material_textures_text = *material_textures_text_opt;
-    EXPECT_NE(material_textures_text.find("import normal_map;"), std::string::npos)
-      << "material_textures.slang no longer imports common/normal_map.slang. " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("import gltf_material;"), std::string::npos)
+      << "material_textures.slang no longer imports OxidANT's common/gltf_material.slang. " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("tangent_space_normal("), std::string::npos)
+      << "material_textures.slang no longer calls tangent_space_normal(). " << kFailureMessage;
     EXPECT_NE(material_textures_text.find("apply_normal_map("), std::string::npos)
       << "material_textures.slang no longer calls apply_normal_map(). " << kFailureMessage;
     EXPECT_NE(material_textures_text.find("material.normalTextureID"), std::string::npos)
       << "material_textures.slang's resolved_normal helpers no longer branch on ObjMaterial::normalTextureID. "
       << kFailureMessage;
     EXPECT_NE(material_textures_text.find("material.normalScale"), std::string::npos)
-      << "material_textures.slang no longer passes ObjMaterial::normalScale into apply_normal_map(). "
+      << "material_textures.slang no longer passes ObjMaterial::normalScale into tangent_space_normal(). "
       << kFailureMessage;
 
     const std::vector<fs::path> shading_paths = {
@@ -3326,7 +3333,7 @@ TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
-      "material_rules.slang's alpha_masked_out() is the sole place the MASK cutoff test happens; a site that stops "
+      "material_rules.slang's material_masked_out() is the sole place the MASK cutoff test happens; a site that stops "
       "sampling ObjMaterial::alphaTextureID silently drops map_d cut-outs (the chain and hanging-plant geometry in "
       "the bundled crytek-sponza render as solid rectangles) instead of alpha-testing them";
 
@@ -3342,8 +3349,8 @@ TEST(BuildIntegrity, AlphaTextureIsSampledByEveryAlphaTestingPath)
         const std::string &text = *text_opt;
         EXPECT_NE(text.find("alphaTextureID"), std::string::npos)
           << path.string() << " no longer branches on ObjMaterial::alphaTextureID. " << kFailureMessage;
-        EXPECT_NE(text.find("alpha_masked_out("), std::string::npos)
-          << path.string() << " no longer calls alpha_masked_out(). " << kFailureMessage;
+        EXPECT_NE(text.find("material_masked_out("), std::string::npos)
+          << path.string() << " no longer calls material_masked_out(). " << kFailureMessage;
     }
 }
 
@@ -3664,13 +3671,13 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
     const auto material_rules_text_opt = readFileText(material_rules_path);
     ASSERT_TRUE(material_rules_text_opt.has_value()) << "could not open " << material_rules_path.string();
     const std::string &material_rules_text = *material_rules_text_opt;
-    EXPECT_NE(material_rules_text.find("material.metallic * mrSample.b"), std::string::npos)
-      << "material_rules.slang's material_metallic_roughness() no longer multiplies the sampled B channel into the "
-         "metallic factor. "
+    EXPECT_NE(material_rules_text.find("material_metallic(material.metallic, mrSample.b)"), std::string::npos)
+      << "material_rules.slang's material_metallic_roughness() no longer hands gltf_material.slang the sampled B "
+         "channel and the metallic factor. "
       << kFailureMessage;
-    EXPECT_NE(material_rules_text.find("material_roughness(material) * mrSample.g"), std::string::npos)
-      << "material_rules.slang's material_metallic_roughness() no longer multiplies the sampled G channel into the "
-         "roughness factor. "
+    EXPECT_NE(material_rules_text.find("material_roughness(roughness_factor(material), mrSample.g)"), std::string::npos)
+      << "material_rules.slang's material_metallic_roughness() no longer hands gltf_material.slang the sampled G "
+         "channel and the roughness factor. "
       << kFailureMessage;
 
     // Every path, path_tracing.slang included, resolves the untextured factor through the same helper.
@@ -4437,7 +4444,7 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
       << joinViolations(violations);
 }
 
-// Roughness comes from material_roughness() in every shading path, never a literal.
+// Roughness comes from roughness_factor() and gltf_material.slang's material_roughness() in every path, never a literal.
 TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
 {
     const fs::path repo_root = repoRoot();
@@ -4468,7 +4475,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
                 violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
                                       + std::to_string(line_number) + ": " + line
                                       + " assigns a numeric literal to roughness - derive it from the material via "
-                                        "material_roughness() instead");
+                                        "material_metallic_roughness() instead");
             }
         }
     }
@@ -4477,13 +4484,13 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
                                     << " shader site(s) hard-code roughness instead of deriving it from the material:"
                                     << joinViolations(violations);
 
-    // Three paths reach material_roughness() through material_textures.slang's resolved_metallic_roughness helpers.
+    // Three paths reach the roughness rule through material_textures.slang's resolved_metallic_roughness helpers.
     const fs::path material_textures_path = slang_root / "common/material_textures.slang";
     const auto material_textures_content = readFileText(material_textures_path);
     ASSERT_TRUE(material_textures_content.has_value()) << "missing " << material_textures_path.string();
-    EXPECT_NE(material_textures_content->find("material_roughness("), std::string::npos)
-      << "material_textures.slang's resolved_metallic_roughness helpers must derive the fallback roughness via "
-         "material_roughness(), not their own copy of the mapping";
+    EXPECT_NE(material_textures_content->find("material_metallic_roughness(material, float4(1.0))"), std::string::npos)
+      << "material_textures.slang's resolved_metallic_roughness helpers must derive the untextured roughness via "
+         "material_metallic_roughness(), not their own copy of the mapping";
 
     static const std::array<const char *, 3> kShadingShaders = {
         "rasterizer/rasterizer.slang",
@@ -4503,7 +4510,7 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
     }
 }
 
-// GltfLoader pins shininess to a fallback, safe only while material_roughness() is its sole shader reader.
+// GltfLoader pins shininess to a fallback, safe only while roughness_factor() is its sole shader reader.
 TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
 {
     const fs::path repo_root = repoRoot();
@@ -4544,7 +4551,7 @@ TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
     EXPECT_TRUE(violations.empty())
       << violations.size()
       << " shader site(s) read material.shininess outside common/material_rules.slang - that field is pinned "
-         "to a fixed fallback value by GltfLoaderRust.cpp and is only meaningful through material_roughness()'s "
+         "to a fixed fallback value by GltfLoaderRust.cpp and is only meaningful through roughness_factor()'s "
          "sentinel branch:"
       << joinViolations(violations);
 }
@@ -10313,21 +10320,21 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
           << relative << " no longer takes the face side from the triangle's winding (" << needle << ")";
     }
 
-    const fs::path normal_map_path = repo_root / "Resources/ShadersSlang/common/normal_map.slang";
-    const auto normal_map_text_opt = readFileText(normal_map_path);
-    ASSERT_TRUE(normal_map_text_opt.has_value()) << "could not open " << normal_map_path.string();
-    EXPECT_NE(normal_map_text_opt->find("return frontFace ? mapped : -mapped;"), std::string::npos)
-      << "normal_map.slang's apply_normal_map() no longer negates the mapped normal as a whole on a back face. "
+    const fs::path gltf_material_path = sharedSlangRoot() / "common" / "gltf_material.slang";
+    const auto gltf_material_text_opt = readFileText(gltf_material_path);
+    ASSERT_TRUE(gltf_material_text_opt.has_value()) << "could not open " << gltf_material_path.string();
+    EXPECT_NE(gltf_material_text_opt->find("return front_face ? mapped : -mapped;"), std::string::npos)
+      << "gltf_material.slang's apply_normal_map() no longer negates the mapped normal as a whole on a back face. "
       << kFailureMessage;
 
-    // OxidANT's twin negates the mapped normal whole on a back face too (its f2a28c5f).
-    const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    // The Rust renderer hands the same helper its SV_IsFrontFace.
+    const fs::path forward_path = sharedSlangRoot() / "forward" / "forward.slang";
     const auto forward_text_opt = readFileText(forward_path);
     ASSERT_TRUE(forward_text_opt.has_value()) << "could not open " << forward_path.string();
     EXPECT_NE(forward_text_opt->find("SV_IsFrontFace"), std::string::npos)
       << "forward.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
-    EXPECT_NE(forward_text_opt->find("if (!isFrontFace) n = -n;"), std::string::npos)
-      << "forward.slang's sample_material no longer negates the mapped normal on a back face. " << kFailureMessage;
+    EXPECT_NE(forward_text_opt->find("apply_normal_map(nGeom, In.worldTangent, nTs, isFrontFace)"), std::string::npos)
+      << "forward.slang's sample_material no longer hands apply_normal_map() the fragment's face. " << kFailureMessage;
     EXPECT_EQ(forward_text_opt->find("nGeom = -nGeom"), std::string::npos)
       << "forward.slang negates nGeom before the normal map again. " << kFailureMessage;
 }
@@ -10453,6 +10460,21 @@ TEST(BuildIntegrity, NoShaderCopiesASharedLeafModule)
         { "common/ambient.slang",
           std::regex(kDefines + R"((ambient_split_sum|analytic_ambient)\s*\()"),
           "an ambient term" },
+        { "common/alpha_mode.slang",
+          std::regex(R"(\bstatic\s+const\s+\w+\s+(ALPHA_OPAQUE|ALPHA_MASK|ALPHA_BLEND)\s*=)"),
+          "an alpha mode" },
+        { "common/gltf_material.slang",
+          std::regex(
+            kDefines
+            + R"((transform_uv|normalize_or|tangent_space_normal|apply_normal_map|mirror_sign|normal_transform)"
+              R"(|material_metallic|material_roughness|alpha_masked_out)\s*\()"),
+          "a glTF material rule" },
+        { "common/gltf_material.slang", std::regex(R"(\bsqrt\(\s*saturate\(\s*1\.0\s*-\s*dot\()"), "a BC5 z rebuild" },
+        { "common/gltf_material.slang",
+          std::regex(R"(\bdot\(\s*float3\(\s*[\w.]+\s*,\s*1\.0\s*\))"
+                     R"(|\.x\s*\*\s*\w+\.x\s*\+\s*\w+\.y\s*\*\s*\w+\.y\s*\+\s*\w+\.z\b)"),
+          "a texture transform" },
+        { "common/gltf_material.slang", std::regex(R"(\bfloat3x3\(\s*t\s*,\s*b\s*,)"), "a tangent frame" },
     };
 
     std::vector<std::string> violations;
@@ -10939,13 +10961,13 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
             "metallic_roughness_uv_transform_row1" } },
         { "resolved_normal",
           { "normalTextureID", "normalScale", "normal_uv_transform_row0", "normal_uv_transform_row1" } },
-        { "alpha_masked_out", { "alphaCutoff", "dissolve" } },
-        { "material_roughness", { "roughness", "shininess" } },
+        { "material_masked_out", { "alphaMode", "alphaCutoff", "dissolve" } },
+        { "roughness_factor", { "roughness", "shininess" } },
         { "base_color", { "diffuse" } },
         { "transform_uv", { "uv_transform_row0", "uv_transform_row1" } },
         { "base_color_uv", { "uv_transform_row0", "uv_transform_row1", "uv1SlotMask" } },
         { "slot_uv", { "uv1SlotMask" } },
-        { "blend_coverage", { "alphaBlend", "dissolve" } },
+        { "blend_coverage", { "alphaMode", "dissolve" } },
         { "material_metallic_roughness", { "metallic" } },
         { "sample_metallic_roughness_lod0",
           { "metallic_roughness_uv_transform_row0", "metallic_roughness_uv_transform_row1" } },

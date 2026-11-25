@@ -1,30 +1,28 @@
-import constants;
+import gltf_material;
 import scene_types;
 
 // Binding-free, so a shader with its own objectDescription binding can import it without a conflict.
 
-// Negative roughness (every OBJ material) maps from shininess.
-float material_roughness(ObjMaterial material)
+// The roughness factor; a negative one (an OBJ material without Pr) maps from shininess.
+float roughness_factor(ObjMaterial material)
 {
-    return material.roughness >= 0.0
-      ? clamp(material.roughness, MIN_ROUGHNESS, 1.0)
-      : clamp(sqrt(2.0 / (material.shininess + 2.0)), MIN_ROUGHNESS, 1.0);
+    return material.roughness >= 0.0 ? material.roughness : sqrt(2.0 / (material.shininess + 2.0));
 }
 
-// glTF 2.0 SS3.9.2: G = roughness, B = metallic, each multiplying its factor; a G of 0 must not undo the floor.
+// glTF 2.0 SS3.9.2 through gltf_material.slang: B is metallic and G roughness, each times its factor.
 float2 material_metallic_roughness(ObjMaterial material, float4 mrSample)
 {
-    return float2(material.metallic * mrSample.b, max(material_roughness(material) * mrSample.g, MIN_ROUGHNESS));
+    return float2(material_metallic(material.metallic, mrSample.b), material_roughness(roughness_factor(material), mrSample.g));
 }
 
-// glTF MASK test on baseColorFactor.a * texture.a * COLOR_0.a; a negative alphaCutoff means not MASK.
-bool alpha_masked_out(ObjMaterial material, float sampledAlpha)
+// glTF MASK on baseColorFactor.a * texture.a * COLOR_0.a; the alpha mode decides, never the cutoff's sign.
+bool material_masked_out(ObjMaterial material, float sampledAlpha)
 {
-    return material.alphaCutoff >= 0.0 && (sampledAlpha * material.dissolve) < material.alphaCutoff;
+    return alpha_masked_out(material.alphaMode, sampledAlpha * material.dissolve, material.alphaCutoff);
 }
 
 // glTF BLEND's alpha, baseColorFactor.a * texture.a * COLOR_0.a; 1 for OPAQUE and MASK, which cover their pixel.
 float blend_coverage(ObjMaterial material, float sampledAlpha)
 {
-    return material.alphaBlend != 0 ? saturate(sampledAlpha * material.dissolve) : 1.0;
+    return material.alphaMode == ALPHA_BLEND ? saturate(sampledAlpha * material.dissolve) : 1.0;
 }

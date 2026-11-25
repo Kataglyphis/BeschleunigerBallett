@@ -115,6 +115,18 @@ the GitHub releases themselves.
 
 ### Changed
 
+- Both renderers sample materials through one Slang source (plan I9, owner rules 2026-11-19): OxidANT's
+  `common/gltf_material.slang` holds `transform_uv` (KHR_texture_transform), `tangent_space_normal` (z rebuilt from
+  xy for a two-channel BC5 map, which this engine's normal maps lacked), `apply_normal_map`, `mirror_sign` and
+  `normal_transform`, `material_metallic` (now clamped to [0, 1] here too), `material_roughness` and
+  `alpha_masked_out`, each of which existed three times; its vector kernel runs on both targets
+  (`Integration.SharedSlangKernelsMeetTheirVectors` here). MASK is an explicit alpha mode plus cutoff: `ObjMaterial::alphaBlend`
+  is `alphaMode` (`ALPHA_OPAQUE`, `ALPHA_MASK`, `ALPHA_BLEND` from OxidANT's `common/alpha_mode.slang`, which
+  `ObjMaterial.hpp` includes and the bridge's `GltfMaterial::alpha_mode` carries), and no shader or the BLAS flag
+  reads the cutoff's sign any more. The raster push constants shrink from 116 to 68 bytes: the vertex stage takes
+  the normal transform from the model matrix's cofactor, so `invModelRows` and `common/normal_map.slang` are gone.
+  `material_rules.slang`'s wrappers are `roughness_factor` and `material_masked_out`.
+
 - **Textures are decoded in Rust, off the render thread** (BACKLOG "Texture ingest in Rust" steps 1-2, plan B5;
   OxidANT pin `d83dca1`). The bridge hands every texture slot over as a full RGBA8 mip chain, level 0 first and packed
   back to back, which `Texture::createFromLevels` uploads in one submit without a blit (a level over

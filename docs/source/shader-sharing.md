@@ -176,12 +176,14 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   raster (`rasterizer.slang`, `deferred.slang`, `shadow_map.slang`),
   closest-hit/any-hit ray tracing (`raytrace.rchit.slang`,
   `raytrace.rahit.slang`) and path tracing (`path_tracing.slang`) entry points.
-- `common/material_rules.slang` — the binding-free glTF material rules on the
-  fetched `ObjMaterial`: `material_roughness`, `material_metallic_roughness`
-  (glTF SS3.9.2 G=roughness/B=metallic channel swizzle) and `alpha_masked_out`
-  (alphaMode MASK). Split out of `material_fetch.slang` so `path_tracing.slang`
-  can call them, as with `base_color.slang` below. Spirv only, every C++
-  shading path (raster, deferred, shadow map, ray tracing, path tracing).
+- `common/material_rules.slang` — the binding-free glue from the fetched
+  `ObjMaterial` to OxidANT's `common/gltf_material.slang` (below):
+  `roughness_factor` (the OBJ shininess fallback), `material_metallic_roughness`
+  (glTF SS3.9.2 G=roughness/B=metallic channel swizzle), `material_masked_out`
+  (alphaMode MASK, decided by `ObjMaterial::alphaMode`) and `blend_coverage`.
+  Split out of `material_fetch.slang` so `path_tracing.slang` can call them, as
+  with `base_color.slang` below. Spirv only, every C++ shading path (raster,
+  deferred, shadow map, ray tracing, path tracing).
 - `common/material_textures.slang` — the one declaration of the
   `textures[]`/`textureSamplers[]` arrays (`TEXTURES_BINDING`/
   `SAMPLER_BINDING`), plus explicit-LOD (`SampleLevel`) and implicit-LOD
@@ -208,31 +210,37 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (`calc_cascaded_shadow`). Spirv only: the raster and deferred lighting paths
   (`rasterizer.slang`, `deferred.slang`).
 - `common/base_color.slang` — `base_color` (glTF base colour =
-  `baseColorFactor * sampled texture`) and `transform_uv`
-  (KHR_texture_transform), in a bindingless module so every spirv shading path
-  can import it. It keeps `rasterizer/rasterizer.slang`,
+  `baseColorFactor * sampled texture`) and the per-slot UV accessors over
+  `gltf_material.slang`'s `transform_uv` (KHR_texture_transform), in a
+  bindingless module so every spirv shading path can import it. It keeps `rasterizer/rasterizer.slang`,
   `deferred/deferred.slang`, `raytracing/raytrace.rchit.slang` and
   `path_tracing/path_tracing.slang` in agreement with the reference
   `prim.base_color * baseSample` in `forward/forward.slang` (wgsl, not an
   importer); before it, those four dropped `baseColorFactor` whenever a
   material also had a texture. The alpha half travels separately:
   the glTF loader puts `baseColorFactor[0..2]` in `diffuse` and
-  `baseColorFactor[3]` in `dissolve`, which `alpha_masked_out()` multiplies
+  `baseColorFactor[3]` in `dissolve`, which `material_masked_out()` multiplies
   into the sampled alpha (the `ObjMaterial` table in
   [`model-loading.md`](model-loading.md)). Spirv only.
 - `common/emission.slang` — the glTF emissive rule (`material_emission`:
   `emissiveFactor` \* sampled `emissiveTexture`, or the factor alone without a
   texture). Spirv only, all four raster/RT shading paths (`rasterizer.slang`,
   `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang`).
-- `common/normal_map.slang` — glTF tangent-space normal mapping
-  (`apply_normal_map`, glTF SS3.9.3). Callers hand it the authored geometric
-  normal and the face side; on a doubleSided back face it negates the mapped
-  normal as a whole, which reverses tangent, bitangent and normal together
-  (glTF SS3.9.2). Negating only the normal before the call kept the tangent
-  and mirrored the map's relief along it, until 2026-11 on all four paths.
-  Spirv only, the same four paths as `emission.slang`;
-  `forward/forward.slang`'s `fs_main` (wgsl) reimplements the same math
-  locally.
+- OxidANT's `common/gltf_material.slang` (both targets) — the material rules
+  both renderers sample with, once: `transform_uv` (KHR_texture_transform),
+  `tangent_space_normal` (the texel to tangent space, z rebuilt from xy for a
+  two-channel BC5 map) and `apply_normal_map` (glTF SS3.9.3; on a doubleSided
+  back face it negates the mapped normal as a whole, which reverses tangent,
+  bitangent and normal together, SS3.9.2), `mirror_sign` and
+  `normal_transform` (the cofactor the raster vertex stages take the normal
+  transform from, so the push constants carry only the model matrix),
+  `material_metallic` (held in [0, 1]), `material_roughness` (floored) and
+  `alpha_masked_out` (an explicit alpha mode plus cutoff,
+  `common/alpha_mode.slang`'s `ALPHA_OPAQUE`/`ALPHA_MASK`/`ALPHA_BLEND`, which
+  `ObjMaterial.hpp` includes). Its vector kernel checks every function on both
+  targets. The C++ shading paths reach it through `material_rules.slang`,
+  `material_textures.slang`, `base_color.slang` and `raster_geometry.slang`;
+  the Rust renderer's `forward.slang` and tracer call it directly.
 - `common/hdr_safe.slang` (OxidANT's since 2026-11-23) — `hdr_safe`, the clamp
   every write to an RGBA16F HDR target ends in: radiance to `[0, HDR_MAX]` with
   `HDR_MAX = 65000`, under fp16's 65504, and NaN to 0, found by its bits
@@ -322,8 +330,8 @@ tonemap shader.
 <!-- shader-targets:end -->
 
 **CI guards:** OxidANT's vector kernels, `tests/<module>_test.slang` for
-`brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces`, `fullscreen` and
-`camera_ray`, run every
+`brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces`, `fullscreen`,
+`camera_ray`, `ambient` and `gltf_material`, run every
 public function of their `common/` module once per case of
 `tests/vectors/<module>.json` (inputs, f64 references, a tolerance per output;
 OxidANT's `docs/shaders.md` § Vector kernels). Both targets are checked on a
@@ -366,6 +374,7 @@ imports.
 | Module | Target |
 | --- | --- |
 | `common/aces.slang` | both |
+| `common/alpha_mode.slang` | both |
 | `common/alpha_test.slang` | spirv |
 | `common/ambient.slang` | both |
 | `common/base_color.slang` | spirv |
@@ -376,13 +385,13 @@ imports.
 | `common/constants.slang` | both |
 | `common/emission.slang` | spirv |
 | `common/fullscreen.slang` | both |
+| `common/gltf_material.slang` | both |
 | `common/hdr_safe.slang` | both |
 | `common/limits.slang` | both |
 | `common/material_fetch.slang` | spirv |
 | `common/material_rules.slang` | spirv |
 | `common/material_textures.slang` | spirv |
 | `common/noise.slang` | both |
-| `common/normal_map.slang` | spirv |
 | `common/path_estimator.slang` | both |
 | `common/punctual_light.slang` | both |
 | `common/punctual_shadow.slang` | wgsl |
@@ -416,8 +425,8 @@ and `Vertex`.
 | `KHR_materials_unlit` | the flat material's `unlit` becomes `ObjMaterial::unlit`, honoured in all four shading paths (`rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`, `path_tracing.slang`) | reads `material.unlit()` into `CpuMaterial::unlit` | Parity: both loaders and every shading path on both sides treat the extension identically. |
 | `occlusionTexture` + `occlusionStrength` | the flat material drops it (`flat.rs` masks off bit 4); `ObjMaterial` has no occlusion field | reads `occlusion_texture()`/`occlusion_strength` into `CpuMaterial::occlusion_texture`/`occlusion_strength` | Divergence until the C++ IBL (BACKLOG "IBL and the occlusion map for C++"): glTF scopes `occlusionTexture` to indirect light, which the C++ raster paths and `raytrace.rchit.slang` have since 2026-11-23 as `analytic_ambient`, unattenuated; the occlusion slot arrives with that item. |
 | Per-slot `KHR_texture_transform` | the flat material gives base-colour, normal, metallic-roughness and emissive each their own transform (`uv_transform_row0`/`_row1`, `normal_uv_transform_row0`/`_row1`, `metallic_roughness_uv_transform_row0`/`_row1`, `emissive_uv_transform_row0`/`_row1`); no occlusion slot, since occlusion textures are not read (previous row) | the same four slots plus `occlusion_uv_transform` | Parity wherever C++ has a texture to transform; the only gap is the occlusion gap above, not a `KHR_texture_transform` bug. |
-| `alphaMode` `BLEND` | the flat model sets `ObjMaterial::alphaBlend` and `MeshRange::alphaBlended`; forward and deferred skip the mesh, then draw it last, farthest first by its bounds centre's distance to the eye, src-alpha blended with depth test on and writes off (deferred shades it forward after the lighting pass); the tracers render it opaque | `AlphaMode::Blend` drives the same sorted pass (the `alpha_blend` primitive flag and its distance sort), forward and deferred; the tracer carries `ALPHA_BLEND` but shades it opaque too | Parity in raster. Neither renderer sorts within a mesh, so a self-overlapping BLEND mesh composites in index order. |
-| Roughness default when `Pr` is unauthored (OBJ path) | OxidANT's one OBJ reader (`kataglyphis_assets::obj`, `material.rs`) sets `ObjMaterial::roughness` from `Ns` through `material_roughness()`'s `sqrt(2/(Ns+2))` curve, clamped `[0.045, 1.0]`; without `Pr` and `Ns` it is 1 (owner, 2026-11-19) | the same reader, through the glTF it writes | Parity: one rule for both renderers. |
+| `alphaMode` `BLEND` | the flat model sets `ObjMaterial::alphaMode` to `ALPHA_BLEND` and `MeshRange::alphaBlended`; forward and deferred skip the mesh, then draw it last, farthest first by its bounds centre's distance to the eye, src-alpha blended with depth test on and writes off (deferred shades it forward after the lighting pass); the tracers render it opaque | `AlphaMode::Blend` drives the same sorted pass (the `alpha_blend` primitive flag and its distance sort), forward and deferred; the tracer carries `ALPHA_BLEND` but shades it opaque too | Parity in raster. Neither renderer sorts within a mesh, so a self-overlapping BLEND mesh composites in index order. |
+| Roughness default when `Pr` is unauthored (OBJ path) | OxidANT's one OBJ reader (`kataglyphis_assets::obj`, `material.rs`) sets `ObjMaterial::roughness` from `Ns` through `roughness_factor()`'s `sqrt(2/(Ns+2))` curve, clamped `[0.045, 1.0]`; without `Pr` and `Ns` it is 1 (owner, 2026-11-19) | the same reader, through the glTF it writes | Parity: one rule for both renderers. |
 | `map_d` (OBJ per-texel opacity map) | the reader's flat model hands `map_d` over as its own linear slot, `ObjMaterial::alphaTextureID`, a `MASK` cut-out at `alphaCutoff = 0.5`, honoured in `rasterizer.slang`, `deferred.slang`, `shadow_map.slang` and `common/alpha_test.slang` | the in-memory GLB the native app opens an OBJ through (`obj::obj_to_glb`, `apply_masks`) composites the mask's red channel into the base colour's alpha and emits `alphaMode: MASK` at the same 0.5 cutoff | Parity in what is cut; C++ samples the mask at its own resolution, Rust resizes it to the base colour's. |
 
 ## Which C++ shading path reads which `ObjMaterial` field
@@ -439,9 +448,9 @@ being rediscovered one field at a time:
   paths. Until 2026-11 `path_tracing.slang` read metallic on the texture
   branch alone, so an untextured factor (`metallic_card.gltf`'s 0.75) was
   ignored, and had no specular lobe to use roughness with.
-- `shininess` is only reachable through `material_roughness()`'s
+- `shininess` is only reachable through `roughness_factor()`'s
   negative-`roughness` fallback ("(fallback)" in its row).
-- `dissolve` is read only inside `alpha_masked_out()`, so a path with no MASK
+- `dissolve` is read only inside `material_masked_out()`, so a path with no MASK
   alpha test of its own (`raytrace.rchit.slang`, `path_tracing.slang`'s own
   shading; their MASK test runs earlier, in `alpha_test.slang`'s
   `ray_hit_masked_out()`) never touches it.
@@ -451,9 +460,9 @@ being rediscovered one field at a time:
 | `diffuse` | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | not read — alpha testing only discards a fragment, never shades a colour |
 | `emission` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` (skipped in furnace-test mode) | not read — no lighting |
 | `shininess` | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness()` (fallback) | `resolved_metallic_roughness_lod0()` (fallback) | `resolved_metallic_roughness_lod0()` (fallback) | not read — no lighting |
-| `dissolve` | `alpha_masked_out()` | `alpha_masked_out()` | not read — the MASK cut-out for ray-traced hits runs in the any-hit shader (`raytrace.rahit.slang`, via `alpha_test.slang`) | not read — candidates are alpha-tested earlier, by `alpha_test.slang`'s `ray_hit_masked_out()` | `alpha_masked_out()` |
+| `dissolve` | `material_masked_out()` | `material_masked_out()` | not read — the MASK cut-out for ray-traced hits runs in the any-hit shader (`raytrace.rahit.slang`, via `alpha_test.slang`) | not read — candidates are alpha-tested earlier, by `alpha_test.slang`'s `ray_hit_masked_out()` | `material_masked_out()` |
 | `textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` |
-| `alphaCutoff` | `alpha_masked_out()` | `alpha_masked_out()` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaCutoff` (outer guard) / `alpha_masked_out()` |
+| `alphaCutoff` | `material_masked_out()` | `material_masked_out()` | not read — see `dissolve` | not read — see `dissolve` | `material_masked_out()` |
 | `uv_transform_row0` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` |
 | `uv_transform_row1` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` | `base_color_uv()` |
 | `metallic` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `resolved_metallic_roughness_lod0()` | not read — no lighting |
@@ -471,7 +480,7 @@ being rediscovered one field at a time:
 | `unlit` | `material.unlit` | `material.unlit` | `material.unlit` | `material.unlit` | not read — MASK alpha testing runs regardless of `unlit` |
 | `alphaTextureID` | `material.alphaTextureID` | `material.alphaTextureID` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaTextureID` |
 | `uv1SlotMask` | `base_color_uv()` / the per-slot accessors, through `slot_uv()` | `base_color_uv()` / the per-slot accessors, through `slot_uv()` | `base_color_uv()` / the `_lod0` accessors, through `slot_uv()` | `base_color_uv()` / the `_lod0` accessors, through `slot_uv()` | `base_color_uv()` |
-| `alphaBlend` | `blend_coverage()` (the output alpha the transparent pass blends by) | not read — a BLEND mesh skips the G-buffer and is shaded by `rasterizer.slang` after the lighting pass | not read — BLEND renders opaque in ray tracing | not read — BLEND renders opaque in path tracing | not read — BLEND casts an opaque shadow |
+| `alphaMode` | `material_masked_out()` / `blend_coverage()` (the output alpha the transparent pass blends by) | `material_masked_out()`; a BLEND mesh skips the G-buffer and is shaded by `rasterizer.slang` after the lighting pass | not read — see `dissolve`; BLEND renders opaque in ray tracing | not read — see `dissolve`; BLEND renders opaque in path tracing | `material.alphaMode` (outer guard) / `material_masked_out()` |
 
 ## Beyond shaders
 

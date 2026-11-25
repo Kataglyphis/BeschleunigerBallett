@@ -32,7 +32,7 @@ struct MeshDrawStats
 /// while leaving genuine per-caller differences to the two callbacks:
 ///
 /// - `onModel(modelMatrix)` runs once per model, before its meshes. Forward
-///   rasterization uses it to seed the push constant's model/invModelRows;
+///   rasterization uses it to seed the push constant's model;
 ///   the shadow pass has nothing model-level to precompute and passes a
 ///   no-op.
 /// - `shouldCull(worldBounds, mesh)` runs once per mesh (after `onModel`, before
@@ -41,8 +41,8 @@ struct MeshDrawStats
 ///   `isVisibleAsShadowCaster` over every cascade.
 /// - `onMesh(modelMatrix, objectIndex, mesh)` runs once per surviving mesh,
 ///   before the shared bind+draw. It is where each caller pushes its own
-///   push-constant type/content (`PushConstantRasterizer` with
-///   inverse-transpose rows and the dynamic `setCullMode`/`setFrontFace`, vs
+///   push-constant type/content (`PushConstantRasterizer` and the dynamic
+///   `setCullMode`/`setFrontFace`, vs
 ///   `ShadowPushConstants` with no cull-mode toggle since the shadow
 ///   pipeline is built `eCullMode = eNone`).
 ///
@@ -100,14 +100,14 @@ MeshDrawStats walkSceneMeshes(vk::CommandBuffer commandBuffer,
 }
 
 /// Forward/deferred rasterization's use of walkSceneMeshes: seeds
-/// `pushConstant`'s model/invModelRows per model, culls against one camera
+/// `pushConstant`'s model per model, culls against one camera
 /// frustum, then pushes `PushConstantRasterizer` and sets the dynamic cull
 /// mode and front face per mesh. `pipelineLayout` and `pushConstantStages` are the two
 /// genuine differences between the callers - forward pushes
 /// eVertex|eFragment through pipeline_layout, deferred pushes eAll through
 /// geometryPipelineLayout - and must NOT be collapsed to one value.
 /// `pushConstant` is taken by reference so the caller's already-seeded fields
-/// (set via setPushConstant) survive; .model / .invModelRows / .objectIndex
+/// (set via setPushConstant) survive; .model / .objectIndex
 /// are (re)written per mesh exactly as the inline loops did. glTF BLEND meshes
 /// are skipped: recordBlendDraws composites them afterwards.
 MeshDrawStats recordSceneMeshDraws(vk::CommandBuffer commandBuffer,

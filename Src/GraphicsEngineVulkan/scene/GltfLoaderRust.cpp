@@ -92,7 +92,7 @@ namespace {
             .unlit = material.unlit ? 1 : 0,
             .alphaTextureID = material.alpha_texture,
             .uv1SlotMask = static_cast<int>(material.uv1_slot_mask),
-            .alphaBlend = material.alpha_blend ? 1 : 0,
+            .alphaMode = static_cast<int>(material.alpha_mode),
         };
     }
 
