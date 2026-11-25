@@ -110,14 +110,20 @@ Shaders:
   sites and the depth ray are the item's to settle; the bounce sky reads the Sun's Ambient slider, which the
   C++ path tracer's fixed 0.35 bounce scale ignores since Phase 7. `trace_path<S: ITracedScene>` in OxidANT,
   C++ over RayQuery, Rust over `bvh_traverse`; BB's `traced_hit.slang` folds the hit fetch of rchit and the
-  path tracer and the three MASK candidate loops.
+  path tracer and the three MASK candidate loops. Since Phase 16 C++ bakes the same IBL as Rust (`AmbientMaps`, set 0
+  bindings 8-10), so a bounce miss can read the prefiltered cube in both renderers.
 
 C++ catches up:
 
-- [ ] `C++` **IBL and the occlusion map for C++** (L, plan C4 stages 2-3; the analytic ambient term is in
-  since Phase 7). Owner 2026-11-19: both renderers bake the IBL from the drawn skybox (Rust follows with
-  OxidANT's IBL entry), and C++ takes Rust's G-buffer packing (occlusion in albedo.a, unlit in metallic's
-  sign).
+- [ ] `Shared` **Mask the photo sky's sun out of the IBL bake** (S-M). Owner 2026-11-25: both renderers bake
+  their IBL from the drawn sky, and a photo sky's sun disk then lights the scene on top of the directional Sun.
+  Mask or clamp the disk around the Sun's direction in OxidANT's `ibl.slang` bake, which both renderers run, so
+  the directional Sun alone supplies it; a golden with a visible photo sun shows no extra sun-facing specular.
+- [ ] `CI` **The IBL bake's cost on emulated lanes** (S). Phase 16's bake costs 1.6 s per renderer on llvmpipe
+  (irradiance 1.24 s of it: 128 x 64 taps per texel); the full x64 ctest went from 42 to 46 min. Under QEMU that
+  is about 30-50 s per renderer: read the next weekly riscv64 `raster` shard and Windows lavapipe times. If it
+  matters, either cache the bake per process (results unchanged, but test-only readback code in the engine) or
+  cut the irradiance taps in the shared `ibl.slang` (changes Rust too); spherical harmonics are the third way.
 - [ ] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; the HDR sky is in since Phase 3, the
   Slang histogram since Phase 6). Exposure as Rust's two-float storage buffer, bloom from OxidANT's shader,
   SSAO on the ambient and IBL terms only (owner 2026-11-19, both renderers), auto exposure once the histogram
