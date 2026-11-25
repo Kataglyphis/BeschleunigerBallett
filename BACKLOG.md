@@ -101,12 +101,8 @@ Loader:
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
 Shaders:
 
-- [ ] `Shared` **The analytic ambient in Rust's ray-traced mode** (S-M). Since Phase 7 Rust's forward pass and
-  every C++ raster and ray-traced frame add `ambient.slang`'s `analytic_ambient`, but Rust's tracer does not:
-  with no environment the analytic term, with one the IBL maps bound in `TRACE_LIGHTS_GROUP`. OxidANT's
-  browser test asserts a black ray-traced shadow, which changes with it.
-- [b] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; after the shared lighting
-  Slang; `camera_ray.slang` is in since Phase 6). Owner 2026-11-19: a camera miss shows the drawn sky, bounce
+- [ ] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; the shared lighting Slang is in
+  since Phase 14, `camera_ray.slang` since Phase 6). Owner 2026-11-19: a camera miss shows the drawn sky, bounce
   misses sample the drawn sky through the IBL, camera rays start at the near plane; furnace NEE, the call
   sites and the depth ray are the item's to settle; the bounce sky reads the Sun's Ambient slider, which the
   C++ path tracer's fixed 0.35 bounce scale ignores since Phase 7. `trace_path<S: ITracedScene>` in OxidANT,
