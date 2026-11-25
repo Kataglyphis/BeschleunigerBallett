@@ -141,7 +141,7 @@ the GitHub releases themselves.
   BB's new `common/traced_hit.slang` holds the hit fetch `raytrace.rchit.slang` and the path tracer share and the
   ray queries' one MASK loop; `common/skybox_radiance.slang` is gone. The closest-hit shader's shadow rays now leave
   along the face normal and test a light's side on the shading normal, as the path tracer's do. OxidANT's new
-  `drawn_sky` and `path_integrator` vector kernels run here on SPIR-V too. OxidANT pin `3570724`.
+  `drawn_sky` and `path_integrator` vector kernels run here on SPIR-V too. OxidANT pin `c84c4ea`.
 - OxidANT pin 2e8688b: the Rust renderer's ray-traced mode adds the raster's ambient term, as this engine's
   ray-traced mode does since Phase 7 (`analytic_ambient`, or the baked IBL with an environment), so its shadows are
   sky-lit instead of black. No C++ change; the bridge crates are untouched.

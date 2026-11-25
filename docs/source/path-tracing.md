@@ -33,8 +33,8 @@ miss); see [`clouds.md`](clouds.md). That ray runs only while clouds are on
 `clouds_enabled`); until 2026-11 every frame paid for it. It is the first
 sample's first loop pass (`PathDepth`), not a traversal of its own: each kernel
 has one closest-hit and one shadow-ray call site, because SwiftShader inlines a
-whole traversal per call site. OxidANT's `cs_path_trace` fell from 8640 to 7457
-SPIR-V instructions with it, 1446 of them the depth ray's own traversal.
+whole traversal per call site. OxidANT's `cs_path_trace` fell from 8640 to 7443
+SPIR-V instructions with it; a call of its own would hold 1446 more.
 
 Rays traverse with `GL_EXT_ray_query` against the RT mode's TLAS;
 geometry/material data arrive via buffer-device-address (`ObjectDescription`
@@ -98,10 +98,10 @@ estimators is biased).
   nothing to the path-traced card (0.347 either way; 9.71 with the old side
   and bound), and the path-traced card must shade like a flat twin (0.347
   both; 0.110 with the old side alone, 0.237 with the old bound alone). Those
-  numbers are the old gradient sky's; under the drawn cube map since
-  2026-11-16 the card reads 0.0150 alone, beside the emitter and as the flat
-  twin, and its sanity bound fell from 0.02 to 0.005 (the controls were not
-  re-measured).
+  numbers are the old gradient sky's; since the shared integrator (plan I11)
+  a bounce reads the IBL times the Ambient slider, and the card reads 0.124
+  alone, beside the emitter and as the flat twin, against a sanity bound of
+  0.04 (the controls were not re-measured).
 - **The BRDF is raster's**: OxidANT's `brdf.slang`, Lambert times
   `(1 - F)(1 - metallic)` plus the GGX lobe `D G F / (4 n.v n.l)`, with
   `f0 = lerp(0.04, albedo, metallic)`. NEE evaluates `brdf_direct`, raster's

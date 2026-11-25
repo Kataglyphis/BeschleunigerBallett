@@ -25,8 +25,7 @@ void commit_unmasked_candidates(inout RayQuery<0> query)
     }
 }
 
-// The surface at a committed triangle hit, read at level 0 as the raster reads its material.
-// objIndex is the instance's first-mesh index plus the geometry index: without the latter a multi-mesh hit reads mesh 0.
+// A committed hit's surface at level 0; objIndex must add the geometry index, or a multi-mesh hit reads mesh 0.
 TracedSurface traced_surface(uint objIndex, uint primitiveID, float2 bary, float3x4 objToWorld, float3x4 worldToObject,
     bool frontFace, float3 rayDirection)
 {

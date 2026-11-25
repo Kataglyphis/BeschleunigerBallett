@@ -193,6 +193,8 @@ The thresholds are the full variant's. Measured on x64 lavapipe in `:latest`, De
   DOOM2016 (hemisphere means of 159-222 and 93-124 displayed levels): all 91 GPU tests passed
   unchanged on aarch64 llvmpipe, the added model's box at 0.199 of its steps after the add (0.0008
   before), the traced mask card at 0.350 of its box, the furnace at 0.9823.
+  Since plan I11 a bounce reads the IBL's sharpest level times the Ambient slider, not the cube map
+  times 0.35: the GPU tests kept their bounds but the leaning-normal card's, raised to 0.04 (it reads 0.124).
 - **A missing skybox is the analytic sky since 2026-11-18**: `WithoutSkyboxFacesTheSkyIsTheAnalyticGradient`
   points `KATAGLYPHIS_SKYBOX_DIR` at no folder and checks every sky pixel (the navy of the switched-off
   sky marks them) against the displayed zenith, horizon and ground of OxidANT's gradient. On aarch64

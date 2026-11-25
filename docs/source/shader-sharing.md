@@ -215,9 +215,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   slot is not here: its sampling stays inline at each call site, next to the
   per-shader control flow (albedo assembly, discard, G-buffer packing). Spirv
   only: `rasterizer.slang`, `deferred.slang`,
-  `rasterizer/shadows/shadow_map.slang`, `raytrace.rchit.slang` and
-  `alpha_test.slang`; `path_tracing.slang` gets it through `alpha_test.slang`
-  and also imports it directly for its own base-colour sample.
+  `rasterizer/shadows/shadow_map.slang`, `common/traced_hit.slang` and
+  `alpha_test.slang`; `raytrace.rchit.slang` and `path_tracing.slang` get it
+  through `traced_hit.slang`, the traced modes' one hit fetch.
 - `common/path_integrator.slang` — both renderers' path tracer: `trace_path`
   walks one path over an `ITracedScene`, which gives the closest hit, the
   shadow ray, the camera and bounce skies, the sun, the punctual lights and the
@@ -281,8 +281,9 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   the path tracer's per-sample sum and output store; in OxidANT the forward
   pass, the sky, bloom and the tracer. Both.
 - `common/alpha_test.slang` — the glTF MASK alpha test for ray queries:
-  `raytrace.rahit.slang`'s any-hit shader and `path_tracing.slang`'s ray-query
-  candidate loop (which has no any-hit stage of its own). Spirv only.
+  `raytrace.rahit.slang`'s any-hit shader and `traced_hit.slang`'s
+  `commit_unmasked_candidates`, the ray-query candidate loop the path tracer
+  runs for want of an any-hit stage. Spirv only.
 - `common/volumetric_clouds.slang` — the volumetric clouds: the noise
   volume's texel (`noise_volume_texel`), `cloud_unpack` of the SceneUBO's four
   cloud `vec4`s, the axis-aligned box test, density, the light's optical

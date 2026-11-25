@@ -32,7 +32,6 @@ struct PushConstantPathTracing
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-// material_textures is imported directly: Slang does not re-export a plain `import` transitively.
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;
 [vk::binding(OUT_IMAGE_BINDING, 1)] RWTexture2D<float4> image;

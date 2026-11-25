@@ -16,7 +16,7 @@ struct PathTracingHistoryKey
     glm::vec4 lightColorAndRadiance{ 0.0F };
     int samplesPerPixel{ 0 };
     int maxBounces{ 0 };
-    // A bounce that misses sees the cube map or the navy, so the toggle changes the converged image.
+    // A camera miss draws the cube map or the navy, and only a drawn cube lights the bounces through the IBL.
     bool skyboxEnabled{ true };
 
     friend auto operator==(const PathTracingHistoryKey &, const PathTracingHistoryKey &) -> bool = default;

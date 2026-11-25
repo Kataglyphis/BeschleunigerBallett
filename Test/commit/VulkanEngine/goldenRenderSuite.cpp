@@ -6027,8 +6027,8 @@ TEST(GoldenRender, TracedHitsTakeTheirSideFromTheTriangleWinding)
     const double after_mean = mean_hdr_in_square(after, width, width / 2U, height / 2U, 24U);
     GTEST_LOG_(INFO) << "path-traced leaning-normal card: " << before_mean << " alone, " << after_mean
                      << " with an emitter behind it";
-    // The bounce sky is the drawn cube map times 0.35, about 0.015 here; a card that missed it would read 0.
-    ASSERT_GT(before_mean, 0.005) << "the path-traced card does not see the sky - check the placement";
+    // The bounce sky is the IBL times the Ambient slider, about 0.124 here; a card that missed it would read 0.
+    ASSERT_GT(before_mean, 0.04) << "the path-traced card does not see the sky - check the placement";
     EXPECT_NEAR(after_mean, before_mean, 0.05 * before_mean)
       << "bounces leave through the triangle toward an emitter behind it: the path bound is the vertex normal";
 

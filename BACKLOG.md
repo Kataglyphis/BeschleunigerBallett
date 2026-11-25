@@ -58,7 +58,9 @@ No P0 item is open.
   clip at the near plane as raster does). Since Phase 7: the Sky tab's Ambient slider and the Sun tab's
   direction drag (it still shows the way the light travels and must move the shadows the same way), F5 in a
   Profile or Release build, and `Test-GpuTimingBudget.ps1` over Forward, Deferred and RayTrace, which the
-  analytic ambient's three `pow` per pixel reach.
+  analytic ambient's three `pow` per pixel reach. Since Phase 18: the traced goldens over the shared
+  integrator (`PathTracedCameraMissShowsTheDrawnSky`, `PathTracedMirrorReflectsTheSkyboxItDraws`,
+  `TracedHitsTakeTheirSideFromTheTriangleWinding`) and a sync-validated path-traced frame with clouds on.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -100,16 +102,6 @@ Loader:
   encoded files). WebP is new work. Streaming chains per slot from the parse thread to the upload is the fallback if a
   scene's chains pass the 1 GiB decode budget. The WebGPU renderer still copies each base once to build its chain
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
-Shaders:
-
-- [ ] `Shared` **A shared path integrator and one C++ hit fetch** (L, plan I11; the shared lighting Slang is in
-  since Phase 14, `camera_ray.slang` since Phase 6). Owner 2026-11-19: a camera miss shows the drawn sky, bounce
-  misses sample the drawn sky through the IBL, camera rays start at the near plane; furnace NEE, the call
-  sites and the depth ray are the item's to settle; the bounce sky reads the Sun's Ambient slider, which the
-  C++ path tracer's fixed 0.35 bounce scale ignores since Phase 7. `trace_path<S: ITracedScene>` in OxidANT,
-  C++ over RayQuery, Rust over `bvh_traverse`; BB's `traced_hit.slang` folds the hit fetch of rchit and the
-  path tracer and the three MASK candidate loops. Since Phase 16 C++ bakes the same IBL as Rust (`AmbientMaps`, set 0
-  bindings 8-10), so a bounce miss can read the prefiltered cube in both renderers.
 
 C++ catches up:
 
@@ -368,6 +360,10 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
   changes `brdf_direct`/`brdf_sampled` and adds bindings to two OxidANT and five BB pipelines; Slang's
   `var<private>` table cost lavapipe 2.3-2.9x. Only if the spline shows up on a device profile.
 
+- **[P3] The ray tracer's miss returns `sky_with_sun`**, which the sky pass draws over anyway (Phase 18's
+  review): drop it, or return the drawn sky as the path tracer's camera miss does.
+- **[P3] A C++ furnace golden with the Sun on.** BB's furnace goldens set the Sun's radiance to 0, so NEE coming
+  back into the furnace would pass them; only OxidANT's `path_integrator.json` furnace case catches it today.
 - **[P3] Count BB's GGX energy evaluations in BuildIntegrity.** OxidANT's `tests/brdf.rs` counts `ggx_energy`
   call sites in its WGSL since Phase 4; BB's `rasterizer`, `deferred`, `raytrace.rchit` and `path_tracing`
   Slang evaluate it once each, guarded only by review. On lavapipe the hoist changed no frame time (LLVM had
