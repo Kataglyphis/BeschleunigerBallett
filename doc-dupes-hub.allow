@@ -1,4 +1,3 @@
 # Passages this repo's pages must share with a hub page, budgeted for ANTfrastructure's doc-dupes --against-hub.
 # Format: <consumer page> | <hub page> | <shared 8-word shingles> | <reason>. A row whose overlap is gone fails.
 # third_party/ANTfrastructure/docs/code-quality-tooling.md#consumer-pages-against-the-hub-doc-dupes---against-hub
-AGENTS.md | AGENTS.md | 23 | the owner's docs rule, kept in every AGENTS.md on the owner's explicit request (2026-10-19)
