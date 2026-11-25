@@ -120,6 +120,9 @@ the GitHub releases themselves.
 
 ### Changed
 
+- OxidANT pin 2e8688b: the Rust renderer's ray-traced mode adds the raster's ambient term, as this engine's
+  ray-traced mode does since Phase 7 (`analytic_ambient`, or the baked IBL with an environment), so its shadows are
+  sky-lit instead of black. No C++ change; the bridge crates are untouched.
 - The deferred G-buffer takes the Rust renderer's packing (owner rule 2026-11-19): metallic in the normal's .w, -1 for
   unlit; occlusion in the albedo's alpha. The shadow maps' uv and depth-slope sign follow each target's NDC rows
   through `fullscreen.slang`.
