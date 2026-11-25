@@ -101,11 +101,6 @@ Loader:
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
 Shaders:
 
-- [ ] `Shared` **Single-source constants and complete layout gates** (M, plan I7; the leaf modules are in
-  since Phase 6). `static const int` lines in a file under `Resources/ShadersSlang/common` that C++ includes
-  (not the reverse: the C++ header sits outside every `-I` root); `limits.slang` in OxidANT; a naga layout
-  table over the ~20 unchecked Rust Pod structs; ArrayStride, struct size and `cloudAmbientTop/Bottom` in the
-  C++ SPIR-V contract.
 - [ ] `Shared` **Shared material Slang** (L, plan I9; the leaf modules are in since Phase 6). Owner
   2026-11-19: metallic is clamped to [0, 1] and MASK is an explicit alpha-mode flag plus cutoff, both as Rust
   does. Normal mapping with the BC5 z rebuild, the texture transform and `gltf_material.slang`; each exists
