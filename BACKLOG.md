@@ -101,10 +101,6 @@ Loader:
   (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
 Shaders:
 
-- [ ] `Shared` **Shared material Slang** (L, plan I9; the leaf modules are in since Phase 6). Owner
-  2026-11-19: metallic is clamped to [0, 1] and MASK is an explicit alpha-mode flag plus cutoff, both as Rust
-  does. Normal mapping with the BC5 z rebuild, the texture transform and `gltf_material.slang`; each exists
-  three times today. The C++ push constants shrink from 116 to 68 bytes.
 - [ ] `Shared` **Shared shadow and lighting Slang** (L, plan I10; the leaf modules are in since Phase 6). C++
   takes Rust's G-buffer packing (owner 2026-11-19); the cascade retry comes with C11. Dual-target punctual
   shadows, `cascade_visibility`, `surface_lighting`, `gbuffer.slang` and the cloud upsample.
