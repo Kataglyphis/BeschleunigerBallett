@@ -78,7 +78,10 @@ takes UTF-8 paths and runs inside `guarded()`.
   and the owner keeps it there even if some keys miss (2026-11-23). At the next hub pin (d2aaa551 or later)
   drop BB's own `: fatal error:` count in `run-static-analysis-format.sh`, which the hub's IWYU count now has,
   and once hub CON299 lands, replace `Build-Windows.ps1`'s inline "Bundle layout" step with its install-tree
-  check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product targets.
+  check. Then CON295's ratchet, once the hub ships it, and warnings as errors on the product targets. From hub
+  ff32348c on, `run-in-ci-image.sh` takes `--memory`/`--cpus`: link its § Sizing the VM for container builds
+  (`rancher-desktop-linux-containers.md`) from AGENTS.md's ANTfrastructure table, after two local builds froze the
+  owner's PC (2026-11-25).
 
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
