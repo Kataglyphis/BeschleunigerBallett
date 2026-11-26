@@ -10,10 +10,26 @@ with this file's `## [<version>]` section as the release notes, so before a merg
 `VERSION.txt` and turn `## [Unreleased]` into that section. The notes of v1.4.2 and earlier are on
 the GitHub releases themselves.
 
-## [Unreleased]
+## [1.7.1] - 2026-11-26
+
+### Added
+
+- `--check_resources` finds and reads every shader, the default scene and the UI font, prints where each was
+  found, and exits 0 or 1, with no window or GPU. The Linux clean-host check (.deb, tarball, AppImage), the
+  Windows x64 lane (the portable tree and the MSI, installed with `msiexec`) and the Windows arm64 lane (the
+  portable tree and the NSIS setup) run it from another working directory. `InstallPathsUnit` and
+  `scripts/linux/tests/test-install-paths.sh` with six mutation recipes hold the search order and the per-user
+  folders.
 
 ### Changed
 
+- The program and its packages are called BeschleunigerBallett, no longer GraphicsEngine: the executable, the
+  window title, `--version`, the installer and Start-menu names, the install folder, the desktop entry, the
+  AppStream id (`de.jonasheinle.BeschleunigerBallett`) and the icon. Package files are named
+  `BeschleunigerBallett-<version>-<OS>-<arch>`, e.g. `BeschleunigerBallett-1.7.1-Windows-x86_64.msi`, without the
+  build type and compiler. The MSI keeps its upgrade code, so 1.7.1 replaces an installed 1.7.0. The MSIX keeps
+  its identity `GraphicsEngine` so it upgrades too; only its display name changed. The .deb
+  `beschleunigerballett` replaces and conflicts with `graphicsengine`.
 - The two giant suites are split by subject: `goldenRenderSuite.cpp` into seven `goldenRender<Subject>Suite.cpp`
   (645-1422 lines) over the header-only `GoldenRenderHarness.hpp`, `buildIntegritySuite.cpp` into 24
   `buildIntegrity<Subject>Suite.cpp` (283-670 lines) over `BuildIntegrityScan.hpp`/`.cpp`. Every test keeps its name:
@@ -38,7 +54,23 @@ the GitHub releases themselves.
   `Invoke-CmakeConfigureAndBuild -BuildOutputLog`) with the census as lane `windows-<arch>-clangcl-<config>`; the
   hub's census reads clang-cl's `file(line,col):` lines now. `docs/source/code-quality.md` has the details.
 
+### Fixed
+
+- On Windows the installed program did not start. The Start-menu and desktop shortcuts start it in its `bin\`
+  folder, and it looked for its shaders relative to that working directory, found none and stopped without a
+  message. It now finds its files from its own location (`bin\..`, its own folder, or, in the Linux packages,
+  two levels above `lib/<name>/`), in every package; only a run from the source tree still uses the working
+  directory. The pipeline cache and the log are kept per user (`%LOCALAPPDATA%\BeschleunigerBallett` on Windows,
+  `$XDG_CACHE_HOME/BeschleunigerBallett` and `$XDG_STATE_HOME/BeschleunigerBallett` on Linux), since `Program Files`
+  cannot be written; a folder that cannot be made costs the file, not the start.
+- On Windows a console window opened beside the render window. The Release program is a GUI program now;
+  `--version` and `--help` still print to the terminal that started it, or to a pipe or file.
+- A failed start leaves a trace: Release writes warnings and errors to that log file, and on Windows a fatal
+  error shows a message box with the error and the log's path.
+
 ## [1.7.0] - 2026-11-26
+
+Known issue: on Windows the installed program does not start (fixed in 1.7.1).
 
 ### Added
 
