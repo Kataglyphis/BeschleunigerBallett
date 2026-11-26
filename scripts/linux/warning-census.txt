@@ -1,5 +1,6 @@
 # Own compiler warnings per lane and flag, held by the hub's verify_warning_census.py (docs/source/code-quality.md).
-# A lane is <arch>-<build>, one per Linux build in reusable-linux.yml; a lane without rows holds zero warnings.
+# A lane is <arch>-<build>, one per Linux build in reusable-linux.yml, or windows-<arch>-clangcl-<config>, one per
+# clang-cl build of Build-Windows.ps1 -WarningCensus; a lane without rows holds zero warnings.
 # A new warning fails its lane, and so does a fixed one until its row is lowered here. Rewrite one lane's rows:
 #   python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane x64-gcc-debug \
 #     --census scripts/linux/warning-census.txt --write logs/build-gcc-debug.log

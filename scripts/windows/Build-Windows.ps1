@@ -23,7 +23,9 @@ param(
   # amd64 (x64) or arm64, empty takes the image's; see third_party/ANTfrastructure/docs/windows-cross-builds.md
   [string]$TargetArch = '',
   # Release also builds the commit suite and stages it in dist\windows-<arch>-tests for the arm64 run job (hub CON43).
-  [switch]$StageTests
+  [switch]$StageTests,
+  # Holds each clang-cl build's own warnings at scripts/linux/warning-census.txt, lane windows-<arch>-<configuration>.
+  [switch]$WarningCensus
 )
 
 $ErrorActionPreference = 'Stop'
@@ -79,6 +81,7 @@ try { Import-BuildModule @('WindowsCrossBundle.Common') } catch { throw "$hubFlo
 $missingHubCommands = @('Get-BuildConfigurationRow', 'New-PortableBundle', 'Get-PackageVersion', 'Get-CmakeBuildArgs', 'Get-SlangShaderManifest', 'Copy-SlangPinnedWgslSnapshot', 'Assert-SlangWgslOutputsMatch') | Where-Object { -not (Get-Command $_ -ErrorAction SilentlyContinue) }
 if (-not $missingHubCommands -and -not (Get-Command Get-PackageVersion).Parameters.ContainsKey('VersionFile')) { $missingHubCommands = @('Get-PackageVersion -VersionFile') }
 if (-not $missingHubCommands -and -not (Get-Command Get-CmakeBuildArgs).Parameters.ContainsKey('Target')) { $missingHubCommands = @('Get-CmakeBuildArgs -Target') }
+if (-not $missingHubCommands -and -not (Get-Command Invoke-CmakeConfigureAndBuild).Parameters.ContainsKey('BuildOutputLog')) { $missingHubCommands = @('Invoke-CmakeConfigureAndBuild -BuildOutputLog') }
 if ($missingHubCommands) { throw "$hubFloor Missing: $($missingHubCommands -join ', ')." }
 $TargetArch = Get-WindowsTargetArch -Arch $TargetArch
 $isCross = Test-WindowsCrossTarget -Arch $TargetArch
@@ -139,7 +142,26 @@ function Invoke-ConfiguredBuild {
     [string[]]$ConfigureExtraArgs = @()
   )
 
-  Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache -ConfigureExtraArgs $ConfigureExtraArgs
+  Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache -ConfigureExtraArgs $ConfigureExtraArgs `
+    -BuildOutputLog (Get-BuildOutputLogPath -BuildPath $BuildPath)
+}
+
+# This build's compiler output alone, beside the combined log, for the warning census.
+function Get-BuildOutputLogPath {
+  param([Parameter(Mandatory)][string]$BuildPath)
+  return Join-Path $workspacePath 'logs' 'windows' "$(Split-Path -Leaf $BuildPath).log"
+}
+
+# Non-critical, so a red census still lets every later build, package and stage run; the script fails at its end.
+function Invoke-WarningCensusStep {
+  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$BuildPath)
+  if (-not $WarningCensus) { return }
+  $lane = "windows-$packageArch-$Name"
+  $census = @((Join-Path $workspacePath 'third_party\ANTfrastructure\linux\scripts\verify_warning_census.py'),
+    '--lane', $lane, '--census', (Join-Path $workspacePath 'scripts\linux\warning-census.txt'), (Get-BuildOutputLogPath -BuildPath $BuildPath))
+  Invoke-BuildStep -Context $context -StepName "Warning census ($lane)" -Script {
+    Invoke-BuildExternal -Context $context -File 'python' -Parameters $census | Out-Null
+  } | Out-Null
 }
 
 
@@ -297,6 +319,7 @@ try {
       Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug' `
         -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
     } | Out-Null
+    Invoke-WarningCensusStep -Name 'clangcl-debug' -BuildPath $buildPathClangDebug
 
     if (-not $SkipTidy) {
       Invoke-BuildStep -Context $context -StepName 'clang-tidy --fix (Src)' -Critical -Script {
@@ -318,6 +341,7 @@ try {
       Invoke-ConfiguredBuild -BuildPath $buildPathClangProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' `
         -ConfigureExtraArgs @(Get-CrossConfigureArgs -Arch $TargetArch -Corrosion -Vulkan)
     } | Out-Null
+    Invoke-WarningCensusStep -Name 'clangcl-profile' -BuildPath $buildPathClangProfile
 
     if (-not $SkipPerfTests) {
       Invoke-BuildStep -Context $context -StepName 'Benchmarks' -Critical -Script {
@@ -365,6 +389,7 @@ try {
         throw
       }
     } | Out-Null
+    if (-not $SkipBuild) { Invoke-WarningCensusStep -Name 'clangcl-release' -BuildPath $buildPathClangRelease }
 
     # The install tree, with no build-time file, plus its imported DLL closure runs on a clean machine; vulkan-1.dll is the GPU driver's.
     Invoke-BuildStep -Context $context -StepName "Portable bundle ($TargetArch)" -Critical -Script {

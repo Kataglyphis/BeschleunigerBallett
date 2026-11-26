@@ -35,6 +35,7 @@ jobs:
         -SkipTests
         -SkipPerfTests
         -StageTests
+        -WarningCensus
       artifact-name: BeschleunigerBallett-windows-arm64
       artifact-dir: dist/windows-arm64
       # The engine and the VC++ runtime at the least.

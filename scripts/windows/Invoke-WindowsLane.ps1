@@ -20,8 +20,9 @@ $profileDir = Join-Path $workspace 'build-clangcl-profile'
 $failed = [System.Collections.Generic.List[string]]::new()
 
 # -SkipPerfTests: the perf suite runs below and fails on a missing exe. No -SkipFormat: this lane gates clang-format.
+# -WarningCensus: a red census fails the build script after every build and package, so the suites below do not run.
 $buildArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'Build-Windows.ps1'),
-  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipTests', '-SkipPerfTests', '-StageTests')
+  '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release', '-SkipTests', '-SkipPerfTests', '-StageTests', '-WarningCensus')
 & pwsh @buildArgs
 if ($LASTEXITCODE -ne 0) { Write-Host "::error::Build-Windows.ps1 exited $LASTEXITCODE"; exit 1 }
 
