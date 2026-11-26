@@ -664,6 +664,14 @@ distro clang-format (21.1.8 flagged 41 of the swept files) never grades. The swe
 `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per
 clone.
 
+**A warning in the product is an error.** `VulkanEngineCore` and `GraphicsEngine` build with CMake's
+`COMPILE_WARNING_AS_ERROR` (`-Werror`, `/WX` under clang-cl); the foreign headers they read are SYSTEM (Abseil not
+under clang-cl, which misparses it so), and the suites compile with `-w`. Every Linux CI build holds the repo's own
+warnings at `scripts/linux/warning-census.txt` through the hub's census, one lane per build and arch: a new warning,
+or a fixed one whose row stays, fails the job. Fix a warning rather than silence it; `cmake
+--compile-no-warning-as-error` lifts the errors for one configure
+([`docs/source/code-quality.md`](docs/source/code-quality.md#warnings-errors-in-the-product-a-census-for-the-rest)).
+
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast default, but
 `clangcl-profile` (optimized, and the only configuration where benchmarks mean anything) and a
 synchronization-validation pass each catch classes of problem the debug loop cannot; what each is

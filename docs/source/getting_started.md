@@ -39,6 +39,10 @@ Run `bash scripts/linux/compile-slang-shaders.sh` (Windows: `scripts\windows\Bui
 first, or build through the wrappers below, which compile them for you
 ([which builds do](shader-build-pipeline.md)).
 
+`GraphicsEngine` and `VulkanEngineCore` treat a warning as an error (`-Werror`, `/WX` under clang-cl); configure with
+`--compile-no-warning-as-error` to try a compiler the image does not ship
+([warnings](code-quality.md#warnings-errors-in-the-product-a-census-for-the-rest)).
+
 A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
 and fails `cmake --list-presets` with `Unrecognized "version" field`: read
 the file itself, or the Windows configurations table in

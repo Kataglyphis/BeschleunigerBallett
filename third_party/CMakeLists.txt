@@ -173,12 +173,19 @@ endmacro()
 # (e.g. absl::random_mocking_access).
 # renovate: datasource=github-tags depName=abseil/abseil-cpp versioning=loose
 set(ABSL_TAG 20260817.0)
+# SYSTEM, so -Werror spares its headers' warnings; not under clang-cl, which then misparses its function_ref.h.
+if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+  set(_myproject_absl_system "")
+else()
+  set(_myproject_absl_system SYSTEM)
+endif()
 FetchContent_Declare(
   abseil-cpp
   GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
   GIT_TAG ${ABSL_TAG}
   GIT_SHALLOW 1
-)
+  ${_myproject_absl_system})
+unset(_myproject_absl_system)
 set(ABSL_PROPAGATE_CXX_STD ON)
 set(BUILD_TESTING_OLD "${BUILD_TESTING}")
 set(BUILD_TESTING OFF)
@@ -376,7 +383,8 @@ _myproject_add_system_interface_library(imgui IMGUI IMGUI/backends)
 _myproject_add_system_interface_library(glm GLM)
 _myproject_add_system_interface_library(vma VULKAN_MEMORY_ALLOCATOR/include)
 
-add_subdirectory(GLFW)
+# SYSTEM like spdlog's: the engine reads glfw3.h, and -Werror is for the engine's own code.
+add_subdirectory(GLFW SYSTEM)
 
 _myproject_force_cache_bool(SPDLOG_NO_EXCEPTIONS ON "Disable SPDLOG exceptions (required when exceptions are disabled globally)")
 

@@ -69,6 +69,7 @@ jobs:
 
       # The one lane that builds the Kompute playground, so its ctest entry runs it on llvmpipe and it cannot rot.
       - name: Prepare for unit/integration tests
+        id: debug-build
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           extra-args: ${{ steps.cc.outputs.docker-args }}
@@ -77,7 +78,7 @@ jobs:
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
             --configure-arg -DKATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON
-          log-file: output.log
+          log-file: logs/build-clang-debug.log
 
       - name: Save compiler cache
         if: always() && steps.cc.outputs.path != ''
@@ -95,6 +96,13 @@ jobs:
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
           log-file: output.log
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-debug)
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-debug"
+          --census scripts/linux/warning-census.txt logs/build-clang-debug.log
 
   # ASan + UBSan with the fuzz seeds (which SEGV without project-wide ASan, Test/fuzz/CMakeLists.txt), then TSan: one image pull for both
   sanitizers:
@@ -127,6 +135,7 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build with AddressSanitizer
+        id: asan-build
         if: matrix.part != 'tsan'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -135,7 +144,7 @@ jobs:
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-asan-clang"
             --build-dir "build-asan-clang"
-          log-file: output-asan.log
+          log-file: logs/build-clang-asan.log
 
       - name: Save compiler cache (ASan)
         if: always() && steps.cc-asan.outputs.path != ''
@@ -215,7 +224,7 @@ jobs:
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-tsan-clang"
             --build-dir "build-tsan"
-          log-file: output-tsan.log
+          log-file: logs/build-clang-tsan.log
 
       - name: Save compiler cache (TSan)
         if: always() && steps.cc-tsan.outputs.path != ''
@@ -240,6 +249,20 @@ jobs:
             --build-type "${{ env.BUILD_TYPE }}"
             --ctest-exclude "^(Integration|GoldenRender)\."
           log-file: output-tsan.log
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-asan)
+        if: ${{ !cancelled() && steps.asan-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-asan"
+          --census scripts/linux/warning-census.txt logs/build-clang-asan.log
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-tsan)
+        if: ${{ !cancelled() && steps.tsan-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-tsan"
+          --census scripts/linux/warning-census.txt logs/build-clang-tsan.log
 
   # Format check (gating), one debug build for the analyzers (advisory) and coverage, then the Rust renderer crate; each part runs and reports alone
   static-analysis:
@@ -286,7 +309,7 @@ jobs:
             bash ./scripts/linux/cmake-configure-build.sh
             --preset "linux-debug-clang"
             --build-dir "${{ env.BUILD_DIR }}"
-          log-file: output.log
+          log-file: logs/build-clang-analysis.log
 
       # Before the analyzers, so it reads the tree exactly as built.
       - name: Build Code Coverage
@@ -346,6 +369,13 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
           log-file: output.log
 
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-analysis)
+        if: ${{ !cancelled() && steps.debug-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-analysis"
+          --census scripts/linux/warning-census.txt logs/build-clang-analysis.log
+
       # Rust renderer tests: the only place this tree's crate edits get a test signal, so on both arches.
       - name: Run Rust renderer tests
         if: ${{ !cancelled() && (matrix.part == 'all' || matrix.part == 'rust') }}
@@ -392,6 +422,7 @@ jobs:
           env: 'SCCACHE_CACHE_SIZE=1200M'
 
       - name: Configure/build CMake for Profiling (select preset by compiler)
+        id: clang-profile-build
         if: matrix.part != 'gcc'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -401,7 +432,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.CLANG_PROFILE_PRESET }}"
             --clean-build-dir true
-          log-file: output.log
+          log-file: logs/build-clang-profile.log
 
       - name: Save compiler cache
         if: always() && steps.cc.outputs.path != ''
@@ -427,7 +458,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.GCC_PROFILE_PRESET }}"
             --clean-build-dir true
-          log-file: output.log
+          log-file: logs/build-gcc-profile.log
 
       # In the container: the binary links the image's /opt/gcc libstdc++, which the host lacks.
       - name: Run performance benchmarks (gcc)
@@ -436,6 +467,20 @@ jobs:
         with:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-profile)
+        if: ${{ !cancelled() && steps.clang-profile-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-profile"
+          --census scripts/linux/warning-census.txt logs/build-clang-profile.log
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (gcc-profile)
+        if: ${{ !cancelled() && steps.gcc-profile-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-gcc-profile"
+          --census scripts/linux/warning-census.txt logs/build-gcc-profile.log
 
   # gcc: build, tests, coverage (uploaded with the gcc flag); no compiler cache, since neither ccache nor sccache caches -fmodules-ts TUs
   gcc:
@@ -451,6 +496,7 @@ jobs:
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Prepare for unit/integration tests (gcc)
+        id: gcc-build
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
           script: >-
@@ -458,7 +504,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "linux-debug-GNU"
             --clean-build-dir true
-          log-file: output.log
+          log-file: logs/build-gcc-debug.log
 
       - name: Run Unit/Integration tests (gcc)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -492,6 +538,13 @@ jobs:
           fail_ci_if_error: false
           verbose: false
 
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (gcc-debug)
+        if: ${{ !cancelled() && steps.gcc-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-gcc-debug"
+          --census scripts/linux/warning-census.txt logs/build-gcc-debug.log
+
   # Release build + packages, then on x64 the docs + wasm demo, uploaded as the bb-docs-site artifact
   release:
     name: ${{ matrix.part == 'docs' && 'docs + wasm demo' || (matrix.part == 'all' && inputs.runner == 'ubuntu-26.04') && 'release + package, docs + wasm demo' || 'release + package' }}
@@ -510,6 +563,7 @@ jobs:
           registry-password: ${{ secrets.GHCR_PAT }}
 
       - name: Configure/build CMake for Release
+        id: release-build
         if: matrix.part != 'docs'
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
         with:
@@ -518,7 +572,7 @@ jobs:
             --build-dir "${{ env.BUILD_RELEASE_DIR }}"
             --preset "linux-release-clang"
             --build-config "Release"
-          log-file: output.log
+          log-file: logs/build-clang-release.log
 
       - name: Package
         if: matrix.part != 'docs'
@@ -557,6 +611,13 @@ jobs:
             ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
             ${{ env.BUILD_RELEASE_DIR }}/*.flatpak
           if-no-files-found: error
+
+      # Holds this build's own warnings at scripts/linux/warning-census.txt; last, so a red census skips no test.
+      - name: Warning census (clang-release)
+        if: ${{ !cancelled() && steps.release-build.outcome == 'success' }}
+        run: >-
+          python3 third_party/ANTfrastructure/linux/scripts/verify_warning_census.py --lane "${RUNNER_ARCH,,}-clang-release"
+          --census scripts/linux/warning-census.txt logs/build-clang-release.log
 
       # The docs run whatever the release did; doc_doxygen has no compiled dependencies, so no engine build.
       - name: Generate Doxygen XML

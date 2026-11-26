@@ -128,6 +128,15 @@ the GitHub releases themselves.
 
 ### Changed
 
+- A warning in the product is an error, and every Linux build holds the rest in a census (ANTfrastructure CON295 (c)
+  steps 2-3, owner decision D11: fix first, then errors). `VulkanEngineCore` and `GraphicsEngine` set CMake's
+  `COMPILE_WARNING_AS_ERROR` (`-Werror`, `/WX` under clang-cl); GLFW, cxx's generated bridge headers and Abseil (not
+  under clang-cl, which misparses its `function_ref.h` as a system header) join the SYSTEM dependencies, so a foreign
+  header's warning cannot stop the build. The suites keep `-w`. Each build of `reusable-linux.yml` tees its log into
+  `logs/build-<build>.log`, and the job ends with the hub's `verify_warning_census.py` over it, one lane per build and
+  arch (`x64-clang-debug` ... `arm64-gcc-profile`), against `scripts/linux/warning-census.txt`, which holds no rows:
+  every lane is at zero. `docs/source/code-quality.md` has the details.
+
 - The skybox's bake leaves its sun to the directional Sun (owner decision 2026-11-25): `AmbientMaps` draws the
   environment twice around OxidANT's new `fs_find_sun` (`common/sun_mask.slang`), which finds the sun in the sky's own
   mips, and the second `fs_skybox_to_cube` brings every channel within 10 degrees of it down to the ring at 12
