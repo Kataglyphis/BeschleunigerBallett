@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/EnvironmentVariable.hpp"
+
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -12,11 +14,8 @@ class ScopedEnvVar
 {
   public:
     // An empty value unsets the variable: the engine treats empty and unset alike.
-    ScopedEnvVar(const char *name, const char *value) : name_(name)
-    {
-        if (const char *previous = std::getenv(name); previous != nullptr) { previous_ = previous; }
-        set(name_.c_str(), value);
-    }
+    ScopedEnvVar(const char *name, const char *value) : name_(name), previous_(Kataglyphis::environmentVariable(name))
+    { set(name_.c_str(), value); }
     ScopedEnvVar(const ScopedEnvVar &) = delete;
     ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
     ScopedEnvVar(ScopedEnvVar &&) = delete;

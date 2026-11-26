@@ -192,7 +192,9 @@ TEST(SceneUboMarshalUnit, CascadeFillClampsToMaxCascades)
 
     EXPECT_EQ(written, static_cast<uint32_t>(CASCADE_COUNT));
     EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(CASCADE_COUNT));
-    for (int i = 0; i < CASCADE_COUNT; ++i) { EXPECT_FLOAT_EQ(ubo.cascadeSplits[i], splitDepths[i]); }
+    for (int i = 0; i < CASCADE_COUNT; ++i) {
+        EXPECT_FLOAT_EQ(ubo.cascadeSplits[i], splitDepths[static_cast<std::size_t>(i)]);
+    }
     EXPECT_FLOAT_EQ(ubo.cascadeSplits[CASCADE_COUNT], kSentinel)
       << "no write may land past cascadeSplits[CASCADE_COUNT - 1]";
 }

@@ -224,7 +224,7 @@ endif()
 
 if(BUILD_TESTING)
   # include google test to project
-  FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.18.0.zip)
+  FetchContent_Declare(googletest URL https://github.com/google/googletest/archive/refs/tags/v1.18.0.zip SYSTEM)
 
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   _myproject_force_cache_bool(gtest_force_shared_crt ON "")
@@ -244,7 +244,8 @@ else()
   _myproject_force_cache_bool(BENCHMARK_ENABLE_EXCEPTIONS ON "Enable benchmark exceptions to match project configuration.")
 endif()
 
-add_subdirectory(GOOGLE_BENCHMARK)
+# SYSTEM, like the suites' other foreign headers: the perf suite builds with the project's warnings.
+add_subdirectory(GOOGLE_BENCHMARK SYSTEM)
 
 # The arm64 cross lane's Release build runs the fuzz targets in FuzzTest unit mode, with ASan nowhere.
 set(_MYPROJECT_FUZZTEST_RELEASE_UNIT_MODE OFF)
@@ -268,7 +269,8 @@ if(BUILD_TESTING
     message("Adding Fuzztest")
 
     # EXCLUDE_FROM_ALL also drops its install rules (ANTLR's names a runtime nobody builds) from the packaged tree.
-    add_subdirectory(FUZZTEST EXCLUDE_FROM_ALL)
+    # SYSTEM: the fuzz targets build with the project's warnings, and FuzzTest's headers and fetches are not ours.
+    add_subdirectory(FUZZTEST EXCLUDE_FROM_ALL SYSTEM)
 
     # ANTLR's install rule reads LICENSE.txt two levels above its source (a monorepo-layout assumption) - stage it at the build root.
     if(EXISTS "${CMAKE_BINARY_DIR}/_deps/antlr_cpp-src/LICENSE.txt"

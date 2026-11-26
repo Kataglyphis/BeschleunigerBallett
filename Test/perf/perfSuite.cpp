@@ -2,9 +2,6 @@
 
 #include <benchmark/benchmark.h>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -30,6 +27,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 
+#include "common/EnvironmentVariable.hpp"
 #include "oxidant_bridge/gltf.h"
 #include "oxidant_bridge/parity.h"
 #include "oxidant_bridge/settings.h"
@@ -354,8 +352,8 @@ void BM_UploadCpuHalf(benchmark::State &state)
         benchmark::DoNotOptimize(index_staging.data());
         benchmark::ClobberMemory();
     }
-    state.SetBytesProcessed(static_cast<int64_t>(state.iterations())
-                            * static_cast<int64_t>(range_vertices.size_bytes() + range_indices.size_bytes()));
+    state.SetBytesProcessed(
+      state.iterations() * static_cast<int64_t>(range_vertices.size_bytes() + range_indices.size_bytes()));
 }
 BENCHMARK(BM_UploadCpuHalf)->Arg(64)->Arg(4096)->Arg(65536);
 
@@ -463,9 +461,21 @@ bool vulkanWindowAvailable()
     if (supported) {
         const auto create_instance =
           reinterpret_cast<PFN_vkCreateInstance>(glfwGetInstanceProcAddress(nullptr, "vkCreateInstance"));
-        VkApplicationInfo app_info{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .apiVersion = VK_API_VERSION_1_3 };
+        VkApplicationInfo app_info{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pNext = nullptr,
+            .pApplicationName = nullptr,
+            .applicationVersion = 0,
+            .pEngineName = nullptr,
+            .engineVersion = 0,
+            .apiVersion = VK_API_VERSION_1_3 };
         const VkInstanceCreateInfo create_info{ .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            .pApplicationInfo = &app_info };
+            .pNext = nullptr,
+            .flags = 0,
+            .pApplicationInfo = &app_info,
+            .enabledLayerCount = 0,
+            .ppEnabledLayerNames = nullptr,
+            .enabledExtensionCount = 0,
+            .ppEnabledExtensionNames = nullptr };
         VkInstance probe = VK_NULL_HANDLE;
         supported = create_instance != nullptr && create_instance(&create_info, nullptr, &probe) == VK_SUCCESS;
         if (supported) {
@@ -487,11 +497,7 @@ bool vulkanWindowAvailable()
 class ScopedModelOverride
 {
   public:
-    explicit ScopedModelOverride(const char *model)
-    {
-        if (const char *previous_value = std::getenv(kName); previous_value != nullptr) { previous = previous_value; }
-        set(model);
-    }
+    explicit ScopedModelOverride(const char *model) : previous(Kataglyphis::environmentVariable(kName)) { set(model); }
     ScopedModelOverride(const ScopedModelOverride &) = delete;
     ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
     ~ScopedModelOverride() { set(previous.has_value() ? previous->c_str() : nullptr); }

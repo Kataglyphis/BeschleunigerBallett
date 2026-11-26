@@ -98,7 +98,7 @@ TEST(WindowInputUnit, OutOfRangeKeysAreIgnoredNotWritten)
     // GLFW_KEY_UNKNOWN is -1 and media keys can exceed the array; ASan in CI catches either write.
     handle_key_callback(nullptr, keys, GLFW_KEY_UNKNOWN, GLFW_PRESS);
     handle_key_callback(nullptr, keys, window_key_count + 5, GLFW_PRESS);
-    for (int i = 0; i < window_key_count; ++i) {
+    for (std::size_t i = 0; i < window_key_count; ++i) {
         ASSERT_FALSE(keys[i]) << "key " << i << " set by an out-of-range event";
     }
 }
@@ -189,7 +189,7 @@ TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)
     EXPECT_FALSE(first_moved);
 
     handle_focus_lost(keys, first_moved, look_mode_active);
-    for (int i = 0; i < window_key_count; ++i) {
+    for (std::size_t i = 0; i < window_key_count; ++i) {
         ASSERT_FALSE(keys[i]) << "key " << i << " still held after focus loss";
     }
     EXPECT_FALSE(look_mode_active) << "focus loss must end look mode, not just reset keys";

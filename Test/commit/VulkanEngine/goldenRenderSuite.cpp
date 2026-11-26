@@ -7,6 +7,7 @@
 #include "GpuTestGuard.hpp"
 #include "RepoFiles.hpp"
 #include "ScopedEnvVar.hpp"
+#include "common/EnvironmentVariable.hpp"
 #include "common/GuiModelTransform.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/RenderingHelper.hpp"
@@ -23,9 +24,6 @@
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <algorithm>
 #include <array>
@@ -147,9 +145,7 @@ struct EngineHarness
         gui(std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback)),
         camera(std::make_unique<Camera>())
     {
-        if (const char *chosen = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); chosen == nullptr || *chosen == '\0') {
-            golden_scene.emplace(GOLDEN_SCENE_MODEL);
-        }
+        if (!Kataglyphis::environmentFlag("KATAGLYPHIS_MODEL_OVERRIDE")) { golden_scene.emplace(GOLDEN_SCENE_MODEL); }
         frame_golden_view(*camera);
         // The goldens frame the whole image; the docked editor would shrink the scene into its viewport.
         gui->setOverlayVisible(false);
@@ -357,8 +353,8 @@ class ScopedGpuTimingJsonPath
 // "light" is run-riscv64-tests.sh's QEMU frame budget; docs/source/gpu-golden-testing.md § The riscv64 light variant.
 int path_traced_history(int full_frames, int light_frames)
 {
-    const char *value = std::getenv("KATAGLYPHIS_PT_GOLDEN_VARIANT");
-    const std::string variant = (value == nullptr || *value == '\0') ? "full" : value;
+    std::string variant = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_GOLDEN_VARIANT").value_or("");
+    if (variant.empty()) { variant = "full"; }
     EXPECT_TRUE(variant == "full" || variant == "light")
       << "KATAGLYPHIS_PT_GOLDEN_VARIANT='" << variant << "' is neither 'full' nor 'light'";
     const int frames = variant == "light" ? light_frames : full_frames;
@@ -421,9 +417,9 @@ std::vector<bool> eroded(const std::vector<bool> &mask, uint32_t w, uint32_t h)
 // KATAGLYPHIS_CLOUDS_DUMP=<prefix> writes <prefix>-<name>.png, for looking at what a cloud golden measured.
 void dump_cloud_frame(const std::string &name, const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h)
 {
-    const char *prefix = std::getenv("KATAGLYPHIS_CLOUDS_DUMP");
-    if (prefix == nullptr || *prefix == '\0' || rgba.empty()) { return; }
-    stbi_write_png((std::string(prefix) + "-" + name + ".png").c_str(),
+    const std::string prefix = Kataglyphis::environmentVariable("KATAGLYPHIS_CLOUDS_DUMP").value_or("");
+    if (prefix.empty() || rgba.empty()) { return; }
+    stbi_write_png((prefix + "-" + name + ".png").c_str(),
       static_cast<int>(w),
       static_cast<int>(h),
       4,
@@ -658,9 +654,7 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
 
     harness.useForwardRaster();
     // A screenshot of the editor itself, for looking at the GUI; the pixel comparisons below then differ.
-    if (const char *with_ui = std::getenv("KATAGLYPHIS_FRAME_DUMP_WITH_UI"); with_ui != nullptr && *with_ui != '\0') {
-        harness.gui->setOverlayVisible(true);
-    }
+    if (Kataglyphis::environmentFlag("KATAGLYPHIS_FRAME_DUMP_WITH_UI")) { harness.gui->setOverlayVisible(true); }
     harness.settings.scene.shadows_enabled = true;
     // Must match ShadowsDarkenSomePixels' configuration, or the two cannot be compared.
     harness.settings.scene.cascaded_shadow_intensity = 1.0F;
@@ -673,8 +667,7 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     const std::vector<uint8_t> frame = harness.capture_frame(width, height);
     ASSERT_FALSE(frame.empty()) << "Capture returned no pixels.";
 
-    const char *out_path = std::getenv("KATAGLYPHIS_FRAME_DUMP");
-    const std::string base = (out_path != nullptr) ? out_path : "frame-dump";
+    const std::string base = Kataglyphis::environmentVariable("KATAGLYPHIS_FRAME_DUMP").value_or("frame-dump");
     const auto write = [&](const std::string &suffix, const std::vector<uint8_t> &pixels) {
         const std::string path = base + suffix + ".png";
         ASSERT_NE(stbi_write_png(path.c_str(),
@@ -808,8 +801,9 @@ TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
         harness.render_frames(TIMED_FRAMES);
         const double wall_ms =
           std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count() / TIMED_FRAMES;
-        const double main_ms = timings.pass_ms[static_cast<size_t>(GpuTimedPass::Main)];
-        const double shadow_ms = timings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)];
+        const double main_ms = static_cast<double>(timings.pass_ms[static_cast<size_t>(GpuTimedPass::Main)]);
+        const double shadow_ms =
+          static_cast<double>(timings.pass_ms[static_cast<size_t>(GpuTimedPass::ShadowCascades)]);
         std::vector<uint8_t> on = harness.capture_frame(width, height);
         // The off frame holds this radius's GUI text, so overlay pixels that move with the slider can be masked.
         scene_vars.cascaded_shadow_intensity = 0.0F;
@@ -896,9 +890,9 @@ TEST(GoldenRender, DISABLED_PcfRadiusSweepMeasuresTheShadowRig)
                   << sample.wall_ms << "\n";
     }
 
-    if (const char *out_path = std::getenv("KATAGLYPHIS_FRAME_DUMP"); out_path != nullptr) {
+    if (const auto out_path = Kataglyphis::environmentVariable("KATAGLYPHIS_FRAME_DUMP")) {
         for (const Sample &sample : samples) {
-            const std::string path = std::string(out_path) + "-pcf" + std::to_string(sample.radius) + ".png";
+            const std::string path = *out_path + "-pcf" + std::to_string(sample.radius) + ".png";
             EXPECT_NE(stbi_write_png(path.c_str(),
                         static_cast<int>(width),
                         static_cast<int>(height),
@@ -1015,7 +1009,7 @@ TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
 
     EngineHarness harness;
     auto &scene_vars = harness.settings.scene;
-    auto &renderer_vars = harness.useForwardRaster();
+    harness.useForwardRaster();
 
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
@@ -1680,7 +1674,8 @@ TEST(GoldenRender, AMirrorInTheSunsShadowReflectsTheSkyAndNoSun)
         // Per unit of Ambient a surface returns at most the sky it reflects: the brightest radiance is the horizon's.
         const glm::dvec3 gain = (means[1] - means[0]) / static_cast<double>(kMaxAmbient);
         for (int c = 0; c < 3; ++c) {
-            EXPECT_LE(gain[c], 1.02 * brightest_sky) << "channel " << c << ": the ambient put the sun into its shadow";
+            EXPECT_LE(gain[c], 1.02 * static_cast<double>(brightest_sky))
+              << "channel " << c << ": the ambient put the sun into its shadow";
         }
         EXPECT_GT(gain.b, 0.2) << "the mirror reflects no sky";
     }
@@ -2222,7 +2217,7 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
         double r = 0.0;
         double g = 0.0;
         double b = 0.0;
-        const size_t n = px.size() / 4;
+        const auto n = static_cast<double>(px.size() / 4);
         for (size_t i = 0; i < px.size(); i += 4) {
             r += px[i];
             g += px[i + 1];
@@ -2321,8 +2316,8 @@ TEST(GoldenRender, DeferredShadowsLandWhereForwardShadowsLand)
 static glm::mat4 panel_free_card_placement()
 {
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     return glm::translate(
              glm::mat4(1.0F), glm::vec3(env_f("CARD_X", 5.0F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -2538,8 +2533,8 @@ TEST(GoldenRender, EmissiveStrengthSurvivesTheDeferredGBuffer)
     const double mean_abs_diff = abs_diff_sum / static_cast<double>(forward.size());
     GTEST_LOG_(INFO) << "emissive-strength deferred-vs-forward mean abs channel diff: " << mean_abs_diff;
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_EMISSIVE_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_EMISSIVE_DUMP")) {
+        const std::string base = *dump;
         const auto stride = static_cast<int>(width) * 4;
         stbi_write_png((base + "-forward.png").c_str(), int(width), int(height), 4, forward.data(), stride);
         stbi_write_png((base + "-deferred.png").c_str(), int(width), int(height), 4, deferred.data(), stride);
@@ -2867,10 +2862,9 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
             size_t n = 0;
             for (uint32_t y = cy0; y < cy1; ++y)
                 for (uint32_t x = cx0; x + lag < cx1; ++x) {
-                    const double a =
-                      luminance_of(early_a, (size_t)y * width + x) - luminance_of(early_b, (size_t)y * width + x);
-                    const double b = luminance_of(early_a, (size_t)y * width + x + lag)
-                                     - luminance_of(early_b, (size_t)y * width + x + lag);
+                    const size_t pixel = static_cast<size_t>(y) * width + x;
+                    const double a = luminance_of(early_a, pixel) - luminance_of(early_b, pixel);
+                    const double b = luminance_of(early_a, pixel + lag) - luminance_of(early_b, pixel + lag);
                     sx += a;
                     sy += b;
                     sxx += a * a;
@@ -2878,9 +2872,10 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
                     sxy += a * b;
                     ++n;
                 }
-            const double cov = sxy / n - (sx / n) * (sy / n);
-            const double va = sxx / n - (sx / n) * (sx / n);
-            const double vb = syy / n - (sy / n) * (sy / n);
+            const auto count = static_cast<double>(n);
+            const double cov = sxy / count - (sx / count) * (sy / count);
+            const double va = sxx / count - (sx / count) * (sx / count);
+            const double vb = syy / count - (sy / count) * (sy / count);
             return (va > 0 && vb > 0) ? cov / std::sqrt(va * vb) : 0.0;
         };
         GTEST_LOG_(INFO) << "noise autocorrelation lag-1: " << corr(1) << ", lag-16: " << corr(16);
@@ -3699,8 +3694,8 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
 
     // Upper right, clear of the ImGui panel and the card's floor shadow; MASK_X/Y/Z/SCALE tune it without a rebuild.
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -3746,8 +3741,8 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
         }
     }
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = *dump;
         std::vector<uint8_t> diff(before.size(), 0U);
         for (uint32_t y = 0; y < height; ++y) {
             for (uint32_t x = 0; x < width; ++x) {
@@ -3805,8 +3800,8 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
 
     // Same env-tunable placement as the forward discard golden.
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -3852,8 +3847,8 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
         }
     }
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = *dump;
         std::vector<uint8_t> diff(before.size(), 0U);
         for (uint32_t y = 0; y < height; ++y) {
             for (uint32_t x = 0; x < width; ++x) {
@@ -3921,8 +3916,8 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
 
     // Same env-tunable placement as the forward/RT discard goldens.
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -3980,8 +3975,8 @@ TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
         }
     }
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = *dump;
         std::vector<uint8_t> diff(before.size(), 0U);
         for (uint32_t y = 0; y < height; ++y) {
             for (uint32_t x = 0; x < width; ++x) {
@@ -4033,8 +4028,8 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehind)
     ASSERT_FALSE(before.empty());
 
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     // Rotated 180 degrees about Y so the back face faces the camera.
     const glm::mat4 placement =
@@ -4114,8 +4109,8 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
     ASSERT_FALSE(before.empty());
 
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -4172,8 +4167,8 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
     ASSERT_FALSE(before.empty());
 
     const auto env_f = [](const char *name, float fallback) {
-        const char *value = std::getenv(name);
-        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+        const auto value = Kataglyphis::environmentVariable(name);
+        return value ? std::strtof(value->c_str(), nullptr) : fallback;
     };
     const glm::mat4 placement =
       glm::translate(glm::mat4(1.0F), glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
@@ -4361,7 +4356,7 @@ TEST(GoldenRender, BlendCardsCompositeInDepthOrderFromBothSides)
           mean_hdr_rgba_in_square(radiance, width, card_column(-0.6F, 1.8F, width, height), y, 8U);
         const glm::dvec4 opaque =
           mean_hdr_rgba_in_square(radiance, width, card_column(0.6F, 1.8F, width, height), y, 8U);
-        const double navy = Kataglyphis::acesTonemapInverse(Kataglyphis::kSkyboxDisabledRadiance.z);
+        const auto navy = static_cast<double>(Kataglyphis::acesTonemapInverse(Kataglyphis::kSkyboxDisabledRadiance.z));
         GTEST_LOG_(INFO) << mode_name << " over the sky: BLEND card (" << blend.r << ", " << blend.g << ", " << blend.b
                          << ", " << blend.a << "), opaque card red " << opaque.r << ", sky blue " << navy;
         constexpr double SKY_TOLERANCE = 0.03;
@@ -4827,8 +4822,8 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     ASSERT_FALSE(frame.empty());
     ASSERT_EQ(frame.size(), before.size());
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = *dump;
         stbi_write_png(
           (base + "-ptadd.png").c_str(), int(width), int(height), 4, frame.data(), static_cast<int>(width) * 4);
     }
@@ -5462,7 +5457,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
                 ASSERT_FALSE(radiance.empty());
 
                 const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
-                const double single = white_single_scatter_albedo(view.mu, std::strtod(roughness, nullptr), 0.0);
+                const double single =
+                  white_single_scatter_albedo(static_cast<double>(view.mu), std::strtod(roughness, nullptr), 0.0);
                 GTEST_LOG_(INFO) << "white dielectric card, roughness " << roughness << ", mu " << view.mu << ": "
                                  << measured << " of a sky of 1 (single scattering " << single << ")";
                 EXPECT_NEAR(measured, kWhiteFurnaceAlbedo, 0.01)
@@ -5506,7 +5502,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
         for (uint32_t y = y0; y < y1; ++y) {
             for (uint32_t x = x0; x < x1; ++x) {
                 const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
-                const double value = (radiance[base] + radiance[base + 1U] + radiance[base + 2U]) / 3.0;
+                const double value =
+                  static_cast<double>(radiance[base] + radiance[base + 1U] + radiance[base + 2U]) / 3.0;
                 sum += value;
                 if (std::abs(value - 1.0) <= FURNACE_PIXEL_BAND) { ++within; }
                 if (value < 0.5) { ++dark; }
@@ -5606,7 +5603,8 @@ TEST(GoldenRender, PathTracingPassesTheWhiteMetalFurnaceTest)
             ASSERT_FALSE(radiance.empty());
 
             const double measured = mean_hdr_in_square(radiance, width, width / 2U, height / 2U, 24U);
-            const double single = white_single_scatter_albedo(view.mu, std::strtod(roughness, nullptr), 1.0);
+            const double single =
+              white_single_scatter_albedo(static_cast<double>(view.mu), std::strtod(roughness, nullptr), 1.0);
             GTEST_LOG_(INFO) << "white metal, roughness " << roughness << ", mu " << view.mu << ": " << measured
                              << " of a sky of 1 (single scattering " << single << ")";
             EXPECT_NEAR(measured, kWhiteFurnaceAlbedo, 0.01)
@@ -5772,20 +5770,21 @@ TEST(GoldenRender, PathTracedMirrorReflectsTheSkyboxItDraws)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(drawn_hdr.empty());
     const glm::dvec3 sky = centre_mean_rgb(drawn_hdr, width, height, HALF);
+    const auto ambient = static_cast<double>(AMBIENT);
 
     GTEST_LOG_(INFO) << "mirror card at ambient " << AMBIENT << ", skybox off: (" << analytic.r << ", " << analytic.g
                      << ", " << analytic.b << ") against the analytic sky it reflects times it ("
-                     << AMBIENT * gradient.r << ", " << AMBIENT * gradient.g << ", " << AMBIENT * gradient.b
+                     << ambient * gradient.r << ", " << ambient * gradient.g << ", " << ambient * gradient.b
                      << "); skybox on: (" << cubemap.r << ", " << cubemap.g << ", " << cubemap.b
-                     << ") against the drawn sky times it (" << AMBIENT * sky.r << ", " << AMBIENT * sky.g << ", "
-                     << AMBIENT * sky.b << "); at twice the ambient (" << doubled.r << ", " << doubled.g << ", "
+                     << ") against the drawn sky times it (" << ambient * sky.r << ", " << ambient * sky.g << ", "
+                     << ambient * sky.b << "); at twice the ambient (" << doubled.r << ", " << doubled.g << ", "
                      << doubled.b << ")";
 
     for (int c = 0; c < 3; ++c) {
         // The switched-off skybox lights with the analytic sky, as the raster's ambient term does; the navy is no light.
-        EXPECT_NEAR(analytic[c], AMBIENT * gradient[c], 0.05 * AMBIENT * gradient[c] + 0.002)
+        EXPECT_NEAR(analytic[c], ambient * gradient[c], 0.05 * ambient * gradient[c] + 0.002)
           << "with the skybox off a bounce that misses is not the analytic sky times the ambient, channel " << c;
-        EXPECT_NEAR(cubemap[c], AMBIENT * sky[c], 0.08 * AMBIENT * sky[c] + 0.002)
+        EXPECT_NEAR(cubemap[c], ambient * sky[c], 0.08 * ambient * sky[c] + 0.002)
           << "the mirror does not reflect the IBL baked from the drawn skybox, channel " << c;
         EXPECT_NEAR(doubled[c], 2.0 * cubemap[c], 0.05 * cubemap[c] + 0.002)
           << "the bounce sky does not follow the Ambient slider, channel " << c;
@@ -6399,8 +6398,8 @@ TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
     ASSERT_EQ(width, width2);
     ASSERT_EQ(height, height2);
 
-    if (const char *dump = std::getenv("KATAGLYPHIS_CLOUDS_DUMP")) {
-        const std::string base = dump;
+    if (const auto dump = Kataglyphis::environmentVariable("KATAGLYPHIS_CLOUDS_DUMP")) {
+        const std::string base = *dump;
         const auto stride = static_cast<int>(width) * 4;
         stbi_write_png((base + "-baseline.png").c_str(), int(width), int(height), 4, baseline.data(), stride);
         stbi_write_png((base + "-clouds.png").c_str(), int(width), int(height), 4, clouds.data(), stride);

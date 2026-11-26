@@ -39,7 +39,7 @@ inline double luminance_of(const std::vector<uint8_t> &rgba, size_t pixel)
 }
 
 // Mean Rec. 709 luminance within `crop` (0..255), so goldens compare brightness without the overlay.
-inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
+inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t /*h*/, Crop crop)
 {
     double sum = 0.0;
     size_t count = 0;
@@ -54,7 +54,7 @@ inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t 
 
 // Fraction of `crop` whose colour moves more than 5 levels on any channel between `a` and `b`.
 inline double
-  swung_fraction(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h, Crop crop)
+  swung_fraction(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t /*h*/, Crop crop)
 {
     size_t swung = 0;
     size_t total = 0;
@@ -74,7 +74,8 @@ inline double
 }
 
 // Texture-detail proxy: fraction of `crop` whose right neighbour, also in `crop`, differs by more than `step` luma levels.
-inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop, double step = 6.0)
+inline double
+  detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t /*h*/, Crop crop, double step = 6.0)
 {
     if (crop.x1 == 0U || crop.x1 <= crop.x0 + 1U) { return 0.0; }
     size_t detailed = 0;

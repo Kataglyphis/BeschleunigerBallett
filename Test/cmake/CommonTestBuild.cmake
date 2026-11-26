@@ -2,17 +2,9 @@
 include(GTestDiscovery)
 include(CrashDump)
 
-function(kataglyphis_disable_test_warnings test_target)
-  if(MSVC)
-    target_compile_options(${test_target} PRIVATE /w)
-  else()
-    target_compile_options(${test_target} PRIVATE -w)
-  endif()
-endfunction()
-
+# VulkanEngineCore hands the suites the project's warnings, as it does the product.
 function(kataglyphis_configure_common_test_target test_target)
   set_target_properties(${test_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
-  kataglyphis_disable_test_warnings(${test_target})
   kataglyphis_add_crash_dump(${test_target})
 endfunction()
 

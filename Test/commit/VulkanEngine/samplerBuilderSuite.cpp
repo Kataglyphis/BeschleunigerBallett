@@ -25,12 +25,12 @@ TEST(SamplerBuilderUnit, MatchesPostStageOffscreenSamplerConfiguration)
     EXPECT_EQ(info.addressModeV, vk::SamplerAddressMode::eRepeat);
     EXPECT_EQ(info.addressModeW, vk::SamplerAddressMode::eRepeat);
     EXPECT_EQ(info.borderColor, vk::BorderColor::eFloatOpaqueBlack);
-    EXPECT_EQ(info.unnormalizedCoordinates, static_cast<vk::Bool32>(VK_FALSE));
+    EXPECT_EQ(info.unnormalizedCoordinates, VK_FALSE);
     EXPECT_EQ(info.mipmapMode, vk::SamplerMipmapMode::eLinear);
     EXPECT_FLOAT_EQ(info.mipLodBias, 0.0F);
     EXPECT_FLOAT_EQ(info.minLod, 0.0F);
     EXPECT_FLOAT_EQ(info.maxLod, 0.0F);
-    EXPECT_EQ(info.anisotropyEnable, static_cast<vk::Bool32>(VK_TRUE));
+    EXPECT_EQ(info.anisotropyEnable, VK_TRUE);
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 16.0F);
 }
 
@@ -45,7 +45,7 @@ TEST(SamplerBuilderUnit, MatchesModelSamplerConfigurationWithMipLevelAsMaxLod)
     EXPECT_EQ(info.borderColor, vk::BorderColor::eFloatOpaqueBlack);
     // maxLod is the one field the call sites genuinely disagree on.
     EXPECT_FLOAT_EQ(info.maxLod, 4.0F);
-    EXPECT_EQ(info.anisotropyEnable, static_cast<vk::Bool32>(VK_FALSE));
+    EXPECT_EQ(info.anisotropyEnable, VK_FALSE);
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 1.0F);
 }
 
@@ -64,12 +64,12 @@ TEST(SamplerBuilderUnit, MatchesTextureSamplerConfigurationWithAnisotropyHardDis
     EXPECT_EQ(info.addressModeV, vk::SamplerAddressMode::eClampToEdge);
     EXPECT_EQ(info.addressModeW, vk::SamplerAddressMode::eClampToEdge);
     // Texture::createTextureSampler disables anisotropy regardless of device support; a known asymmetry.
-    EXPECT_EQ(info.anisotropyEnable, static_cast<vk::Bool32>(VK_FALSE));
+    EXPECT_EQ(info.anisotropyEnable, VK_FALSE);
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 1.0F);
     EXPECT_EQ(info.borderColor, vk::BorderColor::eIntOpaqueBlack);
     EXPECT_FLOAT_EQ(info.maxLod, 5.0F);
     // Omitted compare arguments default to VK_FALSE/eNever.
-    EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_FALSE));
+    EXPECT_EQ(info.compareEnable, VK_FALSE);
     EXPECT_EQ(info.compareOp, vk::CompareOp::eNever);
 }
 
@@ -85,7 +85,7 @@ TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
       VK_TRUE,
       vk::CompareOp::eLessOrEqual);
 
-    EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_TRUE));
+    EXPECT_EQ(info.compareEnable, VK_TRUE);
     EXPECT_EQ(info.compareOp, vk::CompareOp::eLessOrEqual);
 }
 

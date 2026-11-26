@@ -4,14 +4,15 @@
 
 #include "fuzztest/fuzztest.h"
 #include "gtest/gtest.h"
+#include <cstddef>
 #include <string>
 
 // An example function we want to fuzz test
 bool IsPalindrome(const std::string &s)
 {
     if (s.empty()) return true;
-    int left = 0;
-    int right = s.size() - 1;
+    std::size_t left = 0;
+    std::size_t right = s.size() - 1;
     while (left < right) {
         if (s[left] != s[right]) return false;
         left++;

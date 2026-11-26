@@ -71,7 +71,11 @@ std::vector<glm::vec4> frustum_slice_corners(const glm::mat4 &view, float near_d
         for (unsigned y = 0; y < 2; ++y) {
             // Vulkan NDC depth is 0..1 (GLM_FORCE_DEPTH_ZERO_TO_ONE).
             for (unsigned z = 0; z < 2; ++z) {
-                const glm::vec4 pt = inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
+                const glm::vec4 pt = inv
+                                     * glm::vec4((2.0F * static_cast<float>(x)) - 1.0F,
+                                       (2.0F * static_cast<float>(y)) - 1.0F,
+                                       static_cast<float>(z),
+                                       1.0F);
                 corners.push_back(pt / pt.w);
             }
         }

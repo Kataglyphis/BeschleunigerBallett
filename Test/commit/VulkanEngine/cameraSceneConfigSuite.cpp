@@ -3,9 +3,6 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -20,6 +17,7 @@
 #include <vector>
 
 #include "RepoFiles.hpp"
+#include "common/EnvironmentVariable.hpp"
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
@@ -275,8 +273,7 @@ TEST(SceneConfigUnit, StartupModelIsTheOverrideWhenOneIsSet)
         }
 #endif
     };
-    const char *previous = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE");
-    const std::string restore = previous != nullptr ? previous : "";
+    const std::string restore = Kataglyphis::environmentVariable("KATAGLYPHIS_MODEL_OVERRIDE").value_or("");
 
     set_override("Models/ShadowTest/shadow_rig.obj");
     EXPECT_EQ(sceneConfig::startupModelRelativePath(), "Models/ShadowTest/shadow_rig.obj");

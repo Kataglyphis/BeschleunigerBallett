@@ -5,21 +5,11 @@
 #include <span>
 #include <vector>
 
-#include <glm/glm.hpp>
-
 import kataglyphis.vulkan.mesh_range;
-import kataglyphis.vulkan.vertex;
 
 using Kataglyphis::MeshRange;
 using Kataglyphis::meshRangeFits;
 using Kataglyphis::rebaseIndices;
-// Vertex lives in the global namespace (Src/shared/scene/Vertex.hpp), not Kataglyphis.
-using ::Vertex;
-
-namespace {
-Vertex vertexAtX(float x)
-{ return Vertex(glm::vec3(x, 0.0F, 0.0F), glm::vec3(0.0F), glm::vec4(1.0F), glm::vec2(0.0F)); }
-}// namespace
 
 // The upload re-bases a range's indices straight into the staging memory, without a slice.
 TEST(MeshRangeSlice, RebaseWritesTheRangesIndicesRelativeToItsFirstVertex)

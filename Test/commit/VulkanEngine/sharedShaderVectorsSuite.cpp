@@ -224,10 +224,20 @@ struct ComputeDevice
     std::string open()
     {
         const VkApplicationInfo app{ .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+            .pNext = nullptr,
             .pApplicationName = "sharedShaderVectors",
+            .applicationVersion = 0,
+            .pEngineName = nullptr,
+            .engineVersion = 0,
             .apiVersion = VK_API_VERSION_1_3 };
         const VkInstanceCreateInfo instance_info{ .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            .pApplicationInfo = &app };
+            .pNext = nullptr,
+            .flags = 0,
+            .pApplicationInfo = &app,
+            .enabledLayerCount = 0,
+            .ppEnabledLayerNames = nullptr,
+            .enabledExtensionCount = 0,
+            .ppEnabledExtensionNames = nullptr };
         if (const VkResult result = vkCreateInstance(&instance_info, nullptr, &instance); result != VK_SUCCESS) {
             instance = VK_NULL_HANDLE;
             return "vkCreateInstance returned " + std::to_string(result);
@@ -254,12 +264,21 @@ struct ComputeDevice
         }
         const float priority = 1.0F;
         const VkDeviceQueueCreateInfo queue_info{ .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
             .queueFamilyIndex = queue_family,
             .queueCount = 1,
             .pQueuePriorities = &priority };
-        const VkDeviceCreateInfo device_info{
-            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO, .queueCreateInfoCount = 1, .pQueueCreateInfos = &queue_info
-        };
+        const VkDeviceCreateInfo device_info{ .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = &queue_info,
+            .enabledLayerCount = 0,
+            .ppEnabledLayerNames = nullptr,
+            .enabledExtensionCount = 0,
+            .ppEnabledExtensionNames = nullptr,
+            .pEnabledFeatures = nullptr };
         if (const VkResult result = vkCreateDevice(physical, &device_info, nullptr, &device); result != VK_SUCCESS) {
             device = VK_NULL_HANDLE;
             return "vkCreateDevice returned " + std::to_string(result);
@@ -292,11 +311,15 @@ struct HostBuffer
     /// Creates it holding `contents`; empty on success, else the failing call.
     std::string create(const ComputeDevice &gpu, const std::vector<std::uint32_t> &contents)
     {
-        size = static_cast<VkDeviceSize>(contents.size() * sizeof(std::uint32_t));
+        size = contents.size() * sizeof(std::uint32_t);
         const VkBufferCreateInfo info{ .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .pNext = nullptr,
+            .flags = 0,
             .size = size,
             .usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            .sharingMode = VK_SHARING_MODE_EXCLUSIVE };
+            .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+            .queueFamilyIndexCount = 0,
+            .pQueueFamilyIndices = nullptr };
         if (vkCreateBuffer(device, &info, nullptr, &buffer) != VK_SUCCESS) { return "vkCreateBuffer failed"; }
         VkMemoryRequirements needs{};
         vkGetBufferMemoryRequirements(device, buffer, &needs);
@@ -310,9 +333,10 @@ struct HostBuffer
             }
         }
         if (!type) { return "no host-visible, coherent memory type"; }
-        const VkMemoryAllocateInfo allocate{
-            .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO, .allocationSize = needs.size, .memoryTypeIndex = *type
-        };
+        const VkMemoryAllocateInfo allocate{ .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            .pNext = nullptr,
+            .allocationSize = needs.size,
+            .memoryTypeIndex = *type };
         if (vkAllocateMemory(device, &allocate, nullptr, &memory) != VK_SUCCESS) { return "vkAllocateMemory failed"; }
         if (vkBindBufferMemory(device, buffer, memory, 0) != VK_SUCCESS) { return "vkBindBufferMemory failed"; }
         void *mapped = nullptr;
@@ -372,6 +396,8 @@ std::string run_kernel(const ComputeDevice &gpu,
 {
     Dispatch d(gpu.device);
     const VkShaderModuleCreateInfo module_info{ .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .codeSize = spirv.size() * sizeof(std::uint32_t),
         .pCode = spirv.data() };
     if (vkCreateShaderModule(d.device, &module_info, nullptr, &d.module) != VK_SUCCESS) {
@@ -381,36 +407,53 @@ std::string run_kernel(const ComputeDevice &gpu,
       { .binding = 0,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT },
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .pImmutableSamplers = nullptr },
       { .binding = 1,
         .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
         .descriptorCount = 1,
-        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT },
+        .stageFlags = VK_SHADER_STAGE_COMPUTE_BIT,
+        .pImmutableSamplers = nullptr },
     } };
     const VkDescriptorSetLayoutCreateInfo set_info{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .bindingCount = static_cast<std::uint32_t>(bindings.size()),
         .pBindings = bindings.data() };
     if (vkCreateDescriptorSetLayout(d.device, &set_info, nullptr, &d.set_layout) != VK_SUCCESS) {
         return "vkCreateDescriptorSetLayout failed";
     }
-    const VkPipelineLayoutCreateInfo layout_info{
-        .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO, .setLayoutCount = 1, .pSetLayouts = &d.set_layout
-    };
+    const VkPipelineLayoutCreateInfo layout_info{ .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .setLayoutCount = 1,
+        .pSetLayouts = &d.set_layout,
+        .pushConstantRangeCount = 0,
+        .pPushConstantRanges = nullptr };
     if (vkCreatePipelineLayout(d.device, &layout_info, nullptr, &d.pipeline_layout) != VK_SUCCESS) {
         return "vkCreatePipelineLayout failed";
     }
     // Slang names every SPIR-V entry point "main".
     const VkComputePipelineCreateInfo pipeline_info{ .sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .stage = { .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+          .pNext = nullptr,
+          .flags = 0,
           .stage = VK_SHADER_STAGE_COMPUTE_BIT,
           .module = d.module,
-          .pName = "main" },
-        .layout = d.pipeline_layout };
+          .pName = "main",
+          .pSpecializationInfo = nullptr },
+        .layout = d.pipeline_layout,
+        .basePipelineHandle = VK_NULL_HANDLE,
+        .basePipelineIndex = 0 };
     if (vkCreateComputePipelines(d.device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &d.pipeline) != VK_SUCCESS) {
         return "vkCreateComputePipelines failed";
     }
     const VkDescriptorPoolSize pool_size{ .type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, .descriptorCount = 2 };
     const VkDescriptorPoolCreateInfo pool_info{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .maxSets = 1,
         .poolSizeCount = 1,
         .pPoolSizes = &pool_size };
@@ -419,6 +462,7 @@ std::string run_kernel(const ComputeDevice &gpu,
     }
     VkDescriptorSet set = VK_NULL_HANDLE;
     const VkDescriptorSetAllocateInfo set_allocate{ .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
         .descriptorPool = d.pool,
         .descriptorSetCount = 1,
         .pSetLayouts = &d.set_layout };
@@ -430,21 +474,28 @@ std::string run_kernel(const ComputeDevice &gpu,
     std::array<VkWriteDescriptorSet, 2> writes{};
     for (std::uint32_t binding = 0; binding < 2; ++binding) {
         writes[binding] = { .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .pNext = nullptr,
             .dstSet = set,
             .dstBinding = binding,
+            .dstArrayElement = 0,
             .descriptorCount = 1,
             .descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .pBufferInfo = &buffers[binding] };
+            .pImageInfo = nullptr,
+            .pBufferInfo = &buffers[binding],
+            .pTexelBufferView = nullptr };
     }
     vkUpdateDescriptorSets(d.device, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
 
     const VkCommandPoolCreateInfo command_info{ .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
         .queueFamilyIndex = gpu.queue_family };
     if (vkCreateCommandPool(d.device, &command_info, nullptr, &d.commands) != VK_SUCCESS) {
         return "vkCreateCommandPool failed";
     }
     VkCommandBuffer command = VK_NULL_HANDLE;
     const VkCommandBufferAllocateInfo command_allocate{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+        .pNext = nullptr,
         .commandPool = d.commands,
         .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY,
         .commandBufferCount = 1 };
@@ -452,12 +503,15 @@ std::string run_kernel(const ComputeDevice &gpu,
         return "vkAllocateCommandBuffers failed";
     }
     const VkCommandBufferBeginInfo begin{ .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
-        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT };
+        .pNext = nullptr,
+        .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        .pInheritanceInfo = nullptr };
     if (vkBeginCommandBuffer(command, &begin) != VK_SUCCESS) { return "vkBeginCommandBuffer failed"; }
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_COMPUTE, d.pipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_COMPUTE, d.pipeline_layout, 0, 1, &set, 0, nullptr);
     vkCmdDispatch(command, cases, 1, 1);
     const VkMemoryBarrier to_host{ .sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER,
+        .pNext = nullptr,
         .srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT,
         .dstAccessMask = VK_ACCESS_HOST_READ_BIT };
     vkCmdPipelineBarrier(command,
@@ -471,11 +525,17 @@ std::string run_kernel(const ComputeDevice &gpu,
       0,
       nullptr);
     if (vkEndCommandBuffer(command) != VK_SUCCESS) { return "vkEndCommandBuffer failed"; }
-    const VkFenceCreateInfo fence_info{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+    const VkFenceCreateInfo fence_info{ .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0 };
     if (vkCreateFence(d.device, &fence_info, nullptr, &d.fence) != VK_SUCCESS) { return "vkCreateFence failed"; }
-    const VkSubmitInfo submit{
-        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO, .commandBufferCount = 1, .pCommandBuffers = &command
-    };
+    const VkSubmitInfo submit{ .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = nullptr,
+        .waitSemaphoreCount = 0,
+        .pWaitSemaphores = nullptr,
+        .pWaitDstStageMask = nullptr,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &command,
+        .signalSemaphoreCount = 0,
+        .pSignalSemaphores = nullptr };
     if (vkQueueSubmit(gpu.queue, 1, &submit, d.fence) != VK_SUCCESS) { return "vkQueueSubmit failed"; }
     if (const VkResult result = vkWaitForFences(d.device, 1, &d.fence, VK_TRUE, kFenceTimeoutNs);
       result != VK_SUCCESS) {

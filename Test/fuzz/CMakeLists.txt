@@ -44,6 +44,8 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
 
   # Without module scanning clang reports: module 'kataglyphis.vulkan.*' not found.
   set_target_properties(${fuzz_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+  # The project's warnings; not myproject_options, whose sanitizers the preset decides here.
+  target_link_libraries(${fuzz_target} PRIVATE myproject_warnings)
 
   # Unit mode instruments nothing: coverage needs FuzzTest's fuzzing runtime, and ADDRESS_SANITIZER flips abseil's layout.
   if(_kataglyphis_fuzz_unit_mode)

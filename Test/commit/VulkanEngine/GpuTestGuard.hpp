@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common/EnvironmentVariable.hpp"
+
 #include <cstdlib>
 #include <string>
 
@@ -13,11 +15,7 @@
 namespace Kataglyphis::TestSupport {
 
 /// OxidANT's GpuContext::gpu_required rule: KATAGLYPHIS_REQUIRE_GPU set and non-empty.
-inline bool gpuRequired()
-{
-    const char *value = std::getenv("KATAGLYPHIS_REQUIRE_GPU");
-    return value != nullptr && *value != '\0';
-}
+inline bool gpuRequired() { return Kataglyphis::environmentFlag("KATAGLYPHIS_REQUIRE_GPU"); }
 
 /// GLFW starts a platform and finds a Vulkan loader; a broken Xvfb fails here, a missing driver only later.
 inline bool glfwReportsVulkanSupport()

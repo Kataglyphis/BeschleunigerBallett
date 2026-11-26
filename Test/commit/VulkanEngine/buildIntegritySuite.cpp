@@ -34,6 +34,7 @@
 #include "GoldenMetrics.hpp"
 #include "ObjectDescription.hpp"
 #include "RepoFiles.hpp"
+#include "common/EnvironmentVariable.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/FxaaUniforms.hpp"
@@ -267,7 +268,7 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
 }
 
 // Parsed once per process; std::nullopt means missing or malformed, so callers ASSERT on has_value(), never skip.
-const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_root)
+const std::optional<ShaderManifestData> &shader_manifest()
 {
     static const std::optional<ShaderManifestData> cached = parse_shader_manifest(slangRoot() / "shader-manifest.json");
     return cached;
@@ -1135,7 +1136,7 @@ struct SpirvStructContract
     std::map<std::string, std::size_t> member_offsets;
     std::size_t host_size;
     std::size_t host_alignment;
-    std::map<std::string, std::size_t> member_array_strides;
+    std::map<std::string, std::size_t> member_array_strides{};
 };
 
 std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
@@ -1631,7 +1632,7 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
     const fs::path slang_root = slangRoot();
     const fs::path spirv_root = spirvRoot();
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     std::vector<std::string> missing;
@@ -2441,12 +2442,12 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
-    if (const char *generated_root_env = std::getenv("KATAGLYPHIS_STAGED_WGSL_ROOT")) {
-        ASSERT_NE(*generated_root_env, '\0') << "staged WGSL root is empty";
-        const fs::path generated_root = generated_root_env;
+    if (const auto generated_root_env = Kataglyphis::environmentVariable("KATAGLYPHIS_STAGED_WGSL_ROOT")) {
+        ASSERT_FALSE(generated_root_env->empty()) << "staged WGSL root is empty";
+        const fs::path generated_root = *generated_root_env;
         const fs::path artifact_root = generated_root.parent_path();
         std::error_code error;
         ASSERT_TRUE(fs::is_directory(generated_root, error)) << "generated WGSL root missing: " << generated_root;
@@ -2566,7 +2567,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     std::vector<std::string> hand_edits;
@@ -2608,7 +2609,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     static const std::regex kStructHead(R"(^struct\s+([A-Za-z_]\w*))");
@@ -2684,7 +2685,7 @@ TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     EXPECT_FALSE(manifest->min_slangc_version_for_wgsl.empty())
@@ -3841,7 +3842,7 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
     ASSERT_TRUE(shared_constants.contains("CASCADE_COUNT")) << "CASCADE_COUNT not found in limits.slang";
     const int max_cascades = shared_constants.at("CASCADE_COUNT");
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
     const auto &vulkan_consumed_sources = manifest->vulkan_spirv_sources;
     ASSERT_FALSE(vulkan_consumed_sources.empty())
@@ -4253,7 +4254,7 @@ TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFet
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
     const auto &vulkan_consumed_sources = manifest->vulkan_spirv_sources;
     ASSERT_FALSE(vulkan_consumed_sources.empty())
@@ -5249,7 +5250,7 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path slang_root = slangRoot();
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
@@ -5508,7 +5509,7 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     int entry_point_sources_checked = 0;
@@ -5540,7 +5541,7 @@ TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path slang_root = slangRoot();
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
     ASSERT_GE(manifest->wgsl_map.size(), 5U)
       << "found only " << manifest->wgsl_map.size() << " wgslMap entr(y/ies) - the manifest parse itself is broken";
@@ -6810,7 +6811,7 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
       << doc_path.string()
       << " is missing its '<!-- shader-targets:begin -->' / '<!-- shader-targets:end -->' marker block";
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     // An entry point both renderers compile, such as OxidANT's sky, reads "both".
@@ -6861,7 +6862,7 @@ TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
       << " is missing its '<!-- shared-module-targets:begin -->' / '<!-- shared-module-targets:end -->' marker "
          "block";
 
-    const auto &manifest = shader_manifest(repo_root);
+    const auto &manifest = shader_manifest();
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     const auto truth = shared_module_target_truth(slang_root, *manifest);
@@ -7482,7 +7483,8 @@ TEST(BuildIntegrity, CloudAmbientNavyIsTheDisabledSkyRadiance)
           std::regex(std::string(name) + R"(\s*=\s*float3\(\s*([0-9.]+)\s*,\s*([0-9.]+)\s*,\s*([0-9.]+)\s*\))")))
           << path.string() << " no longer defines " << name << " as a float3 literal";
         for (int channel = 0; channel < 3; ++channel) {
-            EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), Kataglyphis::kSkyboxDisabledRadiance[channel])
+            EXPECT_FLOAT_EQ(std::stof(match[static_cast<std::size_t>(channel) + 1U].str()),
+              Kataglyphis::kSkyboxDisabledRadiance[channel])
               << "CloudAmbient.hpp's kSkyboxDisabledRadiance channel " << channel << " differs from " << path.string();
         }
     }
@@ -7560,7 +7562,7 @@ TEST(BuildIntegrity, AnalyticSkyMatchesOxidantsSkyModel)
         ASSERT_TRUE(std::regex_search(*contents, match, literal))
           << model_path.string() << " no longer defines " << name << " as a float3 literal";
         for (int channel = 0; channel < 3; ++channel) {
-            EXPECT_FLOAT_EQ(std::stof(match[channel + 1].str()), colour[channel])
+            EXPECT_FLOAT_EQ(std::stof(match[static_cast<std::size_t>(channel) + 1U].str()), colour[channel])
               << "AnalyticSky.hpp's " << name << " channel " << channel << " differs from " << model_path.string();
         }
     }
