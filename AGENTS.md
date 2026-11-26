@@ -381,6 +381,11 @@ pass `--build-dir /tmp/...` (a build dir on the bind-mounted host tree breaks Fe
 and cargo cleanup), and point `--cargo-cache-dir` at a named volume so Rust dependencies survive the
 container.
 
+A GCC build fits a 12 GB container at `--parallel 2`, not more: a GCC unit that imports the renderer
+holds 5-6 GB, so `Test/commit/VulkanEngine/CMakeLists.txt` compiles those suite files one at a time
+(Ninja pool `kataglyphis_heavy_tests`), and the -j2 rebuild of the suite peaks at 9.5 GB. Clang's
+units stay near 1.3 GB.
+
 ## Shaders: Slang (unified SPIR-V + WGSL)
 
 Vulkan entry points and material modules live under `Resources/ShadersSlang/`; shared math and

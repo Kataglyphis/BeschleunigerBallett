@@ -14,6 +14,18 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The two giant suites are split by subject: `goldenRenderSuite.cpp` into seven `goldenRender<Subject>Suite.cpp`
+  (645-1422 lines) over the header-only `GoldenRenderHarness.hpp`, `buildIntegritySuite.cpp` into 24
+  `buildIntegrity<Subject>Suite.cpp` (283-670 lines) over `BuildIntegrityScan.hpp`/`.cpp`. Every test keeps its name:
+  the sorted test list is the same 888. On arm64 Debug a build-integrity unit peaks at 0.4-1.1 GB of anonymous memory
+  under GCC, 2.2 GB for the one that imports a module (3.1 GB as one unit), and at 0.2-0.55 GB under clang (1.1 GB).
+  A golden unit cannot shrink: the renderer import alone holds 4.9 GB under GCC whatever follows it, so each of the
+  seven peaks at 5.7 GB (5.8 GB as one unit) and the goldens cost GCC 459 s of CPU instead of 121 s; hence seven
+  files, not one per few hundred lines. Under GCC the commit-suite files that import the renderer compile one at a time,
+  an OBJECT library in the Ninja pool `kataglyphis_heavy_tests`: two golden units side by side were OOM-killed at -j2
+  in a 12 GB container, and pooled the -j2 build peaks at 9.5 GB. `ViolationListsGoThroughTheSharedJoiner` reads every
+  build-integrity file, and `NoTranslationUnitIncludesAHeaderAfterAnImport` counts the include of a header that imports
+  (`GoldenRenderHarness.hpp`) as an import.
 - The suites and fuzz targets build like the product (ANTfrastructure CON295 (c)): `commitTestSuite`,
   `compileTestSuite` and `perfTestSuite` lose `-w` (`/w`) and take the project's warnings from `VulkanEngineCore`,
   the fuzz targets link `myproject_warnings`, and all of them set `COMPILE_WARNING_AS_ERROR`. GoogleTest, Google
