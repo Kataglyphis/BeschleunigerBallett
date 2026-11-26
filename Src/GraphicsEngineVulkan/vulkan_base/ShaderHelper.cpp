@@ -3,6 +3,7 @@ module;
 
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <span>
 #include <string>
 #include <utility>
@@ -20,6 +21,7 @@ module kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.device;
 import kataglyphis.shared.util.file_reader;
+import kataglyphis.shared.util.resource_paths;
 
 namespace {
 
@@ -57,13 +59,22 @@ auto Kataglyphis::validateSpirvBlob(std::span<const char> code) -> bool
 auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath)
   -> vk::ShaderModule
 {
+    // The callers name paths below the install root; a relative one read from the cwd broke the 1.7.0 MSI.
+    std::string path = spvPath;
+    if (std::filesystem::path(spvPath).is_relative()) {
+        if (const auto installed = Kataglyphis::Shared::resolveInstalledPath(spvPath); installed.has_value()) {
+            path = installed->string();
+        }
+    }
+
     // No missing-file log: the check below logs critical with a better message and aborts.
-    const std::vector<char> code = Kataglyphis::Shared::readBinaryFile(spvPath);
+    const std::vector<char> code = Kataglyphis::Shared::readBinaryFile(path);
 
     if (!validateSpirvBlob(code)) {
         spdlog::default_logger_raw()->log(spdlog::level::critical,
-          std::string("Invalid or missing SPIR-V shader blob at '") + spvPath
-            + "' - run scripts/windows/Build-SlangShaders.ps1 (or the Linux .sh) to (re)compile shaders.");
+          std::string("Invalid or missing SPIR-V shader blob at '") + path
+            + "' (searched beside the executable, then above the working directory) - run "
+              "scripts/windows/Build-SlangShaders.ps1 (or the Linux .sh) to (re)compile shaders.");
         std::abort();
     }
 

@@ -4,7 +4,8 @@
   The Windows x64 lane's container half, run by windows-x64.yml and by a local container run.
 .DESCRIPTION
   Builds clangcl-debug, clangcl-profile and clangcl-release, then runs the CPU suites, the compile suite,
-  the perf suite, fuzz seed corpora and renderer comparisons; every check runs and the lane fails if any
+  the perf suite, fuzz seed corpora and renderer comparisons, and starts the portable bundle and the
+  installed MSI from a foreign folder with --check_resources; every check runs and the lane fails if any
   did. Secrets arrive as environment. The GPU suites run after it, on the runner host, from the Release
   suite -StageTests leaves in dist\windows-x64-tests (windows-x64.yml's host-command).
 #>
@@ -18,6 +19,33 @@ Set-Location -LiteralPath $workspace
 $debugDir = Join-Path $workspace 'build-clangcl-debug'
 $profileDir = Join-Path $workspace 'build-clangcl-profile'
 $failed = [System.Collections.Generic.List[string]]::new()
+$engineExe = 'GraphicsEngine.exe'
+
+# A shortcut starts the program in any folder (1.7.0's MSI: bin\, and no shader found), so the check runs from %TEMP%.
+function Test-InstalledTree {
+  param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string]$Label)
+  $exe = Join-Path $Root "bin\$engineExe"
+  if (-not (Test-Path -LiteralPath $exe)) { return "$Label has no $exe" }
+  $out = Join-Path $env:TEMP "check-resources-$Label.txt"
+  # Start-Process -Wait: the Release program is a GUI one, which PowerShell would not wait for.
+  $p = Start-Process -FilePath $exe -ArgumentList '--check_resources' -WorkingDirectory $env:TEMP -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
+  Get-Content -LiteralPath $out | Write-Host
+  if ($p.ExitCode -ne 0) { return "${Label}: $engineExe --check_resources exited $($p.ExitCode)" }
+  return $null
+}
+
+# The MSI as a user gets it, installed and started from elsewhere, then removed again.
+function Test-MsiInstall {
+  param([Parameter(Mandatory)][string]$DistDir)
+  $msi = @(Get-ChildItem -Path (Join-Path $DistDir 'packages') -Filter '*.msi' -File -ErrorAction SilentlyContinue)
+  if ($msi.Count -ne 1) { return "expected one .msi in $DistDir\packages, found $($msi.Count)" }
+  $dir = Join-Path $env:TEMP 'msi-install'
+  $log = Join-Path $env:TEMP 'msi-install.log'
+  $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$($msi[0].FullName)`"", '/qn', '/norestart', "INSTALL_ROOT=`"$dir`"", '/l*v', "`"$log`"" -Wait -PassThru
+  if ($p.ExitCode -notin 0, 3010) { return "msiexec /i $($msi[0].Name) exited $($p.ExitCode); see $log" }
+  try { return Test-InstalledTree -Root $dir -Label 'msi' }
+  finally { $null = Start-Process msiexec.exe -ArgumentList '/x', "`"$($msi[0].FullName)`"", '/qn', '/norestart' -Wait -PassThru }
+}
 
 # -SkipPerfTests: the perf suite runs below and fails on a missing exe. No -SkipFormat: this lane gates clang-format.
 # -WarningCensus: a red census fails the build script after every build and package, so the suites below do not run.
@@ -84,8 +112,13 @@ foreach ($comparison in 'Compare-RendererTimings', 'Compare-RendererPixels') {
   }
 }
 
+$distDir = Join-Path $workspace 'dist\windows-x64'
+foreach ($problem in @((Test-InstalledTree -Root (Join-Path $distDir 'bundle') -Label 'bundle'), (Test-MsiInstall -DistDir $distDir))) {
+  if ($problem) { $failed.Add($problem) }
+}
+
 if ($failed.Count -gt 0) {
   foreach ($f in $failed) { Write-Host "::error::$f" }
   exit 1
 }
-Write-Host 'Windows x64 lane: build, CPU, compile and perf suites, fuzz seeds and renderer comparisons passed.'
+Write-Host 'Windows x64 lane: build, CPU, compile and perf suites, fuzz seeds, renderer comparisons and the installed trees passed.'

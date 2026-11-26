@@ -8,6 +8,8 @@ module;
 #include <system_error>
 #include <vector>
 
+#include "InstallPaths.hpp"
+
 export module kataglyphis.shared.util.resource_paths;
 
 export namespace Kataglyphis::Shared {
@@ -81,36 +83,58 @@ inline auto cachedResourceRootsAbove(const std::filesystem::path &cwd) -> std::v
     return cached_roots;
 }
 
-#if defined(RELATIVE_RESOURCE_PATH)
-// Resources-tree resolver shared by scene-config model lookup and the skybox
-// texture loader: try the build-relative RELATIVE_RESOURCE_PATH candidate
-// first (matches the IDE/debugger working directory), then walk ancestors
-// looking for a `Resources/<relative>` sibling (matches launching from an
-// arbitrary subdirectory of the repo/install tree).
-inline auto resolveResourceRelativePath(std::string_view relative) -> std::optional<std::filesystem::path>
+inline auto cachedExecutableDirectory() -> const std::optional<std::filesystem::path> &
 {
-    const std::filesystem::path relativePath(relative);
-    for (const auto &part : relativePath) {
-        if (part == "..") { return std::nullopt; }
-    }
+    static const std::optional<std::filesystem::path> directory = executableDirectory();
+    return directory;
+}
 
+// Exported names for InstallPaths.hpp: a TU that includes vulkan.hpp must not get <windows.h> and its macros.
+inline auto executableInstallRoots() -> std::vector<std::filesystem::path>
+{ return installRootsFromExecutable(cachedExecutableDirectory()); }
+
+inline auto userCacheDirectory() -> std::optional<std::filesystem::path>
+{ return userDirectory(UserDirectoryKind::Cache); }
+
+inline auto userLogDirectory() -> std::optional<std::filesystem::path>
+{ return userDirectory(UserDirectoryKind::Logs); }
+
+#if defined(RELATIVE_RESOURCE_PATH)
+// The working directory's roots, for developer runs from the source tree: the build-relative one, then each ancestor's.
+inline auto workingDirectoryRoots(const std::filesystem::path &cwd) -> std::vector<std::filesystem::path>
+{
+    std::vector<std::filesystem::path> roots;
+    std::filesystem::path build_relative =
+      std::filesystem::path(cwd.string() + RELATIVE_RESOURCE_PATH).lexically_normal();
+    if (!build_relative.has_filename()) { build_relative = build_relative.parent_path(); }
+    roots.push_back(build_relative.parent_path());
+    // A miss then costs one probe per Resources directory instead of one per ancestor.
+    for (const std::filesystem::path &resources : cachedResourceRootsAbove(cwd)) {
+        roots.push_back(resources.parent_path());
+    }
+    return roots;
+}
+
+inline auto installSearchRoots(const std::optional<std::filesystem::path> &executableDir)
+  -> std::vector<std::filesystem::path>
+{
     std::error_code current_path_ec;
     const std::filesystem::path cwd = std::filesystem::current_path(current_path_ec);
-    if (current_path_ec) { return std::nullopt; }
-
-    const std::filesystem::path direct_candidate =
-      std::filesystem::path(cwd.string() + RELATIVE_RESOURCE_PATH) / relativePath;
-    std::error_code exists_ec;
-    if (std::filesystem::exists(direct_candidate, exists_ec) && !exists_ec) { return direct_candidate; }
-
-    // A miss then costs one probe per Resources directory instead of one per ancestor.
-    for (const std::filesystem::path &root : cachedResourceRootsAbove(cwd)) {
-        const std::filesystem::path candidate = root / relativePath;
-        if (std::filesystem::exists(candidate, exists_ec) && !exists_ec) { return candidate; }
-        if (exists_ec) { break; }
-    }
-    return std::nullopt;
+    return orderedSearchRoots(installRootsFromExecutable(executableDir),
+      current_path_ec ? std::vector<std::filesystem::path>{} : workingDirectoryRoots(cwd));
 }
+
+// `relative` names a path below the install root, e.g. "Resources/ShadersSlang/build/spirv/post/post.vs_main.spv".
+inline auto resolveInstalledPath(std::string_view relative) -> std::optional<std::filesystem::path>
+{ return resolveUnderRoots(installSearchRoots(cachedExecutableDirectory()), std::filesystem::path(relative)); }
+
+inline auto resolveResourceRelativePathFrom(const std::optional<std::filesystem::path> &executableDir,
+  std::string_view relative) -> std::optional<std::filesystem::path>
+{ return resolveUnderRoots(installSearchRoots(executableDir), std::filesystem::path("Resources") / relative); }
+
+// `relative` is below Resources/, as model and skybox paths are.
+inline auto resolveResourceRelativePath(std::string_view relative) -> std::optional<std::filesystem::path>
+{ return resolveResourceRelativePathFrom(cachedExecutableDirectory(), relative); }
 
 inline auto resourcesRootOrEmpty() -> std::filesystem::path
 {

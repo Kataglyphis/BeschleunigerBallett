@@ -45,8 +45,9 @@ jobs:
         with:
           artifact: linux-packages-arm64
           deb: '*.deb'
-          deb-command: GraphicsEngine --version
+          # --check_resources from a foreign cwd: a shortcut starts the program anywhere, and 1.7.0 then found no shader.
+          deb-command: GraphicsEngine --version && cd "$(mktemp -d)" && GraphicsEngine --check_resources
           tarball: '*.tar.gz'
-          tarball-command: ./bin/GraphicsEngine --version
+          tarball-command: ./bin/GraphicsEngine --version && top="$PWD" && cd "$(mktemp -d)" && "$top/bin/GraphicsEngine" --check_resources
           appimage: '*.AppImage'
-          appimage-command: '"$APPIMAGE" --version'
+          appimage-command: '"$APPIMAGE" --version && cd "$(mktemp -d)" && "$APPIMAGE" --check_resources'

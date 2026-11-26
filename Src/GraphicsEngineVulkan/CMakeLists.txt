@@ -133,6 +133,12 @@ target_sources(
           # IMGUI object library - excluded from static analysis
           $<TARGET_OBJECTS:IMGUI>)
 
+# A shipped Windows program opens no console beside its window; /ENTRY keeps main() its start, not WinMain.
+if(WIN32)
+  set_target_properties(${PROJECT_NAME} PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
+  target_link_options(${PROJECT_NAME} PRIVATE $<$<CONFIG:Release>:/ENTRY:mainCRTStartup>)
+endif()
+
 # Since CMake 3.28 the PUBLIC CXX_MODULES file set makes the modules importable here.
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
 

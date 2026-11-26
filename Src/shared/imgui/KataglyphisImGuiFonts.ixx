@@ -4,6 +4,8 @@ module;
 
 #include <imgui.h>
 
+#include "../util/InstallPaths.hpp"
+
 export module kataglyphis.shared.imgui.fonts;
 
 import kataglyphis.shared.util.resource_paths;
@@ -48,13 +50,24 @@ inline auto addKataglyphisFontIfAvailable(ImFontAtlas *fonts, const std::filesys
     return fonts->AddFontFromFileTTF(fontPath.string().c_str(), sizePixels);
 }
 
+// The installed tree beside the executable first; the working directory only finds a source tree.
+inline auto kataglyphisImGuiFontDirectory() -> std::filesystem::path
+{
+    if (const auto installed = Kataglyphis::Shared::resolveUnderRoots(
+          Kataglyphis::Shared::installRootsFromExecutable(Kataglyphis::Shared::executableDirectory()),
+          "third_party/IMGUI/misc/fonts");
+      installed.has_value()) {
+        return *installed;
+    }
+    std::error_code current_path_ec;
+    const std::filesystem::path cwd = std::filesystem::current_path(current_path_ec);
+    return resolveKataglyphisImGuiFontDirectory(current_path_ec ? std::filesystem::path(".") : cwd);
+}
+
 // The vector default stands in for a missing TTF: the bitmap one is drawn for 13 px and blurs at any scale.
 inline auto configureKataglyphisImGuiFonts(ImGuiIO &imguiIo, float sizePixels) -> KataglyphisFonts
 {
-    std::error_code current_path_ec;
-    const std::filesystem::path cwd = std::filesystem::current_path(current_path_ec);
-    const std::filesystem::path fontDir =
-      resolveKataglyphisImGuiFontDirectory(current_path_ec ? std::filesystem::path(".") : cwd);
+    const std::filesystem::path fontDir = kataglyphisImGuiFontDirectory();
 
     KataglyphisFonts fonts{};
     if (!fontDir.empty()) {

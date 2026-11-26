@@ -166,5 +166,53 @@
     "replace": "include = [\"Src/*\"]\nmax = 1",
     "test": "bash scripts/linux/tests/test-filesystem-pattern.sh",
     "why": "A throwing std::filesystem overload in Src/ must fail the lint gates, not be counted."
+  },
+  {
+    "id": "install.executable-before-cwd",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "roots.insert(roots.end(), workingDirectoryRoots.begin(), workingDirectoryRoots.end());",
+    "replace": "roots.insert(roots.begin(), workingDirectoryRoots.begin(), workingDirectoryRoots.end());",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "The installed tree beside the executable must win over the working directory: a cwd-first lookup is the 1.7.0 MSI crash."
+  },
+  {
+    "id": "install.bin-parent-first",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "return { parent, executableDir, parent.parent_path() };",
+    "replace": "return { executableDir, parent, parent.parent_path() };",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "bin/.. is the packages' root and must be tried before the program's own folder."
+  },
+  {
+    "id": "install.bundle-root",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "return { parent, executableDir, parent.parent_path() };",
+    "replace": "return { parent, executableDir };",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "A Linux package starts the program, or its bundled loader, from lib/<name>/, two levels below Resources/."
+  },
+  {
+    "id": "install.userdir-localappdata",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "return *base / app / (kind == UserDirectoryKind::Cache ? \"cache\" : \"logs\");",
+    "replace": "return *base / app;",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "Windows keeps the cache and the logs apart under %LOCALAPPDATA%/<app>."
+  },
+  {
+    "id": "install.userdir-xdg-absolute",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "if (!value.has_value() || value->empty() || !value->is_absolute()) { return std::nullopt; }",
+    "replace": "if (!value.has_value() || value->empty()) { return std::nullopt; }",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "The XDG spec calls a relative XDG_*_HOME invalid; it must fall back to the default under HOME."
+  },
+  {
+    "id": "install.userdir-home-default",
+    "target": "Src/shared/util/InstallPaths.hpp",
+    "find": "return kind == UserDirectoryKind::Cache ? *home / \".cache\" / app : *home / \".local\" / \"state\" / app;",
+    "replace": "return *home / app;",
+    "test": "bash scripts/linux/tests/test-install-paths.sh",
+    "why": "Without XDG variables the cache goes to ~/.cache and the logs to ~/.local/state."
   }
 ]

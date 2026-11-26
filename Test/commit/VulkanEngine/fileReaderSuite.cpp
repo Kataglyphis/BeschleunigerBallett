@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -20,13 +22,17 @@ using Kataglyphis::Shared::getBaseDir;
 using Kataglyphis::Shared::isWindowsReservedDeviceName;
 using Kataglyphis::Shared::readBinaryFile;
 using Kataglyphis::Shared::readTextFile;
-using Kataglyphis::Shared::resolveResourceRelativePath;
+using Kataglyphis::Shared::resolveResourceRelativePathFrom;
 
 namespace {
 
 std::filesystem::path uniqueTempPath(const std::string &name) { return std::filesystem::temp_directory_path() / name; }
 
-// The working directory is process-global and resolveResourceRelativePath reads it, so always restore it.
+// No executable directory: these pin the working-directory walk alone, whatever tree the suite binary sits in.
+auto resolveFromWorkingDirectory(std::string_view relative)
+{ return resolveResourceRelativePathFrom(std::nullopt, relative); }
+
+// The working directory is process-global and the resolver reads it, so always restore it.
 class ScopedWorkingDirectory
 {
   public:
@@ -324,7 +330,7 @@ TEST(ResourcePathsUnit, ResolvesAtDepthZero)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(root);
-    const auto resolved = resolveResourceRelativePath("Models");
+    const auto resolved = resolveFromWorkingDirectory("Models");
     ASSERT_TRUE(resolved.has_value());
     EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
 
@@ -342,7 +348,7 @@ TEST(ResourcePathsUnit, ResolvesAtDepthThree)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(leaf);
-    const auto resolved = resolveResourceRelativePath("Models");
+    const auto resolved = resolveFromWorkingDirectory("Models");
     ASSERT_TRUE(resolved.has_value());
     EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
 
@@ -362,7 +368,7 @@ TEST(ResourcePathsUnit, MissesPastTheDepthCap)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(leaf);
-    EXPECT_FALSE(resolveResourceRelativePath("Models").has_value());
+    EXPECT_FALSE(resolveFromWorkingDirectory("Models").has_value());
 
     std::filesystem::remove_all(root, ec);
 }
@@ -378,7 +384,7 @@ TEST(ResourcePathsUnit, FindsAnOuterResourcesTreeWhenTheInnerOneLacksTheFile)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(root / "inner");
-    const auto resolved = resolveResourceRelativePath("Models");
+    const auto resolved = resolveFromWorkingDirectory("Models");
     ASSERT_TRUE(resolved.has_value());
     EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
 
@@ -395,10 +401,10 @@ TEST(ResourcePathsUnit, AFileCreatedAfterAMissResolves)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(root);
-    EXPECT_FALSE(resolveResourceRelativePath("Models").has_value());
+    EXPECT_FALSE(resolveFromWorkingDirectory("Models").has_value());
     std::filesystem::create_directories(root / "Resources" / "Models", ec);
     ASSERT_FALSE(ec);
-    const auto resolved = resolveResourceRelativePath("Models");
+    const auto resolved = resolveFromWorkingDirectory("Models");
     ASSERT_TRUE(resolved.has_value());
     EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
 
@@ -419,13 +425,13 @@ TEST(ResourcePathsUnit, FollowsAWorkingDirectoryChange)
 
     {
         ScopedWorkingDirectory cwdGuard(first);
-        EXPECT_TRUE(resolveResourceRelativePath("OnlyInFirst").has_value());
-        EXPECT_FALSE(resolveResourceRelativePath("OnlyInSecond").has_value());
+        EXPECT_TRUE(resolveFromWorkingDirectory("OnlyInFirst").has_value());
+        EXPECT_FALSE(resolveFromWorkingDirectory("OnlyInSecond").has_value());
     }
     {
         ScopedWorkingDirectory cwdGuard(second);
-        EXPECT_TRUE(resolveResourceRelativePath("OnlyInSecond").has_value());
-        EXPECT_FALSE(resolveResourceRelativePath("OnlyInFirst").has_value());
+        EXPECT_TRUE(resolveFromWorkingDirectory("OnlyInSecond").has_value());
+        EXPECT_FALSE(resolveFromWorkingDirectory("OnlyInFirst").has_value());
     }
 
     std::filesystem::remove_all(first, ec);
@@ -441,7 +447,7 @@ TEST(ResourcePathsUnit, RejectsRelativePathEscapingTheTree)
     ASSERT_FALSE(ec);
 
     ScopedWorkingDirectory cwdGuard(root);
-    EXPECT_FALSE(resolveResourceRelativePath("../etc/passwd").has_value());
+    EXPECT_FALSE(resolveFromWorkingDirectory("../etc/passwd").has_value());
 
     std::filesystem::remove_all(root, ec);
 }

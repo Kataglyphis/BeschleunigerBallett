@@ -20,14 +20,20 @@ module;
 
 module kataglyphis.vulkan.device;
 
+import kataglyphis.shared.util.resource_paths;
+
 namespace {
 
 auto readGpuSelectionFromEnvironment() -> std::string
 { return Kataglyphis::environmentVariable("KATAGLYPHIS_VK_GPU").value_or(""); }
 
-// Relative to the working directory, like Resources/ and logs/.
+// Per user: Program Files is read-only, and the cwd of a shortcut is no place for state; empty when there is none.
 auto pipelineCacheFilePath() -> std::filesystem::path
-{ return std::filesystem::path("pipeline_cache") / "kataglyphis_pipeline.cache"; }
+{
+    const auto directory = Kataglyphis::Shared::userCacheDirectory();
+    if (!directory.has_value()) { return {}; }
+    return *directory / "kataglyphis_pipeline.cache";
+}
 
 auto deviceTypeToString(vk::PhysicalDeviceType type) -> const char *
 {
@@ -88,9 +94,12 @@ void Kataglyphis::VulkanDevice::create_pipeline_cache()
 {
     std::vector<char> initial_data;
     const std::filesystem::path cache_file = pipelineCacheFilePath();
+    if (cache_file.empty()) {
+        spdlog::warn("No per-user cache directory (HOME/LOCALAPPDATA unset); the pipeline cache is not kept.");
+    }
 
     std::error_code file_error;
-    if (std::filesystem::exists(cache_file, file_error) && !file_error) {
+    if (!cache_file.empty() && std::filesystem::exists(cache_file, file_error) && !file_error) {
         std::ifstream cache_stream(cache_file, std::ios::binary | std::ios::ate);
         if (cache_stream) {
             const std::streamsize cache_size = cache_stream.tellg();
@@ -146,8 +155,8 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
 
     auto cache_data = logical_device.getPipelineCacheData(pipeline_cache);
     const bool cache_data_ok = cache_data.result == vk::Result::eSuccess;
-    if (cache_data_ok && !cache_data.value.empty()) {
-        const std::filesystem::path cache_file = pipelineCacheFilePath();
+    const std::filesystem::path cache_file = pipelineCacheFilePath();
+    if (cache_data_ok && !cache_data.value.empty() && !cache_file.empty()) {
         std::error_code dir_error;
         std::filesystem::create_directories(cache_file.parent_path(), dir_error);
         if (dir_error) {
