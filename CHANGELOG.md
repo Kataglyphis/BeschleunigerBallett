@@ -10,6 +10,15 @@ with this file's `## [<version>]` section as the release notes, so before a merg
 `VERSION.txt` and turn `## [Unreleased]` into that section. The notes of v1.4.2 and earlier are on
 the GitHub releases themselves.
 
+## [Unreleased]
+
+### Fixed
+
+- CI's gcc job (ASan, UBSan and coverage) builds two units at a time on a 16 GB runner, not three
+  (`--mb-per-job 6500`): a GCC unit that imports an engine module holds 5-6 GB, and at three jobs the runner was
+  killed in the engine's module units, both attempts of run 45878827600 on 5befb4aa (`VulkanRenderer.ixx` among the
+  last units started each time).
+
 ## [1.7.1] - 2026-11-26
 
 ### Added

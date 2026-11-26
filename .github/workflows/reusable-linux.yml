@@ -497,6 +497,7 @@ jobs:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
 
+      # A GCC unit with ASan, UBSan and coverage importing an engine module holds 5-6 GB; three on 16 GB killed the runner.
       - name: Prepare for unit/integration tests (gcc)
         id: gcc-build
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
@@ -506,6 +507,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "linux-debug-GNU"
             --clean-build-dir true
+            --mb-per-job 6500
           log-file: logs/build-gcc-debug.log
 
       - name: Run Unit/Integration tests (gcc)
