@@ -279,6 +279,8 @@ jobs:
         with:
           registry-username: ${{ github.actor }}
           registry-password: ${{ secrets.GHCR_PAT }}
+          # Its C++ coverage tree, the whole OxidANT cargo test build and clippy outgrow fast's room beside the 72 GB image.
+          free-disk-space: 'true'
 
       # The pinned LLVM's clang-format, the binary the Windows check uses, so both lanes grade the same bytes; cmake-format beside it.
       - name: Check clang-format and cmake-format
