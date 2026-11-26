@@ -135,7 +135,9 @@ the GitHub releases themselves.
   header's warning cannot stop the build. The suites keep `-w`. Each build of `reusable-linux.yml` tees its log into
   `logs/build-<build>.log`, and the job ends with the hub's `verify_warning_census.py` over it, one lane per build and
   arch (`x64-clang-debug` ... `arm64-gcc-profile`), against `scripts/linux/warning-census.txt`, which holds no rows:
-  every lane is at zero. `docs/source/code-quality.md` has the details.
+  every lane is at zero. `docs/source/code-quality.md` has the details. The riscv64 cross build's clang 22 reports
+  Abseil's `__COUNTER__` at the line that expands `ABSL_FLAG`, where clang 23 leaves it to the system header, so
+  `Main.cpp` ignores `-Wc2y-extensions` around its one flag, under clang only.
 
 - The static-analysis job always takes the runner's full disk cleanup: a runner with 91 GB free passed the 90 GB
   floor of the fast one, and with the 72 GB image beside its coverage tree, the OxidANT workspace's test build and

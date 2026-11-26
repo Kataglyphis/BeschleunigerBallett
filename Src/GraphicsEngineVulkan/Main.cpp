@@ -24,7 +24,15 @@ import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.oxidant_diagnostics;
 
 // abseil owns argument parsing, `--help` and unknown-argument rejection; add no parser of your own.
+#if defined(__clang__)
+// clang 22 (the riscv64 cross build's) blames this line for flag.h's __COUNTER__, which 23 leaves to the system header.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wc2y-extensions"
+#endif
 ABSL_FLAG(std::string, gpu, "", "GPU selection mode (auto, dedicated, integrated)");
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
 
 namespace {
 auto normalize_gpu_mode(std::string value) -> std::string
