@@ -1,5 +1,5 @@
 # Shadow test rig - a broad solid occluder over a receiving plane.
-# Deliberately NOT a small centred box: see goldenRenderSuite.cpp. The
+# Deliberately NOT a small centred box: see goldenRenderLightSuite.cpp. The
 # occluder spans the plane so its shadow covers a large area regardless of
 # window size or how much of the viewport the GUI overlay covers.
 # Ground: 60x60 at y=0. Slab: 44 x 2 x 12, centred at (0, 9, -4).

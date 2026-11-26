@@ -2,7 +2,14 @@
 
 The `GoldenRender.*` and `Integration.*` suites in `Test/commit/VulkanEngine/` render real frames
 on a real GPU and assert on the captured pixels: the end-to-end net for render- and device-path
-changes that the CPU unit suites cannot cover.
+changes that the CPU unit suites cannot cover. `GoldenRender` keeps one subject per
+`goldenRender*Suite.cpp` (frame, scene, light, sky, material, tracing, cloud) over the header-only
+`GoldenRenderHarness.hpp`, the engine harness and pixel helpers. The header imports the engine's
+modules, so it is a file's last include (gcc rejects an include after an import), and the file
+imports the renderer too: IWYU and Windows clang-tidy look for an import in the file itself to know
+they cannot read it, and `Test/commit/VulkanEngine/CMakeLists.txt` for that line to put the unit in
+GCC's pool of one. A GCC Debug unit that imports the renderer holds 5-6 GB however short (clang
+about 1 GB), so the goldens are seven files, not more, and two of them never compile together.
 
 ## They skip without a GPU
 
@@ -356,7 +363,8 @@ run the compile script once before the engine has anything to load
 ## Writing a new golden test — cautions learned the hard way
 
 A new `GoldenRender` or `Integration` test raises the `golden-counts` marker above in the same
-change: `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` fails until it matches the suite.
+change: `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` fails until it matches the suite. It
+goes into the file of its subject; a helper a second file needs moves into `GoldenRenderHarness.hpp`.
 
 The single home for these instrument cautions; `docs/source/cpp-renderer-improvements.md`,
 `docs/source/path-tracing.md` and the suite's one-line comments link here. The expensive mistakes:

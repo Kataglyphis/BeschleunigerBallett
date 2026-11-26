@@ -245,7 +245,7 @@ golden pass with per-frame sampling disabled.
 
 <!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, PathTracingHonorsTheUntexturedMetallicFactor, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, PathTracingPassesTheWhiteMetalFurnaceTest, PathTracingFloorsAZeroRoughnessTexel, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
 
-Eleven PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
+Eleven PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderTracingSuite.cpp`,
 each red/green-proven against the pre-fix shader. Numbers are post-HDR: before
 the HDR unit, lit surfaces clamped at the UNORM ceiling (186 after tonemap)
 and hid most of every light response; lifting it widened several margins
