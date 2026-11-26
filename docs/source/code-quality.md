@@ -121,7 +121,7 @@ reads no clang 23 module file), and writes `logs/code-quality/iwyu.txt`. The
 
 Hub CON295 (c), owner decision D11 (fix first, then errors).
 
-**A warning in the product, a suite or a fuzz target is an error.** `VulkanEngineCore` and `GraphicsEngine`
+**A warning in the product, a suite or a fuzz target is an error.** `VulkanEngineCore` and `BeschleunigerBallett`
 (`Src/GraphicsEngineVulkan/CMakeLists.txt`), the three suites (`Test/cmake/CommonTestBuild.cmake`) and the fuzz
 targets (`Test/fuzz/CMakeLists.txt`) set CMake's `COMPILE_WARNING_AS_ERROR`, which CMake spells `-Werror`, or `/WX`
 under clang-cl. The suites take the project's warnings from `VulkanEngineCore`; the fuzz targets link

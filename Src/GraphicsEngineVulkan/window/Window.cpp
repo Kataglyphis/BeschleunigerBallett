@@ -92,11 +92,8 @@ auto Window::initialize(uint32_t window_width, uint32_t window_height, bool fit_
 
     // retrieve new window
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    main_window = glfwCreateWindow(static_cast<int>(window_width),
-      static_cast<int>(window_height),
-      "\\__/ Epic graphics from hell \\__/ ",
-      nullptr,
-      nullptr);
+    main_window = glfwCreateWindow(
+      static_cast<int>(window_width), static_cast<int>(window_height), "BeschleunigerBallett", nullptr, nullptr);
 
     if (main_window == nullptr) {
         std::cerr << "GLFW Window creation failed!" << '\n';

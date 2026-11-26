@@ -30,7 +30,7 @@ Created in the repository on request. Verification history:
 ## What every package ships
 
 Every package (DEB, TGZ, AppImage, ZIP, MSI, NSIS, MSIX) installs these under
-`share/licenses/GraphicsEngine/` (`/usr/share/...` in the DEB):
+`share/licenses/BeschleunigerBallett/` (`/usr/share/...` in the DEB):
 
 - `LICENSE`: the project's own text (ANTfrastructure's `CPackCommon`).
 - `third_party/<component>/`: the original license file of each library the engine
@@ -53,7 +53,7 @@ carries its `ATTRIBUTION.txt` and `LICENSES/` in `Resources/Textures/Skybox/kloo
 for older hosts; that belongs to ANTfrastructure's closure helpers. For the MSVC runtime DLLs,
 every Windows package (ZIP, MSI, NSIS, the portable bundle and the MSIX staged from it) carries
 `licenses/msvc-runtime/Redist.txt` and `README.txt` at the install root beside `bin/`, not under
-`share/licenses/GraphicsEngine/`. ANTfrastructure's `CPackCommon` installs both and appends the
+`share/licenses/BeschleunigerBallett/`. ANTfrastructure's `CPackCommon` installs both and appends the
 notice to the MSI licence page, and its `New-PortableBundle` checks the CPack MSI and ZIP for
 them; the wording is the hub's draft
 ([the MSVC runtime notice](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/third-party-licenses.md#the-msvc-runtime-notice)).

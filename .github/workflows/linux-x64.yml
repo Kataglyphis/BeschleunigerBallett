@@ -113,9 +113,9 @@ jobs:
           artifact: linux-packages-x64
           deb: '*.deb'
           # --check_resources from a foreign cwd: a shortcut starts the program anywhere, and 1.7.0 then found no shader.
-          deb-command: GraphicsEngine --version && cd "$(mktemp -d)" && GraphicsEngine --check_resources
+          deb-command: BeschleunigerBallett --version && cd "$(mktemp -d)" && BeschleunigerBallett --check_resources
           tarball: '*.tar.gz'
-          tarball-command: ./bin/GraphicsEngine --version && top="$PWD" && cd "$(mktemp -d)" && "$top/bin/GraphicsEngine" --check_resources
+          tarball-command: ./bin/BeschleunigerBallett --version && top="$PWD" && cd "$(mktemp -d)" && "$top/bin/BeschleunigerBallett" --check_resources
           appimage: '*.AppImage'
           appimage-command: '"$APPIMAGE" --version && cd "$(mktemp -d)" && "$APPIMAGE" --check_resources'
 

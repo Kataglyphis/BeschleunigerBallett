@@ -6,7 +6,7 @@ Starts the compiled executable inside the release directory and sets necessary e
 #requires -Version 7.0
 
 param (
-    [string]$ExeName = "GraphicsEngine.exe",
+    [string]$ExeName = "BeschleunigerBallett.exe",
     [Parameter(ValueFromRemainingArguments=$true)]
     [string[]]$ExeArgs
 )

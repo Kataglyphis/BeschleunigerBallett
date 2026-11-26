@@ -172,7 +172,7 @@ cannot even read this repo's presets ([the trap](#build-system-overview)).
    The build runs in the reusable container `bb-build-persistent` and **streams the finished build
    trees back into the working tree**; no `docker cp` step. Tests are skipped unless `-RunTests`
    (the CPU suites, in-container).
-2. **The artifacts are on the host** at the build-directory root: `build-clangcl-debug\GraphicsEngine.exe`,
+2. **The artifacts are on the host** at the build-directory root: `build-clangcl-debug\BeschleunigerBallett.exe`,
    `commitTestSuite.exe`, the fuzz executables, `compile_commands.json`, and `logs\`. `bin\` holds
    only the copied ASAN runtime DLL. Other configurations land in `build-clangcl-profile\` and
    `build-clangcl-release\`.
@@ -195,12 +195,18 @@ cannot even read this repo's presets ([the trap](#build-system-overview)).
 
 `CMakePresets.json` drives everything: pick a preset, never an ad-hoc CMake command line.
 
-**The repository and the CMake project are spelled differently, on purpose.** `GraphicsEngine` is
-the CMake project and executable name (`CMakeLists.txt:8`), matching `Src/GraphicsEngineVulkan/`;
-Sphinx (`project` in `docs/source/conf.py`) and Doxygen (`Doxyfile.in:45`) publish under
-`BeschleunigerBallett`, the repository name. Build directories, preset names and the MSIX package
-(`Msix.PackageNameDefault` in `scripts/windows/Build-Windows.config.psd1`) follow the CMake name;
-nothing here is a leftover to be unified.
+**The program is `BeschleunigerBallett`** (owner, 1.7.1): the CMake project and executable
+(`CMakeLists.txt:8`), the packages, their file names (`<name>-<version>-<OS>-<arch>`, set in
+`cmake/CPackOptions.cmake` over the hub's default), the desktop entry and the window title. Two
+identities keep 1.7.0's value so an upgrade works: the MSI's `WIX_UPGRADE_GUID` and the MSIX
+`Identity Name` (`Msix.IdentityNameDefault`, `GraphicsEngine`, in
+`scripts/windows/Build-Windows.config.psd1`); the .deb replaces the old `graphicsengine` package.
+`Src/GraphicsEngineVulkan/` and the `GraphicsEngineVulkan` logger keep the old spelling.
+
+An installed program finds its files from its own location (`Src/shared/util/InstallPaths.hpp`:
+`bin/..`, its own folder, or `lib/<name>/../..` for the Linux launcher), never the working directory,
+which only finds a source tree; the pipeline cache and the log are per user. `--check_resources`
+proves it without a GPU, and every package lane runs it from a foreign folder.
 
 The version is the repo-root **`VERSION.txt`**, read by `CMakeLists.txt:4` (into
 `project(... VERSION ...)` and the `PROJECT_VERSION` compile definition), `docs/source/conf.py`
@@ -247,16 +253,16 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
   builds on `x64-ClangCL-Windows-Release`.
 - The Release package step gets its `cmake --build --target package` arguments and parallelism
   from ANTfrastructure's `Get-CmakeBuildArgs`; keep the package target here, not a copied parser.
-- The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/GraphicsEngine/LICENSE`.
+- The Linux DEB layout gate requires the complete project LICENSE at `usr/share/licenses/BeschleunigerBallett/LICENSE`.
 - No package ships a build-time file: `check-deb-layout.sh` and `Build-Windows.ps1`'s `New-PortableBundle -ForbidBuildTimeFiles` apply the hub's install-tree rule (headers, CMake and pkg-config packages, `.lib` and `.a`; googletest installed them until `INSTALL_GTEST` went OFF).
 - The hub's hardening gates (CON294) read the shipped binaries: the Linux release job runs `verify-elf-hardening.sh`
-  on the .deb's `usr/lib/graphicsengine/GraphicsEngine` (PIE, RELRO, BIND_NOW, stack protector, `_FORTIFY_SOURCE`),
+  on the .deb's `usr/lib/beschleunigerballett/BeschleunigerBallett` (PIE, RELRO, BIND_NOW, stack protector, `_FORTIFY_SOURCE`),
   and `Build-Windows.ps1` runs `Assert-PeHardening` over every `.exe` and `.dll` of the portable bundle (ASLR, DEP,
   high-entropy VA, CFG). Before the hub pin `734ab966` both failed: no BIND_NOW, no CFG bit in `GraphicsEngine.exe`.
 - MSIX packaging passes `images/logo.png` to the shared renderer; transparent placeholder logos are forbidden.
 - A selected MSIX build is critical and checks the completed package for the project license and both Sponza texts using the shared verifier.
-- The Windows GraphicsEngine executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
-- Every package installs third-party license texts under `share/licenses/GraphicsEngine/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
+- The Windows BeschleunigerBallett executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
+- Every package installs third-party license texts under `share/licenses/BeschleunigerBallett/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
 - The C++ bridge's crate texts come from the hub's `stage-cargo-licenses.py` with OxidANT's reviewed policy (`cmake/CargoLicenses.cmake`); never write a notice for a crate that lacks one, add the original text to OxidANT's policy.
 - The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 60 runtime packages (counted on all five bridge targets); raise the budget only with a reviewed dependency.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
@@ -557,7 +563,7 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   without validation layers unless `KATAGLYPHIS_VULKAN_VALIDATION` is set (the Windows x64 lane's
   lavapipe step sets it, with the layer staged beside the suite). They still enable
   `VK_EXT_debug_utils` where the loader lists it, so captures keep the labels and object names.
-- The build copies the ASAN runtime DLL next to `GraphicsEngine.exe`, and the run helpers set
+- The build copies the ASAN runtime DLL next to `BeschleunigerBallett.exe`, and the run helpers set
   `ASAN_OPTIONS` with a relative `log_path`
   ([why both](third_party/ANTfrastructure/docs/agentic-loop-build-matrix.md#windows-asan-note)).
 - **VSync is on by default** (Fifo, as the Rust renderer presents); the editor's VSync switch turns
@@ -664,7 +670,7 @@ distro clang-format (21.1.8 flagged 41 of the swept files) never grades. The swe
 `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per
 clone.
 
-**A warning in our code is an error.** `VulkanEngineCore`, `GraphicsEngine`, the three suites and the fuzz targets
+**A warning in our code is an error.** `VulkanEngineCore`, `BeschleunigerBallett`, the three suites and the fuzz targets
 build with CMake's `COMPILE_WARNING_AS_ERROR` (`-Werror`, `/WX` under clang-cl) and the project's warnings; the
 foreign headers they read are SYSTEM (GoogleTest, Google Benchmark and FuzzTest too; Abseil not under clang-cl, which
 misparses it so). Every Linux CI build and each clang-cl build of both Windows lanes (`Build-Windows.ps1
@@ -783,7 +789,7 @@ lane's to gate: since 2026-10-11 the hub proves it in its own `windows-arm64.yml
 defect the renderer never touches cannot turn this lane red or skip its GPU suites.
 
 The hub's `Hardening.cmake` links `/CETCOMPAT` on x64 only. The run job borrows the Khronos loader
-from LunarG's arm64 runtime, pinned by hash, and calls `GraphicsEngine.exe --version`: the engine
+from LunarG's arm64 runtime, pinned by hash, and calls `BeschleunigerBallett.exe --version` and `--check_resources`: the engine
 imports `vulkan-1.dll`, which a device gets from its GPU driver and the GPU-less runner has not got.
 The bundle never ships the loader. The image, the arch gate over `dist/windows-arm64`, the upload
 and the run job are the hub's:

@@ -50,7 +50,7 @@ Describe 'MSIX project logo wiring' {
     . (Get-ScriptFunctionDefinition -ScriptPath (Join-Path $PSScriptRoot '..\Build-Windows.ps1') -FunctionName 'Assert-MsixLicenseContents')
     $dir = New-TestDir -Prefix 'ballett-msix-license-'
     $build = Join-Path $dir 'build'
-    $licenses = 'share/licenses/GraphicsEngine'
+    $licenses = 'share/licenses/BeschleunigerBallett'
     $members = [ordered]@{
       "$licenses/LICENSE" = (Join-Path $workspace 'LICENSE')
       'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = (Join-Path $workspace 'licenses/CC-BY-3.0.txt')

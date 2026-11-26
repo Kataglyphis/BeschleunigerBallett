@@ -1,4 +1,4 @@
-# Only values that identify GraphicsEngine; the packaging wiring lives in ANTfrastructure's CPackCommon.
+# Only values that identify BeschleunigerBallett; the packaging wiring lives in ANTfrastructure's CPackCommon.
 include(CPackCommon)
 
 kataglyphis_cpack_common(
@@ -25,18 +25,25 @@ kataglyphis_cpack_common(
   ON
   # AppImage resolves the .desktop file and icon by name, so both must match what CMakeLists.txt installs.
   APPIMAGE_DESKTOP_FILE
-  "GraphicsEngine.desktop"
+  "BeschleunigerBallett.desktop"
   APPIMAGE_ICON_NAME
-  "Engine_logo"
+  "BeschleunigerBallett"
   # glibc travels (LOADER below); the Vulkan loader and its drivers must be the machine's.
   DEBIAN_DEPENDS
   "libvulkan1")
+
+# The user's name for a package: no build type or compiler in it (the hub's default names both).
+set(CPACK_PACKAGE_FILE_NAME "${PROJECT_NAME}-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${KATAGLYPHIS_CPACK_ARCH}")
+# Up to 1.7.0 the .deb was graphicsengine; it ships the same /usr/Resources files, so it must step aside.
+set(CPACK_DEBIAN_PACKAGE_REPLACES "graphicsengine")
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "graphicsengine")
+set(CPACK_DEBIAN_PACKAGE_PROVIDES "graphicsengine")
 
 # The compiler's libstdc++ and the image's glibc: GCC 16.2's and glibc 2.43 are newer than Debian 13's.
 kataglyphis_install_linux_closure(
   LOADER
   PRIVATE_DIR
-  graphicsengine
+  beschleunigerballett
   TARGETS
   ${PROJECT_NAME}
   SYSTEM

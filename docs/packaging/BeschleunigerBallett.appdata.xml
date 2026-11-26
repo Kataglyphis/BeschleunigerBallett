@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>de.jonasheinle.GraphicsEngine</id>
-  <name>GraphicsEngine</name>
+  <id>de.jonasheinle.BeschleunigerBallett</id>
+  <name>BeschleunigerBallett</name>
   <summary>Epic GPU accelerated rendering engine using Vulkan and C++</summary>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
   <description>
     <p>
-      GraphicsEngine is a high-performance Vulkan-based rendering and compute
+      BeschleunigerBallett is a high-performance Vulkan-based rendering and compute
       playground focused on real-time graphics experiments.
     </p>
   </description>
   <url type="homepage">https://jonasheinle.de/</url>
-  <launchable type="desktop-id">GraphicsEngine.desktop</launchable>
+  <launchable type="desktop-id">BeschleunigerBallett.desktop</launchable>
   <categories>
     <category>Graphics</category>
     <category>Development</category>

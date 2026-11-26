@@ -5,7 +5,7 @@ file(READ "VERSION.txt" PROJECT_VERSION_STR)
 string(STRIP "${PROJECT_VERSION_STR}" PROJECT_VERSION_STR)
 
 project(
-  GraphicsEngine
+  BeschleunigerBallett
   VERSION ${PROJECT_VERSION_STR}
   DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
@@ -153,23 +153,23 @@ set(_myproject_imgui_fonts
 install(FILES ${_myproject_imgui_fonts} DESTINATION third_party/IMGUI/misc/fonts/)
 if(UNIX AND NOT APPLE)
   # share/, not usr/share/: the .deb's /usr prefix completes it, and CPack's AppImage finds the entry by name.
-  install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION share/applications)
+  install(FILES docs/packaging/BeschleunigerBallett.desktop DESTINATION share/applications)
   install(
-    FILES docs/packaging/GraphicsEngine.appdata.xml
+    FILES docs/packaging/BeschleunigerBallett.appdata.xml
     DESTINATION share/metainfo
-    RENAME de.jonasheinle.GraphicsEngine.appdata.xml)
+    RENAME de.jonasheinle.BeschleunigerBallett.appdata.xml)
   install(
     FILES images/Engine_logo.png
     DESTINATION share/icons/hicolor/256x256/apps
-    RENAME Engine_logo.png)
+    RENAME BeschleunigerBallett.png)
   install(
     FILES images/Engine_logo.png
     DESTINATION share/icons/hicolor/256x256/apps
-    RENAME Engine_logo)
+    RENAME BeschleunigerBallett)
   install(
     FILES images/Engine_logo.png
     DESTINATION .
-    RENAME Engine_logo.png)
+    RENAME BeschleunigerBallett.png)
 endif()
 
 include(cmake/CPackOptions.cmake)

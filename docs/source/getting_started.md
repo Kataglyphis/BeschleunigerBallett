@@ -39,7 +39,7 @@ Run `bash scripts/linux/compile-slang-shaders.sh` (Windows: `scripts\windows\Bui
 first, or build through the wrappers below, which compile them for you
 ([which builds do](shader-build-pipeline.md)).
 
-`GraphicsEngine`, `VulkanEngineCore`, the suites and the fuzz targets treat a warning as an error (`-Werror`, `/WX`
+`BeschleunigerBallett`, `VulkanEngineCore`, the suites and the fuzz targets treat a warning as an error (`-Werror`, `/WX`
 under clang-cl); configure with `--compile-no-warning-as-error` to try a compiler the image does not ship
 ([warnings](code-quality.md#warnings-errors-in-every-own-target-a-census-behind-them)).
 
@@ -153,7 +153,7 @@ pwsh -ExecutionPolicy Bypass -File .\scripts\windows\Build-Windows-Container.ps1
 
 ### Linux release packages
 
-The DEB layout gate requires the complete project `LICENSE` in `/usr/share/licenses/GraphicsEngine/`,
+The DEB layout gate requires the complete project `LICENSE` in `/usr/share/licenses/BeschleunigerBallett/`,
 every third-party text listed in `licenses/third-party-licenses.txt` beside it, GSL's and abseil's,
 and the C++ bridge's crate texts with their `manifest.json` ([licences](LICENSES-README.md#what-every-package-ships)).
 It does not inventory the C and C++ runtime the package carries for older hosts.
@@ -180,7 +180,7 @@ the installed model; the AssetANT archive remains unchanged.
 ### Windows MSIX
 
 The MSIX uses `images/logo.png` for its application tiles and logo assets; the shared packager renders the required sizes.
-The Windows GraphicsEngine executable embeds the project icon via the shared CMake resource helper.
+The Windows BeschleunigerBallett executable embeds the project icon via the shared CMake resource helper.
 
 The Windows release workflow can produce an MSIX package. It is signed when a PFX certificate sits at the repository root (the first `*.pfx` there, gitignored; without one the build warns and the MSIX stays unsigned), with the password from `MSIX_PFX_PASSWORD`, else `MSIX_CERT_PASSWORD`. The signing is ANTfrastructure's `Invoke-MsixPackage -Sign -SigningRoot <repo root>`.
 

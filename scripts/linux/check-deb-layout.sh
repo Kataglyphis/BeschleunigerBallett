@@ -12,11 +12,11 @@ listing="$(dpkg-deb -c "${deb}" | awk '{print $6}')"
 fails=0
 
 for required in \
-  ./usr/bin/GraphicsEngine \
-  ./usr/share/applications/GraphicsEngine.desktop \
-  ./usr/share/metainfo/de.jonasheinle.GraphicsEngine.appdata.xml \
-  ./usr/share/licenses/GraphicsEngine/LICENSE \
-  ./usr/share/icons/hicolor/256x256/apps/Engine_logo.png; do
+  ./usr/bin/BeschleunigerBallett \
+  ./usr/share/applications/BeschleunigerBallett.desktop \
+  ./usr/share/metainfo/de.jonasheinle.BeschleunigerBallett.appdata.xml \
+  ./usr/share/licenses/BeschleunigerBallett/LICENSE \
+  ./usr/share/icons/hicolor/256x256/apps/BeschleunigerBallett.png; do
   if ! grep -qxF "${required}" <<< "${listing}"; then
     printf 'FAIL  missing %s\n' "${required}"
     fails=$((fails + 1))
@@ -24,7 +24,7 @@ for required in \
 done
 
 if ! python3 "${license_verifier}" "${deb}" \
-  --require "usr/share/licenses/GraphicsEngine/LICENSE=${repo_root}/LICENSE" \
+  --require "usr/share/licenses/BeschleunigerBallett/LICENSE=${repo_root}/LICENSE" \
   --require "usr/Resources/Models/crytek-sponza/CC-BY-3.0.txt=${repo_root}/licenses/CC-BY-3.0.txt" \
   --require "usr/Resources/Models/crytek-sponza/crytek-sponza.NOTICE=${repo_root}/licenses/crytek-sponza.NOTICE"; then
   printf 'FAIL  an installed project or scene license text is missing or altered\n'
@@ -32,7 +32,7 @@ if ! python3 "${license_verifier}" "${deb}" \
 fi
 
 # The checkout holds every mapped source; the FetchContent and Cargo texts are checked by presence and the bridge's own entry.
-licenses=usr/share/licenses/GraphicsEngine
+licenses=usr/share/licenses/BeschleunigerBallett
 third_party_rules=(--require "${licenses}/cargo/kataglyphis_cxx_bridge@*/workspace/LICENSE=${repo_root}/third_party/OxidANT/LICENSE")
 while IFS='=' read -r installed source; do
   third_party_rules+=(--require "${licenses}/third_party/${installed}=${repo_root}/${source}")

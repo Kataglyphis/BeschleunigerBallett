@@ -5,7 +5,7 @@ Runs the local clang-cl debug test flow, optional fuzz tests, and then launches 
 #>
 
 param (
-    [string]$ExeName = "GraphicsEngine.exe",
+    [string]$ExeName = "BeschleunigerBallett.exe",
     [switch]$SkipTests,
     [switch]$SkipFuzzTests,
     [switch]$RunVulkanIntegrationTest,

@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=GraphicsEngine
+Name=BeschleunigerBallett
 Comment=Epic GPU accelerated rendering engine using Vulkan and C++
-Exec=GraphicsEngine
-Icon=Engine_logo
+Exec=BeschleunigerBallett
+Icon=BeschleunigerBallett
 Terminal=false
 Categories=Graphics;Development;

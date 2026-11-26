@@ -54,17 +54,17 @@ jobs:
         # Start-Process -Wait, as the Release program is a GUI one; --check_resources from a foreign folder, as a shortcut starts it.
         foreach ($arguments in '--version', '--check_resources') {
           $out = Join-Path $env:RUNNER_TEMP 'engine-out.txt'
-          $p = Start-Process -FilePath (Resolve-Path ./bundle/bin/GraphicsEngine.exe).Path -ArgumentList $arguments -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
+          $p = Start-Process -FilePath (Resolve-Path ./bundle/bin/BeschleunigerBallett.exe).Path -ArgumentList $arguments -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
           Get-Content -LiteralPath $out
-          if ($p.ExitCode) { throw "./bundle/bin/GraphicsEngine.exe $arguments exited $($p.ExitCode)" }
+          if ($p.ExitCode) { throw "./bundle/bin/BeschleunigerBallett.exe $arguments exited $($p.ExitCode)" }
         }
       # The same engine, as the setup .exe installed it (the hub installs it, grades every binary ARM64, then uninstalls).
       installed-run-command: |
         foreach ($arguments in '--version', '--check_resources') {
           $out = Join-Path $env:RUNNER_TEMP 'engine-out.txt'
-          $p = Start-Process -FilePath (Resolve-Path ./bin/GraphicsEngine.exe).Path -ArgumentList $arguments -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
+          $p = Start-Process -FilePath (Resolve-Path ./bin/BeschleunigerBallett.exe).Path -ArgumentList $arguments -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru -NoNewWindow -RedirectStandardOutput $out
           Get-Content -LiteralPath $out
-          if ($p.ExitCode) { throw "./bin/GraphicsEngine.exe $arguments exited $($p.ExitCode)" }
+          if ($p.ExitCode) { throw "./bin/BeschleunigerBallett.exe $arguments exited $($p.ExitCode)" }
         }
       # The commit suite (Release), the ASan suite (Debug, /MDd) and the perf suite (Profile), run natively; filter and list in tests.json (hub CON43).
       test-artifact-dir: dist/windows-arm64-tests

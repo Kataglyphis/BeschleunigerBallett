@@ -19,7 +19,7 @@ Set-Location -LiteralPath $workspace
 $debugDir = Join-Path $workspace 'build-clangcl-debug'
 $profileDir = Join-Path $workspace 'build-clangcl-profile'
 $failed = [System.Collections.Generic.List[string]]::new()
-$engineExe = 'GraphicsEngine.exe'
+$engineExe = 'BeschleunigerBallett.exe'
 
 # A shortcut starts the program in any folder (1.7.0's MSI: bin\, and no shader found), so the check runs from %TEMP%.
 function Test-InstalledTree {

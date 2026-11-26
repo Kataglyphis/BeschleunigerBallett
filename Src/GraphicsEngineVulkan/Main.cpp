@@ -62,7 +62,7 @@ auto normalize_gpu_mode(std::string value) -> std::string
 auto version_string() -> std::string
 {
     namespace config = Kataglyphis::RendererConfig;
-    return "GraphicsEngine " PROJECT_VERSION " (Vulkan " + std::string(config::vulkanVersionMajor) + "."
+    return "BeschleunigerBallett " PROJECT_VERSION " (Vulkan " + std::string(config::vulkanVersionMajor) + "."
            + std::string(config::vulkanVersionMinor) + ", OxidANT " + Kataglyphis::oxidantVersion() + ")\n";
 }
 

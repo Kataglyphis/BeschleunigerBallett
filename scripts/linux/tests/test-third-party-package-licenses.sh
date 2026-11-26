@@ -12,7 +12,7 @@ verifier="$(antfrastructure_path linux/scripts/verify_package_license.py)" || ex
 python="$(command -v python3 || command -v python)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
-licenses=share/licenses/GraphicsEngine
+licenses=share/licenses/BeschleunigerBallett
 # A Windows CMake reads Git Bash paths only in mixed form.
 native() { if command -v cygpath > /dev/null; then cygpath -m "$1"; else printf '%s' "$1"; fi; }
 
@@ -26,7 +26,7 @@ t_assert_ok cpack_first "${root}/CMakeLists.txt"
 grep -v '^include(CPackCommon)' "${root}/CMakeLists.txt" > "${work}/CMakeLists.mutant"
 t_assert_fails cpack_first "${work}/CMakeLists.mutant"
 
-# GraphicsEngine with GSL and abseil taken from local directories instead of their repositories.
+# BeschleunigerBallett with GSL and abseil taken from local directories instead of their repositories.
 fixture() {
   local dir="$1" module="$2"
   mkdir -p "${dir}/gsl" "${dir}/abseil"
@@ -34,7 +34,7 @@ fixture() {
   printf 'abseil license\n' > "${dir}/abseil/LICENSE"
   cat > "${dir}/CMakeLists.txt" <<CMAKE
 cmake_minimum_required(VERSION 3.24)
-project(GraphicsEngine NONE)
+project(BeschleunigerBallett NONE)
 include(FetchContent)
 FetchContent_Declare(GSL GIT_REPOSITORY https://invalid.example/gsl.git)
 FetchContent_Declare(abseil-cpp GIT_REPOSITORY https://invalid.example/abseil.git)
@@ -89,7 +89,7 @@ set(Rust_CARGO_TARGET_CACHED ${target} CACHE INTERNAL "")
 CMAKE
 cat > "${work}/cargo/CMakeLists.txt" <<CMAKE
 cmake_minimum_required(VERSION 3.24)
-project(GraphicsEngine NONE)
+project(BeschleunigerBallett NONE)
 add_subdirectory(rust)
 include("$(native "${root}")/cmake/CargoLicenses.cmake")
 set(CPACK_PACKAGE_FILE_NAME cargo)

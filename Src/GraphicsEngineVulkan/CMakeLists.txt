@@ -120,7 +120,7 @@ target_compile_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsaniti
                                                $<${_kat_dbg_linux}:-fno-omit-frame-pointer>)
 target_link_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>)
 
-# GraphicsEngine executable
+# The BeschleunigerBallett executable
 add_executable(${PROJECT_NAME})
 include(CPackCommon)
 kataglyphis_add_windows_icon(${PROJECT_NAME} "${PROJECT_SOURCE_DIR}/images/faviconNew.ico")

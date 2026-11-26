@@ -38,7 +38,9 @@
   }
 
   Msix = @{
-    PackageNameDefault = 'GraphicsEngine'
+    PackageNameDefault = 'BeschleunigerBallett'
+    # STABLE FOREVER: the Identity an installed MSIX upgrades by; 1.7.0 shipped it as GraphicsEngine.
+    IdentityNameDefault = 'GraphicsEngine'
     Publisher = 'CN=Jonas Heinle'
     # No Version key: the MSIX version comes only from the repo-root VERSION.txt.
     MinVersion = '10.0.17763.0'

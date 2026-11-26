@@ -57,7 +57,7 @@ Import-BuildModule @(
 
 function Assert-MsixLicenseContents {
   param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][string]$WorkspacePath, [Parameter(Mandatory)][string]$BuildPath)
-  $licenses = 'share/licenses/GraphicsEngine'
+  $licenses = 'share/licenses/BeschleunigerBallett'
   $texts = [ordered]@{
     "$licenses/LICENSE" = Join-Path $WorkspacePath 'LICENSE'
     'Resources/Models/crytek-sponza/CC-BY-3.0.txt' = Join-Path $WorkspacePath 'licenses/CC-BY-3.0.txt'
@@ -226,7 +226,7 @@ function Assert-ClangClAvailable {
 $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnError
 
 # Ensure no running instance of the application or crash handler is blocking the build output
-Stop-Process -Name "GraphicsEngine", "WerFault" -Force -ErrorAction SilentlyContinue
+Stop-Process -Name "BeschleunigerBallett", "GraphicsEngine", "WerFault" -Force -ErrorAction SilentlyContinue
 
 try {
   Open-BuildLog -Context $context
@@ -482,6 +482,7 @@ try {
       }
 
       $msixName = Get-OrDefault $env:MSIX_PACKAGE_NAME (Get-ConfigValue -Config $config -Path 'Msix.PackageNameDefault')
+      $msixIdentity = Get-OrDefault $env:MSIX_IDENTITY_NAME (Get-ConfigValue -Config $config -Path 'Msix.IdentityNameDefault')
       $msixPublisher = Get-OrDefault $env:MSIX_PUBLISHER (Get-ConfigValue -Config $config -Path 'Msix.Publisher')
 
       $msixVersion = Get-PackageVersion -WorkspacePath $workspacePath -VersionFile 'VERSION.txt' -Required
@@ -508,12 +509,15 @@ try {
         throw "Expected executable not found in MSIX staging: $exeRelPath"
       }
 
-      $msixOutPath = Join-Path $distArch "msix\${msixName}_$packageArch.msix"
+      # Named like the CPack packages: <name>-<version>-Windows-<arch>.
+      $msixFileArch = @{ x64 = 'x86_64'; arm64 = 'aarch64' }[$packageArch]
+      $msixOutPath = Join-Path $distArch "msix\$msixName-$((Get-Content -LiteralPath (Join-Path $workspacePath 'VERSION.txt') -Raw).Trim())-Windows-$msixFileArch.msix"
       Invoke-MsixPackage -Context $context `
         -StagingDir $msixStaging `
         -ManifestTemplatePath $manifestTemplatePath `
         -TokenMap @{
           '__MSIX_NAME__' = $msixName
+          '__MSIX_IDENTITY__' = $msixIdentity
           '__MSIX_PUBLISHER__' = $msixPublisher
           '__MSIX_VERSION__' = $msixVersion
           '__MSIX_ARCH__' = $packageArch

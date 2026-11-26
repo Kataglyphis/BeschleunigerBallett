@@ -8,7 +8,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 # Not a third_party literal: antfrastructure_source honours ANTFRASTRUCTURE_DIR.
 antfrastructure_source linux/scripts/lib/app-runner.sh
 
-APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"
+APP_RUNNER_DEFAULT_EXE_NAME="BeschleunigerBallett"
 APP_RUNNER_DEFAULT_BUILD_DIR="build-release"
 APP_RUNNER_DEFAULT_BUILD_TYPE="Release"
 APP_RUNNER_LABEL="release"
