@@ -75,19 +75,6 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 ### P2: medium
 
-- [ ] `C++` **Split the two giant suites by subject** (M).
-  `goldenRenderSuite.cpp` (7708 lines, 101 tests) and `buildIntegritySuite.cpp` (12014 lines, 194 tests) are one
-  translation unit each: a changed test recompiles the whole file, finding one means scrolling thousands of lines,
-  and in Phase 20 a local GCC Debug build at -j4 stalled a 12 GB container for 27 min with four compiles of 2.6-3.9 GB
-  each, among them `buildIntegritySuite.cpp`; GCC builds stay at -j2 locally since. First measure each suite unit's
-  peak memory (`/usr/bin/time -v`, GCC and clang, arm64 Debug) against a small unit with the same imports: splitting
-  divides only the tests' own share (`DeferredRasterizer.cpp`, 461 lines, peaked alike, so its imports dominate).
-  Then split each suite into files of a few hundred lines by subject, with a shared helper header; keep every test
-  name (CI filters, `BuildIntegrity`'s Windows lists and the riscv64 shards name them) and the commit-suite count,
-  and move the source reads that name the two files (three in `buildIntegritySuite.cpp`, one in
-  `repoFilesSuite.cpp`). Done when the per-unit peak and the GCC -j that fits 12 GB are measured before and after.
-
-
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
   geometry index, so a hit on any mesh but a model's first read past mesh 0's index buffer.
@@ -96,7 +83,7 @@ takes UTF-8 paths and runs inside `guarded()`.
   `commitTestSuite.exe --gtest_filter='GoldenRender.PathTracing*:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
   on the host. Once it passes, retire the "Known issue" section of
   `docs/source/gpu-golden-testing.md`, with the `excluded=3` count and the `--gtest_filter` line
-  `buildIntegritySuite.cpp` pins in it.
+  `buildIntegrityDocsSuite.cpp` pins in it.
 
 Loader:
 
@@ -187,6 +174,14 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `C++` **A test unit that imports the renderer costs GCC 5-6 GB and 40-65 s** (M). Clang needs about 1 GB.
+  Measured in Phase 22 on arm64 Debug: the import alone holds 4.9 GB under GCC, so the seven golden files cost
+  5.7 GB each however short. The eleven such units (the goldens, `commitSuite`, `deviceLossSuite`,
+  `editorInputSuite`, `renderModesSuite`) compile one at a time under GCC (Ninja pool `kataglyphis_heavy_tests`),
+  about 10 min of GCC CPU in a chain, and a local GCC build stays at -j2. A narrower module surface for the tests
+  (the harness and each subject importing only what it reads) would cut both, and would make a finer golden split
+  cheap. Measure as Phase 22 did: rerun one unit's compile command from `compile_commands.json` alone and read
+  `wait4`'s maxrss (the CI image has no `/usr/bin/time`).
 - [ ] `C++` **`CloudCompositeAndTracedSkyAreFreeOfSyncHazards` hung once on aarch64 llvmpipe** (S, needs a repro).
   A full local ctest timed out on it at 1500 s, against 20-42 s elsewhere (CI x64 20.1 s, arm64 29.6 s, two solo
   reruns 42 s). Its last line was the BLAS compaction after the model load, so it stalled in the frame loop with
@@ -426,7 +421,7 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 - **[P3] `bugprone-unchecked-optional-access` is off for `Test/`**: clang-tidy segfaults in its
   dataflow on gtest bodies. Re-tested 2026-11-16 with the pinned 23.1.5 in the arm64 image, the
   check alone over every `Test/` TU: still a SIGSEGV in `dataflow::transfer`, now on one TU
-  (`buildIntegritySuite.cpp`, `ShadowLightMatricesAreProvisionedInOnePlace`'s `reinit_span->first`);
+  (`buildIntegrityLightingSuite.cpp`, `ShadowLightMatricesAreProvisionedInOnePlace`'s `reinit_span->first`);
   the other 67 finish, with 100 findings, every one behind an `ASSERT`. Re-enable it, and rewrite
   those, once an LLVM release fixes the crash.
 - **[P3] The GUI input sweep runs weekly, on x64 only** (`linux-x64.yml`'s `gui-sweep`, since
