@@ -136,5 +136,5 @@ target_sources(
 # Since CMake 3.28 the PUBLIC CXX_MODULES file set makes the modules importable here.
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
 
-# A warning in the product is an error (-Werror, /WX under clang-cl); the suites compile with -w, the census reads the rest.
+# A warning in the product is an error (-Werror, /WX under clang-cl), as in the suites and fuzz targets.
 set_target_properties(VulkanEngineCore ${PROJECT_NAME} PROPERTIES COMPILE_WARNING_AS_ERROR ON)

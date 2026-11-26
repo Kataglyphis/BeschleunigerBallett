@@ -117,46 +117,62 @@ nor import a module (the image's include-what-you-use is built on clang 19 and
 reads no clang 23 module file), and writes `logs/code-quality/iwyu.txt`. The
 `static-analysis` job runs it after the debug build.
 
-## Warnings: errors in the product, a census for the rest
+## Warnings: errors in every own target, a census behind them
 
 Hub CON295 (c), owner decision D11 (fix first, then errors).
 
-**A warning in the product is an error.** `VulkanEngineCore` and `GraphicsEngine` set CMake's
-`COMPILE_WARNING_AS_ERROR` (`Src/GraphicsEngineVulkan/CMakeLists.txt`), which CMake spells `-Werror`, or `/WX`
-under clang-cl. `cmake --compile-no-warning-as-error` lifts it for one configure, say to try a compiler the image does
-not ship yet. The foreign headers a product unit reads are SYSTEM, so their warnings stay theirs: GLM, ImGui, STB,
-VMA, GSL, spdlog, nlohmann_json and the Vulkan SDK were already; GLFW (`add_subdirectory(GLFW SYSTEM)`), cxx's
-generated bridge headers (`oxidant_bridge`'s `SYSTEM` property) and Abseil, whose flags `Main.cpp` includes, are
-now. Abseil is SYSTEM outside clang-cl only: clang-cl misparses its `function_ref.h` as a system header
+**A warning in the product, a suite or a fuzz target is an error.** `VulkanEngineCore` and `GraphicsEngine`
+(`Src/GraphicsEngineVulkan/CMakeLists.txt`), the three suites (`Test/cmake/CommonTestBuild.cmake`) and the fuzz
+targets (`Test/fuzz/CMakeLists.txt`) set CMake's `COMPILE_WARNING_AS_ERROR`, which CMake spells `-Werror`, or `/WX`
+under clang-cl. The suites take the project's warnings from `VulkanEngineCore`; the fuzz targets link
+`myproject_warnings` themselves, not `myproject_options`, whose sanitizers the preset decides for them.
+`cmake --compile-no-warning-as-error` lifts the errors for one configure, say to try a compiler the image does not
+ship yet. The Kompute playground links no warning set and keeps the compiler's defaults.
+
+**Foreign headers are SYSTEM, so their warnings stay theirs.** GLM, ImGui, STB, VMA, GSL, spdlog, nlohmann_json and
+the Vulkan SDK; GLFW (`add_subdirectory(GLFW SYSTEM)`), cxx's generated bridge headers (`oxidant_bridge`'s `SYSTEM`
+property) and Abseil, which `Main.cpp` and FuzzTest include; and for the tests GoogleTest
+(`FetchContent_Declare(... SYSTEM)`), Google Benchmark and FuzzTest with what it fetches (`add_subdirectory(...
+SYSTEM)`). Abseil is SYSTEM outside clang-cl only: clang-cl misparses its `function_ref.h` as a system header
 (AccelerANTgine, 4eac5a56), and its `/W4` raises none of the warnings GCC (`-Wpedantic` on `__int128`) and clang
 (`-Wnullability-extension`) print there. The engine imports no foreign C++ module, so no BMI CMake builds with the
-product's flags carries a foreign warning.
+product's flags carries a foreign warning. The hub's crash handler, which the suites compile on Windows, takes `/w`
+from `kataglyphis_add_crash_dump`.
 
-**The suites do not join.** `Test/cmake/CommonTestBuild.cmake` compiles `commitTestSuite`, `compileTestSuite` and
-`perfTestSuite` with `-w` (`/w`), so they print no warning to stop on or to count. The fuzz targets and the Kompute
-playground link no warning set and keep the compiler's defaults.
+**What `-w` hid.** Until the suites dropped `-w` (`/w`), they printed no warning. Without it, arm64 Debug showed 77
+own warnings over 11 flags under clang (22 `-Wmissing-designated-field-initializers`, 12 `-Wmacro-redefined`, 12
+`-Wmissing-field-initializers`, 12 `-Wdouble-promotion`) and 66 under GCC (21 `-Wmissing-field-initializers`, 12
+unflagged macro redefinitions, 7 `-Wuseless-cast`, 7 `-Wdouble-promotion`), counted as the census counts. The macros
+were six suites re-defining `GLM_FORCE_*`, which `VulkanEngineCore` already passes; the missing fields were the
+Vulkan structs of `sharedShaderVectorsSuite`'s compute harness, which now name every member. With the project's
+warnings the fuzz targets added `example_fuzz_test.cpp`'s `int` indices. The CRT deprecates `getenv` under
+clang-cl, so the suites' 24 reads go through `common/EnvironmentVariable.hpp`, as the engine's do; with that, the
+Windows x64 lane's three clang-cl builds read none (run 45775919309, before the errors).
 
-**Every Linux build holds its own warnings in a census.** Each build step of `reusable-linux.yml` tees its log into
-`logs/build-<build>.log`, and the job's last steps run the hub's
+**Every Linux build and both Windows lanes hold their own warnings in a census.** Each build step of
+`reusable-linux.yml` tees its log into `logs/build-<build>.log`, and the job's last steps run the hub's
 [`verify_warning_census.py`](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/code-quality-tooling.md#the-warning-census)
 over it as lane `<arch>-<build>` against `scripts/linux/warning-census.txt`. The eight builds are `clang-debug`
 (`clang-tests`), `clang-asan` and `clang-tsan` (`sanitizers`), `clang-analysis` (`static-analysis`),
 `clang-profile` and `gcc-profile` (`profiling`), `gcc-debug` (`gcc`) and `clang-release` (`release`), on `x64` and
-`arm64`. Only the repository's own code counts, each `path:line:flag` once. A new warning fails its lane; so does a
-fixed one until its row is lowered, and a log that compiled nothing. Each job builds into an empty tree, so its log
-holds every compile; a sccache hit replays the compiler's warnings. The census steps come last, so a red census skips
-no test. Re-measure a lane with `--write` (the file's header has the command).
+`arm64`. `Build-Windows.ps1 -WarningCensus`, which both Windows lanes pass, writes each clang-cl build's output to
+`logs/windows/<build dir>.log` (the hub's `Invoke-CmakeConfigureAndBuild -BuildOutputLog`) and grades it as lane
+`windows-<x64|arm64>-clangcl-<debug|profile|release>` against the same file. Only the repository's own code counts,
+each `path:line:flag` once. A new warning fails its lane; so does a fixed one until its row is lowered, and a log
+that compiled nothing. Each job builds into an empty tree, so its log holds every compile; a sccache hit replays the
+compiler's warnings. The Linux census steps come last, so a red census skips no test. A Windows census step is not
+critical: every later build, package and stage still runs, then `Build-Windows.ps1` fails, and the x64 lane skips
+its container suites. Re-measure a lane with `--write` (the file's header has the command).
 
-The file holds no rows: every lane is at zero. CI run 45719414600 (9c18544b), before the fixes, held 36 own warnings
-over six flags in both GCC builds (25 `-Wshadow`, 5 `-Wuseless-cast`, 2 `-Wconversion`, 2 unflagged macro
-redefinitions, `-Wclass-memaccess`, `-Wmissing-field-initializers`), 11 in the four clang Debug builds and 13 in
-clang's Profile and Release, where `_FORTIFY_SOURCE` made the `snprintf` of `CommonGuiPanels.ixx`'s inline functions
-a TU-local entity they exposed (`-WTU-local-entity-exposure`). clang-cl added the CRT's deprecation of `getenv` at
-eight sites, which `common/EnvironmentVariable.hpp` now reads through `getenv_s`.
+The file holds no rows: every lane is at zero. CI run 45719414600 (9c18544b), before the product's fixes, held 36
+own warnings over six flags in both GCC builds (25 `-Wshadow`, 5 `-Wuseless-cast`, 2 `-Wconversion`, 2 unflagged
+macro redefinitions, `-Wclass-memaccess`, `-Wmissing-field-initializers`), 11 in the four clang Debug builds and 13
+in clang's Profile and Release, where `_FORTIFY_SOURCE` made the `snprintf` of `CommonGuiPanels.ixx`'s inline
+functions a TU-local entity they exposed (`-WTU-local-entity-exposure`). clang-cl added the CRT's deprecation of
+`getenv` at eight sites, which `common/EnvironmentVariable.hpp` now reads through `getenv_s`.
 
-**Windows and riscv64 have the errors, not the census.** clang-cl prints `file(line,col): warning:`, which the census
-does not read, and Windows builds in PowerShell; the riscv64 lane cross-builds the same CMake, so its product has
-`-Werror` too. AccelerANTgine draws the same line.
+**riscv64 has the errors, not the census.** The lane cross-builds the same CMake, so its product and suites build
+with `-Werror` too; its fuzz targets skip themselves, as they need ASan.
 
 ## Known state (2026-10-06)
 

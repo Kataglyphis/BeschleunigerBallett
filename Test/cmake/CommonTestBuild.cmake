@@ -2,9 +2,10 @@
 include(GTestDiscovery)
 include(CrashDump)
 
-# VulkanEngineCore hands the suites the project's warnings, as it does the product.
+# Like the product: VulkanEngineCore hands the suites the project's warnings, and a warning is an error.
 function(kataglyphis_configure_common_test_target test_target)
-  set_target_properties(${test_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+  set_target_properties(${test_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES}
+                                                  COMPILE_WARNING_AS_ERROR ON)
   kataglyphis_add_crash_dump(${test_target})
 endfunction()
 

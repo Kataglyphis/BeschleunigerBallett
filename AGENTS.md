@@ -664,13 +664,14 @@ distro clang-format (21.1.8 flagged 41 of the swept files) never grades. The swe
 `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once per
 clone.
 
-**A warning in the product is an error.** `VulkanEngineCore` and `GraphicsEngine` build with CMake's
-`COMPILE_WARNING_AS_ERROR` (`-Werror`, `/WX` under clang-cl); the foreign headers they read are SYSTEM (Abseil not
-under clang-cl, which misparses it so), and the suites compile with `-w`. Every Linux CI build holds the repo's own
-warnings at `scripts/linux/warning-census.txt` through the hub's census, one lane per build and arch: a new warning,
-or a fixed one whose row stays, fails the job. Fix a warning rather than silence it; `cmake
---compile-no-warning-as-error` lifts the errors for one configure
-([`docs/source/code-quality.md`](docs/source/code-quality.md#warnings-errors-in-the-product-a-census-for-the-rest)).
+**A warning in our code is an error.** `VulkanEngineCore`, `GraphicsEngine`, the three suites and the fuzz targets
+build with CMake's `COMPILE_WARNING_AS_ERROR` (`-Werror`, `/WX` under clang-cl) and the project's warnings; the
+foreign headers they read are SYSTEM (GoogleTest, Google Benchmark and FuzzTest too; Abseil not under clang-cl, which
+misparses it so). Every Linux CI build and each clang-cl build of both Windows lanes (`Build-Windows.ps1
+-WarningCensus`) holds the repo's own warnings at `scripts/linux/warning-census.txt` through the hub's census, one
+lane per build and arch: a new warning, or a fixed one whose row stays, fails the job. Fix a warning rather than
+silence it; `cmake --compile-no-warning-as-error` lifts the errors for one configure
+([`docs/source/code-quality.md`](docs/source/code-quality.md#warnings-errors-in-every-own-target-a-census-behind-them)).
 
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast default, but
 `clangcl-profile` (optimized, and the only configuration where benchmarks mean anything) and a

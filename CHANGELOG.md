@@ -12,6 +12,20 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Changed
+
+- The suites and fuzz targets build like the product (ANTfrastructure CON295 (c)): `commitTestSuite`,
+  `compileTestSuite` and `perfTestSuite` lose `-w` (`/w`) and take the project's warnings from `VulkanEngineCore`,
+  the fuzz targets link `myproject_warnings`, and all of them set `COMPILE_WARNING_AS_ERROR`. GoogleTest, Google
+  Benchmark and FuzzTest (with what it fetches) are SYSTEM. On arm64 Debug `-w` had hidden 77 own warnings under clang
+  and 66 under GCC; all are fixed without changing what a test checks: six suites stop re-defining `GLM_FORCE_*`,
+  `sharedShaderVectorsSuite` names every member of its Vulkan structs, and the rest are casts, unsigned indices and
+  unused names. The suites' 24 `getenv` reads go through `common/EnvironmentVariable.hpp`, as the engine's do, which
+  leaves clang-cl nothing to report.
+  `Build-Windows.ps1 -WarningCensus`, which both Windows lanes pass, grades each clang-cl build's output (the hub's
+  `Invoke-CmakeConfigureAndBuild -BuildOutputLog`) with the census as lane `windows-<arch>-clangcl-<config>`; the
+  hub's census reads clang-cl's `file(line,col):` lines now. `docs/source/code-quality.md` has the details.
+
 ## [1.7.0] - 2026-11-26
 
 ### Added
