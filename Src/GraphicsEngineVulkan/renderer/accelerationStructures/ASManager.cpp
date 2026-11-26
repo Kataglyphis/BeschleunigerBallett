@@ -4,12 +4,10 @@ module;
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
 #include "renderer/accelerationStructures/BlasReuse.hpp"
 #include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
+#include "renderer/accelerationStructures/TlasInstance.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
-#include <glm/ext/matrix_float4x4.hpp>
-#include <glm/matrix.hpp>
 #include <memory>
 #include <spdlog/spdlog.h>
 #include <utility>
@@ -302,6 +300,16 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
         return;
     }
 
+    // instanceCustomIndex is the flat index of the model's first mesh, not model_index; shaders add GeometryIndex().
+    const std::vector<uint32_t> mesh_base_offsets = Kataglyphis::meshBaseOffsets(scene->getMeshCountPerModel());
+    if (!Kataglyphis::meshBasesFitInstanceCustomIndex(mesh_base_offsets)) {
+        spdlog::error(
+          "ASManager::createTLAS: the last model's first mesh ({}) is past instanceCustomIndex's 24 bits, skipping "
+          "TLAS build and keeping the previous TLAS.",
+          mesh_base_offsets.back());
+        return;
+    }
+
     // Clear old TLAS
     if (tlas.vulkanAS) {
         device->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
@@ -312,13 +320,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     std::vector<vk::AccelerationStructureInstanceKHR> tlas_instances;
     tlas_instances.reserve(scene->getModelCount());
 
-    // instanceCustomIndex is the flat index of the model's first mesh, not model_index; shaders add GeometryIndex().
-    const std::vector<uint32_t> mesh_base_offsets = Kataglyphis::meshBaseOffsets(scene->getMeshCountPerModel());
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
-        glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
-        vk::TransformMatrixKHR out_matrix;
-        memcpy(&out_matrix, &transpose_transform, sizeof(vk::TransformMatrixKHR));
-
         vk::AccelerationStructureDeviceAddressInfoKHR acceleration_structure_device_address_info{};
         acceleration_structure_device_address_info.accelerationStructure = blas[model_index].vulkanAS;
 
@@ -326,8 +328,10 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
           device->getLogicalDevice().getAccelerationStructureAddressKHR(acceleration_structure_device_address_info);
 
         vk::AccelerationStructureInstanceKHR geometry_instance{};
-        geometry_instance.transform = out_matrix;
-        geometry_instance.instanceCustomIndex = mesh_base_offsets[model_index];
+        geometry_instance.transform =
+          Kataglyphis::tlasInstanceTransform(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
+        // The guard above keeps every base inside the mask; the mask tells the compiler the 24-bit field holds it.
+        geometry_instance.instanceCustomIndex = mesh_base_offsets[model_index] & Kataglyphis::kMaxInstanceCustomIndex;
         geometry_instance.mask = 0xFF;
         geometry_instance.instanceShaderBindingTableRecordOffset = 0;
         geometry_instance.flags =

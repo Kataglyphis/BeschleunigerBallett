@@ -79,7 +79,11 @@ class Mesh
     VulkanBufferManager vulkanBufferManager;
 
     static constexpr uint64_t INVALID_ADDR = ~uint64_t(0);
-    ObjectDescription object_description{ INVALID_ADDR, INVALID_ADDR, INVALID_ADDR, INVALID_ADDR };
+    ObjectDescription object_description{ .vertex_address = INVALID_ADDR,
+        .index_address = INVALID_ADDR,
+        .material_index_address = INVALID_ADDR,
+        .material_address = INVALID_ADDR,
+        .texture_offset = 0 };
 
     VulkanBuffer vertexBuffer;
     VulkanBuffer indexBuffer;

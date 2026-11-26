@@ -6,11 +6,15 @@ module;
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
+
+#include "common/EnvironmentVariable.hpp"
 
 module kataglyphis.vulkan.scene_config;
 
@@ -108,8 +112,9 @@ auto defaultModelRelativePath() -> std::string_view
 auto startupModelRelativePath() -> std::string
 {
     // Tests pick a scene for what it measures: the default skeleton's thin bones cast too little shadow to gate on.
-    if (const char *override_path = std::getenv("KATAGLYPHIS_MODEL_OVERRIDE"); override_path != nullptr) {
-        if (*override_path != '\0') { return override_path; }
+    if (auto override_path = Kataglyphis::environmentVariable("KATAGLYPHIS_MODEL_OVERRIDE");
+      override_path.has_value() && !override_path->empty()) {
+        return std::move(*override_path);
     }
 
     return std::string(defaultModelRelativePath());

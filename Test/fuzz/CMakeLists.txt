@@ -103,6 +103,8 @@ target_sources(
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx
          ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
+# SceneConfig.cpp names the engine's common/ headers from its root.
+target_include_directories(scene_config_fuzz_test PRIVATE ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan)
 # Same values kataglyphis_apply_runtime_compile_definitions gives the engine, so paths and clip conventions match.
 target_compile_definitions(scene_config_fuzz_test PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS
                                                           RELATIVE_RESOURCE_PATH="/../Resources/")

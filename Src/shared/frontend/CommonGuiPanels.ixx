@@ -4,7 +4,7 @@ module;
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <cstdio>
+#include <format>
 #include <span>
 
 #include <imgui.h>
@@ -81,13 +81,14 @@ inline void renderGpuPassTimings(bool supported,
     // Sized for the widest value, so the column does not jump with the readings.
     ImGui::TableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("0000.00 ms").x);
     std::array<char, 32> value{};
+    // One char stays for the terminator.
+    const auto value_chars = static_cast<std::ptrdiff_t>(value.size()) - 1;
     for (std::size_t i = 0; i < count; ++i) {
         const bool active = pass_ms[i] >= 0.0F;
-        if (active) {
-            std::snprintf(value.data(), value.size(), "%.2f ms", static_cast<double>(pass_ms[i]));
-        } else {
-            std::snprintf(value.data(), value.size(), "n/a");
-        }
+        // std::format, not snprintf: a fortified snprintf is TU-local, which this inline function may not name.
+        const auto written = active ? std::format_to_n(value.data(), value_chars, "{:.2f} ms", pass_ms[i])
+                                    : std::format_to_n(value.data(), value_chars, "n/a");
+        *written.out = '\0';
         // Each bar is the pass's share of the frame; without a frame time, of the longest pass.
         float fraction = 0.0F;
         if (frame_ms > 0.0F) {

@@ -19,23 +19,23 @@ struct Vertex
 
     Vertex() = default;
 
-    Vertex(glm::vec3 pos,
-      glm::vec3 normal,
-      glm::vec4 color,
-      glm::vec2 texture_coords,
-      glm::vec4 tangent = glm::vec4(0.0F))
-      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent),
-        texture_coords1(texture_coords)
+    Vertex(glm::vec3 in_position,
+      glm::vec3 in_normal,
+      glm::vec4 in_color,
+      glm::vec2 in_texture_coords,
+      glm::vec4 in_tangent = glm::vec4(0.0F))
+      : position(in_position), normal(in_normal), color(in_color), texture_coords(in_texture_coords),
+        tangent(in_tangent), texture_coords1(in_texture_coords)
     {}
 
-    Vertex(glm::vec3 pos,
-      glm::vec3 normal,
-      glm::vec4 color,
-      glm::vec2 texture_coords,
-      glm::vec4 tangent,
-      glm::vec2 texture_coords1)
-      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent),
-        texture_coords1(texture_coords1)
+    Vertex(glm::vec3 in_position,
+      glm::vec3 in_normal,
+      glm::vec4 in_color,
+      glm::vec2 in_texture_coords,
+      glm::vec4 in_tangent,
+      glm::vec2 in_texture_coords1)
+      : position(in_position), normal(in_normal), color(in_color), texture_coords(in_texture_coords),
+        tangent(in_tangent), texture_coords1(in_texture_coords1)
     {}
 
     glm::vec3 get_position() const { return position; }

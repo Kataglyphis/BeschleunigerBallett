@@ -24,7 +24,7 @@ using namespace Kataglyphis;
 
 Model::Model() = default;
 
-Model::Model(const std::shared_ptr<VulkanDevice> &device) : device(device) {}
+Model::Model(const std::shared_ptr<VulkanDevice> &in_device) : device(in_device) {}
 
 void Model::cleanUp()
 {

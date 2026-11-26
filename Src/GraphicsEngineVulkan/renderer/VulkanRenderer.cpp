@@ -94,12 +94,12 @@ void recordGeneralImageBarrier(vk::CommandBuffer commandBuffer,
 
 }// namespace
 
-Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
-  Scene *scene,
-  Camera *camera,
+Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_window,
+  Scene *in_scene,
+  Camera *in_camera,
   const RenderSettings &settings,
   RendererFeedback &feedback)
-  : window(window), scene(scene), camera(camera), frameSettings(settings)
+  : window(in_window), scene(in_scene), camera(in_camera), frameSettings(settings)
 {
     instance = std::make_shared<VulkanInstance>();
     device = std::make_shared<VulkanDevice>(instance, create_surface());

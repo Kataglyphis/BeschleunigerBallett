@@ -4,6 +4,7 @@
 #include <string_view>
 #include <utility>
 
+#include "common/EnvironmentVariable.hpp"
 #include "host_device_shared_vars.hpp"
 #include <spdlog/spdlog.h>
 #include <vulkan/vulkan.hpp>
@@ -34,10 +35,7 @@ template<typename T> [[nodiscard]] auto vkCheck(vk::ResultValue<T> &&resultValue
 inline bool validationLayersEnabled()
 {
 #ifdef NDEBUG
-    static const bool enabled = [] {
-        const char *value = std::getenv("KATAGLYPHIS_VULKAN_VALIDATION");
-        return value != nullptr && *value != '\0';
-    }();
+    static const bool enabled = environmentFlag("KATAGLYPHIS_VULKAN_VALIDATION");
     return enabled;
 #else
     return true;

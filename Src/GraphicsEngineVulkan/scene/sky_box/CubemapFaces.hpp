@@ -6,8 +6,10 @@
 #include <filesystem>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
+#include "common/EnvironmentVariable.hpp"
 #include "scene/TextureFit.hpp"
 
 namespace Kataglyphis {
@@ -47,9 +49,9 @@ inline auto fitCubemapFacesToLimit(std::span<const unsigned char *const, 6> face
 // KATAGLYPHIS_SKYBOX_DIR names another folder of the six faces; empty or unset keeps the fetched sky.
 inline auto skyboxDirectoryOverride() -> std::optional<std::filesystem::path>
 {
-    const char *value = std::getenv("KATAGLYPHIS_SKYBOX_DIR");
-    if (value == nullptr || *value == '\0') { return std::nullopt; }
-    return std::filesystem::path(value);
+    const std::optional<std::string> value = environmentVariable("KATAGLYPHIS_SKYBOX_DIR");
+    if (!value.has_value() || value->empty()) { return std::nullopt; }
+    return std::filesystem::path(*value);
 }
 
 }// namespace Kataglyphis

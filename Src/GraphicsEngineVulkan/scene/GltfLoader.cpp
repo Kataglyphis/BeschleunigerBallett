@@ -13,6 +13,7 @@ module;
 
 #include <glm/glm.hpp>
 
+#include "common/EnvironmentVariable.hpp"
 #include "spdlog/spdlog.h"
 
 module kataglyphis.vulkan.gltf_loader;
@@ -26,9 +27,9 @@ import kataglyphis.vulkan.sampler_builder;
 
 namespace Kataglyphis {
 
-GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device,// DEVICE_SINK_OK: moved into member
-  vk::CommandPool command_pool)
-  : device(std::move(device)), command_pool(command_pool)
+GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> in_device,// DEVICE_SINK_OK: moved into member
+  vk::CommandPool in_command_pool)
+  : device(std::move(in_device)), command_pool(in_command_pool)
 {}
 
 GltfLoader::GltfLoader(GltfLoader &&other) noexcept : device(std::move(other.device)), command_pool(other.command_pool)
@@ -44,11 +45,7 @@ GltfLoader &GltfLoader::operator=(GltfLoader &&other) noexcept
 }
 
 GltfLoadOptions gltfLoadOptionsFromEnvironment()
-{
-    // Empty counts as unset, as for the engine's other knobs and OxidANT's load_options_from_env.
-    const char *value = std::getenv("KATAGLYPHIS_MIKKTSPACE_TANGENTS");
-    return GltfLoadOptions{ .mikktspaceTangents = value != nullptr && *value != '\0' };
-}
+{ return GltfLoadOptions{ .mikktspaceTangents = environmentFlag("KATAGLYPHIS_MIKKTSPACE_TANGENTS") }; }
 
 std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile, const GltfLoadOptions &options)
 {

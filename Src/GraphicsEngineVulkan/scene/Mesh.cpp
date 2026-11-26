@@ -33,7 +33,7 @@ void Mesh::cleanUp()
     materialsBuffer.cleanUp();
 }
 
-Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
+Mesh::Mesh(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool transfer_command_pool,
   std::span<const Vertex> vertices,
   std::span<const uint32_t> indices,
@@ -41,7 +41,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
   std::span<const ObjMaterial> materials,
   uint32_t firstVertex)
   : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
-    device(device)
+    device(in_device)
 {
     // Computed here, the last point the positions are on the CPU; an empty mesh keeps invalid bounds (visible).
     if (!vertices.empty()) {

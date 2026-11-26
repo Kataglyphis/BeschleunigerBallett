@@ -41,17 +41,17 @@ void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device,
   uint32_t width,
   uint32_t height,
   uint32_t num_cascades,
-  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout,
-  uint32_t swapChainImageCount,
-  vk::CommandPool commandPool)
+  vk::DescriptorSetLayout in_sharedRenderDescriptorSetLayout,
+  uint32_t in_swapChainImageCount,
+  vk::CommandPool in_commandPool)
 {
     this->device = in_device;
     this->shadowWidth = width;
     this->shadowHeight = height;
     this->numCascades = num_cascades;
-    this->sharedRenderDescriptorSetLayout = sharedRenderDescriptorSetLayout;
-    this->swapChainImageCount = swapChainImageCount;
-    this->commandPool = commandPool;
+    this->sharedRenderDescriptorSetLayout = in_sharedRenderDescriptorSetLayout;
+    this->swapChainImageCount = in_swapChainImageCount;
+    this->commandPool = in_commandPool;
 
     cascadeData.resize(numCascades);
 

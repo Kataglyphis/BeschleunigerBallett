@@ -3,6 +3,7 @@ module;
 #include "renderer/SwapChainDetails.hpp"
 #include <cstdint>
 
+#include "common/EnvironmentVariable.hpp"
 #include "common/ExtensionSupport.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
@@ -22,24 +23,7 @@ module kataglyphis.vulkan.device;
 namespace {
 
 auto readGpuSelectionFromEnvironment() -> std::string
-{
-#if defined(_WIN32)
-    std::size_t required_size = 0;
-    if (getenv_s(&required_size, nullptr, 0, "KATAGLYPHIS_VK_GPU") != 0 || required_size == 0) { return ""; }
-
-    std::string value(required_size, '\0');
-    if (getenv_s(&required_size, value.data(), value.size(), "KATAGLYPHIS_VK_GPU") != 0 || required_size == 0) {
-        return "";
-    }
-
-    value.resize(required_size - 1);
-    return value;
-#else
-    const char *value = std::getenv("KATAGLYPHIS_VK_GPU");
-    if (value == nullptr) { return ""; }
-    return std::string(value);
-#endif
-}
+{ return Kataglyphis::environmentVariable("KATAGLYPHIS_VK_GPU").value_or(""); }
 
 // Relative to the working directory, like Resources/ and logs/.
 auto pipelineCacheFilePath() -> std::filesystem::path
@@ -74,8 +58,8 @@ const std::vector<const char *> device_extensions_for_raytracing = { VK_KHR_ACCE
     VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
     VK_KHR_RAY_QUERY_EXTENSION_NAME };
 
-Kataglyphis::VulkanDevice::VulkanDevice(const std::shared_ptr<VulkanInstance> &instance, vk::SurfaceKHR surface)
-  : instance(instance), surface(surface)
+Kataglyphis::VulkanDevice::VulkanDevice(const std::shared_ptr<VulkanInstance> &in_instance, vk::SurfaceKHR in_surface)
+  : instance(in_instance), surface(in_surface)
 {
 
 

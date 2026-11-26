@@ -90,7 +90,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
         vkCheck(vmaCreateBufferWithAlignment(device->getVmaAllocator(),
                   &c_buffer_info,
                   &allocation_create_info,
-                  static_cast<VkDeviceSize>(device->getMinDeviceAddressAlignment()),
+                  device->getMinDeviceAddressAlignment(),
                   &c_buffer,
                   &allocation,
                   &allocation_info),

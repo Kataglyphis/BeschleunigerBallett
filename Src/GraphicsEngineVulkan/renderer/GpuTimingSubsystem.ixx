@@ -5,9 +5,12 @@ module;
 #include <cstdlib>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <optional>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/EnvironmentVariable.hpp"
 #include "spdlog/spdlog.h"
 
 export module kataglyphis.vulkan.gpu_timing;
@@ -247,27 +250,27 @@ class GpuTimingSubsystem
     // supported flag still describe the finished run.
     void writeJsonIfRequested()
     {
-        const char *out_path = std::getenv("KATAGLYPHIS_GPU_TIMING_JSON");
-        if (out_path == nullptr || *out_path == '\0') { return; }
+        const std::optional<std::string> out_path = environmentVariable("KATAGLYPHIS_GPU_TIMING_JSON");
+        if (!out_path.has_value() || out_path->empty()) { return; }
 
         const nlohmann::json dump = timingExport(
           gpu_timing_export_sum_ms, gpu_timing_export_samples, gpu_timing_export_frames, gpu_timings_supported);
 
         // ofstream reports failure via the stream state, never throws by default -
         // which is the only option anyway with exceptions disabled project-wide.
-        std::ofstream file(out_path, std::ios::out | std::ios::trunc);
+        std::ofstream file(*out_path, std::ios::out | std::ios::trunc);
         if (!file.is_open()) {
-            spdlog::error("GPU timing export: cannot open '{}' for writing; no JSON dumped.", out_path);
+            spdlog::error("GPU timing export: cannot open '{}' for writing; no JSON dumped.", *out_path);
             return;
         }
         file << dump.dump(2) << '\n';
         file.close();
         if (file.fail()) {
-            spdlog::error("GPU timing export: writing '{}' failed; the dump may be truncated.", out_path);
+            spdlog::error("GPU timing export: writing '{}' failed; the dump may be truncated.", *out_path);
             return;
         }
         spdlog::info("GPU timing export: wrote {} ({} frames measured, timestamps supported: {}).",
-          out_path,
+          *out_path,
           gpu_timing_export_frames,
           gpu_timings_supported);
     }

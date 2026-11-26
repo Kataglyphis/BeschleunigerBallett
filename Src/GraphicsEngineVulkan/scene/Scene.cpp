@@ -25,7 +25,7 @@ namespace Kataglyphis {
 
 Scene::Scene() = default;
 
-Scene::Scene(GltfLoadOptions gltfLoadOptions) : gltfLoadOptions(gltfLoadOptions) {}
+Scene::Scene(GltfLoadOptions in_gltfLoadOptions) : gltfLoadOptions(in_gltfLoadOptions) {}
 
 void Scene::loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {

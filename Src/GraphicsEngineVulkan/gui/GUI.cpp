@@ -288,12 +288,8 @@ void mutedWrappedText(const char *text)
 void formatApiVersion(std::span<char> out, std::uint32_t version)
 {
     // VK_API_VERSION_MAJOR and friends are C-style-cast macros; the bit layout is fixed by the spec.
-    std::snprintf(out.data(),
-      out.size(),
-      "Vulkan %u.%u.%u",
-      static_cast<unsigned int>(version >> 22U),
-      static_cast<unsigned int>((version >> 12U) & 0x3FFU),
-      static_cast<unsigned int>(version & 0xFFFU));
+    std::snprintf(
+      out.data(), out.size(), "Vulkan %u.%u.%u", version >> 22U, (version >> 12U) & 0x3FFU, version & 0xFFFU);
 }
 
 // A caption on a frame-height line with a hairline under it; with `enabled`, a switch at its right end.
@@ -472,8 +468,8 @@ auto culledPercent(unsigned int drawn, unsigned int total) -> double
 { return (total > 0U) ? 100.0 * static_cast<double>(total - drawn) / static_cast<double>(total) : 0.0; }
 }// namespace
 
-GUI::GUI(Window *window, RenderSettings &settings, const RendererFeedback &feedback)
-  : window(window), guiSceneSharedVars(settings.scene), guiRendererSharedVars(settings.renderer),
+GUI::GUI(Window *in_window, RenderSettings &settings, const RendererFeedback &feedback)
+  : window(in_window), guiSceneSharedVars(settings.scene), guiRendererSharedVars(settings.renderer),
     rendererFeedback(feedback), studio(std::make_unique<StudioState>())
 {}
 

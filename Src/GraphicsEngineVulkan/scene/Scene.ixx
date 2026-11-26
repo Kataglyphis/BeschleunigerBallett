@@ -87,7 +87,7 @@ class Scene
     uint32_t getMeshCount(uint32_t model_index) const
     {
         Model *model = findModel(model_index);
-        return model != nullptr ? static_cast<uint32_t>(model->getMeshCount()) : 0;
+        return model != nullptr ? model->getMeshCount() : 0;
     };
     // This ordering is the contract assignTextureOffsets and
     // planFlattenedTextureSlots are both indexed by; consumers must use this

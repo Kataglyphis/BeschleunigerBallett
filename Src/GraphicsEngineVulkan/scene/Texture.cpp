@@ -67,7 +67,7 @@ auto deviceSupportsMipmapGeneration(vk::PhysicalDevice physical_device, vk::Form
 }
 }// namespace
 
-auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &device,
+auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool,
   const std::string &fileName,
   bool srgb) -> bool
@@ -83,10 +83,10 @@ auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &d
         return false;
     }
 
-    return uploadRgba(device, commandPool, width, height, size, image_data, srgb);
+    return uploadRgba(in_device, commandPool, width, height, size, image_data, srgb);
 }
 
-auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> &device,
+auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool,
   const unsigned char *encodedBytes,
   size_t byteCount,
@@ -108,10 +108,10 @@ auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> 
 
     // STBI_rgb_alpha forced 4 channels, so the tight size is width*height*4.
     const vk::DeviceSize size = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4U;
-    return uploadRgba(device, commandPool, width, height, size, image_data, srgb);
+    return uploadRgba(in_device, commandPool, width, height, size, image_data, srgb);
 }
 
-auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &device,
+auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool,
   int width,
   int height,
@@ -123,7 +123,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
 
     // Past maxImageDimension2D vmaCreateImage fails and vkCheck aborts, so the upload starts at the first level that fits.
     FittedRgba8 fitted;
-    const uint32_t side_limit = device->getMaxImageDimension2D();
+    const uint32_t side_limit = in_device->getMaxImageDimension2D();
     if (static_cast<uint32_t>(std::max(width, height)) > side_limit) {
         fitted = fitRgba8ToLimit(rgba, static_cast<uint32_t>(width), static_cast<uint32_t>(height), side_limit, srgb);
         spdlog::warn("Texture {}x{} exceeds the device's {}-texel side; uploaded at {}x{}.",
@@ -141,9 +141,9 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
     // Color texels are sRGB-encoded and must decode to linear at sample time; normal maps are already linear, so UNORM.
     const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
     uint32_t levels = mipLevelCount(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
-    if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
+    if (!deviceSupportsMipmapGeneration(in_device->getPhysicalDevice(), texture_format)) {
         vk::FormatFeatureFlags optimal_tiling_features =
-          device->getPhysicalDevice().getFormatProperties(texture_format).optimalTilingFeatures;
+          in_device->getPhysicalDevice().getFormatProperties(texture_format).optimalTilingFeatures;
         spdlog::warn(
           "Mipmap generation not supported for texture format (missing: filterLinear={}, blitSrc={}, "
           "blitDst={}); using single mip level.",
@@ -154,7 +154,8 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
     }
 
     const ChainLevel base{ static_cast<uint32_t>(width), static_cast<uint32_t>(height), 0 };
-    return uploadLevels(device, commandPool, texture_format, levels, { rgba, static_cast<size_t>(size) }, { &base, 1 });
+    return uploadLevels(
+      in_device, commandPool, texture_format, levels, { rgba, static_cast<size_t>(size) }, { &base, 1 });
 }
 
 auto Kataglyphis::Texture::createFromLevels(const std::shared_ptr<VulkanDevice> &in_device,

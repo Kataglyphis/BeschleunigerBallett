@@ -390,6 +390,18 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The engine's own compiler warnings are gone, before they became errors: 36 under GCC (CI run 45719414600), 11 under
+  clang (13 in Profile and Release) and the clang-cl ones. Constructor and setter parameters that shadowed members
+  take an `in_` prefix; `App.cpp` stops redefining the GLM macros `VulkanEngineCore` already defines; useless casts
+  and an implicit unsigned-to-float conversion go; `Mesh`'s object description names its `texture_offset`.
+  `CommonGuiPanels.ixx` formats with `std::format_to_n`, since a fortified `snprintf` is a TU-local entity its inline
+  functions may not expose (clang, Profile and Release). The TLAS instance's transform is built by
+  `tlasInstanceTransform` (`TlasInstance.hpp`) instead of a `memcpy` into `vk::TransformMatrixKHR`, and `createTLAS`
+  keeps the previous TLAS when a model's first mesh would pass `instanceCustomIndex`'s 24 bits, which the shaders
+  would have read as another model's meshes; `TlasInstanceUnit` holds both. The engine reads its environment knobs
+  through `environmentVariable` (`common/EnvironmentVariable.hpp`), `getenv_s` on Windows, whose CRT deprecates
+  `getenv`; `EnvironmentVariableUnit` reads a 300-character value back whole.
+
 - The Windows packages no longer ship googletest: its install rules put `include/gtest`, `include/gmock`, four
   `.lib`s, `lib/cmake/GTest` and `lib/pkgconfig` into the bundle, ZIP, MSI and NSIS of both arches (run 45176371019).
   `INSTALL_GTEST` is OFF, and `Build-Windows.ps1`'s *Bundle layout* step fails a bundle with `include/`,

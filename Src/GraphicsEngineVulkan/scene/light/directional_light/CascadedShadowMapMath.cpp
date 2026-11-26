@@ -25,12 +25,12 @@ namespace {
 
         std::array<glm::vec4, 8> frustumCorners{};
         std::size_t index = 0;
-        for (unsigned int x = 0; x < 2; ++x) {
-            for (unsigned int y = 0; y < 2; ++y) {
-                for (unsigned int z = 0; z < 2; ++z) {
+        constexpr std::array<float, 2> kUnitSpan{ 0.0F, 1.0F };
+        for (const float x : kUnitSpan) {
+            for (const float y : kUnitSpan) {
+                for (const float z : kUnitSpan) {
                     // NDC z runs 0..1, not -1..1: the engine builds with GLM_FORCE_DEPTH_ZERO_TO_ONE.
-                    const glm::vec4 pt =
-                      inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
+                    const glm::vec4 pt = inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, z, 1.0F);
                     frustumCorners[index] = pt / pt.w;
                     ++index;
                 }

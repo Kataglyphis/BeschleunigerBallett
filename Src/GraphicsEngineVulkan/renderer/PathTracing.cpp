@@ -13,6 +13,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/EnvironmentVariable.hpp"
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "renderer/PathTracingDispatch.hpp"
@@ -38,14 +39,14 @@ struct FurnaceSurface
 FurnaceSurface furnaceSurfaceFromEnvironment()
 {
     FurnaceSurface surface;
-    if (const char *metallic = std::getenv("KATAGLYPHIS_PT_FURNACE_METALLIC");
-      metallic != nullptr && *metallic != '\0') {
-        surface.metallic = std::clamp(std::strtof(metallic, nullptr), 0.0F, 1.0F);
+    if (const auto metallic = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE_METALLIC");
+      metallic.has_value() && !metallic->empty()) {
+        surface.metallic = std::clamp(std::strtof(metallic->c_str(), nullptr), 0.0F, 1.0F);
     }
     // 0.045 is material_roughness()'s floor, which keeps the GGX lobe finite.
-    if (const char *roughness = std::getenv("KATAGLYPHIS_PT_FURNACE_ROUGHNESS");
-      roughness != nullptr && *roughness != '\0') {
-        surface.roughness = std::clamp(std::strtof(roughness, nullptr), 0.045F, 1.0F);
+    if (const auto roughness = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE_ROUGHNESS");
+      roughness.has_value() && !roughness->empty()) {
+        surface.roughness = std::clamp(std::strtof(roughness->c_str(), nullptr), 0.045F, 1.0F);
     }
     return surface;
 }
@@ -104,9 +105,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
     // White-furnace mode; read per record, not cached, because several tests share one process.
-    const char *furnace_value = std::getenv("KATAGLYPHIS_PT_FURNACE");
-    if (furnace_value != nullptr && *furnace_value != '\0') {
-        const float furnace_radiance = std::strtof(furnace_value, nullptr);
+    const auto furnace_value = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE");
+    if (furnace_value.has_value() && !furnace_value->empty()) {
+        const float furnace_radiance = std::strtof(furnace_value->c_str(), nullptr);
         push_constant.clearColor = { furnace_radiance, furnace_radiance, furnace_radiance, 1.0F };
     } else {
         push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
