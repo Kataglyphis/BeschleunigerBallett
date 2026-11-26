@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-// Plain header, not a module, so buildIntegritySuite.cpp can pin these against the shaders' [numthreads].
+// Plain header, not a module, so buildIntegrityCloudSuite.cpp can pin these against the shaders' [numthreads].
 namespace Kataglyphis {
 
 inline constexpr uint32_t kNoiseVolumeExtent = 128;

@@ -37,7 +37,7 @@ Find your task, do the first action, read the doc. [Docs](#docs) and
 | --- | --- |
 | `Src/GraphicsEngineVulkan/` | The C++ Vulkan engine (`app`, `renderer`, `vulkan_base`, `memory`, `scene`, `gui`, `window`, `common`) |
 | `Src/shared/`, `Src/KomputePlayground/` | Renderer-agnostic frontend/scene/imgui/util code; the Kompute compute playground |
-| `Test/commit/VulkanEngine/` | The main gtest suite (`commitTestSuite.exe`): CPU suites plus `GoldenRender.*` / `Integration.*` |
+| `Test/commit/VulkanEngine/` | The main gtest suite (`commitTestSuite.exe`): CPU suites plus `GoldenRender.*` / `Integration.*`; `goldenRender*Suite.cpp` and `buildIntegrity*Suite.cpp` hold one subject each, over `GoldenRenderHarness` and `BuildIntegrityScan` |
 | `Test/compile/`, `Test/fuzz/`, `Test/perf/` | Compile-time checks, FuzzTest targets, Google Benchmark suite (`perfTestSuite`) |
 | `Resources/ShadersSlang/` | Vulkan/test Slang + `shader-manifest.json`, which imports OxidANT's shared/WebGPU manifest; compiled output under `build/` is gitignored |
 | `third_party/OxidANT/shaders/` | Canonical shared math and WebGPU Slang sources consumed by both renderers |
@@ -688,10 +688,11 @@ for: [`BACKLOG.md`](BACKLOG.md).
 **There is no Windows ThreadSanitizer.** For race detection use the Linux `linux-debug-tsan-clang`
 preset, which CI runs ("Sanitizer semantics" above).
 
-**`buildIntegritySuite` reads raw source, comments included.** It matches `[shader(`, `BENCHMARK(`
+**`BuildIntegrity` reads raw source, comments included.** It matches `[shader(`, `BENCHMARK(`
 and `kataglyphis_add_fuzz_test(` by substring, counts calls, and looks a few lines around
 `return;`, `.value` and filesystem calls. A comment quoting such text can pass or fail a gate by
-itself, so grep the suite for a file's name before rewording a comment in it.
+itself, so grep `buildIntegrity*Suite.cpp` and `BuildIntegrityScan.*` for a file's name before
+rewording a comment in it.
 
 **Fuzz targets** (`Test/fuzz/`):
 - **ASan.** On Linux the whole project builds with ASan (`linux-debug-asan-clang`). Abseil's

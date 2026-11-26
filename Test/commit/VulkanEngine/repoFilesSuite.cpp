@@ -1,4 +1,4 @@
-// buildIntegritySuite.cpp relies on these readers for every source scan.
+// The build-integrity suites rely on these readers for every source scan.
 
 #include <filesystem>
 #include <fstream>

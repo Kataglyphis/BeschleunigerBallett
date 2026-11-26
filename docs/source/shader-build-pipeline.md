@@ -68,9 +68,9 @@ An output is reused only when it is newer than its source **and** every
 compile scripts walk the manifest and recompile only stale entries.
 
 The `BuildIntegrity` gates that check already-compiled or checked-in output
-(`CompiledShadersAreNotOlderThanSharedIncludes`,
-`CheckedInWgslIsNotOlderThanItsSlangSource`, in
-`Test/commit/VulkanEngine/buildIntegritySuite.cpp`) do **not** copy that
+(`CompiledShadersAreNotOlderThanSharedIncludes` and
+`CheckedInWgslIsNotOlderThanItsSlangSource`, in `Test/commit/VulkanEngine/`'s
+`buildIntegrityShaderBinarySuite.cpp` and `buildIntegrityWgslSuite.cpp`) do **not** copy that
 whole-tree rule: they compare each source against its `import_closure`, the
 `.slang` files it (transitively) actually `import`s, and flag an artifact
 stale only when one of *those* is newer. Rebuild-everything is right for
