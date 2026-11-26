@@ -137,6 +137,12 @@ the GitHub releases themselves.
   arch (`x64-clang-debug` ... `arm64-gcc-profile`), against `scripts/linux/warning-census.txt`, which holds no rows:
   every lane is at zero. `docs/source/code-quality.md` has the details.
 
+- The static-analysis job always takes the runner's full disk cleanup: a runner with 91 GB free passed the 90 GB
+  floor of the fast one, and with the 72 GB image beside its coverage tree, the OxidANT workspace's test build and
+  clippy ran out of space (run 45743600841, 42 MB left). The 1200M sccache cap per key held its first runs: the
+  cache totalled 7.45 GB of 10 on 2026-11-26, the four x64 keys at the cap, and the clang-tests build step took
+  15.4-20.4 min over nine runs against 11.0-12.6 before; the owner keeps the cap.
+
 - The skybox's bake leaves its sun to the directional Sun (owner decision 2026-11-25): `AmbientMaps` draws the
   environment twice around OxidANT's new `fs_find_sun` (`common/sun_mask.slang`), which finds the sun in the sky's own
   mips, and the second `fs_skybox_to_cube` brings every channel within 10 degrees of it down to the ring at 12

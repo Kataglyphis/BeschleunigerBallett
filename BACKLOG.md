@@ -75,16 +75,17 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 ### P2: medium
 
-- [ ] `CI` **Warnings that count, and the cache cap's first runs** (S each). Since 2026-11-23 (hub pin
-  04981676, run 45233255466): explicit PIE at the project's scope, IWYU as a report (32 of 35 units with
-  suggestions), and no spdlog `-Wstringop-overflow` in the profiling job since spdlog builds without LTO;
-  `SCCACHE_CACHE_SIZE` is 1200M per key. Left: watch the next few runs' clang-tests and sanitizer build times
-  and the cache total (under 10 GB); 1200M sits at or below the debug working set (about 1.5 GB at zlib-1),
-  and the owner keeps it there even if some keys miss (2026-11-23). Then CON295 (c) steps 2-3, which the hub ships
-  since 2026-11-23 (`verify_warning_census.py`; AccelerANTgine went through all three): hold the GCC and clang jobs'
-  own warnings in a census file (37 GCC warnings over six flags at hub 04981676), fix them, and build the product
-  targets with `-Werror` (`/WX` under clang-cl), minding the hub's two lessons (an imported module's BMI takes the
-  importer's flags; Abseil is SYSTEM outside clang-cl only).
+- [ ] `CI` **The suites' warnings, and a census clang-cl can read** (S-M). Since Phase 20 (eacea92d, bd012d72) the
+  engine's own warnings are fixed (36 GCC, 11-13 clang, clang-cl's `getenv` at eight sites; one was a mesh base
+  truncated into `instanceCustomIndex`'s 24 bits), `VulkanEngineCore` and `GraphicsEngine` build with
+  `COMPILE_WARNING_AS_ERROR`, GLFW, the cxx bridge headers and Abseil (outside clang-cl) are SYSTEM, and every Linux
+  build holds its own warnings in `scripts/linux/warning-census.txt` (8 builds x 2 arches, no rows; x64 proven in
+  run 45749216375). Left: (1) `Test/cmake/CommonTestBuild.cmake` compiles the three suites with `-w`, so neither the
+  census nor `-Werror` sees them; without it arm64 clang Debug shows 77 own warnings over 11 flags (22 missing
+  designated initializers, 12 macro redefinitions, 12 missing field initializers, 12 double promotions): lift `-w`,
+  census the suites, fix them, then decide `-Werror` for them. (2) clang-cl prints `file(line,col):`, which the hub's
+  census does not read, so Windows has `/WX` but no census of its suites and fuzz targets: wire one once the hub
+  reads it (its CON295 follow-up).
 
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
