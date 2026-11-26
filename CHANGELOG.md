@@ -12,6 +12,8 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-26
+
 ### Added
 
 - The C++ engine lights its scenes with the skybox it draws and reads the glTF occlusion map (plan C4 stages 2-3,
