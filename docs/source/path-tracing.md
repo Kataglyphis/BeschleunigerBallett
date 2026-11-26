@@ -152,7 +152,8 @@ estimators is biased).
   (`common/drawn_sky.slang`, which `sky/sky.slang` draws with), the skybox's
   cube map untonemapped while it is on, the disabled sky's navy otherwise. A
   bounce gets the light the raster's ambient term gets: the baked IBL's
-  prefiltered map at its sharpest level while the skybox lights the scene
+  prefiltered map at its sharpest level, which leaves the photo's sun to NEE
+  (OxidANT's `sun_mask.slang`), while the skybox lights the scene
   (`iblParams.x`), the analytic `sky_gradient` otherwise, times the Sun's
   Ambient slider (`dirLight.direction.w`), as Rust's bounce takes its ambient
   strength. The fixed 0.35 is gone. The cube map is `SKYBOX_CUBEMAP_BINDING`

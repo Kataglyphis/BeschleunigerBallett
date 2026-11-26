@@ -341,7 +341,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=100 runnable=98 integration=15 total=113 excluded=3 -->
+<!-- golden-counts: defined=101 runnable=99 integration=15 total=114 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -449,9 +449,12 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   measured.
 - **`PostEncodesEachHdrTexelThroughAcesAndSrgb`**: at a tenth of the default sun and at the
   default, every HDR texel must be opaque (the sky is in the HDR target since 2026-11-21) and
-  more than 99.9 % of them must sit within 2 levels of ACES then sRGB of their HDR value, texels
-  near 0.18 must average level 141, and the two frames must hold at least 1000 green texels
-  below 0.05 and above 1.0 and 100 near 0.18, so the toe, middle and shoulder are all checked.
+  more than 99.9 % of them must sit within 2 levels of ACES then sRGB of their HDR value, green
+  texels within half a stop of 0.18 must average within 2 levels of the formula's mean over the
+  same texels (level 124 over 660990 of them on llvmpipe), and the two frames must hold at least
+  1000 green texels below 0.05, within that half stop and above 1.0, so the toe, middle and
+  shoulder are all checked. The band was ±0.004 until Phase 19, whose dimmer bake moved the
+  sky-lit ground out of it (99845 texels to 418).
   The C++ post has no exposure or bloom stage to test; those are the Rust renderer's.
 - **`TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame`** (2026-11-23): the shadow rig with the
   sun's shadow at full strength, in forward, deferred and ray-traced frames, at Ambient 0, the default
@@ -474,6 +477,14 @@ Three goldens (2026-11-16) say where it is and what post does with a texel:
   brightest sky radiance, the horizon's 0.72, and at least 0.2 in blue. Measured on aarch64
   llvmpipe at Ambient 2: (0.277, 0.403, 0.722), a gain of (0.139, 0.202, 0.361), deferred within
   0.5 %. With OxidANT's sun disk back in `analytic_ambient` the card reads (87.7, 83.5, 75.1) at Ambient 2 and fails in every mode.
+- **`AMirrorFacingThePhotoSunReflectsTheSkyAroundIt`** (2026-11-26): the default photo sky, the Sun's radiance 0
+  and Ambient 1. Looking at the photo's sun (0.6248, 0.6769, 0.3891), the sky pass still draws its saturated disk
+  (7.24 in every channel within 2 degrees) and the ring at 11-14 degrees around it; then a smooth white metal card
+  (roughness 0.05), turned so the eye sees that sun mirrored in its centre, must reflect 0.3 to 2 times the ring's
+  luminance in forward, deferred, ray-traced and path-traced frames (1 spp, two bounces, 4 frames). Measured on
+  aarch64 llvmpipe: ring (0.579, 1.205, 4.120), luminance 1.282; the mirror 0.908 of it in forward and ray tracing,
+  0.903 deferred, 0.923 path traced. With the engine's second environment pass keeping the sun (`AmbientMaps.cpp`'s
+  `leaveOutSun` 0) it reads 4.60, 4.57, 4.60 and 5.07 and fails in every mode.
 - **`SkyFillsTheHdrTargetInEveryMode`**: on the shadow rig with the navy sky, the forward,
   deferred, ray-traced and path-traced HDR targets hold no transparent texel and more than 5000
   texels at the navy's untonemapped radiance, which post shows as the navy; the path tracer's

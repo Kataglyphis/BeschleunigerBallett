@@ -25,6 +25,7 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.sampler_builder;
+import kataglyphis.vulkan.color_attachment;
 
 namespace Kataglyphis {
 
@@ -33,6 +34,7 @@ namespace {
     constexpr uint32_t kParamsBinding = 0;
     constexpr uint32_t kSourceCubeBinding = 2;
     constexpr uint32_t kSourceSamplerBinding = 3;
+    constexpr uint32_t kSunMaskBinding = 4;
 
     constexpr vk::Format kCubeFormat = vk::Format::eR16G16B16A16Sfloat;
     constexpr vk::Format kLutFormat = vk::Format::eR16G16Sfloat;
@@ -118,7 +120,8 @@ void AmbientMaps::init(const std::shared_ptr<VulkanDevice> &in_device, vk::Comma
 
     descriptors.addBinding(kParamsBinding, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment)
       .addBinding(kSourceCubeBinding, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(kSourceSamplerBinding, vk::DescriptorType::eSampler, 1, vk::ShaderStageFlagBits::eFragment);
+      .addBinding(kSourceSamplerBinding, vk::DescriptorType::eSampler, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(kSunMaskBinding, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eFragment);
     if (!descriptors.create(device, kAmbientBakeDraws)) {
         spdlog::error("AmbientMaps: no descriptor sets; the scene keeps the analytic ambient.");
         return;
@@ -148,6 +151,13 @@ void AmbientMaps::createMaps()
     cube(environment, kAmbientEnvironmentSize, kAmbientEnvironmentMips);
     cube(irradiance, kAmbientIrradianceSize, 1);
     cube(prefiltered, kAmbientPrefilterSize, kAmbientPrefilterMips);
+    VulkanRendererInternals::createColorAttachment(sunMask,
+      device,
+      vk::Extent2D{ 2, 1 },
+      kCubeFormat,
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+        | vk::ImageUsageFlagBits::eTransferDst,
+      "IBL sun mask");
 
     brdfLut.createImage(device,
       kAmbientBrdfLutSize,
@@ -186,11 +196,12 @@ bool AmbientMaps::clearMaps()
         uint32_t mips;
         uint32_t layers;
     };
-    const std::array<Map, 4> maps = { Map{ environment.getImage(), kAmbientEnvironmentMips, 6 },
+    const std::array<Map, 5> maps = { Map{ environment.getImage(), kAmbientEnvironmentMips, 6 },
         Map{ irradiance.getImage(), 1, 6 },
         Map{ prefiltered.getImage(), kAmbientPrefilterMips, 6 },
-        Map{ brdfLut.getImage(), 1, 1 } };
-    std::array<vk::ImageMemoryBarrier2, 4> barriers{};
+        Map{ brdfLut.getImage(), 1, 1 },
+        Map{ sunMask.getImage(), 1, 1 } };
+    std::array<vk::ImageMemoryBarrier2, 5> barriers{};
     for (std::size_t i = 0; i < maps.size(); ++i) {
         barriers[i] = buildImageMemoryBarrier(maps[i].image,
           vk::ImageLayout::eUndefined,
@@ -256,6 +267,7 @@ void AmbientMaps::createPipelines()
             "Failed to create an IBL pipeline!");
     };
     skyboxToCube = build("fs_skybox_to_cube", kCubeFormat, "IBL skybox to cube");
+    findSun = build("fs_find_sun", kCubeFormat, "IBL sun search");
     downsample = build("fs_downsample_cube", kCubeFormat, "IBL downsample");
     irradianceFilter = build("fs_irradiance", kCubeFormat, "IBL irradiance");
     prefilter = build("fs_prefilter", kCubeFormat, "IBL prefilter");
@@ -265,7 +277,7 @@ void AmbientMaps::createPipelines()
 void AmbientMaps::destroyFilterPipelines()
 {
     const vk::Device logical = device->getLogicalDevice();
-    for (vk::Pipeline *pipeline : { &skyboxToCube, &downsample, &irradianceFilter, &prefilter }) {
+    for (vk::Pipeline *pipeline : { &skyboxToCube, &findSun, &downsample, &irradianceFilter, &prefilter }) {
         if (*pipeline) {
             logical.destroyPipeline(*pipeline);
             *pipeline = nullptr;
@@ -293,12 +305,13 @@ bool AmbientMaps::bake(Texture &skybox, uint32_t faceSize)
         return false;
     }
 
-    // One fullscreen triangle into target, reading source; each draw has its own params slot and set.
-    const auto draw = [&](vk::Pipeline pipeline,
-                        vk::ImageView target,
-                        uint32_t size,
-                        vk::ImageView source,
-                        const AmbientBakeParams &values) {
+    // One fullscreen triangle into target, reading source (and the sun mask); each draw has its own params slot and set.
+    const auto drawInto = [&](vk::Pipeline pipeline,
+                            vk::ImageView target,
+                            vk::Extent2D extent,
+                            vk::ImageView source,
+                            const AmbientBakeParams &values,
+                            vk::ImageView mask) {
         const uint32_t set = drawIndex++;
         std::memcpy(mapped + set * paramsStride, &values, sizeof(values));
         descriptors.writeBuffer(set, kParamsBinding, params.getBuffer(), sizeof(AmbientBakeParams), set * paramsStride);
@@ -306,8 +319,8 @@ bool AmbientMaps::bake(Texture &skybox, uint32_t faceSize)
             descriptors.writeImage(set, kSourceCubeBinding, source, vk::ImageLayout::eShaderReadOnlyOptimal);
         }
         descriptors.writeImage(set, kSourceSamplerBinding, nullptr, vk::ImageLayout::eUndefined, bakeSampler);
+        if (mask) { descriptors.writeImage(set, kSunMaskBinding, mask, vk::ImageLayout::eShaderReadOnlyOptimal); }
 
-        const vk::Extent2D extent{ size, size };
         const std::array<vk::RenderingAttachmentInfo, 1> colour = { buildRenderingAttachmentInfo(
           target, vk::ImageLayout::eColorAttachmentOptimal, vk::AttachmentLoadOp::eDontCare) };
         commandBuffer.beginRendering(buildRenderingInfo(extent, colour, nullptr));
@@ -317,6 +330,13 @@ bool AmbientMaps::bake(Texture &skybox, uint32_t faceSize)
           vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptors.sets()[set], 0, nullptr);
         commandBuffer.draw(3, 1, 0, 0);
         commandBuffer.endRendering();
+    };
+    const auto draw = [&](vk::Pipeline pipeline,
+                        vk::ImageView target,
+                        uint32_t size,
+                        vk::ImageView source,
+                        const AmbientBakeParams &values) {
+        drawInto(pipeline, target, vk::Extent2D{ size, size }, source, values, nullptr);
     };
     const auto face = [&](Texture &texture, uint32_t index, uint32_t mip) {
         transientViews.push_back(faceView(logical, texture.getImage(), kCubeFormat, index, mip));
@@ -333,29 +353,44 @@ bool AmbientMaps::bake(Texture &skybox, uint32_t faceSize)
     }
     draw(brdfTable, brdfLut.getImageView(), kAmbientBrdfLutSize, nullptr, AmbientBakeParams{});
 
-    // The drawn skybox's radiance at mip 0, then each mip from the one above.
+    // The drawn skybox's radiance at mip 0, then each mip from the one above; masked leaves out the sun found.
     const float faceTexels = static_cast<float>(faceSize);
-    for (uint32_t f = 0; f < 6; ++f) {
-        draw(skyboxToCube,
-          face(environment, f, 0),
-          kAmbientEnvironmentSize,
-          skybox.getImageView(),
-          AmbientBakeParams{ { static_cast<float>(f), 0.0F, 0.0F, 0.0F }, { faceTexels, 0.0F, 0.0F, 0.0F } });
-    }
-    for (uint32_t mip = 1; mip < kAmbientEnvironmentMips; ++mip) {
-        recordImageBarrier(commandBuffer, toSampled(environment.getImage(), mip - 1, 1, 6));
-        transientViews.push_back(cubeMipView(logical, environment.getImage(), mip - 1));
-        const vk::ImageView source = transientViews.back();
-        const float sourceTexels = static_cast<float>(kAmbientEnvironmentSize >> (mip - 1));
+    const auto environmentPasses = [&](bool masked) {
+        const float leaveOutSun = masked ? 1.0F : 0.0F;
         for (uint32_t f = 0; f < 6; ++f) {
-            draw(downsample,
-              face(environment, f, mip),
-              kAmbientEnvironmentSize >> mip,
-              source,
-              AmbientBakeParams{ { static_cast<float>(f), 0.0F, 0.0F, 0.0F }, { sourceTexels, 0.0F, 0.0F, 0.0F } });
+            drawInto(skyboxToCube,
+              face(environment, f, 0),
+              vk::Extent2D{ kAmbientEnvironmentSize, kAmbientEnvironmentSize },
+              skybox.getImageView(),
+              AmbientBakeParams{ { static_cast<float>(f), 0.0F, 0.0F, 0.0F }, { faceTexels, leaveOutSun, 0.0F, 0.0F } },
+              sunMask.getImageView());
         }
+        for (uint32_t mip = 1; mip < kAmbientEnvironmentMips; ++mip) {
+            recordImageBarrier(commandBuffer, toSampled(environment.getImage(), mip - 1, 1, 6));
+            transientViews.push_back(cubeMipView(logical, environment.getImage(), mip - 1));
+            const vk::ImageView source = transientViews.back();
+            const float sourceTexels = static_cast<float>(kAmbientEnvironmentSize >> (mip - 1));
+            for (uint32_t f = 0; f < 6; ++f) {
+                draw(downsample,
+                  face(environment, f, mip),
+                  kAmbientEnvironmentSize >> mip,
+                  source,
+                  AmbientBakeParams{ { static_cast<float>(f), 0.0F, 0.0F, 0.0F }, { sourceTexels, 0.0F, 0.0F, 0.0F } });
+            }
+        }
+        recordImageBarrier(commandBuffer, toSampled(environment.getImage(), kAmbientEnvironmentMips - 1, 1, 6));
+    };
+    // The search reads the whole unmasked chain, so the masked environment is drawn again over it.
+    environmentPasses(false);
+    recordImageBarrier(commandBuffer, toTarget(sunMask.getImage(), 1, 1));
+    drawInto(
+      findSun, sunMask.getImageView(), vk::Extent2D{ 2, 1 }, environment.getImageView(), AmbientBakeParams{}, nullptr);
+    {
+        const std::array<vk::ImageMemoryBarrier2, 2> barriers = { toSampled(sunMask.getImage(), 0, 1, 1),
+            toTarget(environment.getImage(), kAmbientEnvironmentMips, 6) };
+        recordImageBarriers(commandBuffer, barriers);
     }
-    recordImageBarrier(commandBuffer, toSampled(environment.getImage(), kAmbientEnvironmentMips - 1, 1, 6));
+    environmentPasses(true);
 
     const float environmentTexels = static_cast<float>(kAmbientEnvironmentSize);
     for (uint32_t f = 0; f < 6; ++f) {
@@ -420,6 +455,7 @@ void AmbientMaps::cleanUp()
         bakeSampler = nullptr;
     }
     brdfLut.cleanUp();
+    sunMask.cleanUp();
     prefiltered.cleanUp();
     irradiance.cleanUp();
     environment.cleanUp();

@@ -40,6 +40,7 @@
 #include <limits>
 #include <memory>
 #include <nlohmann/json.hpp>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <span>
@@ -1844,6 +1845,121 @@ TEST(GoldenRender, TheDrawnSkyboxLightsACardThroughItsBakeInEveryMode)
     }
 }
 
+// The bake leaves the photo's sun to the directional Sun: a mirror facing it reflects the sky around the disk.
+TEST(GoldenRender, AMirrorFacingThePhotoSunReflectsTheSkyAroundIt)
+{
+    SKIP_WITHOUT_GPU();
+
+    // The default photo sky's sun, measured from its faces: the centroid of the saturated texels around it.
+    const glm::vec3 PHOTO_SKY_SUN = glm::normalize(glm::vec3(0.6248F, 0.6769F, 0.3891F));
+
+    const auto mirror = write_gltf_variant(EMISSIVE_CARD_MODEL, "kataglyphis_photo_sun_mirror.gltf", [](auto &gltf) {
+        auto &material = gltf["materials"][0];
+        material["pbrMetallicRoughness"] = {
+            { "baseColorFactor", { 0.9, 0.9, 0.9, 1.0 } }, { "metallicFactor", 1.0 }, { "roughnessFactor", 0.05 }
+        };
+        material["emissiveFactor"] = { 0.0, 0.0, 0.0 };
+    });
+    ASSERT_TRUE(mirror.has_value()) << "could not write the mirror card";
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    ASSERT_FALSE(harness.renderer->skyIsAnalytic())
+      << "the photo sky did not load - not fetched, or not the repo root?";
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    // The sky alone lights the mirror: a sun spike in it can only come from the bake.
+    scene_vars.directional_light_radiance = 0.0F;
+    scene_vars.directional_light_ambient = 1.0F;
+    scene_vars.shadows_enabled = false;
+    const glm::vec3 eye(0.0F, 6.0F, 26.0F);
+    harness.camera->set_camera_position(eye);
+    const auto look_along = [&harness](const glm::vec3 &dir) {
+        harness.camera->set_orientation(glm::degrees(std::atan2(dir.z, dir.x)), glm::degrees(std::asin(dir.y)));
+    };
+    look_along(PHOTO_SKY_SUN);
+    harness.render_frames(WARMUP_FRAMES);
+
+    // The sky pass still draws the sun's saturated disk; the ring at 11-14 degrees is the sky around it.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<float> sky = harness.capture_hdr_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost drawing the sky.";
+    ASSERT_EQ(sky.size(), static_cast<size_t>(width) * height * 4U);
+    const glm::mat4 clip_to_world = harness_inverse_view_projection(harness, width, height);
+    glm::dvec3 disk(0.0);
+    glm::dvec3 ring(0.0);
+    size_t disk_pixels = 0;
+    size_t ring_pixels = 0;
+    for (uint32_t y = 0; y < height; ++y) {
+        for (uint32_t x = 0; x < width; ++x) {
+            const glm::vec2 ndc((static_cast<float>(x) + 0.5F) / static_cast<float>(width) * 2.0F - 1.0F,
+              (static_cast<float>(y) + 0.5F) / static_cast<float>(height) * 2.0F - 1.0F);
+            const glm::vec4 point = clip_to_world * glm::vec4(ndc, 0.5F, 1.0F);
+            const float degrees = glm::degrees(std::acos(
+              std::clamp(glm::dot(glm::normalize(glm::vec3(point) / point.w - eye), PHOTO_SKY_SUN), -1.0F, 1.0F)));
+            const float *texel = &sky[(static_cast<size_t>(y) * width + x) * 4U];
+            const glm::dvec3 rgb(texel[0], texel[1], texel[2]);
+            if (degrees < 2.0F) {
+                disk += rgb;
+                ++disk_pixels;
+            } else if (degrees >= 11.0F && degrees <= 14.0F) {
+                ring += rgb;
+                ++ring_pixels;
+            }
+        }
+    }
+    ASSERT_GT(disk_pixels, 10U) << "the sun's disk is off the frame";
+    ASSERT_GT(ring_pixels, 100U) << "the ring around the sun is off the frame";
+    disk /= static_cast<double>(disk_pixels);
+    ring /= static_cast<double>(ring_pixels);
+    const auto luminance = [](const glm::dvec3 &c) { return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
+    GTEST_LOG_(INFO) << "drawn photo sun (" << disk.r << ", " << disk.g << ", " << disk.b << "), the ring around it ("
+                     << ring.r << ", " << ring.g << ", " << ring.b << ") luminance " << luminance(ring);
+    EXPECT_GT(std::min({ disk.r, disk.g, disk.b }), 5.0)
+      << "the sky pass no longer draws a saturated sun at PHOTO_SKY_SUN: the faces changed, or the mask reached it";
+
+    // Turned so the eye sees the sun mirrored in its centre.
+    const glm::vec3 centre(0.0F, 5.0F, 18.0F);
+    const glm::vec3 mirror_normal = glm::normalize(PHOTO_SKY_SUN + glm::normalize(eye - centre));
+    const glm::vec3 card_normal(0.0F, 0.0F, 1.0F);
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), centre)
+                                * glm::rotate(glm::mat4(1.0F),
+                                  std::acos(glm::dot(card_normal, mirror_normal)),
+                                  glm::normalize(glm::cross(card_normal, mirror_normal)))
+                                * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    ASSERT_TRUE(harness.renderer->addModel(mirror->string(), placement).has_value()) << "adding the mirror failed";
+    look_along(glm::normalize(centre - eye));
+
+    std::vector<LitMode> modes = raster_and_ray_traced_modes(harness);
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back(LitMode{ "path traced", RasterizationMode::Forward, false });
+    }
+    for (const LitMode &mode : modes) {
+        SCOPED_TRACE(mode.name);
+        const bool traced = std::string_view(mode.name) == "path traced";
+        renderer_vars.rasterizationMode = mode.raster;
+        renderer_vars.raytracing = mode.raytracing;
+        renderer_vars.pathTracing = traced;
+        renderer_vars.pathTracingSamplesPerPixel = 1;
+        renderer_vars.pathTracingMaxBounces = 2;
+        // The mirror's GGX lobe is narrow, so four one-sample frames settle its mean.
+        harness.render_frames(traced ? 4 : SETTLE_FRAMES);
+        const std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+        ASSERT_EQ(radiance.size(), static_cast<size_t>(width) * height * 4U);
+        const auto mean = mean_radiance_at(harness, radiance, width, height, centre);
+        ASSERT_TRUE(mean.has_value()) << "the mirror's centre projects outside the frame";
+        GTEST_LOG_(INFO) << mode.name << ": the mirror facing the photo sun (" << mean->r << ", " << mean->g << ", "
+                         << mean->b << ") luminance " << luminance(*mean) << ", " << luminance(*mean) / luminance(ring)
+                         << " times the ring's";
+        // Its saturated disk mirrored is about 5 times the ring: the bake would light the scene with the sun twice.
+        EXPECT_LT(luminance(*mean), 2.0 * luminance(ring)) << "the mirror shows the photo's sun: the bake kept it";
+        EXPECT_GT(luminance(*mean), 0.3 * luminance(ring)) << "the mirror reflects no sky";
+    }
+}
+
 // A bake that bails, as after a failed skybox upload, leaves the maps sampleable and the scene on the analytic sky.
 TEST(GoldenRender, AFailedAmbientBakeLeavesSampleableMapsAndTheAnalyticSky)
 {
@@ -1981,6 +2097,7 @@ TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
     size_t mid_grey = 0;
     size_t shoulder = 0;
     double mid_grey_level_sum = 0.0;
+    double mid_grey_formula_sum = 0.0;
     for (const float radiance : radiances) {
         SCOPED_TRACE("directional radiance " + std::to_string(radiance));
         scene_vars.directional_light_radiance = radiance;
@@ -2023,10 +2140,11 @@ TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
                 if (channel != 1U) { continue; }
                 if (linear < 0.05) { ++dark; }
                 if (linear > 1.0) { ++shoulder; }
-                // Narrow enough that the band's own spread (about one level each side) cannot move the mean.
-                if (std::abs(linear - 0.18) < 0.004) {
+                // Half a stop each side of 0.18, graded against the formula's mean over the same texels.
+                if (linear > 0.18 / std::numbers::sqrt2 && linear < 0.18 * std::numbers::sqrt2) {
                     ++mid_grey;
                     mid_grey_level_sum += static_cast<double>(display[pixel * 4U + channel]);
+                    mid_grey_formula_sum += expected;
                 }
             }
             worst_delta = std::max(worst_delta, pixel_delta);
@@ -2042,12 +2160,14 @@ TEST(GoldenRender, PostEncodesEachHdrTexelThroughAcesAndSrgb)
 
     // Both frames together must exercise the toe, the middle and the shoulder, or a match proves one segment only.
     const double mid_grey_level = mid_grey > 0U ? mid_grey_level_sum / static_cast<double>(mid_grey) : 0.0;
-    GTEST_LOG_(INFO) << "green texels: below 0.05 " << dark << ", near 0.18 " << mid_grey << " (mean level "
-                     << mid_grey_level << ", formula " << post_display_level(0.18) << "), above 1.0 " << shoulder;
+    const double mid_grey_formula = mid_grey > 0U ? mid_grey_formula_sum / static_cast<double>(mid_grey) : 0.0;
+    GTEST_LOG_(INFO) << "green texels: below 0.05 " << dark << ", within half a stop of 0.18 " << mid_grey
+                     << " (mean level " << mid_grey_level << ", formula " << mid_grey_formula << "), above 1.0 "
+                     << shoulder;
     EXPECT_GT(dark, 1000U) << "No dark texels: the toe goes unchecked.";
-    EXPECT_GT(mid_grey, 100U) << "No texels near 0.18: the middle goes unchecked.";
+    EXPECT_GT(mid_grey, 1000U) << "No texels near 0.18: the middle goes unchecked.";
     EXPECT_GT(shoulder, 1000U) << "No texels above 1.0: the shoulder goes unchecked.";
-    EXPECT_NEAR(mid_grey_level, post_display_level(0.18), 2.0)
+    EXPECT_NEAR(mid_grey_level, mid_grey_formula, 2.0)
       << "Linear 0.18 should display at level 141: 46 is no tonemap and no encode, 68 no encode, 118 no tonemap.";
 }
 

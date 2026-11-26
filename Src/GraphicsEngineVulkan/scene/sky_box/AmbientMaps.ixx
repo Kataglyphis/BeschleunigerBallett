@@ -25,8 +25,8 @@ inline constexpr uint32_t kAmbientPrefilterMips = 5;
 inline constexpr uint32_t kAmbientPrefilterSamples = 256;
 inline constexpr uint32_t kAmbientBrdfLutSize = 256;
 
-// Every draw one bake records: the table, the environment's faces and mips, the irradiance and the prefilter.
-inline constexpr uint32_t kAmbientBakeDraws = 1 + 6 * kAmbientEnvironmentMips + 6 + 6 * kAmbientPrefilterMips;
+// Every draw one bake records: the table, the environment twice around the sun search, the irradiance, the prefilter.
+inline constexpr uint32_t kAmbientBakeDraws = 1 + 2 * 6 * kAmbientEnvironmentMips + 1 + 6 + 6 * kAmbientPrefilterMips;
 
 // OxidANT's ibl.slang IblParams.
 struct AmbientBakeParams
@@ -35,7 +35,7 @@ struct AmbientBakeParams
     std::array<float, 4> sourceResolution{};
 };
 
-// The split-sum maps baked from the drawn skybox's cube, which the raster and ray-traced modes light the scene with.
+// The split-sum maps baked from the drawn skybox's cube without its sun, which the directional Sun alone supplies.
 class AmbientMaps
 {
   public:
@@ -71,6 +71,8 @@ class AmbientMaps
     vk::CommandPool commandPool{};
 
     Texture environment;
+    // OxidANT's fs_find_sun result: the sun's direction, then the ring that replaces it.
+    Texture sunMask;
     Texture irradiance;
     Texture prefiltered;
     Texture brdfLut;
@@ -81,6 +83,7 @@ class AmbientMaps
     DescriptorSetGroup descriptors;
     vk::PipelineLayout pipelineLayout{};
     vk::Pipeline skyboxToCube{};
+    vk::Pipeline findSun{};
     vk::Pipeline downsample{};
     vk::Pipeline irradianceFilter{};
     vk::Pipeline prefilter{};

@@ -128,6 +128,21 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The skybox's bake leaves its sun to the directional Sun (owner decision 2026-11-25): `AmbientMaps` draws the
+  environment twice around OxidANT's new `fs_find_sun` (`common/sun_mask.slang`), which finds the sun in the sky's own
+  mips, and the second `fs_skybox_to_cube` brings every channel within 10 degrees of it down to the ring at 12
+  degrees. The default photo's sun (saturated to 4 degrees, which `aces_tonemap_inverse` makes 7.24, its rays and
+  glow to 10) sits at 42.6 degrees elevation, 11.3 from the default Sun, so a mask around the Sun's direction would
+  miss it; the two sunlit clouds below it saturate alike, so a clamp would dim them too. The search keys on a texel's
+  dimmest channel, since the glow below the disk saturates green and blue. A mirror facing that sun reflected the disk:
+  `GoldenRender.AMirrorFacingThePhotoSunReflectsTheSkyAroundIt` reads 0.91 times the drawn ring around it in forward,
+  deferred and ray tracing and 0.92 path traced, 4.6 and 5.1 with the mask off. The disk's 10 degrees carried about a
+  sixth of an upward surface's sky light: `TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame`'s shadowed ground
+  went from (0.0593, 0.0955, 0.1834) to (0.0496, 0.0759, 0.1663) at the default Ambient. The drawn sky, the path
+  tracer's camera miss and the clouds' ambient keep the sun. A bake on aarch64 llvmpipe stays at about 1.6 s (median
+  1586 ms, 1659 before). `PostEncodesEachHdrTexelThroughAcesAndSrgb` grades the middle over half a stop around 0.18
+  against the formula's mean over the same texels: the ±0.004 band had held the sky-lit ground by chance, 99845 texels
+  before and 418 after. OxidANT pin `44c7703`.
 - Both package layouts take the hub's install-tree rule (CON299): `check-deb-layout.sh` runs `check-install-tree.sh` over
   the extracted .deb, and `Build-Windows.ps1` passes `-ForbidBuildTimeFiles` to `New-PortableBundle` instead of its own
   *Bundle layout* step, so both also refuse `share/pkgconfig` and a `.a` anywhere. The static-analysis IWYU step drops its

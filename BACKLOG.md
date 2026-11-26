@@ -61,6 +61,9 @@ No P0 item is open.
   analytic ambient's three `pow` per pixel reach. Since Phase 18: the traced goldens over the shared
   integrator (`PathTracedCameraMissShowsTheDrawnSky`, `PathTracedMirrorReflectsTheSkyboxItDraws`,
   `TracedHitsTakeTheirSideFromTheTriangleWinding`) and a sync-validated path-traced frame with clouds on.
+  Since Phase 19: `AMirrorFacingThePhotoSunReflectsTheSkyAroundIt`, the bake's new barriers under
+  `Invoke-SyncValidation.ps1`, and `TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame` and
+  `TheOcclusionMapDarkensTheSkysLightAndNotTheSuns` at their sun-less bake values.
 
 The entries tagged *plan* come from the bridge and feature plan of 2026-11-18 (80 candidates, each
 checked against the code; the ids in parentheses are the plan's). Its rules: bridge load-time and tool
@@ -105,10 +108,6 @@ Loader:
 
 C++ catches up:
 
-- [ ] `Shared` **Mask the photo sky's sun out of the IBL bake** (S-M). Owner 2026-11-25: both renderers bake
-  their IBL from the drawn sky, and a photo sky's sun disk then lights the scene on top of the directional Sun.
-  Mask or clamp the disk around the Sun's direction in OxidANT's `ibl.slang` bake, which both renderers run, so
-  the directional Sun alone supplies it; a golden with a visible photo sun shows no extra sun-facing specular.
 - [ ] `CI` **The IBL bake's cost on emulated lanes** (S). Phase 16's bake costs 1.6 s per renderer on llvmpipe
   (irradiance 1.24 s of it: 128 x 64 taps per texel); the full x64 ctest went from 42 to 46 min. Under QEMU that
   is about 30-50 s per renderer: read the next weekly riscv64 `raster` shard and Windows lavapipe times. If it
@@ -197,7 +196,13 @@ New in both:
   95 C++ GPU tests to its Rust twin or a reason; BuildIntegrity fails on an unmapped test or a stale row.
 - [ ] `Shared` **Rotate the photo sky with the sun's azimuth** (M, plan X19), on by default in both renderers
   (owner 2026-11-19). The three C++ cube lookups (with post's cloud composite) take a yaw; Rust needs only a
-  flag in `sky.slang`.
+  flag in `sky.slang`. The IBL bake must then read the sky as drawn, turned, so `sun_mask.slang`'s search
+  still finds the drawn sun; the search itself does not care which way the sky faces.
+- [ ] `Shared` **Feather the sun mask's edge** (S). Since Phase 19 the bake caps every channel within 10° of the
+  sky's own sun at its 12° ring (`sun_mask.slang`), so a near-mirror shows a circle where the photo's green and
+  blue glow is cut to the ring's mean. A blend from 10° to 12° joins it to the sky; it moves the `sun_mask`
+  vectors and the goldens Phase 19 moved. A patch that outshines its ring 3x in every channel within 10° (an
+  interior `.hdr`'s window) is masked like a sun; no product path loads one today.
 - [ ] `Assets` **Skybox faces and the cloud ambient from Rust** (M, plan B4). One
   face decode and average for both renderers; the navy gate needs a new form.
 - [ ] `C++` **Fit the cascades in Rust** (M, plan B7). The first per-frame bridge call (about 1 µs, no

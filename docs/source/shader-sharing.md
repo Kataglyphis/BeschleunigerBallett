@@ -93,8 +93,10 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   after the sun's shadow through `common/ambient_maps.slang`'s
   `scene_sky_ambient` over `AmbientMaps`'s bake of the drawn skybox (OxidANT's
   `ibl.slang`, its `fs_skybox_to_cube` untonemapping the faces as `sky.slang`
-  draws them), scaled by `dirLight.direction.w` (the Sky tab's Ambient slider)
-  and the occlusion map; a switched-off skybox lights with the analytic sky. In
+  draws them, without the sun `fs_find_sun` finds in them: OxidANT's
+  `common/sun_mask.slang`, so the directional Sun alone lights with it),
+  scaled by `dirLight.direction.w` (the Sky tab's Ambient slider) and the
+  occlusion map; a switched-off skybox lights with the analytic sky. In
   OxidANT `forward_lighting.slang` and the tracer's `trace_shading.slang` call
   it over their own maps. The path tracers get the sky through their bounces'
   misses. Both.
@@ -442,6 +444,7 @@ imports.
 | `common/shared_constants.slang` | spirv |
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |
+| `common/sun_mask.slang` | both |
 | `common/surface_lighting.slang` | both |
 | `common/trace_constants.slang` | both |
 | `common/traced_hit.slang` | spirv |
