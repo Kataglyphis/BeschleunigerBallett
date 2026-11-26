@@ -87,6 +87,18 @@ takes UTF-8 paths and runs inside `guarded()`.
   census does not read, so Windows has `/WX` but no census of its suites and fuzz targets: wire one once the hub
   reads it (its CON295 follow-up).
 
+- [ ] `C++` **Split the two giant suites by subject** (M; after the suites' warnings, which edit the same files).
+  `goldenRenderSuite.cpp` (7708 lines, 101 tests) and `buildIntegritySuite.cpp` (12014 lines, 194 tests) are one
+  translation unit each: a changed test recompiles the whole file, finding one means scrolling thousands of lines,
+  and in Phase 20 a local GCC Debug build at -j4 stalled a 12 GB container for 27 min with four compiles of 2.6-3.9 GB
+  each, among them `buildIntegritySuite.cpp`; GCC builds stay at -j2 locally since. First measure each suite unit's
+  peak memory (`/usr/bin/time -v`, GCC and clang, arm64 Debug) against a small unit with the same imports: splitting
+  divides only the tests' own share (`DeferredRasterizer.cpp`, 461 lines, peaked alike, so its imports dominate).
+  Then split each suite into files of a few hundred lines by subject, with a shared helper header; keep every test
+  name (CI filters, `BuildIntegrity`'s Windows lists and the riscv64 shards name them) and the commit-suite count,
+  and move the source reads that name the two files (three in `buildIntegritySuite.cpp`, one in
+  `repoFilesSuite.cpp`). Done when the per-unit peak and the GCC -j that fits 12 GB are measured before and after.
+
 
 - [b] `C++` **Confirm on the RX 9070 XT that the path-tracing device loss is gone** (S, needs the
   host GPU). Cause found 2026-08-05: `path_tracing.slang`'s committed hit dropped the
