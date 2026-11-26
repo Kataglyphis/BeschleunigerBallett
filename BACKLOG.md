@@ -75,19 +75,7 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 ### P2: medium
 
-- [ ] `CI` **The suites' warnings, and a census clang-cl can read** (S-M). Since Phase 20 (eacea92d, bd012d72) the
-  engine's own warnings are fixed (36 GCC, 11-13 clang, clang-cl's `getenv` at eight sites; one was a mesh base
-  truncated into `instanceCustomIndex`'s 24 bits), `VulkanEngineCore` and `GraphicsEngine` build with
-  `COMPILE_WARNING_AS_ERROR`, GLFW, the cxx bridge headers and Abseil (outside clang-cl) are SYSTEM, and every Linux
-  build holds its own warnings in `scripts/linux/warning-census.txt` (8 builds x 2 arches, no rows; x64 proven in
-  run 45749216375). Left: (1) `Test/cmake/CommonTestBuild.cmake` compiles the three suites with `-w`, so neither the
-  census nor `-Werror` sees them; without it arm64 clang Debug shows 77 own warnings over 11 flags (22 missing
-  designated initializers, 12 macro redefinitions, 12 missing field initializers, 12 double promotions): lift `-w`,
-  census the suites, fix them, then decide `-Werror` for them. (2) clang-cl prints `file(line,col):`, which the hub's
-  census does not read, so Windows has `/WX` but no census of its suites and fuzz targets: wire one once the hub
-  reads it (its CON295 follow-up).
-
-- [ ] `C++` **Split the two giant suites by subject** (M; after the suites' warnings, which edit the same files).
+- [ ] `C++` **Split the two giant suites by subject** (M).
   `goldenRenderSuite.cpp` (7708 lines, 101 tests) and `buildIntegritySuite.cpp` (12014 lines, 194 tests) are one
   translation unit each: a changed test recompiles the whole file, finding one means scrolling thousands of lines,
   and in Phase 20 a local GCC Debug build at -j4 stalled a 12 GB container for 27 min with four compiles of 2.6-3.9 GB
@@ -199,6 +187,16 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `C++` **`CloudCompositeAndTracedSkyAreFreeOfSyncHazards` hung once on aarch64 llvmpipe** (S, needs a repro).
+  A full local ctest timed out on it at 1500 s, against 20-42 s elsewhere (CI x64 20.1 s, arm64 29.6 s, two solo
+  reruns 42 s). Its last line was the BLAS compaction after the model load, so it stalled in the frame loop with
+  clouds and sync validation on. 15 min in, the main and frame threads slept while one thread of llvmpipe's
+  7-thread compute pool spun at 100 %, with 15.5 GB available: a compute workgroup that never finished, not
+  starvation. The clouds' marches are bounded (at most 128 steps; a NaN interval skips the march, an infinite one
+  takes the cap), so the likelier spinner is the ray queries' `while (query.Proceed())` in
+  `common/traced_hit.slang`, whose end lavapipe decides. Next: repeat the test (`--gtest_repeat`) under
+  `run-ctest.sh --virtual-display` in a container with ptrace allowed until it hangs, then take the spinning
+  thread's stack.
 - [ ] `Assets` **Credit and framing polish** (S). The Rust renderer credits from `asset.copyright` only; give it
   `scene_meta::credit`'s ATTRIBUTION.txt fallback, so its OBJ scenes are credited as the engine's are. C++ shows the
   credit in About only; a library-row tooltip as Rust's would show it before a load.
