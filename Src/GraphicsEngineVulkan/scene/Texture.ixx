@@ -40,15 +40,14 @@ class Texture
       const unsigned char *encodedBytes,
       size_t byteCount,
       bool srgb = true);
-    /// Uploads a ready RGBA8 mip chain (level 0 first, packed back to back, each level halving down to 1x1), as
-    /// OxidANT's loader delivers every texture; no blit. Levels past maxImageDimension2D are skipped; false when the
-    /// chain is shorter than `levelCount` levels.
+    /// Uploads a ready mip chain as OxidANT's loader delivers every texture (level 0 first, packed back to back, each
+    /// level halving): RGBA8 texels down to 1x1, or blocks of a family the device samples; no blit. Levels past
+    /// maxImageDimension2D are skipped, a block chain starting at whole blocks; false when the chain is shorter than
+    /// its levels or the device samples no such blocks.
     bool createFromLevels(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
-      uint32_t width,
-      uint32_t height,
-      uint32_t levelCount,
-      std::span<const unsigned char> rgba8,
+      const ChainShape &shape,
+      std::span<const unsigned char> data,
       bool srgb);
     /// Returns false if the white-default upload itself failed (e.g. a failed
     /// submit), in which case the texture is left empty/unwritten.
@@ -58,6 +57,8 @@ class Texture
     void setImageView(vk::ImageView imageView);
 
     uint32_t getMipLevel() const { return mip_levels; };
+    /// The format of the last upload's image and view, eUndefined before one.
+    vk::Format getFormat() const { return image_format; }
     VulkanImage &getVulkanImage() { return vulkanImage; };
     vk::Image &getImage() { return vulkanImage.getImage(); };
     vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
@@ -138,6 +139,7 @@ class Texture
       std::span<const ChainLevel> stored);
 
     uint32_t mip_levels = 0;
+    vk::Format image_format = vk::Format::eUndefined;
 
     void generateMipMaps(vk::CommandBuffer command_buffer, vk::Image image, int32_t width, int32_t height);
 

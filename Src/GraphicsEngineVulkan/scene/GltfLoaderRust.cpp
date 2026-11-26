@@ -14,6 +14,7 @@ module;
 
 #include <glm/glm.hpp>
 
+#include "scene/TextureFit.hpp"
 #include "spdlog/spdlog.h"
 
 #include "oxidant_bridge/gltf.h"
@@ -44,6 +45,17 @@ namespace {
     static_assert(offsetof(ox::GltfVertex, tangent) == offsetof(Vertex, tangent));
     static_assert(offsetof(ox::GltfVertex, uv1) == offsetof(Vertex, texture_coords1));
     static_assert(std::is_same_v<std::uint32_t, unsigned int> && std::is_same_v<std::uint8_t, unsigned char>);
+
+    // The bridge's tag is read as ChainFormat, so the two enumerations must agree value by value.
+    constexpr bool sameTag(ox::GltfTextureFormat tag, ChainFormat format)
+    { return static_cast<std::uint8_t>(tag) == static_cast<std::uint8_t>(format); }
+    static_assert(sameTag(ox::GltfTextureFormat::Rgba8, ChainFormat::Rgba8));
+    static_assert(sameTag(ox::GltfTextureFormat::Bc1, ChainFormat::Bc1));
+    static_assert(sameTag(ox::GltfTextureFormat::Bc3, ChainFormat::Bc3));
+    static_assert(sameTag(ox::GltfTextureFormat::Bc5, ChainFormat::Bc5));
+    static_assert(sameTag(ox::GltfTextureFormat::Bc7, ChainFormat::Bc7));
+    static_assert(sameTag(ox::GltfTextureFormat::Etc2Rgba8, ChainFormat::Etc2Rgba8));
+    static_assert(sameTag(ox::GltfTextureFormat::Astc4x4, ChainFormat::Astc4x4));
 
     // Pinned for every glTF material: only an OBJ material's roughness falls back to shininess.
     constexpr float kGltfShininess = 1.0F;
@@ -173,7 +185,10 @@ namespace {
 bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptions &options)
 {
     const std::vector<std::uint8_t> path = Shared::utf8PathBytes(std::filesystem::path(modelFile));
-    const ox::GltfLoadOptions bridgeOptions{ .mikktspace_tangents = options.mikktspaceTangents };
+    const BlockSupport &blocks = options.blocks;
+    const ox::GltfLoadOptions bridgeOptions{ .mikktspace_tangents = options.mikktspaceTangents,
+        .blocks = ox::GltfBlockSupport{
+          .bc = blocks.bc, .etc2 = blocks.etc2, .astc = blocks.astc, .max_side = blocks.maxSide } };
     auto parsed = std::make_shared<BridgeModel>(
       BridgeModel{ ox::load_gltf_flat_with(rust::Slice<const std::uint8_t>(path.data(), path.size()), bridgeOptions) });
     logOxidantRecords();
@@ -192,7 +207,8 @@ bool GltfLoader::parseWithRust(const std::string &modelFile, const GltfLoadOptio
         textures.push_back(ParsedTexture{ .width = texture.width,
           .height = texture.height,
           .levelCount = texture.level_count,
-          .rgba8 = { texture.rgba8.data(), texture.rgba8.size() },
+          .format = static_cast<ChainFormat>(texture.format),
+          .data = { texture.data.data(), texture.data.size() },
           .encoded = { texture.encoded.data(), texture.encoded.size() } });
         textureSamplerDescs.push_back(toSamplerDesc(texture.sampler));
         textureSrgb.push_back(texture.srgb ? 1 : 0);

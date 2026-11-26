@@ -14,6 +14,7 @@ module;
 #include <glm/glm.hpp>
 
 #include "common/EnvironmentVariable.hpp"
+#include "scene/TextureFit.hpp"
 #include "spdlog/spdlog.h"
 
 module kataglyphis.vulkan.gltf_loader;
@@ -81,6 +82,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     std::shared_ptr<Model> model = std::make_shared<Model>(device);
 
     // Upload order must match the textureIDs parseCpu assigned.
+    std::size_t block_textures = 0;
     for (std::size_t i = 0; i < textures.size(); ++i) {
         const ParsedTexture &parsed = textures[i];
         const bool srgb = textureSrgb[i] != 0;
@@ -88,10 +90,17 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
         // levelCount 0 is a format only stb reads, its file's bytes.
         const bool created =
           parsed.levelCount > 0
-            ? texture.createFromLevels(
-                device, command_pool, parsed.width, parsed.height, parsed.levelCount, parsed.rgba8, srgb)
+            ? texture.createFromLevels(device,
+                command_pool,
+                { parsed.format, parsed.width, parsed.height, parsed.levelCount },
+                parsed.data,
+                srgb)
             : texture.createFromMemory(device, command_pool, parsed.encoded.data(), parsed.encoded.size(), srgb);
+        if (created && parsed.format != ChainFormat::Rgba8) { ++block_textures; }
         addTextureOrDefault(*model, device, command_pool, created, std::move(texture), textureSamplerDescs[i]);
+    }
+    if (block_textures > 0) {
+        spdlog::info("GltfLoader: {} of {} textures uploaded as stored blocks.", block_textures, textures.size());
     }
     ensureAtLeastOneTexture(*model, device, command_pool);
 

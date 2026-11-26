@@ -275,25 +275,106 @@ TEST(TextureLoadUnit, AnOversizedTextureIsHalvedUntilItFitsTheDeviceLimit)
 // createFromLevels uploads the planned levels; a chain no level of which fits once read front() of nothing.
 TEST(TextureLoadUnit, AChainPlanKeepsTheLevelsThatFitAndNoneWhenNothingFits)
 {
-    const Kataglyphis::ChainPlan all = Kataglyphis::planChainUpload(4, 2, 3, 16);
+    using Kataglyphis::ChainFormat;
+    const Kataglyphis::ChainPlan all = Kataglyphis::planChainUpload(ChainFormat::Rgba8, 4, 2, 3, 16);
     ASSERT_EQ(all.levels.size(), 3U);
     EXPECT_EQ(all.totalBytes, 32U + 8U + 4U);
     EXPECT_EQ(all.firstOffset, 0U);
     EXPECT_EQ(all.levels[1].offset, 32U);
     EXPECT_EQ(all.levels[2].width, 1U);
 
-    const Kataglyphis::ChainPlan fitted = Kataglyphis::planChainUpload(4, 2, 3, 2);
+    const Kataglyphis::ChainPlan fitted = Kataglyphis::planChainUpload(ChainFormat::Rgba8, 4, 2, 3, 2);
     ASSERT_EQ(fitted.levels.size(), 2U) << "the 4x2 base is over a 2-texel side";
     EXPECT_EQ(fitted.firstOffset, 32U);
     EXPECT_EQ(fitted.levels[0].offset, 0U);
     EXPECT_EQ(fitted.levels[0].width, 2U);
 
-    const Kataglyphis::ChainPlan none = Kataglyphis::planChainUpload(4, 2, 3, 0);
+    const Kataglyphis::ChainPlan none = Kataglyphis::planChainUpload(ChainFormat::Rgba8, 4, 2, 3, 0);
     EXPECT_TRUE(none.levels.empty());
     EXPECT_EQ(none.totalBytes, 44U);
 
-    const Kataglyphis::ChainPlan deep = Kataglyphis::planChainUpload(2, 2, 40, 16);
+    const Kataglyphis::ChainPlan deep = Kataglyphis::planChainUpload(ChainFormat::Rgba8, 2, 2, 40, 16);
     EXPECT_EQ(deep.levels.size(), 32U) << "no shift past a 32-bit side";
+}
+
+// A block chain is staged in whole blocks, starts at a level of whole blocks within the side and keeps those below it.
+TEST(TextureLoadUnit, ABlockChainPlanStartsAtWholeBlocksAndKeepsThePartialLevelsBelow)
+{
+    using Kataglyphis::ChainFormat;
+    // 64, 32, 16, 8, 4, 2, 1: 256, 64, 16, 4 blocks, then one block each for 4x4 and below.
+    const Kataglyphis::ChainPlan all = Kataglyphis::planChainUpload(ChainFormat::Bc7, 64, 64, 7, 16384);
+    ASSERT_EQ(all.levels.size(), 7U);
+    EXPECT_EQ(all.totalBytes, 4096U + 1024U + 256U + 64U + 16U + 16U + 16U);
+    EXPECT_EQ(all.levels[5].offset, 4096U + 1024U + 256U + 64U + 16U);
+    EXPECT_EQ(all.levels[6].width, 1U);
+
+    const Kataglyphis::ChainPlan fitted = Kataglyphis::planChainUpload(ChainFormat::Bc7, 64, 64, 7, 16);
+    ASSERT_EQ(fitted.levels.size(), 5U) << "64 and 32 are past a 16-texel side";
+    EXPECT_EQ(fitted.firstOffset, 4096U + 1024U);
+    EXPECT_EQ(fitted.levels[0].width, 16U);
+    for (const Kataglyphis::ChainLevel &level : fitted.levels) {
+        EXPECT_EQ(level.offset % 16U, 0U) << "vkCmdCopyBufferToImage takes a block-aligned offset";
+    }
+
+    const Kataglyphis::ChainPlan tiny = Kataglyphis::planChainUpload(ChainFormat::Bc7, 64, 64, 7, 2);
+    EXPECT_TRUE(tiny.levels.empty()) << "2x2 and 1x1 fit, but neither is a whole block to start from";
+
+    const Kataglyphis::ChainPlan bc1 = Kataglyphis::planChainUpload(ChainFormat::Bc1, 8, 4, 2, 16384);
+    EXPECT_EQ(bc1.totalBytes, 16U + 8U) << "BC1 blocks are 8 bytes";
+    const Kataglyphis::ChainPlan partial = Kataglyphis::planChainUpload(ChainFormat::Etc2Rgba8, 6, 8, 2, 16384);
+    EXPECT_TRUE(partial.levels.empty()) << "a 6x8 base and its 3x4 level are no whole blocks";
+}
+
+TEST(TextureLoadUnit, AChainFormatUploadsAsItsSlotsColourSpaceAndSizesItsLevelsInBlocks)
+{
+    using Kataglyphis::ChainFormat;
+    using Kataglyphis::chainVkFormat;
+    EXPECT_EQ(chainVkFormat(ChainFormat::Rgba8, true), vk::Format::eR8G8B8A8Srgb);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Rgba8, false), vk::Format::eR8G8B8A8Unorm);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Bc1, true), vk::Format::eBc1RgbaSrgbBlock);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Bc3, false), vk::Format::eBc3UnormBlock);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Bc5, true), vk::Format::eBc5UnormBlock) << "BC5 has no sRGB variant";
+    EXPECT_EQ(chainVkFormat(ChainFormat::Bc7, true), vk::Format::eBc7SrgbBlock);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Bc7, false), vk::Format::eBc7UnormBlock);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Etc2Rgba8, true), vk::Format::eEtc2R8G8B8A8SrgbBlock);
+    EXPECT_EQ(chainVkFormat(ChainFormat::Astc4x4, false), vk::Format::eAstc4x4UnormBlock);
+    EXPECT_EQ(Kataglyphis::chainLevelBytes(ChainFormat::Rgba8, 3, 2), 24U);
+    EXPECT_EQ(Kataglyphis::chainLevelBytes(ChainFormat::Bc1, 6, 6), 32U);
+    EXPECT_EQ(Kataglyphis::chainLevelBytes(ChainFormat::Astc4x4, 1, 1), 16U);
+
+    const Kataglyphis::BlockSupport bc_only{ .bc = true };
+    EXPECT_TRUE(Kataglyphis::samplesChainFormat(bc_only, ChainFormat::Bc5));
+    EXPECT_FALSE(Kataglyphis::samplesChainFormat(bc_only, ChainFormat::Etc2Rgba8));
+    EXPECT_TRUE(Kataglyphis::samplesChainFormat({}, ChainFormat::Rgba8));
+}
+
+// A family counts only with its feature on and every one of its formats sampled, filtered and copied into.
+TEST(TextureLoadUnit, ABlockFamilyCountsOnlyWithItsFeatureAndEveryFormatUsable)
+{
+    const vk::FormatFeatureFlags usable = vk::FormatFeatureFlagBits::eSampledImage
+                                          | vk::FormatFeatureFlagBits::eSampledImageFilterLinear
+                                          | vk::FormatFeatureFlagBits::eTransferDst;
+    vk::PhysicalDeviceFeatures features{};
+    features.textureCompressionBC = VK_TRUE;
+    features.textureCompressionASTC_LDR = VK_TRUE;
+    const auto everything = [&](vk::Format) { return usable; };
+    const Kataglyphis::BlockSupport support = Kataglyphis::blockSupportFrom(features, 8192, everything);
+    EXPECT_TRUE(support.bc);
+    EXPECT_FALSE(support.etc2) << "no ETC2 feature, whatever the format properties say";
+    EXPECT_TRUE(support.astc);
+    EXPECT_EQ(support.maxSide, 8192U);
+
+    const auto no_filtered_bc7_srgb = [&](vk::Format format) {
+        return format == vk::Format::eBc7SrgbBlock
+                 ? usable & ~vk::FormatFeatureFlags(vk::FormatFeatureFlagBits::eSampledImageFilterLinear)
+                 : usable;
+    };
+    EXPECT_FALSE(Kataglyphis::blockSupportFrom(features, 8192, no_filtered_bc7_srgb).bc);
+    const auto no_copies = [&](vk::Format) {
+        return vk::FormatFeatureFlags(vk::FormatFeatureFlagBits::eSampledImage)
+               | vk::FormatFeatureFlagBits::eSampledImageFilterLinear;
+    };
+    EXPECT_EQ(Kataglyphis::blockSupportFrom(features, 8192, no_copies), (Kataglyphis::BlockSupport{ .maxSide = 8192 }));
 }
 
 TEST(TextureLoadUnit, ATextureWithinTheDeviceLimitKeepsItsTexels)

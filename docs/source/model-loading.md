@@ -65,30 +65,45 @@ normal, keeps only the vertices a primitive's indices use, and hands textures
 over decoded, deduped on `(image sources, sampler settings, srgb)`.
 
 **Textures are decoded in Rust, on every core of the parse thread** (plan B5).
-Each slot is a full RGBA8 mip chain down to 1x1, level 0 first and packed back to
-back (`levels.rs`'s `Rgba8Chain`), which `Texture::createFromLevels` uploads without a
-blit: PNG, JPEG, BMP, TGA, GIF, PNM and Radiance HDR decode through the image
-crate (`image_decode.rs`, channels expanded and HDR gamma-encoded as stb's
-`STBI_rgb_alpha` does) and box-filter with the WebGPU renderer's filter (sRGB
-averaged in linear space). A `KHR_texture_basisu` KTX2 is preferred over the core
-`source` and transcoded level by level straight to RGBA8, a BCn KTX2 decoded, and a
-KTX2 chain shorter than full is completed by halving its last level; the core
-`source` is the fallback when it fails. PSD and PIC arrive as the file's bytes with
+Each slot is a mip chain, level 0 first and packed back to back (`levels.rs`'s
+`TextureChain`, tagged with its `ChainFormat`), which `Texture::createFromLevels`
+uploads without a blit. PNG, JPEG, BMP, TGA, GIF, PNM and Radiance HDR decode
+through the image crate (`image_decode.rs`, channels expanded and HDR gamma-encoded
+as stb's `STBI_rgb_alpha` does) to a full RGBA8 chain down to 1x1, box-filtered with
+the WebGPU renderer's filter (sRGB averaged in linear space). A `KHR_texture_basisu`
+KTX2 is preferred over the core `source`. **A KTX2 arrives as the blocks the device
+samples** (plan B5 step 3): `VulkanDevice` enables `textureCompressionBC`, `ETC2` and
+`ASTC_LDR` where offered and counts a family (`BlockSupport`, `scene/TextureFit.hpp`)
+when every one of its formats, in both colour spaces, samples, filters linearly and
+takes a copy with optimal tiling; the renderer hands that and `maxImageDimension2D`
+to the scene before its first load, and the options carry them to the bridge. A Basis
+payload is transcoded once to BC7, else ETC2, else ASTC 4x4, a BCn KTX2 kept as stored,
+when the base is whole 4x4 blocks and a level of whole blocks fits the side; the chain
+keeps the file's levels, and a colour slot samples the sRGB format (BC5 has none).
+Otherwise the payload is transcoded straight to RGBA8 or decoded, and a chain shorter
+than full is completed by halving its last level. A stored ETC2 or ASTC KTX2 is still
+refused; the core `source` is the fallback whenever the KTX2 fails. PSD and PIC arrive
+as the file's bytes with
 `levelCount` 0 for `Texture::createFromMemory`'s stb. An image over 16384x16384
 pixels (`MAX_PIXELS`, read from its header, PSD and PIC included) or in no format
 either reader knows gets no slot, and the materials' ids are renumbered. Decodes in
 flight share a 1 GiB budget, and one image under two samplers is decoded once. A
-level over `maxImageDimension2D` is skipped; a chain none of whose levels fits gets
-the default texture. `Colosseum-gltf`'s 69 images make 760 MB of chains, held until
-`uploadParsed` has staged them; the decode runs after the scene walk with the
-document's buffers already dropped, so `load_flat` peaks at 1.28-1.30 GiB resident there
-(745 MiB when it handed over the encoded files). The document, its buffers and
+level over `maxImageDimension2D` is skipped (a block chain starts at whole blocks);
+a chain none of whose levels fits gets the default texture, as does a block format the
+device does not sample. `Colosseum-gltf`'s 69 PNG and JPEG images make 760 MB of RGBA8
+chains, held until `uploadParsed` has staged them; the decode runs after the scene walk
+with the document's buffers already dropped, so `load_flat` peaks at 1.28-1.30 GiB
+resident there (745 MiB when it handed over the encoded files). The same images as
+UASTC KTX2, a local measurement build, make 190 MB of BC7 chains on a BC device
+instead of 760 MB of RGBA8: `load_flat` peaks at 711-713 MiB instead of 1363-1416 MiB,
+and the textures take 190 MiB of device memory instead of 760 MiB. The document, its buffers and
 its images must be regular files, the buffers and images inside the document's
 directory.
 
 What a load asks beyond the file is a `GltfLoadOptions` (`mikktspaceTangents`
-today), which `parseCpu`, `loadModel`, `AsyncModelParse::start` and `Scene`
-hand to `load_gltf_flat_with`; each field's zero is the loader's default. The
+and the device's `blocks`), which `parseCpu`, `loadModel`, `AsyncModelParse::start`
+and `Scene` hand to `load_gltf_flat_with`; each field's zero is the loader's default,
+RGBA8 for every texture. The
 loader reads no environment: `App::run` turns `KATAGLYPHIS_MIKKTSPACE_TANGENTS`
 into the options once, through `gltfLoadOptionsFromEnvironment` (any non-empty
 value; empty counts as unset, as in OxidANT's viewer), and tests ask through the

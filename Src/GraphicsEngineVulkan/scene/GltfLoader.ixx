@@ -12,6 +12,8 @@ module;
 
 #include <glm/glm.hpp>
 
+#include "scene/TextureFit.hpp"
+
 export module kataglyphis.vulkan.gltf_loader;
 
 import kataglyphis.vulkan.device;
@@ -32,16 +34,20 @@ struct GltfLoadOptions
 {
     /// MikkTSpace tangents instead of Lengyel's where the file has none.
     bool mikktspaceTangents = false;
+    /// The block families the device samples: a KTX2 arrives as their blocks, transcoded once, else as RGBA8.
+    BlockSupport blocks{};
 };
 
-/// One texture slot as OxidANT's loader hands it over, viewing the bridge's arrays: an RGBA8 mip chain, level 0 first
-/// and packed back to back, or, for a format only stb reads (PSD, PIC), `levelCount` 0 and the file's bytes.
+/// One texture slot as OxidANT's loader hands it over, viewing the bridge's arrays: a mip chain, level 0 first and
+/// packed back to back, of RGBA8 texels halving down to 1x1 or of a KTX2's blocks with its own levels; or, for a format
+/// only stb reads (PSD, PIC), `levelCount` 0 and the file's bytes.
 struct ParsedTexture
 {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t levelCount = 0;
-    std::span<const unsigned char> rgba8;
+    ChainFormat format = ChainFormat::Rgba8;
+    std::span<const unsigned char> data;
     std::span<const unsigned char> encoded;
 };
 

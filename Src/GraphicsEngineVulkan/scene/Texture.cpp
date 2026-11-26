@@ -17,6 +17,7 @@ module;
 #include <type_traits>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_format_traits.hpp>
 
 module kataglyphis.vulkan.texture;
 
@@ -34,7 +35,7 @@ using namespace Kataglyphis;
 Kataglyphis::Texture::Texture() = default;
 
 Kataglyphis::Texture::Texture(Texture &&other) noexcept
-  : mip_levels(other.mip_levels), vulkanImage(std::move(other.vulkanImage)),
+  : mip_levels(other.mip_levels), image_format(other.image_format), vulkanImage(std::move(other.vulkanImage)),
     vulkanImageView(std::move(other.vulkanImageView)), textureSampler(other.textureSampler), device(other.device)
 {
     other.textureSampler = nullptr;
@@ -47,6 +48,7 @@ Kataglyphis::Texture &Kataglyphis::Texture::operator=(Texture &&other) noexcept
     if (this != &other) {
         cleanUp();
         mip_levels = other.mip_levels;
+        image_format = other.image_format;
         vulkanImage = std::move(other.vulkanImage);
         vulkanImageView = std::move(other.vulkanImageView);
         textureSampler = other.textureSampler;
@@ -160,24 +162,30 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &in_de
 
 auto Kataglyphis::Texture::createFromLevels(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool,
-  uint32_t width,
-  uint32_t height,
-  uint32_t levelCount,
-  std::span<const unsigned char> rgba8,
+  const ChainShape &shape,
+  std::span<const unsigned char> data,
   bool srgb) -> bool
 {
+    const auto [chain_format, width, height, levelCount] = shape;
     if (width == 0 || height == 0 || levelCount == 0 || levelCount > mipLevelCount(width, height)) { return false; }
+    if (!samplesChainFormat(in_device->getBlockSupport(), chain_format)) {
+        spdlog::warn("Texture {}x{}: the device samples no blocks of format {}; skipping.",
+          width,
+          height,
+          static_cast<int>(chain_format));
+        return false;
+    }
 
     // The chain holds the halvings uploadRgba would compute, so a level past maxImageDimension2D is skipped instead.
     const uint32_t side_limit = in_device->getMaxImageDimension2D();
-    const ChainPlan plan = planChainUpload(width, height, levelCount, side_limit);
-    if (plan.totalBytes > rgba8.size()) {
+    const ChainPlan plan = planChainUpload(chain_format, width, height, levelCount, side_limit);
+    if (plan.totalBytes > data.size()) {
         spdlog::warn("Texture chain of {} levels over {}x{} needs {} bytes but holds {}; skipping.",
           levelCount,
           width,
           height,
           plan.totalBytes,
-          rgba8.size());
+          data.size());
         return false;
     }
     if (plan.levels.empty()) {
@@ -198,8 +206,8 @@ auto Kataglyphis::Texture::createFromLevels(const std::shared_ptr<VulkanDevice> 
           plan.levels.front().height);
     }
 
-    const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
-    const std::span<const unsigned char> uploaded = rgba8.subspan(plan.firstOffset, plan.totalBytes - plan.firstOffset);
+    const vk::Format texture_format = chainVkFormat(chain_format, srgb);
+    const std::span<const unsigned char> uploaded = data.subspan(plan.firstOffset, plan.totalBytes - plan.firstOffset);
     return uploadLevels(
       in_device, commandPool, texture_format, static_cast<uint32_t>(plan.levels.size()), uploaded, plan.levels);
 }
@@ -225,14 +233,20 @@ auto Kataglyphis::Texture::uploadLevels(const std::shared_ptr<VulkanDevice> &in_
     // VUID-vkDestroyImage-image-01000: the old view must go before createImage() replaces its image.
     vulkanImageView.cleanUp();
 
+    // A block chain arrives whole and is never blitted, and BlockSupport vouched only for copies into it.
+    const vk::ImageUsageFlags usage = vk::isCompressed(texture_format)
+                                        ? vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled
+                                        : vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst
+                                            | vk::ImageUsageFlagBits::eSampled;
     createImage(in_device,
       base.width,
       base.height,
       level_count,
       texture_format,
       vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+      usage,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
+    image_format = texture_format;
 
     // One submit for transition, copies and mips instead of three fence-waited ones.
     vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(

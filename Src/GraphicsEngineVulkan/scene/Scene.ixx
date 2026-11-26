@@ -8,6 +8,8 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "scene/TextureFit.hpp"
+
 export module kataglyphis.vulkan.scene;
 
 import kataglyphis.vulkan.obj_material;
@@ -29,6 +31,9 @@ class Scene
     Scene();
     /// Every glTF this scene loads, from any path, parses with these.
     explicit Scene(GltfLoadOptions gltfLoadOptions);
+
+    /// The block families every later load may hand a KTX2 over in; the renderer sets its device's before the first.
+    void setBlockSupport(const BlockSupport &blocks) { gltfLoadOptions.blocks = blocks; }
 
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
 

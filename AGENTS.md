@@ -887,7 +887,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 113 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 114 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -909,7 +909,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (92 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (93 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,

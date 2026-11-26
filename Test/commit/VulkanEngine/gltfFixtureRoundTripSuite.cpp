@@ -292,8 +292,8 @@ TEST_P(GltfFixtureRoundTrip, ReachesVertexMeshRangeAndObjMaterialAsTheBridgeRetu
         EXPECT_EQ(texture.width, expected.width) << "texture " << t;
         EXPECT_EQ(texture.height, expected.height) << "texture " << t;
         EXPECT_EQ(texture.levelCount, expected.level_count) << "texture " << t;
-        EXPECT_TRUE(
-          std::equal(texture.rgba8.begin(), texture.rgba8.end(), expected.rgba8.begin(), expected.rgba8.end()))
+        EXPECT_EQ(static_cast<int>(texture.format), static_cast<int>(expected.format)) << "texture " << t;
+        EXPECT_TRUE(std::equal(texture.data.begin(), texture.data.end(), expected.data.begin(), expected.data.end()))
           << "texture " << t;
         EXPECT_TRUE(
           std::equal(texture.encoded.begin(), texture.encoded.end(), expected.encoded.begin(), expected.encoded.end()))

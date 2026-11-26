@@ -2,6 +2,7 @@
 
 #include "GoldenRenderHarness.hpp"
 
+import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.renderer;
 
 using namespace Kataglyphis::TestSupport::GoldenRender;
@@ -1127,6 +1128,112 @@ TEST(GoldenRender, BasisuOnlyTextureDrawsItsRampInEveryMode)
         renderer_vars.raytracing = true;
         EXPECT_GT(ramp_spread("ray traced", SETTLE_FRAMES), 80.0) << "ray traced: the cube shows no ramp";
     }
+}
+
+// The KTX2 arrives as the blocks its device samples, transcoded once, and draws as its RGBA8 chain does in each family.
+TEST(GoldenRender, BasisTextureUploadsAsTheDevicesBlocksAndDrawsAsItsRgba8Chain)
+{
+    SKIP_WITHOUT_GPU();
+
+    const std::string model = basisu_cube_model();
+    ScopedModelOverride cube(model.c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+    const Kataglyphis::BlockSupport device_blocks = harness.renderer->sharedDevice()->getBlockSupport();
+
+    // Load n sits 50 units along x, framed as the startup cube is, so a frame sees that cube alone.
+    constexpr float kSpacing = 50.0F;
+    const auto crop_of = [&](uint32_t index) {
+        harness.camera->set_camera_position(glm::vec3(kSpacing * static_cast<float>(index), 0.6F, 2.2F));
+        harness.camera->set_orientation(-90.0F, -15.0F);
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        std::vector<int> crop;
+        if (frame.empty()) { return crop; }
+        for (uint32_t y = height / 2U - 60U; y < height / 2U + 60U; ++y) {
+            for (uint32_t x = width / 2U - 150U; x < width / 2U + 150U; ++x) {
+                const size_t base = (static_cast<size_t>(y) * width + x) * 4U;
+                for (size_t channel = 0; channel < 3U; ++channel) { crop.push_back(frame[base + channel]); }
+            }
+        }
+        return crop;
+    };
+    // Red minus blue, right fifth against left: the ramp's spread, near 0 on an untextured cube.
+    const auto ramp_spread = [](const std::vector<int> &crop) {
+        double left = 0.0;
+        double right = 0.0;
+        for (size_t row = 0; row < 120U; ++row) {
+            for (size_t x = 0; x < 60U; ++x) {
+                const size_t l = (row * 300U + x) * 3U;
+                const size_t r = (row * 300U + 240U + x) * 3U;
+                left += crop[l] - crop[l + 2U];
+                right += crop[r] - crop[r + 2U];
+            }
+        }
+        return std::abs(right - left) / (120.0 * 60.0);
+    };
+    const auto mean_difference = [](const std::vector<int> &a, const std::vector<int> &b) {
+        double sum = 0.0;
+        for (size_t i = 0; i < a.size(); ++i) { sum += std::abs(a[i] - b[i]); }
+        return sum / static_cast<double>(a.size());
+    };
+    const auto format_of = [&](uint32_t index) { return harness.scene->getTextures(index).at(0).getFormat(); };
+    const auto load_with = [&](const Kataglyphis::BlockSupport &blocks, uint32_t index) {
+        harness.scene->setBlockSupport(blocks);
+        const glm::mat4 placed = glm::translate(glm::mat4(1.0F), glm::vec3(kSpacing * static_cast<float>(index), 0, 0));
+        return harness.renderer->addModel(model, placed) == std::optional<uint32_t>(index);
+    };
+
+    const vk::Format device_format = device_blocks.bc     ? vk::Format::eBc7SrgbBlock
+                                     : device_blocks.etc2 ? vk::Format::eEtc2R8G8B8A8SrgbBlock
+                                     : device_blocks.astc ? vk::Format::eAstc4x4SrgbBlock
+                                                          : vk::Format::eR8G8B8A8Srgb;
+    EXPECT_EQ(format_of(0), device_format) << "the startup load takes the device's best block format";
+    const std::vector<int> startup = crop_of(0);
+
+    ASSERT_TRUE(load_with({}, 1)) << "the RGBA8 reference did not load";
+    EXPECT_EQ(format_of(1), vk::Format::eR8G8B8A8Srgb) << "no block family sampled: RGBA8";
+    const std::vector<int> rgba8 = crop_of(1);
+    ASSERT_FALSE(startup.empty() || rgba8.empty());
+    EXPECT_GT(ramp_spread(rgba8), 80.0) << "the RGBA8 reference shows no ramp";
+    EXPECT_GT(ramp_spread(startup), 80.0) << "the startup cube shows no ramp";
+    const double startup_difference = mean_difference(startup, rgba8);
+    GTEST_LOG_(INFO) << "startup (" << vk::to_string(format_of(0)) << ") against RGBA8: " << startup_difference;
+    EXPECT_LT(startup_difference, 3.0) << "the startup cube's blocks draw unlike the RGBA8 chain";
+
+    struct Family
+    {
+        bool sampled;
+        Kataglyphis::BlockSupport alone;
+        vk::Format format;
+    };
+    const uint32_t side = device_blocks.maxSide;
+    const std::array<Family, 3> families{ {
+      { device_blocks.bc, { .bc = true, .maxSide = side }, vk::Format::eBc7SrgbBlock },
+      { device_blocks.etc2, { .etc2 = true, .maxSide = side }, vk::Format::eEtc2R8G8B8A8SrgbBlock },
+      { device_blocks.astc, { .astc = true, .maxSide = side }, vk::Format::eAstc4x4SrgbBlock },
+    } };
+    uint32_t next = 2;
+    for (const Family &family : families) {
+        if (!family.sampled) {
+            GTEST_LOG_(INFO) << vk::to_string(family.format) << ": not sampled by this device";
+            continue;
+        }
+        ASSERT_TRUE(load_with(family.alone, next)) << vk::to_string(family.format) << " did not load";
+        EXPECT_EQ(format_of(next), family.format);
+        const std::vector<int> drawn = crop_of(next);
+        ASSERT_FALSE(drawn.empty());
+        const double difference = mean_difference(drawn, rgba8);
+        GTEST_LOG_(INFO) << vk::to_string(family.format) << " against RGBA8: " << difference;
+        EXPECT_LT(difference, 3.0) << vk::to_string(family.format) << " draws unlike the RGBA8 chain";
+        EXPECT_GT(ramp_spread(drawn), 80.0) << vk::to_string(family.format) << " shows no ramp";
+        ++next;
+    }
+    EXPECT_FALSE(harness.renderer->hasDeviceLost());
 }
 
 // glTF 3.9.2: a doubleSided back face reverses its whole tangent frame; flipping only N and B mirrored the relief.

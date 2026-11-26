@@ -6,6 +6,7 @@ module;
 #include "common/EnvironmentVariable.hpp"
 #include "common/ExtensionSupport.hpp"
 #include "common/Utilities.hpp"
+#include "scene/TextureFit.hpp"
 #include "spdlog/spdlog.h"
 #include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <algorithm>
@@ -366,6 +367,10 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features2.features.depthClamp = available_features2.features.depthClamp;
     // Selection rejects a device without it: the punctual lights' cube shadow maps are one cube-array view.
     features2.features.imageCubeArray = available_features2.features.imageCubeArray;
+    // OxidANT's loader hands a KTX2 over as blocks only in a family blockSupport counts, which needs its feature on.
+    features2.features.textureCompressionBC = available_features2.features.textureCompressionBC;
+    features2.features.textureCompressionETC2 = available_features2.features.textureCompressionETC2;
+    features2.features.textureCompressionASTC_LDR = available_features2.features.textureCompressionASTC_LDR;
     features2.features.robustBufferAccess = VK_FALSE;
 
     std::vector<const char *> extensions(device_extensions);
@@ -387,6 +392,13 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     deviceSupportsImageCubeArray = available_features2.features.imageCubeArray == VK_TRUE;
     deviceSupportsSamplerAnisotropy = available_features2.features.samplerAnisotropy == VK_TRUE;
     deviceMaxSamplerAnisotropy = device_properties.limits.maxSamplerAnisotropy;
+    blockSupport = blockSupportFrom(available_features2.features,
+      device_properties.limits.maxImageDimension2D,
+      [this](vk::Format format) { return physical_device.getFormatProperties(format).optimalTilingFeatures; });
+    spdlog::info("Block-compressed textures sampled: BC {}, ETC2 {}, ASTC 4x4 {}",
+      blockSupport.bc,
+      blockSupport.etc2,
+      blockSupport.astc);
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;

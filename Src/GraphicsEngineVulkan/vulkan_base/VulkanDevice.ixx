@@ -1,6 +1,7 @@
 module;
 
 #include "renderer/SwapChainDetails.hpp"
+#include "scene/TextureFit.hpp"
 #include <memory>
 #include <vector>
 #include <vk_mem_alloc.h>
@@ -59,6 +60,8 @@ class VulkanDevice
     // VkPhysicalDeviceLimits::maxImageDimension2D/Cube: a texture or skybox face past them is halved until it fits.
     uint32_t getMaxImageDimension2D() const { return device_properties.limits.maxImageDimension2D; };
     uint32_t getMaxImageDimensionCube() const { return device_properties.limits.maxImageDimensionCube; };
+    // The block families this device samples, enabled at creation, and its maxImageDimension2D: the loader's choice.
+    const BlockSupport &getBlockSupport() const { return blockSupport; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
     // Minimum alignment for allocations backing buffers whose device address
@@ -93,6 +96,7 @@ class VulkanDevice
     bool deviceSupportsImageCubeArray = false;
     bool deviceSupportsSamplerAnisotropy = false;
     float deviceMaxSamplerAnisotropy = 1.0F;
+    BlockSupport blockSupport{};
     uint32_t maxMultiviewViewCount = 0;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };

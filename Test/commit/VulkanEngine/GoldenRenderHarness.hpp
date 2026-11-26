@@ -15,6 +15,7 @@
 #include "common/RenderingHelper.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "scene/TextureFit.hpp"
 #include "scene/sky_box/AnalyticSky.hpp"
 #include "scene/sky_box/CloudAmbient.hpp"
 #include <glm/glm.hpp>

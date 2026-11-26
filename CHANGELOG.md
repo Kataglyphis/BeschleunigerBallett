@@ -12,6 +12,19 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Changed
+
+- A KTX2 texture uploads as the blocks the device samples instead of an RGBA8 chain (plan B5 step 3, OxidANT pin
+  `f0a325e`). `VulkanDevice` enables `textureCompressionBC`, `ETC2` and `ASTC_LDR` where offered and counts a family
+  when each of its formats, sRGB and UNORM, samples, filters linearly and takes a copy (`BlockSupport`,
+  `scene/TextureFit.hpp`); the renderer hands that and `maxImageDimension2D` to the scene, whose loads pass them to
+  OxidANT's loader, which transcodes a Basis payload once to BC7, else ETC2, else ASTC 4x4, and keeps a BCn KTX2 as
+  stored where its base is whole 4x4 blocks and a level of whole blocks fits the side. `GltfTexture` carries a format
+  tag and the packed levels; `Texture::createFromLevels` uploads either through one path, `planChainUpload` starting a
+  block chain at whole blocks, and `Texture::getFormat` reports the image's format. PNG and JPEG stay RGBA8, so
+  `Colosseum-gltf` is unchanged. Its 69 images encoded as UASTC KTX2 (a local measurement scene) now take 190 MiB
+  of device memory as BC7 instead of 760 MiB, and the parse peaks at 711-714 MiB instead of 1363-1416 MiB.
+
 ### Fixed
 
 - CI's gcc job (ASan, UBSan and coverage) builds two units at a time on a 16 GB runner, not three

@@ -10,6 +10,7 @@ module;
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include "scene/TextureFit.hpp"
 #include "scene/sky_box/SkyUniforms.hpp"
 #include "spdlog/spdlog.h"
 #include <optional>
@@ -168,6 +169,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     registerBuiltInStages();
 
     // Anything depending on scene contents waits for finishModelLoad(), on the frame the model arrives.
+    scene->setBlockSupport(device->getBlockSupport());
     scene->beginModelLoadAsync();
 
     // Descriptors need valid contents before the first frame, while the model still loads.
