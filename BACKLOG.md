@@ -87,12 +87,27 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Loader:
 
-- [ ] `Assets` **Texture ingest in Rust, step 3** (M-L, plan B5; steps 1-2 are in since Phase 10). Upload BC7, ETC2
-  or ASTC natively where the device samples them (KTX2 as stored, Basis transcoded to the device's format), so the C++
-  engine stops holding RGBA8 chains: Colosseum's 760 MB of chains put `load_flat`'s peak at 1.3 GiB (745 MiB with the
-  encoded files). WebP is new work. Streaming chains per slot from the parse thread to the upload is the fallback if a
-  scene's chains pass the 1 GiB decode budget. The WebGPU renderer still copies each base once to build its chain
-  (`generate_mips` borrows the `Arc`'d `CpuTexture`); an owned or `Cow` `LevelChain` would remove that copy.
+- [ ] `Assets` **WebP textures (`EXT_texture_webp`)** (S, owner decision 2026-11-26: raise the bridge's budget to
+  62). Since Phase 23 the bridge holds exactly 60 runtime packages on all five targets, the budget; `image`'s `webp`
+  feature adds `image-webp` and `quick-error`. Raise `cmake/CargoLicenses.cmake`'s budget to 62 in the same change,
+  stage both crates' licence texts through OxidANT's reviewed policy, decode WebP in `image_decode` for both
+  renderers, and add a golden that draws a WebP-only texture.
+- [ ] `Assets` **Colosseum-ktx2 in AssetANT** (M, owner decision 2026-11-26). A separate release-only asset: the
+  Colosseum glTF with UASTC + Zstandard textures through `KHR_texture_basisu` and no PNG/JPEG copy; `Colosseum-gltf`
+  stays. Phase 23 measured a local UASTC build (69 images, mipmapped): device memory 760 -> 190 MiB (BC7 on
+  llvmpipe), `load_flat`'s peak 1.36-1.42 GiB -> 711-714 MiB, 0.73-0.88 s; the engine and the WebGPU renderer need
+  nothing more. Build the export reproducibly in AssetANT (its converter beside `export_gltf.py`), with the CC BY 4.0
+  text, a NOTICE of the changes and the archive's SHA-256, then show the package to the owner. **Publish only after
+  the owner's okay to that package**; then add its lock line and a model-picker row.
+- [ ] `Assets` **Texture ingest in Rust, the rest** (S each; step 3 is in since Phase 23). A stored ETC2 or ASTC KTX2
+  is still refused: passing it through needs an ETC2 CPU decoder (T, H and planar modes; basisu has none) for the
+  devices without ETC2, which are most desktop GPUs; ASTC could decode through basisu, and `KHR_texture_basisu`
+  allows Basis payloads only anyway. The WebGPU renderer's CPU chain budget still counts a base it now shares with
+  the scene (`StreamedTexture::cpu_bytes`). Two renderer differences are left: a Basis base that is not whole 4x4
+  blocks (WebGPU box-filters from level 0, C++ keeps the transcoded levels), and a short decoded BCn chain on an
+  adapter without BC (C++ completes it to 1x1, WebGPU does not). Streaming chains per slot is not needed: no scene's
+  chains reach the 1 GiB decode budget. Native ETC2 and ASTC upload is untested on a device that samples them
+  (llvmpipe and lavapipe sample neither).
 
 C++ catches up:
 
