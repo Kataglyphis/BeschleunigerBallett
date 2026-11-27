@@ -13,6 +13,8 @@ Passed as --gtest_filter; defaults to the two GPU suites.
 Directory holding the Khronos validation layer.
 .PARAMETER LogDir
 Where each run's timestamped log is written.
+.PARAMETER GpuAssisted
+Adds GPU-assisted validation (GPU-AV): every shader's buffer-device-address and descriptor access is checked.
 .PARAMETER LogFixturePath
 Test-only: evaluate this log instead of running the suite, so Pester needs no GPU.
 #>
@@ -22,6 +24,7 @@ param(
     [string]$GtestFilter = 'GoldenRender.*:Integration.*',
     [string]$VulkanSdkBin = 'C:\VulkanSDK\1.4.350.0\Bin',
     [string]$LogDir = (Join-Path $PSScriptRoot '..\..\logs\sync-validation'),
+    [switch]$GpuAssisted,
     [string]$LogFixturePath
 )
 
@@ -75,7 +78,8 @@ Invoke-VulkanValidationRun -ExecutablePath $ExecutablePath `
     -WorkingDirectory $repoRoot `
     -LogPath $logPath `
     -LayerPath $VulkanSdkBin `
-    -SettingsPath $settingsSource
+    -SettingsPath $settingsSource `
+    -GpuAssisted:$GpuAssisted
 $exitCode = $LASTEXITCODE
 
 $hazards = @(Get-VulkanValidationHazard -LogPath $logPath -Pattern $validationPatterns)

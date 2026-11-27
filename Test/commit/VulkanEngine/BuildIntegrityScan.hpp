@@ -200,4 +200,7 @@ std::optional<std::string> cpp_struct_body(const std::string &text, const std::s
 // Member names of scene_types.slang's scalar-layout ObjMaterial mirror, brace-matched like the SceneUBO parser.
 std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_types_path);
 
+// Test names of `suite` from TEST(suite, name) at a line's start; file I/O only, so GPU suites list without a GPU.
+std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, const std::string &suite);
+
 }// namespace Kataglyphis::TestSupport::BuildIntegrity

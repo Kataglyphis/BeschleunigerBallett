@@ -653,7 +653,10 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   It exits non-zero when the run log contains `SYNC-HAZARD` or `VUID-`, and with the test executable's own code
   when the run itself fails. Linux CI runs sync validation on llvmpipe since 2026-10-06
   (`run-ctest.sh --virtual-display`, which fails a test that logs either through the hub's
-  `--fail-on-log-pattern`); this script is the host-GPU and Windows run. Details:
+  `--fail-on-log-pattern`); this script is the host-GPU and Windows run. After touching a shader's
+  buffer-device-address reads, add `-GpuAssisted`: GPU-assisted validation (GPU-AV) reports a read
+  outside every buffer as `VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819`, which `robustBufferAccess`
+  never catches; `linux-x64.yml`'s weekly `gpu-av` job runs it on llvmpipe. Details:
   [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md).
 
 **Adding tests is always in scope.** No permission needed to improve or extend the suites; a change
@@ -740,7 +743,8 @@ opt-ins before that are gone. Linux x64 still skips a docs-only commit through `
 | Security audit (osv-scanner over `uv.lock`; a new HIGH or CRITICAL advisory fails a push) | `security-audit.yml` — one `uses:` of ANTfrastructure's reusable lane | push and PR on `main`/`develop`, Mondays 07:50 UTC (report only), by hand |
 | Code quality measurements (`quality-report.sh` against the newest develop record; a regression is reported, an incomplete run fails) | `code-quality-report.yml` — one `uses:` of ANTfrastructure's reusable lane, with `quality-report: true` | every push and PR |
 | Linux x86_64 (build + test + coverage) | `linux-x64.yml` → `reusable-linux.yml` | always, minus `'**.md'`/`docs/**` |
-| Linux x86_64 GUI input sweep (`gui-sweep`: the debug build, then only `GuiInputSweepNeverCrashesOrLosesTheDevice` on llvmpipe) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gui-sweep`; skips every other job of the lane |
+| Linux x86_64 GUI input sweep (`gui-sweep`: the debug build, then only `GuiInputSweepNeverCrashesOrLosesTheDevice` on llvmpipe) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gui-sweep`; skips the lane's push jobs |
+| Linux x86_64 GPU-assisted validation (`gpu-av`: the debug build, then only the goldens of `scripts/linux/gpu-av-goldens.txt` on llvmpipe, GPU-AV on) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gpu-av`; skips the lane's push jobs |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | on request (`on-request.yml`) or by hand; builds no docs site (the docs steps need `runner == 'ubuntu-26.04'`) |
 | Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 18 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |

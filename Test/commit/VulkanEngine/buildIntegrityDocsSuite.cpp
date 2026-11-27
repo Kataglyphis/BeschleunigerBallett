@@ -20,37 +20,6 @@ using namespace Kataglyphis::TestSupport::BuildIntegrity;
 
 namespace {
 
-// Test names of `suite`, anchored like collect_defined_suites; file I/O only, so GPU suites list without a GPU.
-std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, const std::string &suite)
-{
-    std::vector<std::string> names;
-    const std::string macro_prefix = "TEST(" + suite + ",";
-    std::error_code error;
-    for (fs::recursive_directory_iterator it(tests_dir, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
-
-        const auto lines = readFileLines(it->path());
-        if (!lines) { continue; }
-        for (const auto &line : *lines) {
-            const std::size_t start = line.find_first_not_of(" \t");
-            if (start == std::string::npos) { continue; }
-            if (line.compare(start, macro_prefix.size(), macro_prefix) != 0) { continue; }
-
-            const std::size_t name_start = start + macro_prefix.size();
-            const std::size_t close_paren = line.find(')', name_start);
-            if (close_paren == std::string::npos) { continue; }
-
-            const std::size_t name_begin = line.find_first_not_of(" \t", name_start);
-            const std::size_t name_end = line.find_last_not_of(" \t", close_paren - 1);
-            if (name_begin == std::string::npos || name_begin > name_end) { continue; }
-
-            names.push_back(line.substr(name_begin, name_end - name_begin + 1));
-        }
-    }
-    return names;
-}
-
 // The five integers of docs/source/gpu-golden-testing.md's golden-counts marker line.
 struct GoldenCountsMarker
 {

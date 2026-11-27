@@ -1,0 +1,9 @@
+# ctest --tests-from-file: the goldens linux-x64.yml's gpu-av job runs under GPU-AV; ctest ignores a line naming no test.
+GoldenRender.RendersNonBlankFrame
+GoldenRender.EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode
+GoldenRender.TracedSecondModelResolvesItsOwnMeshAndTextures
+GoldenRender.MaskCardDiscardsCutoutTexelsVisually
+GoldenRender.MaskCardDoubleSidedRendersFromBehindDeferred
+GoldenRender.MaskCardDiscardsCutoutTexelsInRaytracing
+GoldenRender.PathTracedMaskCardShowsItsCutout
+GoldenRender.SponzaBindsEveryTextureSlot

@@ -636,6 +636,61 @@ Vulkan loader reads `vk_layer_settings.txt` from the CWD or the executable's dir
 no path env var for it), and exits non-zero with a per-hazard summary if the run's log contains
 `SYNC-HAZARD` or `VUID-`.
 
+### GPU-assisted validation of buffer-device-address reads
+
+The raster passes (forward, deferred, the shadow map's alpha test) read an object's material IDs
+and materials through raw buffer device addresses (`common/material_fetch.slang`); the traced
+paths (ray-traced hits and any-hit, path tracing) read its vertices and indices that way too
+(`common/traced_hit.slang`, `common/alpha_test.slang`). `robustBufferAccess` bounds none of these
+reads. The layer's GPU-assisted validation (GPU-AV, `khronos_validation.gpuav_enable`) instruments
+every pipeline to check each such read against the buffers the device created, and reports a read
+that falls in none of them as `VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819` ("Out of bounds:
+trying to read 12 bytes at [...] but this range does not belong to any buffer"), so the `VUID-`
+half of the log scan fails it. A read past one buffer's end that lands in another is not reported:
+VMA packs buffers side by side into shared blocks (`VulkanBuffer::create`). Planted `+ 1` on
+`fetch_material`'s material index, a read one past each mesh's last material, logged no 11819 in
+`EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode` or `MaskCardDiscardsCutoutTexelsVisually`
+(2026-11-28); their pixel assertions failed instead.
+
+- **Weekly on llvmpipe.** `linux-x64.yml`'s `gpu-av` job runs Sundays and on a dispatch with
+  `gpu-av`: the `linux-debug-clang` build, then `run-ctest.sh --virtual-display` over the goldens
+  in `scripts/linux/gpu-av-goldens.txt`, with `VK_KHRONOS_VALIDATION_GPUAV_ENABLE=1` and
+  `VK_KHRONOS_VALIDATION_GPUAV_SAFE_MODE=1`. The eight read materials in every mode: the debug
+  scene and Sponza forward, the mask card forward with its shadow, deferred, ray traced and path
+  traced, the three emissive cards in all four modes, and a second model's object index. ctest
+  ignores a list line that names no test, so `BuildIntegrity.GpuAvJobRunsItsGoldenListWithGpuAvOn`
+  holds each line to a runnable golden, and the job's `run-ctest.sh` step to both settings and to
+  a list path that resolves from its `--build-dir`: the hub's `ctest-run.sh` runs ctest there, so
+  the path starts with `../`. Locally:
+
+  ```bash
+  VK_KHRONOS_VALIDATION_GPUAV_ENABLE=1 VK_KHRONOS_VALIDATION_GPUAV_SAFE_MODE=1 \
+    bash ./scripts/linux/run-ctest.sh --virtual-display --build-dir build --build-type Debug \
+    -- --tests-from-file ../scripts/linux/gpu-av-goldens.txt --timeout 3600 --no-tests=error
+  ```
+
+- **Cost:** on 6 aarch64 cores the eight took 607 s with GPU-AV and 319 s without (2026-11-27),
+  484 and 251 of them `PathTracedMaskCardShowsItsCutout`; 591 s with GPU-AV through the list
+  (2026-11-28).
+- **Safe mode** is a precaution: with it GPU-AV "tries to prevent crashes" at a slower
+  validation, in the layer's own words. A planted read past the materials
+  (`materials->m[materialIDs->i[primitiveID] + 0x100000]` in `fetch_material`) crashed llvmpipe in
+  neither mode, at 72 s with safe mode and 60 s without for one golden.
+- **It runs on llvmpipe** with the image's 1.4.363 layer. At device creation the layer turns on
+  `vertexPipelineStoresAndAtomics`, `shaderInt16`, `timelineSemaphore`, the Vulkan memory model and
+  8- and 16-bit storage, drops its mesh-shading checks, and warns that core validation slows it
+  (`VALIDATION-SETTINGS`); none of that matches the scan.
+- **The far read is reported in every mode** (2026-11-27, with
+  `VK_KHRONOS_VALIDATION_DUPLICATE_MESSAGE_LIMIT` raised): with the `+ 0x100000` plant,
+  `EmissiveOnTexCoord1FollowsTheSecondUvSetInEveryMode` logged 11819 from the forward and deferred
+  fragment shaders, the ray-traced closest hit and the path-traced compute pass, and
+  `--fail-on-log-pattern` named it. The same read planted in `rahit_main` alone was reported from
+  the any-hit stage in `MaskCardDiscardsCutoutTexelsInRaytracing`. The clean tree logs none.
+- **On a host GPU:** `Invoke-SyncValidation.ps1 -GpuAssisted` appends the hub's
+  `Get-VulkanGpuAvLayerSetting` (`gpuav_enable`, `gpuav_safe_mode`) to the staged
+  `vk_layer_settings.txt` for that run; pass `-GtestFilter` with the list's names joined by `:` to
+  run the same goldens.
+
 ## Known issue: path-tracing compute device-lost on the large dinosaur mesh
 
 `GoldenRender.PathTracingAccumulatesAndConverges`,

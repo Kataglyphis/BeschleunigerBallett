@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <filesystem>
+#include <iterator>
 #include <optional>
 #include <regex>
 #include <set>
@@ -334,4 +335,87 @@ TEST(BuildIntegrity, LinuxGpuRunsFailOnASkippedGpuTest)
     EXPECT_NE(
       shell_command_from(*riscv, *shard_display).find(R"(bash "${BASH_SOURCE[0]}" --gpu-ctest)"), std::string::npos)
       << riscv_path.string() << "'s GPU shard xvfb-run must re-run the script's --gpu-ctest branch";
+}
+
+namespace {
+
+// A workflow job's steps without their comment lines; a step opens at a "- " six spaces in.
+std::vector<std::string> workflow_job_steps(const std::vector<std::string> &workflow, const std::string &job_key)
+{
+    std::vector<std::string> steps;
+    const auto job = std::find(workflow.begin(), workflow.end(), job_key);
+    if (job == workflow.end()) { return steps; }
+    for (auto line = std::next(job); line != workflow.end(); ++line) {
+        const std::size_t indent = line->find_first_not_of(' ');
+        if (indent == std::string::npos || (*line)[indent] == '#') { continue; }
+        if (indent <= 2) { break; }
+        if (indent == 6 && line->compare(indent, 2, "- ") == 0) { steps.emplace_back(); }
+        if (!steps.empty()) {
+            steps.back() += *line;
+            steps.back() += '\n';
+        }
+    }
+    return steps;
+}
+
+// The word after flag in a folded command, unquoted.
+std::optional<std::string> word_after(const std::string &text, std::string_view flag)
+{
+    const std::size_t at = text.find(std::string(flag) + ' ');
+    if (at == std::string::npos) { return std::nullopt; }
+    const std::size_t begin = text.find_first_not_of(" \n", at + flag.size());
+    if (begin == std::string::npos) { return std::nullopt; }
+    std::string word = text.substr(begin, text.find_first_of(" \n", begin) - begin);
+    if (word.size() >= 2 && (word.front() == '"' || word.front() == '\'') && word.back() == word.front()) {
+        word = word.substr(1, word.size() - 2);
+    }
+    return word;
+}
+
+}// namespace
+
+// ctest ignores a --tests-from-file line that names no test, so a renamed golden would leave the GPU-AV job unseen.
+TEST(BuildIntegrity, GpuAvJobRunsItsGoldenListWithGpuAvOn)
+{
+    const fs::path list_path = repoRoot() / "scripts" / "linux" / "gpu-av-goldens.txt";
+    const auto list = readFileLines(list_path);
+    ASSERT_TRUE(list.has_value()) << "could not open " << list_path.string();
+    const std::vector<std::string> goldens =
+      collect_suite_test_names(repoRoot() / "Test" / "commit" / "VulkanEngine", "GoldenRender");
+    const std::set<std::string> defined(goldens.begin(), goldens.end());
+    static const std::string kPrefix = "GoldenRender.";
+    std::vector<std::string> unknown;
+    std::size_t listed = 0;
+    for (const std::string &line : *list) {
+        if (line.empty() || line.starts_with('#')) { continue; }
+        ++listed;
+        const std::string name = line.starts_with(kPrefix) ? line.substr(kPrefix.size()) : std::string{};
+        if (!defined.contains(name) || name.starts_with("DISABLED_")) { unknown.push_back(line); }
+    }
+    EXPECT_GT(listed, 0U) << list_path.string() << " lists no golden";
+    EXPECT_TRUE(unknown.empty()) << list_path.string() << " names line(s) that are no runnable TEST(GoldenRender, ...):"
+                                 << joinViolations(unknown);
+
+    const fs::path workflow_path = repoRoot() / ".github" / "workflows" / "linux-x64.yml";
+    const auto workflow = readFileLines(workflow_path);
+    ASSERT_TRUE(workflow.has_value()) << "could not open " << workflow_path.string();
+    const std::vector<std::string> steps = workflow_job_steps(*workflow, "  gpu-av:");
+    const auto run = std::find_if(steps.begin(), steps.end(), [](const std::string &step) {
+        return step.find("run-ctest.sh --virtual-display") != std::string::npos;
+    });
+    ASSERT_NE(run, steps.end()) << workflow_path.string() << "'s gpu-av job has no run-ctest.sh --virtual-display step";
+    for (const std::string_view setting : { std::string_view("-e VK_KHRONOS_VALIDATION_GPUAV_ENABLE=1"),
+           std::string_view("-e VK_KHRONOS_VALIDATION_GPUAV_SAFE_MODE=1") }) {
+        EXPECT_NE(run->find(setting), std::string::npos)
+          << workflow_path.string() << "'s gpu-av run-ctest.sh step does not pass " << setting;
+    }
+    // The hub's ctest-run.sh enters --build-dir before ctest opens the list.
+    const auto build_dir = word_after(*run, "--build-dir");
+    const auto list_arg = word_after(*run, "--tests-from-file");
+    ASSERT_TRUE(build_dir.has_value() && list_arg.has_value())
+      << workflow_path.string() << "'s gpu-av run-ctest.sh step names no --build-dir or no --tests-from-file";
+    const fs::path resolved = (repoRoot() / *build_dir / *list_arg).lexically_normal();
+    EXPECT_EQ(resolved, list_path.lexically_normal())
+      << "--tests-from-file " << *list_arg << " read from --build-dir " << *build_dir << " is " << resolved.string()
+      << ", not " << list_path.string();
 }

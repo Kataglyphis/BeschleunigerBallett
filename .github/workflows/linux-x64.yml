@@ -11,7 +11,7 @@ on:
       - 'docs/**'
   pull_request:
     branches: [main, develop]
-  # The GUI input sweep alone, weekly: too slow for a push (docs/source/gpu-golden-testing.md).
+  # The GUI input sweep and the GPU-AV goldens alone, weekly: too slow for a push (docs/source/gpu-golden-testing.md).
   schedule:
     - cron: '17 3 * * 0'
   # Tests a docs-only fix the suite pins (docs/source/gpu-golden-testing.md's golden counts), which paths-ignore skips.
@@ -25,11 +25,15 @@ on:
         description: Run only the GUI input sweep, as the weekly schedule does
         type: boolean
         default: false
+      gpu-av:
+        description: Run only the GPU-AV goldens, as the weekly schedule does
+        type: boolean
+        default: false
   workflow_call:
 
-# Per lane and caller (github.workflow is the caller's name when called), the sweep in its own; main's and develop's runs are never cancelled (D9).
+# Per lane and caller (github.workflow is the caller's name when called), the weekly jobs in their own; main's and develop's runs are never cancelled (D9).
 concurrency:
-  group: linux-x64-${{ github.ref }}-${{ github.workflow }}${{ (github.event_name == 'schedule' || inputs.gui-sweep) && '-gui-sweep' || '' }}
+  group: linux-x64-${{ github.ref }}-${{ github.workflow }}${{ github.event_name == 'schedule' && '-weekly' || inputs.gui-sweep && '-gui-sweep' || inputs.gpu-av && '-gpu-av' || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/develop' }}
 
 permissions:
@@ -39,7 +43,7 @@ jobs:
   # Minutes on the bare runner: the scripts against synthetic inputs (the release collector's suite is the hub's).
   deb-layout:
     name: Script suites
-    if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep }}
+    if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep && !inputs.gpu-av }}
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
@@ -71,7 +75,7 @@ jobs:
         run: bash scripts/linux/tests/test-filesystem-pattern.sh
 
   build-x64:
-    if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep }}
+    if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep && !inputs.gpu-av }}
     uses: ./.github/workflows/reusable-linux.yml
     # No timeout-minutes: GitHub rejects it on a job that calls a reusable workflow.
     permissions:
@@ -89,7 +93,7 @@ jobs:
   docs:
     needs: build-x64
     # A red test elsewhere in the build must not hold back the site; the site's own steps decide.
-    if: ${{ !cancelled() && github.event_name != 'schedule' && !inputs.gui-sweep }}
+    if: ${{ !cancelled() && github.event_name != 'schedule' && !inputs.gui-sweep && !inputs.gpu-av }}
     uses: Kataglyphis/ANTfrastructure/.github/workflows/build-docs.yml@develop
     with:
       artifact: bb-docs-site
@@ -161,5 +165,51 @@ jobs:
             --build-dir build
             --build-type Debug
             -- -R "^GoldenRender\.GuiInputSweepNeverCrashesOrLosesTheDevice$"
+            --timeout 3600 --no-tests=error
+          log-file: output.log
+
+  # GPU-AV checks every shader's buffer-device-address and descriptor access; robustBufferAccess covers no BDA read.
+  gpu-av:
+    name: GPU-assisted validation (llvmpipe)
+    if: ${{ github.event_name == 'schedule' || inputs.gpu-av }}
+    runs-on: ubuntu-26.04
+    # A debug build like clang-tests', then the list's goldens: 607 s with GPU-AV, 319 s without, on 6 aarch64 cores.
+    timeout-minutes: 120
+    steps:
+      - name: Prepare host
+        uses: Kataglyphis/ANTfrastructure/.github/actions/prepare-linux-ci-host@develop
+        with:
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GHCR_PAT }}
+
+      # Reads clang-tests' debug cache and never writes it: same preset, same objects.
+      - name: Restore compiler cache
+        id: cc
+        uses: Kataglyphis/ANTfrastructure/.github/actions/compiler-cache-restore@develop
+        with:
+          key: ${{ runner.arch }}-clang-debug
+          mounts: 'sccache:/var/cache/sccache'
+          env: 'SCCACHE_CACHE_SIZE=1200M'
+
+      - name: Configure/build
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          extra-args: ${{ steps.cc.outputs.docker-args }}
+          script: >-
+            bash ./scripts/linux/cmake-configure-build.sh
+            --preset "linux-debug-clang"
+            --build-dir build
+          log-file: output.log
+
+      # Safe mode is a precaution: GPU-AV then tries to prevent a crash. ctest runs in --build-dir, where the list path starts.
+      - name: Run the GPU-AV goldens
+        uses: Kataglyphis/ANTfrastructure/.github/actions/run-in-linux-container@develop
+        with:
+          extra-args: -e VK_KHRONOS_VALIDATION_GPUAV_ENABLE=1 -e VK_KHRONOS_VALIDATION_GPUAV_SAFE_MODE=1
+          script: >-
+            bash ./scripts/linux/run-ctest.sh --virtual-display
+            --build-dir build
+            --build-type Debug
+            -- --tests-from-file ../scripts/linux/gpu-av-goldens.txt
             --timeout 3600 --no-tests=error
           log-file: output.log

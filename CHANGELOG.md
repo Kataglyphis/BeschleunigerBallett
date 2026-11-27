@@ -49,6 +49,19 @@ the GitHub releases themselves.
   `cmake/CargoLicenses.cmake`'s budget with it; both crates ship their own MIT and Apache-2.0 texts, which the hub's
   stager installs. `GoldenRender.WebpOnlyTextureDrawsItsRampInEveryMode` and
   `GoldenRender.WebpTextureDrawsInsteadOfItsPngFallback` draw OxidANT's 32x32 lossless ramp.
+- GPU-assisted validation of the shaders' buffer-device-address reads (plan X6), which `robustBufferAccess` never
+  covers. `linux-x64.yml`'s new `gpu-av` job runs Sundays and on a dispatch with `gpu-av`: the debug build, then the
+  eight goldens of `scripts/linux/gpu-av-goldens.txt`, which read materials in every render mode, on llvmpipe with the
+  layer's GPU-AV and its safe mode on; a read outside every buffer logs
+  `VUID-RuntimeSpirv-PhysicalStorageBuffer64-11819`, which `run-ctest.sh --virtual-display`'s log scan fails. They
+  took 607 s against 319 s without GPU-AV on 6 aarch64 cores. A planted far read past the materials in
+  `fetch_material` was reported from the forward, deferred, ray-traced and path-traced shaders, and one in the any-hit
+  shader from that stage; the clean tree reports none. A read one past a mesh's last material is not reported (GPU-AV
+  checks only that a read falls in some buffer); the goldens' pixel assertions failed it instead.
+  `Invoke-SyncValidation.ps1 -GpuAssisted` stages the same settings on a host GPU through the hub's new
+  `Invoke-VulkanValidationRun -GpuAssisted` (ANTfrastructure pin). `BuildIntegrity.GpuAvJobRunsItsGoldenListWithGpuAvOn`
+  holds the list to runnable goldens, since ctest ignores a line that names no test, and the job's ctest step to both
+  settings and to a list path that resolves from its build directory, where ctest runs.
 
 ### Changed
 
