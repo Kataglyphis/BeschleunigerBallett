@@ -107,8 +107,11 @@ C++ catches up:
   cut the irradiance taps in the shared `ibl.slang` (changes Rust too); spherical harmonics are the third way.
 - [ ] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2). Since Phase 27 one set of scene
   targets serves every frame in flight and only the drawn raster path is allocated: 54.5 B/px forward and 70.5
-  deferred against 206.5 (four swapchain images on llvmpipe), 1080p's VMA total 226 or 257 MiB against 526. The
-  scene extent lives in the new `SceneTargets` module; every pass must take it instead of the swapchain's.
+  deferred against 206.5 (four swapchain images on llvmpipe), 1080p's VMA total 226 or 257 MiB against 526. They
+  are sized at `VulkanRenderer::sceneExtent()`, which `updateSceneExtent()` sets from the swapchain; scale it there.
+  Still on the swapchain's extent and to move to the scene's: Raytracing/PathTracing's dispatch size,
+  BloomStage/SsaoStage's `postHalfExtent`, and `RenderStageFrame`/`RenderStageResize::extent` (split into a scene
+  and an output extent). Post, FXAA and the capture stay at the output's, post sampling the scaled target.
 - [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
   device thread onto the `AsyncModelParse` worker and batch texture uploads through a staging ring; route
   the editor reload through the worker and keep the old scene until the new one lands (a failed reload
@@ -174,6 +177,9 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `C++` **The rest of the scene targets lazily** (S-M), as Rust's pool does: the path tracer's RGBA32F history
+  and the traced depth (20 B/px on a ray-tracing device, held in raster modes), the clouds' two targets (10 B/px,
+  bound with clouds off), and the forward prepass only while SSAO is on (forward 16 -> 12 B/px).
 - [ ] `Shared` **Make the forward SSAO prepass pay for itself** (M, both renderers). Since Phase 26 the forward
   path draws a single-sample depth prepass for SSAO (opaque and MASK), and SSAO defaults to 0.7 as in Rust, so it
   runs by default: on llvmpipe (Dinosaurs, 1200x768) `Ssao` takes 491 ms in forward against 4 ms deferred, as much
