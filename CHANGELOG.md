@@ -12,6 +12,17 @@ the GitHub releases themselves.
 
 ## [Unreleased]
 
+### Added
+
+- WebP textures (`EXT_texture_webp`), lossy and lossless, alpha included (OxidANT pin `12ff01e`). OxidANT's loader
+  decodes WebP for both renderers through `image`'s pure-Rust `webp` feature, prefers an `EXT_texture_webp` image
+  over the core `source` (after a `KHR_texture_basisu` one) and falls back to the next image when it does not decode.
+  Before, a glTF that required the extension failed to load, and one with a PNG fallback drew the PNG. The bridge's
+  runtime graph grows from 60 to 62 packages on all five bridge targets (`image-webp`, `quick-error`), and
+  `cmake/CargoLicenses.cmake`'s budget with it; both crates ship their own MIT and Apache-2.0 texts, which the hub's
+  stager installs. `GoldenRender.WebpOnlyTextureDrawsItsRampInEveryMode` and
+  `GoldenRender.WebpTextureDrawsInsteadOfItsPngFallback` draw OxidANT's 32x32 lossless ramp.
+
 ### Changed
 
 - A KTX2 texture uploads as the blocks the device samples instead of an RGBA8 chain (plan B5 step 3, OxidANT pin

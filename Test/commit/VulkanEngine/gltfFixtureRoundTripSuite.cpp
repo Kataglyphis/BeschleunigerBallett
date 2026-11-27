@@ -223,6 +223,20 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
                 << "the base colour's KHR_texture_transform is lost";
           } },
         { "cube_unlit.gltf", [](const GltfLoader &loader) { EXPECT_EQ(loader.getMaterials().at(0).unlit, 1); } },
+        { "cube_webp.gltf",
+          [](const GltfLoader &loader) {
+              ASSERT_EQ(loader.getTextures().size(), 1U) << "a WebP-only image is the slot, decoded by OxidANT";
+              EXPECT_EQ(loader.getMaterials().at(0).textureID, 0);
+              const Kataglyphis::ParsedTexture &texture = loader.getTextures()[0];
+              EXPECT_EQ(texture.width, 32U);
+              EXPECT_EQ(texture.levelCount, 6U) << "a full RGBA8 chain";
+              EXPECT_TRUE(texture.encoded.empty()) << "nothing is left for stb, which reads no WebP";
+          } },
+        { "cube_webp_fallback.gltf",
+          [](const GltfLoader &loader) {
+              ASSERT_EQ(loader.getTextures().size(), 1U);
+              EXPECT_EQ(loader.getTextures()[0].width, 32U) << "the WebP wins over the 2x2 PNG";
+          } },
         { "point_light.gltf", [](const GltfLoader &loader) { EXPECT_EQ(loader.getPunctualLights().size(), 2U); } },
         { "skinned_bar.gltf", [](const GltfLoader &loader) { EXPECT_TRUE(loader.getMeshRanges().at(0).doubleSided); } },
         { "skinned_bar_quantized.gltf",

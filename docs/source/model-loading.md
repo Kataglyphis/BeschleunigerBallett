@@ -67,12 +67,13 @@ over decoded, deduped on `(image sources, sampler settings, srgb)`.
 **Textures are decoded in Rust, on every core of the parse thread** (plan B5).
 Each slot is a mip chain, level 0 first and packed back to back (`levels.rs`'s
 `TextureChain`, tagged with its `ChainFormat`), which `Texture::createFromLevels`
-uploads without a blit. PNG, JPEG, BMP, TGA, GIF, PNM and Radiance HDR decode
-through the image crate (`image_decode.rs`, channels expanded and HDR gamma-encoded
+uploads without a blit. PNG, JPEG, BMP, TGA, GIF, PNM, Radiance HDR and WebP (lossy or
+lossless) decode through the image crate (`image_decode.rs`, channels expanded and HDR gamma-encoded
 as stb's `STBI_rgb_alpha` does) to a full RGBA8 chain down to 1x1, box-filtered with
 the WebGPU renderer's filter (sRGB averaged in linear space). A `KHR_texture_basisu`
-KTX2 is preferred over the core `source`. **A KTX2 arrives as the blocks the device
-samples** (plan B5 step 3): `VulkanDevice` enables `textureCompressionBC`, `ETC2` and
+KTX2 is preferred over the core `source`, then an `EXT_texture_webp` image; one that
+does not decode falls back to the next, the core `source` last. **A KTX2 arrives as the
+blocks the device samples** (plan B5 step 3): `VulkanDevice` enables `textureCompressionBC`, `ETC2` and
 `ASTC_LDR` where offered and counts a family (`BlockSupport`, `scene/TextureFit.hpp`)
 when every one of its formats, in both colour spaces, samples, filters linearly and
 takes a copy with optimal tiling; the renderer hands that and `maxImageDimension2D`

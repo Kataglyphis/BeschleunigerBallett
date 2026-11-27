@@ -264,7 +264,7 @@ keep `Resolve-WorkspacePath` and all project-specific settings in this driver.
 - The Windows BeschleunigerBallett executable embeds `images/faviconNew.ico` through the shared CMake resource helper.
 - Every package installs third-party license texts under `share/licenses/BeschleunigerBallett/`: `licenses/third-party-licenses.txt` maps each shipped library's original file, which CMake installs, the DEB gate and the MSIX check read back; GSL and abseil come from their FetchContent checkouts. A new linked library or shipped asset needs its row in the same change.
 - The C++ bridge's crate texts come from the hub's `stage-cargo-licenses.py` with OxidANT's reviewed policy (`cmake/CargoLicenses.cmake`); never write a notice for a crate that lacks one, add the original text to OxidANT's policy.
-- The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 60 runtime packages (counted on all five bridge targets); raise the budget only with a reviewed dependency.
+- The same call gates the bridge's crate graph (plan X4): a wgpu, naga, winit, egui, tokio, gstreamer or ort package fails the build, and so do more than 62 runtime packages (counted on all five bridge targets); raise the budget only with a reviewed dependency.
 - The ARM64 source-copy Pester suite uses the hub's parsed loop and fixture helpers;
   keep Ballett's shader list, mutation and path assertions in this repo.
 
@@ -887,7 +887,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 114 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 116 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -909,7 +909,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (93 today, two of them disabled), 90 min per test;
+  - `raster`: every GPU test in no other shard (95 today, two of them disabled), 90 min per test;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,

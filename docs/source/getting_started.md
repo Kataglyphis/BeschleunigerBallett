@@ -11,7 +11,7 @@
   unwinds into an error value); Corrosion runs a `cxxbridge` on `PATH` at that lock's `cxx` version,
   or else builds exactly that version into the build tree on the first build. The build stages the
   bridge's crate licences and fails when its graph gains a wgpu, naga, winit, egui, tokio, gstreamer or
-  ort package or more than 60 runtime packages (`cmake/CargoLicenses.cmake`)
+  ort package or more than 62 runtime packages (`cmake/CargoLicenses.cmake`)
 - network access for the first configure, which downloads the default scenes (see below)
 
 ## Clone the Repository

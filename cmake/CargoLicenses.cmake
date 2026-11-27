@@ -28,8 +28,8 @@ set(_myproject_cargo_forbidden
     ort
     --forbid-package
     "ort-*")
-# All five bridge targets: gif, weezl, color_quant for GIF, kataglyphis_bridge_support; raise only when reviewed.
-set(_myproject_cargo_runtime_budget 60)
+# All five bridge targets; WebP brought image-webp and quick-error, both pure Rust. Raise only when reviewed.
+set(_myproject_cargo_runtime_budget 62)
 add_custom_command(
   OUTPUT "${_myproject_cargo_licenses}/manifest.json"
   COMMAND "${CMAKE_COMMAND}" -E rm -rf "${_myproject_cargo_licenses}"
