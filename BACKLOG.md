@@ -105,11 +105,10 @@ C++ catches up:
   is about 30-50 s per renderer: read the next weekly riscv64 `raster-*` shards and Windows lavapipe times. If it
   matters, either cache the bake per process (results unchanged, but test-only readback code in the engine) or
   cut the irradiance taps in the shared `ibl.slang` (changes Rust too); spherical harmonics are the third way.
-- [ ] `C++` **One set of C++ scene targets** (M-L, plan C6 step 1). One set per swapchain image, and both
-  raster paths always allocated, cost about 124.5 B/px since Phase 26's post targets (a forward depth prepass
-  4, bloom 4, SSAO 0.5; about 245 MiB at 1080p); afterwards 12 B/px forward or 32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
-- [b] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2; after one set of targets).
-  Every pass reads the swapchain extent today and must take a scene extent instead.
+- [ ] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2). Since Phase 27 one set of scene
+  targets serves every frame in flight and only the drawn raster path is allocated: 54.5 B/px forward and 70.5
+  deferred against 206.5 (four swapchain images on llvmpipe), 1080p's VMA total 226 or 257 MiB against 526. The
+  scene extent lives in the new `SceneTargets` module; every pass must take it instead of the swapchain's.
 - [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
   device thread onto the `AsyncModelParse` worker and batch texture uploads through a staging ring; route
   the editor reload through the worker and keep the old scene until the new one lands (a failed reload
