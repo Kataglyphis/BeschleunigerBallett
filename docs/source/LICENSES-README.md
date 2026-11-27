@@ -167,8 +167,8 @@ third-party works beside it that no package carries:
 | Noto Emoji and emoji-icon-font symbol subsets (`NotoEmoji-Subset.ttf`, `EmojiIcon-Subset.ttf`, embedded by the same `fonts.rs`), cut from egui's `epaint_default_fonts` 0.37.0 | OFL-1.1 (Noto Emoji, a Modified Version keeping its name) and MIT (emoji-icon-font) | the same `NOTICE`, which carries the MIT text, and `OFL-1.1.txt`, copied to `webgpu-demo/fonts/` |
 
 `licenses/third-party-licenses.txt` lists what the packages install, so the Colosseum and the fonts' demo copies have no row there; the skybox's row is the packages' own.
-The `Colosseum-gltf` scene, which `KATAGLYPHIS_FETCH_ALL_ASSETS` fetches for the model picker, is
-CC BY 4.0 by the same author and ships nowhere either.
+The `Colosseum-gltf` and `Colosseum-ktx2` scenes, which `KATAGLYPHIS_FETCH_ALL_ASSETS` fetches for the model picker,
+are CC BY 4.0 by the same author and ship nowhere either.
 
 ## Toolchain (build time, not shipped)
 

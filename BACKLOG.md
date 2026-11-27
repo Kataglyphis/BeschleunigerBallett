@@ -87,13 +87,6 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Loader:
 
-- [ ] `Assets` **Colosseum-ktx2 in AssetANT** (M, owner decision 2026-11-26). A separate release-only asset: the
-  Colosseum glTF with UASTC + Zstandard textures through `KHR_texture_basisu` and no PNG/JPEG copy; `Colosseum-gltf`
-  stays. Phase 23 measured a local UASTC build (69 images, mipmapped): device memory 760 -> 190 MiB (BC7 on
-  llvmpipe), `load_flat`'s peak 1.36-1.42 GiB -> 711-714 MiB, 0.73-0.88 s; the engine and the WebGPU renderer need
-  nothing more. Build the export reproducibly in AssetANT (its converter beside `export_gltf.py`), with the CC BY 4.0
-  text, a NOTICE of the changes and the archive's SHA-256, then show the package to the owner. **Publish only after
-  the owner's okay to that package**; then add its lock line and a model-picker row.
 - [ ] `Assets` **Texture ingest in Rust, the rest** (S each; step 3 is in since Phase 23). A stored ETC2 or ASTC KTX2
   is still refused: passing it through needs an ETC2 CPU decoder (T, H and planar modes; basisu has none) for the
   devices without ETC2, which are most desktop GPUs; ASTC could decode through basisu, and `KHR_texture_basisu`

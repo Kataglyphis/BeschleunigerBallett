@@ -65,8 +65,8 @@ and which went on 2026-11-19 with the toml++ submodule (owner decision 2026-11-1
 - **A configure fetches two**: `crytek-sponza` (the Release default, the one scene the packages
   install, two goldens) and `Dinosaurs` (the Debug default, the golden scene, two `ObjParseUnit`
   fixtures, the renderer comparisons), named by `KATAGLYPHIS_DEFAULT_ASSETS` in the module.
-  `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other fourteen for the model picker, among them
-  `Colosseum-gltf` (117 MiB) and `Colosseum-web`;
+  `-DKATAGLYPHIS_FETCH_ALL_ASSETS=ON` adds the other fifteen for the model picker, among them
+  `Colosseum-gltf` (117 MiB), `Colosseum-ktx2` (the same scene with UASTC KTX2 textures) and `Colosseum-web`;
   `-DKATAGLYPHIS_FETCH_ASSETS=OFF` fetches nothing (the tests that read a scene then skip or fail).
   The shipped scene also carries its official CC BY 3.0 text and source notice from `licenses/`;
   CMake installs both alongside the scene without changing its pinned AssetANT archive.

@@ -14,6 +14,10 @@ the GitHub releases themselves.
 
 ### Added
 
+- `Colosseum-ktx2` (AssetANT release `Colosseum-ktx2-v1`, CC BY 4.0) is in `Resources/assets.lock`, fetched with
+  `KATAGLYPHIS_FETCH_ALL_ASSETS` for the model picker: `Colosseum-gltf` with its 69 textures as UASTC KTX2 through
+  `KHR_texture_basisu`. On llvmpipe they upload as BC7, 190 MiB of device memory against 760 MiB, and `load_flat`
+  peaks at 706-714 MiB against 1288-1298 MiB for `Colosseum-gltf`; five views of both render within 49-58 dB PSNR.
 - WebP textures (`EXT_texture_webp`), lossy and lossless, alpha included (OxidANT pin `12ff01e`). OxidANT's loader
   decodes WebP for both renderers through `image`'s pure-Rust `webp` feature, prefers an `EXT_texture_webp` image
   over the core `source` (after a `KHR_texture_basisu` one) and falls back to the next image when it does not decode.

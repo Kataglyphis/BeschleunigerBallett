@@ -95,8 +95,8 @@ device does not sample. `Colosseum-gltf`'s 69 PNG and JPEG images make 760 MB of
 chains, held until `uploadParsed` has staged them; the decode runs after the scene walk
 with the document's buffers already dropped, so `load_flat` peaks at 1.28-1.30 GiB
 resident there (745 MiB when it handed over the encoded files). The same images as
-UASTC KTX2, a local measurement build, make 190 MB of BC7 chains on a BC device
-instead of 760 MB of RGBA8: `load_flat` peaks at 711-713 MiB instead of 1363-1416 MiB,
+UASTC KTX2, AssetANT's `Colosseum-ktx2`, make 190 MB of BC7 chains on a BC device
+instead of 760 MB of RGBA8: `load_flat` peaks at 706-714 MiB instead of 1349-1375 MiB,
 and the textures take 190 MiB of device memory instead of 760 MiB. The document, its buffers and
 its images must be regular files, the buffers and images inside the document's
 directory.
