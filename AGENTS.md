@@ -384,9 +384,9 @@ container.
 A GCC build fits a 12 GB container at `--parallel 2`, not more: a GCC unit that imports the renderer
 holds 5-6 GB, so `Test/commit/VulkanEngine/CMakeLists.txt` compiles those suite files one at a time
 (Ninja pool `kataglyphis_heavy_tests`), and the -j2 rebuild of the suite peaks at 9.5 GB. Clang's
-units stay near 1.3 GB. The engine's own module units are not pooled, so CI's gcc job passes
-`--mb-per-job 6500`, which gives two jobs on a 16 GB runner: at the default 4000 it ran three and the runner was
-killed in the engine's module units.
+units stay near 1.3 GB. The engine's own module units are not pooled, so CI's two GCC builds (the debug job and the profiling
+job's gcc half) pass `--mb-per-job 6500`, which gives two jobs on a 16 GB runner: at the default 4000 they ran
+three and the runner was killed in the engine's module units.
 
 ## Shaders: Slang (unified SPIR-V + WGSL)
 

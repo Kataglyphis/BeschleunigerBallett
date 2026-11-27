@@ -449,7 +449,7 @@ jobs:
           script: bash ./scripts/linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
-      # The gcc half runs whatever the clang half did; no compiler cache, since neither cache handles -fmodules-ts TUs.
+      # Runs whatever the clang half did, two units at a time as gcc debug; no cache, as none handles -fmodules-ts TUs.
       - name: Configure/build CMake for Profiling (gcc)
         id: gcc-profile-build
         if: ${{ !cancelled() && matrix.part != 'clang' }}
@@ -460,6 +460,7 @@ jobs:
             --build-dir "${{ env.BUILD_DIR }}"
             --preset "${{ env.GCC_PROFILE_PRESET }}"
             --clean-build-dir true
+            --mb-per-job 6500
           log-file: logs/build-gcc-profile.log
 
       # In the container: the binary links the image's /opt/gcc libstdc++, which the host lacks.

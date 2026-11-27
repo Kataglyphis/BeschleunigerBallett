@@ -65,6 +65,8 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The profiling job's gcc build takes two units at a time too (`--mb-per-job 6500`): on arm64 run 46036623338
+  (1721d469) lost its runner at 619 of 625 steps with `VulkanRenderer.ixx` compiling, at the default three jobs.
 - The riscv64 lane's `raster` GPU shard is three, `raster-1` to `raster-3`, each every third of its tests by ctest
   number: as one job it passed GitHub's 6 h limit (run 45969392334 was cancelled with 64 of 95 tests done in 5.7 h);
   split so, those 64 take 1.7-2.0 h per shard.
