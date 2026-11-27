@@ -25,10 +25,14 @@ RISCV64_GPU_CLOUD_TESTS+='|CloudsCompositeOverTheSkyAsOverGeometry|CloudsInFront
 RISCV64_GPU_CLOUD_TESTS+='|CloudsAreLitByTheSkyTheyDraw|CloudWindMovesTheNoiseAndRepeatsWithItsPeriod'
 RISCV64_GPU_CLOUD_TESTS+='|HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch'
 RISCV64_GPU_SWEEP_TEST='GuiInputSweepNeverCrashesOrLosesTheDevice'
+# The rest splits by ctest number, every third test a shard: as one, run 45969392334 hit the 6 h job limit at 64 of 95.
+RISCV64_GPU_RASTER_SHARDS=3
 
 # The weekly matrix reads its shards here, before any hub library loads, so the list has one home.
 if [[ "${1:-}" == "--list-gpu-shards" ]]; then
-  shards=(raster clouds "${RISCV64_GPU_SOLO_TESTS[@]}")
+  shards=()
+  for ((part = 1; part <= RISCV64_GPU_RASTER_SHARDS; part++)); do shards+=("raster-${part}"); done
+  shards+=(clouds "${RISCV64_GPU_SOLO_TESTS[@]}")
   # A dispatch may name a subset (comma-separated); a name off the list fails before any job starts.
   if [[ -n "${2:-}" ]]; then
     IFS=',' read -r -a wanted <<<"${2// /}"
@@ -67,13 +71,18 @@ fi
 
 # Ceilings leave a solo test 300 of the job's 360 min after the 23-33 min cross build; the measured times are in AGENTS.md.
 riscv64_gpu_shard_args() {
-  local shard="$1" solo_tests
+  local shard="$1" solo_tests part
   solo_tests="$(IFS='|'; printf '%s' "${RISCV64_GPU_SOLO_TESTS[*]}")"
   case "${shard}" in
     all) CTEST_GPU_ARGS=(-R "${CTEST_GPU_SUITES}" -E "^GoldenRender\.${RISCV64_GPU_SWEEP_TEST}\$" --timeout 7200) ;;
-    raster)
+    raster-*)
+      part="${shard#raster-}"
+      [[ "${part}" =~ ^[1-9][0-9]*$ ]] && ((part <= RISCV64_GPU_RASTER_SHARDS)) \
+        || { err "unknown RISCV64_GPU_SHARD '${shard}'; see --list-gpu-shards"; exit 2; }
+      # -I intersects with -R and -E, so the parts cover the filtered tests once each.
       CTEST_GPU_ARGS=(-R "${CTEST_GPU_SUITES}"
-        -E "^GoldenRender\.(${solo_tests}|${RISCV64_GPU_CLOUD_TESTS}|${RISCV64_GPU_SWEEP_TEST})\$" --timeout 5400)
+        -E "^GoldenRender\.(${solo_tests}|${RISCV64_GPU_CLOUD_TESTS}|${RISCV64_GPU_SWEEP_TEST})\$"
+        -I "${part},,${RISCV64_GPU_RASTER_SHARDS}" --timeout 5400)
       ;;
     clouds) CTEST_GPU_ARGS=(-R "^GoldenRender\.(${RISCV64_GPU_CLOUD_TESTS})\$" --timeout 9000) ;;
     *)

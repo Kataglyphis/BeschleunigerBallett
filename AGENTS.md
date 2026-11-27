@@ -743,7 +743,7 @@ opt-ins before that are gone. Linux x64 still skips a docs-only commit through `
 | Linux x86_64 GUI input sweep (`gui-sweep`: the debug build, then only `GuiInputSweepNeverCrashesOrLosesTheDevice` on llvmpipe) | `linux-x64.yml` | Sundays 03:17 UTC, or by hand with `gui-sweep`; skips every other job of the lane |
 | Windows x64 (clang-cl container build of `clangcl-debug`, `clangcl-profile` and `clangcl-release`, CPU, compile and perf suites, fuzz seeds, renderer comparisons, packaging; then the GPU suites on lavapipe on the runner host; Pester) | `windows-x64.yml` → the hub's reusable `container-ci-windows.yml`; the container half is `scripts/windows/Invoke-WindowsLane.ps1` | on request (`on-request.yml`) or by hand |
 | Linux ARM64 | `linux-arm64.yml` → `reusable-linux.yml` | on request (`on-request.yml`) or by hand; builds no docs site (the docs steps need `runner == 'ubuntu-26.04'`) |
-| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 15 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
+| Linux riscv64 (cross build on amd64, Debug ctest under QEMU; the CPU suites on request, the GPU suites behind the fp16 shim in 17 weekly shards; see [The riscv64 lane](#the-riscv64-lane)) | `linux-riscv64.yml` → the hub's reusable `container-ci-riscv64.yml`; the container half is `scripts/linux/run-riscv64-tests.sh` | on request (`on-request.yml`) or by hand; the GPU shards on Saturdays and on dispatch with `gpu-tests` |
 | Windows ARM64 (cross build in the arm64 bundle, then the Release commit suite, the Profile perf suite and the Debug (ASan) suite on `windows-11-arm`, dda807b0; below) | `windows-arm64-cross.yml` → the hub's reusable `container-ci-windows.yml` | on request (`on-request.yml`) or by hand |
 
 The top two are their own workflows, not jobs inside the build lanes, which is what makes "always"
@@ -909,7 +909,10 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster`: every GPU test in no other shard (95 today, two of them disabled), 90 min per test;
+  - `raster-1` to `raster-3`: every GPU test in no other shard (95 today, two of them disabled), every third
+    by ctest number in each (`-I k,,3`, which intersects with the filter), 90 min per test. As one `raster`
+    job they passed GitHub's 6 h job limit: run 45969392334 had finished 64 of 95 in 5.7 h of tests, which a
+    split by number leaves at 1.7-2.0 h per shard;
   - `clouds`: the ten cloud goldens, 150 min per test;
   - one solo shard each, 300 min, for the twelve path-traced tests (the eight
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
@@ -923,7 +926,9 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   natively), are unmeasured under QEMU. On a native aarch64 llvmpipe the cloud five took 26 s together against 91 s for
   `CloudsAcrossManyFramesDoesNotLoseTheDevice`, and the path-traced four 8-19 s each against
   17 s for `PathTracingHonorsTheQualityControls` (50 min under QEMU). `raster` grew from the 31
-  tests timed below to 90 runnable ones, also untimed under QEMU. `ShaderHotReloadRestartsThePathTracedMean`
+  tests timed below to 95; run 45969392334 timed 64 of them under QEMU, the slowest
+  `NormalMappedBackFaceFlipsItsWholeTangentFrame` and `TwoChannelNormalMapShadesAsItsThreeChannelTwin` at about 20 min.
+  `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
   pipeline, and thirteen more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
@@ -986,7 +991,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   [`docs/source/gpu-golden-testing.md`](docs/source/gpu-golden-testing.md) § The riscv64 light variant.
 
   Each shard cross-builds for itself (23-33 min before ctest starts), because the hub's reusable
-  lane takes no build artifact; the 15 jobs restore the push lane's `riscv64-clang-debug` cache
+  lane takes no build artifact; the 17 jobs restore the push lane's `riscv64-clang-debug` cache
   and, off a push, never save it. The CPU and GPU runs sit in different concurrency groups, so a
   push cannot cancel the weekly run. `ctest --no-tests=error` fails a shard whose filter matches
   nothing, and an unknown shard name stops before the build. `RISCV64_GPU_SHARD=all` is the old

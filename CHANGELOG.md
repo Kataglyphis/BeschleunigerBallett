@@ -42,6 +42,9 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The riscv64 lane's `raster` GPU shard is three, `raster-1` to `raster-3`, each every third of its tests by ctest
+  number: as one job it passed GitHub's 6 h limit (run 45969392334 was cancelled with 64 of 95 tests done in 5.7 h);
+  split so, those 64 take 1.7-2.0 h per shard.
 - CI's gcc job (ASan, UBSan and coverage) builds two units at a time on a 16 GB runner, not three
   (`--mb-per-job 6500`): a GCC unit that imports an engine module holds 5-6 GB, and at three jobs the runner was
   killed in the engine's module units, both attempts of run 45878827600 on 5befb4aa (`VulkanRenderer.ixx` among the

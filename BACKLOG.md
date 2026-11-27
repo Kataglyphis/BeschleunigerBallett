@@ -102,7 +102,7 @@ C++ catches up:
 
 - [ ] `CI` **The IBL bake's cost on emulated lanes** (S). Phase 16's bake costs 1.6 s per renderer on llvmpipe
   (irradiance 1.24 s of it: 128 x 64 taps per texel); the full x64 ctest went from 42 to 46 min. Under QEMU that
-  is about 30-50 s per renderer: read the next weekly riscv64 `raster` shard and Windows lavapipe times. If it
+  is about 30-50 s per renderer: read the next weekly riscv64 `raster-*` shards and Windows lavapipe times. If it
   matters, either cache the bake per process (results unchanged, but test-only readback code in the engine) or
   cut the irradiance taps in the shared `ibl.slang` (changes Rust too); spherical harmonics are the third way.
 - [ ] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; the HDR sky is in since Phase 3, the
