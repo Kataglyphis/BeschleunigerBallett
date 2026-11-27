@@ -31,6 +31,7 @@ inline void renderCommonKeyBindings()
         Binding{ { "ESC" }, "Leave the focused panel; pressed again, quit" },
         Binding{ { "F1" }, "Show or hide the editor" },
         Binding{ { "F5" }, "Reload all shaders" },
+        Binding{ { "F12" }, "Save a screenshot" },
     };
 
     if (!ImGui::BeginTable("##key_bindings", 2, ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings)) {

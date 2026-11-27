@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -22,8 +23,10 @@
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/PathTracingHistory.hpp"
 
+import kataglyphis.vulkan.command_line;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
+import kataglyphis.vulkan.gui_scene_shared_vars;
 
 using namespace Kataglyphis::TestSupport::BuildIntegrity;
 
@@ -180,6 +183,7 @@ TEST(BuildIntegrity, EveryGuiSceneVarIsComparedWithOxidantsSettingsOrExempt)
           "the combo's labels; the texels are compared through kShadowMapResolutions" },
         { "skybox_enabled", "OxidANT's settings carry no skybox toggle yet" },
         { "camera_fov", "the camera, which OxidANT's settings do not carry" },
+        { "camera_fly_speed", "the camera; TheFlySpeedTakesOxidantsDefaultAndRange compares it with render_core's" },
         { "model_position", "the Model tab's pose, compared through parity_model_transform (rendererParitySuite.cpp)" },
         { "model_rotation", "the Model tab's pose, compared through parity_model_transform (rendererParitySuite.cpp)" },
     };
@@ -209,6 +213,7 @@ TEST(BuildIntegrity, EveryRendererFeedbackFieldReachesTheEditor)
         { "publishedSun", "applyRendererFeedback writes it into the editor's Sun, which the Sun inspector shows" },
         { "publishedShadowDistance", "applyRendererFeedback writes it into the Sun tab's shadow Distance slider" },
         { "publishedFov", "applyRendererFeedback writes it into the Camera tab's Field of view slider" },
+        { "publishedFlySpeed", "applyRendererFeedback writes it into the Camera tab's Fly speed slider" },
     };
     expect_every_member_has_a_gui_control("RendererFeedback",
       "Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx",
@@ -555,4 +560,114 @@ TEST(BuildIntegrity, PathTracingTakesTheRustTracersPlanDefaultsAndRows)
       std::regex(
         R"re(ImGui::Button\("Restart accumulation"[^{]*\{\s*guiRendererSharedVars\.pathTracingRestartRequested = true;)re")))
       << "the editor's Restart accumulation button does not request pathTracingRestartRequested";
+}
+
+// The fly speed is OxidANT's (render_core's fly_speed.rs, which both renderers' framing fits to a scene).
+TEST(BuildIntegrity, TheFlySpeedTakesOxidantsDefaultAndRange)
+{
+    const fs::path source = repoRoot() / "third_party" / "OxidANT" / "crates" / "render_core" / "src" / "fly_speed.rs";
+    if (!sourceExists(source)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const auto rust = readFileText(source);
+    ASSERT_TRUE(rust.has_value()) << "could not read " << source.string();
+    const auto number = [](std::string text) {
+        text.erase(std::remove(text.begin(), text.end(), '_'), text.end());
+        return std::stof(text);
+    };
+    std::smatch match;
+    ASSERT_TRUE(std::regex_search(*rust, match, std::regex(R"(pub const DEFAULT_SPEED: f32 = ([\d_.]+);)")))
+      << source.string() << " has no DEFAULT_SPEED";
+    EXPECT_FLOAT_EQ(number(match[1].str()), kDefaultCameraFlySpeed);
+    ASSERT_TRUE(std::regex_search(
+      *rust, match, std::regex(R"(pub const SPEED_RANGE: RangeInclusive<f32> = ([\d_.]+)\.\.=([\d_.]+);)")))
+      << source.string() << " has no SPEED_RANGE";
+    EXPECT_FLOAT_EQ(number(match[1].str()), kMinCameraFlySpeed);
+    EXPECT_FLOAT_EQ(number(match[2].str()), kMaxCameraFlySpeed);
+}
+
+// The Rust editor's shortcut keys, F12 among them, are the C++ editor's: handled, and listed with Rust's words.
+TEST(BuildIntegrity, TheEditorsShortcutKeysAreTheRustEditors)
+{
+    const fs::path keys_path =
+      repoRoot() / "third_party" / "OxidANT" / "crates" / "webgpu_renderer" / "src" / "ui" / "editor" / "keys.rs";
+    if (!sourceExists(keys_path)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const auto rust = readFileText(keys_path);
+    const auto gui = readFileText(repoRoot() / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp");
+    const auto panel = readFileText(repoRoot() / "Src" / "shared" / "frontend" / "CommonGuiPanels.ixx");
+    ASSERT_TRUE(rust.has_value() && gui.has_value() && panel.has_value()) << "could not read the key sources";
+
+    // `keys: &["F12"], action: "...", shortcut: Some((Key::F12, ...))`; ESC's words differ by the hosts' focus.
+    static const std::regex kRow(R"rx(keys: &\["(F\d+)"\],\s*action: "([^"]+)",\s*shortcut: Some\(\(Key::F\d+)rx");
+    std::size_t rows = 0;
+    for (auto it = std::sregex_iterator(rust->begin(), rust->end(), kRow); it != std::sregex_iterator(); ++it) {
+        ++rows;
+        const std::string key = (*it)[1].str();
+        const std::string action = (*it)[2].str();
+        EXPECT_NE(gui->find("ImGuiKey_" + key + ", false"), std::string::npos) << "GUI.cpp does not handle " << key;
+        EXPECT_NE(panel->find("{ \"" + key + "\" }, \"" + action + "\""), std::string::npos)
+          << "the CONTROLS list does not say \"" << action << "\" for " << key;
+    }
+    EXPECT_GE(rows, 3U) << "found only " << rows << " function-key shortcut(s) in keys.rs - the scan broke";
+}
+
+// getting_started.md lists the keys the CONTROLS list shows, no more and no fewer.
+TEST(BuildIntegrity, GettingStartedListsTheEditorsKeys)
+{
+    const auto panel = readFileText(repoRoot() / "Src" / "shared" / "frontend" / "CommonGuiPanels.ixx");
+    const auto guide = readFileText(repoRoot() / "docs" / "source" / "getting_started.md");
+    ASSERT_TRUE(panel.has_value() && guide.has_value()) << "could not read the key list or the guide";
+
+    // `Binding{ { "W", "A", "S", "D" }, "..." }` reads "W A S D" in the guide's first column.
+    std::set<std::string> listed;
+    static const std::regex kBinding(R"rx(Binding\{ \{ ((?:"[^"]+"(?:, )?)+) \}, ")rx");
+    static const std::regex kKey(R"rx("([^"]+)")rx");
+    for (auto it = std::sregex_iterator(panel->begin(), panel->end(), kBinding); it != std::sregex_iterator(); ++it) {
+        const std::string keys = (*it)[1].str();
+        std::vector<std::string> names;
+        for (auto key = std::sregex_iterator(keys.begin(), keys.end(), kKey); key != std::sregex_iterator(); ++key) {
+            names.push_back((*key)[1].str());
+        }
+        listed.insert(joinViolations(names, " ").substr(1));
+    }
+    ASSERT_GE(listed.size(), 5U) << "found only " << listed.size()
+                                 << " bindings in CommonGuiPanels.ixx - the scan broke";
+
+    std::set<std::string> documented;
+    std::istringstream lines(*guide);
+    std::string line;
+    bool in_table = false;
+    while (std::getline(lines, line)) {
+        if (line.starts_with("| Key | Does |")) {
+            in_table = true;
+        } else if (in_table && line.starts_with("| ") && !line.starts_with("| ---")) {
+            documented.insert(line.substr(2, line.find(" |", 2) - 2));
+        } else if (in_table && !line.starts_with("| ---")) {
+            break;
+        }
+    }
+    EXPECT_EQ(documented, listed) << "getting_started.md's key table and renderCommonKeyBindings() disagree";
+}
+
+// --help lists every flag: abseil shows only those of files the usage filter accepts.
+TEST(BuildIntegrity, EveryFlagIsInAFileHelpLists)
+{
+    static const std::regex kFlag(R"(ABSL_FLAG\(\s*[^,]+,\s*(\w+))");
+    std::size_t flags = 0;
+    std::error_code error;
+    const fs::path src_root = repoRoot() / "Src";
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error)) { continue; }
+        const std::string extension = it->path().extension().string();
+        if (extension != ".cpp" && extension != ".ixx" && extension != ".hpp") { continue; }
+        const auto text = readFileText(it->path());
+        if (!text.has_value()) { continue; }
+        for (auto flag = std::sregex_iterator(text->begin(), text->end(), kFlag); flag != std::sregex_iterator();
+          ++flag) {
+            ++flags;
+            EXPECT_TRUE(Kataglyphis::helpListsFlagsOf(it->path().generic_string()))
+              << "--" << (*flag)[1].str() << " is defined in " << it->path().generic_string() << ", which --help skips";
+        }
+    }
+    ASSERT_FALSE(error) << error.message();
+    EXPECT_GE(flags, 2U) << "found only " << flags << " ABSL_FLAG definitions under Src/ - the scan broke";
 }

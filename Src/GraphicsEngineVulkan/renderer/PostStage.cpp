@@ -22,12 +22,10 @@
 
 #include "common/Utilities.hpp"
 #include "vulkan_base/PhysicalDeviceChoices.hpp"
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
 
 module kataglyphis.vulkan.post_stage;
 
-import kataglyphis.vulkan.debug;
+import kataglyphis.vulkan.gui_overlay;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
@@ -63,7 +61,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
   std::span<const vk::DescriptorSet> descriptorSets,
   bool cloudsEnabled,
   float bloomStrength,
-  Kataglyphis::Texture *fxaaInput)
+  Kataglyphis::Texture *fxaaInput,
+  const BeforeGuiHook &beforeGui)
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     Texture &target = fxaaInput != nullptr ? *fxaaInput : vulkanSwapChain->getSwapChainImage(image_index);
@@ -103,9 +102,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
     // The GUI goes over the last pass that writes the swapchain image, FXAA's while it filters.
     if (fxaaInput == nullptr) {
-        Kataglyphis::debug::ScopedCmdLabel const gui_label(commandBuffer, "gui", { 0.90F, 0.70F, 0.20F, 1.0F });
-        ImGui::Render();
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
+        recordGuiOverlay(commandBuffer, target.getImage(), target.getImageView(), swap_chain_extent, beforeGui);
     }
 
     commandBuffer.endRendering();

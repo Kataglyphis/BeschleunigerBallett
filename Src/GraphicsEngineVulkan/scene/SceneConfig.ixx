@@ -2,6 +2,7 @@ module;
 
 #include <filesystem>
 #include <glm/glm.hpp>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,6 +21,11 @@ std::string resolveModelPath(const std::string &relativeModelPath);
 std::string_view defaultModelRelativePath();
 // The library row holding relativePath, or -1 when none does: nothing loaded, or a path the scan does not list.
 int modelIndexOf(std::span<const std::string> availablePaths, std::string_view relativePath);
+// A command-line or dropped file as the scene loads it: as the library lists it below `resourcesRoot`'s Models/, else
+// absolute; none when the system code page cannot name it.
+std::optional<std::string> libraryPathFor(const std::filesystem::path &file,
+  const std::filesystem::path &resourcesRoot);
+std::optional<std::string> libraryPathFor(const std::filesystem::path &file);
 
 /// Result of one walk of a Models directory. `complete` is false iff the walk
 /// could not be started or was aborted by an error partway through - a false

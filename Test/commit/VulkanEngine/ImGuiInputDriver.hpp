@@ -11,9 +11,11 @@
 #include <cmath>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace Kataglyphis::TestSupport {
 
@@ -35,6 +37,8 @@ class ImGuiInputDriver
         glfwSetKeyCallback(window_, key_);
         scroll_ = glfwSetScrollCallback(window_, nullptr);
         glfwSetScrollCallback(window_, scroll_);
+        drop_ = glfwSetDropCallback(window_, nullptr);
+        glfwSetDropCallback(window_, drop_);
         // A pointer outside the window makes ImGui's backend poll the OS cursor, which would undo every move here.
         if (cursorEnter_ != nullptr) { cursorEnter_(window_, GLFW_TRUE); }
     }
@@ -43,7 +47,7 @@ class ImGuiInputDriver
     [[nodiscard]] bool wired() const
     {
         return cursorEnter_ != nullptr && cursorPos_ != nullptr && mouseButton_ != nullptr && key_ != nullptr
-               && scroll_ != nullptr;
+               && scroll_ != nullptr && drop_ != nullptr;
     }
 
     void frames(int count)
@@ -86,6 +90,14 @@ class ImGuiInputDriver
     {
         sendKey(glfwKey, GLFW_PRESS);
         sendKey(glfwKey, GLFW_RELEASE);
+    }
+
+    /// Files dropped on the window at once, as UTF-8 paths, then one frame.
+    void drop(std::span<const char *const> paths)
+    {
+        std::vector<const char *> list(paths.begin(), paths.end());
+        drop_(window_, static_cast<int>(list.size()), list.data());
+        frames(1);
     }
 
     /// The first point on `from`..`to`, `step` px apart, where ImGui's hit test reports `id` hovered.
@@ -131,6 +143,7 @@ class ImGuiInputDriver
     GLFWmousebuttonfun mouseButton_ = nullptr;
     GLFWkeyfun key_ = nullptr;
     GLFWscrollfun scroll_ = nullptr;
+    GLFWdropfun drop_ = nullptr;
 };
 
 /// The child `childStrId` of `parentName` drawn last frame; a tab's child exists per tab, only the shown one active.

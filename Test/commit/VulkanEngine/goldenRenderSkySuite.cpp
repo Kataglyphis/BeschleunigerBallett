@@ -1058,3 +1058,32 @@ TEST(GoldenRender, HdrTargetStaysBelowTheHalfFloatMaximum)
         EXPECT_GT(lamp_luma, 240.0) << mode.name << ": the overbright lamp does not tonemap to white";
     }
 }
+
+// The Skybox's inspector title reads Procedural while no cube map loaded, as Rust's does, and Cube map once one has.
+TEST(GoldenRender, TheSkyboxTitleSaysWhetherACubeMapLoaded)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride nothing("Models/ShadowTest/no_such_model.obj");
+    {
+        const ScopedEnvVar no_faces("KATAGLYPHIS_SKYBOX_DIR", "Resources/Textures/Skybox/no-such-sky");
+        EngineHarness harness;
+        harness.render_frames(1);
+        ASSERT_TRUE(harness.renderer->skyIsAnalytic())
+          << "KATAGLYPHIS_SKYBOX_DIR named no faces, yet a cube map loaded";
+        EXPECT_TRUE(harness.feedback.skyIsAnalytic) << "the renderer does not tell the editor";
+        EXPECT_EQ(harness.gui->skyboxSubtitle(), std::string_view("Procedural"));
+        ASSERT_NE(harness.gui->skyNote(), nullptr) << "the Sky tab does not say the procedural sky stands in";
+        EXPECT_EQ(std::string_view(harness.gui->skyNote()), "No cube map loaded, so the procedural sky stands in.");
+    }
+
+    RedSkybox red_sky;
+    ASSERT_TRUE(red_sky.written()) << "could not write the red faces";
+    const ScopedEnvVar use_red_sky("KATAGLYPHIS_SKYBOX_DIR", red_sky.string().c_str());
+    EngineHarness harness;
+    harness.render_frames(1);
+    ASSERT_FALSE(harness.renderer->skyIsAnalytic()) << "the red faces did not load, so the test measures nothing";
+    EXPECT_FALSE(harness.feedback.skyIsAnalytic);
+    EXPECT_EQ(harness.gui->skyboxSubtitle(), std::string_view("Cube map"));
+    EXPECT_EQ(harness.gui->skyNote(), nullptr) << "the Sky tab names the procedural sky while a cube map draws";
+}

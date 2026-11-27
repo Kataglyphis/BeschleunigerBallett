@@ -23,6 +23,7 @@ RenderSettings settingsWithEveryRequestRaised()
     settings.scene.model_reload_requested = true;
     settings.renderer.shader_hot_reload_triggered = true;
     settings.renderer.pathTracingRestartRequested = true;
+    settings.renderer.screenshot_requested = true;
     settings.scene.selected_model_index = 3;
     settings.scene.model_position[0] = 1.0F;
     settings.scene.model_position[2] = -2.0F;
@@ -45,6 +46,7 @@ TEST(RenderSettingsUnit, ApplyingFeedbackSpendsEveryOneShotRequest)
     EXPECT_FALSE(settings.scene.model_reload_requested);
     EXPECT_FALSE(settings.renderer.shader_hot_reload_triggered);
     EXPECT_FALSE(settings.renderer.pathTracingRestartRequested);
+    EXPECT_FALSE(settings.renderer.screenshot_requested) << "one F12 would save a screenshot every frame";
 }
 
 // Without a load, the editor's selection and transform are the user's and must survive.
@@ -154,6 +156,23 @@ TEST(RenderSettingsUnit, APublishedFovBecomesTheCameraTabsWithinTheSliderRange)
     feedback.publishedFov = 5.0F;
     applyRendererFeedback(settings, feedback);
     EXPECT_FLOAT_EQ(settings.scene.camera_fov, kMinCameraFov);
+}
+
+// A framing fits the fly speed to the scene, and the renderer sets the camera's from the Camera tab every frame.
+TEST(RenderSettingsUnit, APublishedFlySpeedBecomesTheCameraTabsWithinTheSliderRange)
+{
+    RenderSettings settings;
+    settings.scene.camera_fly_speed = 25.0F;
+    applyRendererFeedback(settings, RendererFeedback{});
+    EXPECT_FLOAT_EQ(settings.scene.camera_fly_speed, 25.0F) << "a frame without a framing keeps the editor's";
+
+    RendererFeedback feedback;
+    feedback.publishedFlySpeed = 0.433F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.camera_fly_speed, 0.433F);
+    feedback.publishedFlySpeed = 0.0F;
+    applyRendererFeedback(settings, feedback);
+    EXPECT_FLOAT_EQ(settings.scene.camera_fly_speed, kMinCameraFlySpeed);
 }
 
 // Owner 2026-11-19: VSync on by default, as the Rust renderer and the browser present; a feedback never turns it off.

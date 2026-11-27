@@ -19,7 +19,7 @@ using Kataglyphis::shadowResolutionForIndex;
 namespace {
 
 // Size when makeNonDefaultVars() was last checked against the struct.
-constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 200;
+constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 208;
 
 // Must stay exhaustive: a field forgotten here goes untested.
 GUISceneSharedVars makeNonDefaultVars()
@@ -63,6 +63,7 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.punctual_shadows_enabled = false;
     vars.skybox_enabled = false;
     vars.camera_fov = 77.0F;
+    vars.camera_fly_speed = 0.25F;
     vars.selected_model_index = 7;
     vars.model_reload_requested = true;
     vars.model_transform_changed = true;

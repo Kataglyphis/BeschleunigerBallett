@@ -198,7 +198,7 @@ constexpr auto objectInfo(SceneObject object) -> ObjectInfo
     case SceneObject::Camera:
         return { "Camera", StudioIcon::Camera, "Perspective" };
     case SceneObject::Skybox:
-        return { "Skybox", StudioIcon::Mountain, "Cube map" };
+        return { "Skybox", StudioIcon::Mountain, nullptr };
     case SceneObject::Clouds:
         return { "Clouds", StudioIcon::Cloud, "Volumetric" };
     case SceneObject::Renderer:
@@ -532,6 +532,12 @@ auto GUI::loadedModelName() const -> std::string_view
     return (dot == std::string_view::npos || dot == 0) ? file : file.substr(0, dot);
 }
 
+auto GUI::skyboxSubtitle() const -> std::string_view
+{ return rendererFeedback.skyIsAnalytic ? std::string_view("Procedural") : std::string_view("Cube map"); }
+
+auto GUI::skyNote() const -> const char *
+{ return rendererFeedback.skyIsAnalytic ? "No cube map loaded, so the procedural sky stands in." : nullptr; }
+
 void GUI::render()
 {
     // The style may only change between frames, so following the monitor's DPI happens before NewFrame().
@@ -566,6 +572,9 @@ void GUI::render()
     // Every build, as Rust's (owner 2026-11-19): a package reloads the SPIR-V it installs.
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
         guiRendererSharedVars.shader_hot_reload_triggered = true;
+    }
+    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F12, false)) {
+        guiRendererSharedVars.screenshot_requested = true;
     }
 
     // Re-derived from the shared vars every frame, never cached, so writes from code are not stomped.
@@ -898,7 +907,7 @@ void GUI::renderModelLibrary()
     const auto model_names = sceneConfig::getAvailableModelDisplayNames();
     const auto model_paths = sceneConfig::getAvailableModelPaths();
     if (model_names.empty() || model_names.size() != model_paths.size()) {
-        mutedWrappedText("No loadable models (.obj/.gltf/.glb) found in Resources/Models/");
+        mutedWrappedText("No loadable models (.obj/.gltf/.glb) in Resources/Models/; drop one on the window.");
         return;
     }
 
@@ -1065,6 +1074,7 @@ void GUI::renderInspectorDock(float width)
             if (subject == SceneObject::Renderer) {
                 return kRenderModeLabels[static_cast<std::size_t>(displayedRenderMode())];
             }
+            if (subject == SceneObject::Skybox) { return skyboxSubtitle(); }
             const char *kind = objectInfo(subject).kind;
             return (kind != nullptr) ? std::string_view(kind) : std::string_view();
         };
@@ -1186,6 +1196,9 @@ void GUI::renderCameraInspector()
     if (beginStudioProperties("##lens", propertyLabelWidth())) {
         studioPropertyLabel("Field of view", "Vertical, in degrees");
         studioSlider("##fov", &guiSceneSharedVars.camera_fov, kMinCameraFov, kMaxCameraFov, "%.0f\xC2\xB0");
+        studioPropertyLabel("Fly speed", "World units per second for W A S D");
+        studioLogSlider(
+          "##fly_speed", &guiSceneSharedVars.camera_fly_speed, kMinCameraFlySpeed, kMaxCameraFlySpeed, " /s");
         endStudioProperties();
     }
 
@@ -1235,6 +1248,7 @@ void GUI::renderModelInspector()
 void GUI::renderSkyInspector()
 {
     sectionHeader("SKYBOX", "##skybox_enabled", &guiSceneSharedVars.skybox_enabled);
+    if (const char *note = skyNote(); note != nullptr) { mutedWrappedText(note); }
 
     // Rust's Sky tab holds it too: the value is the Sun's, the light the sky's.
     sectionHeader("ENVIRONMENT");

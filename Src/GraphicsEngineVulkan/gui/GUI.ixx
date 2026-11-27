@@ -35,6 +35,10 @@ class GUI
     [[nodiscard]] int displayedRenderMode() const;
     // The scene's model as the editor names it, listed or not; empty while the scene holds none.
     [[nodiscard]] std::string_view loadedModelName() const;
+    // The Skybox's kind in its inspector title, as Rust's: the procedural sky until a cube map is loaded.
+    [[nodiscard]] std::string_view skyboxSubtitle() const;
+    // The Sky tab's line, Rust's, while the procedural sky stands in; null while a cube map draws.
+    [[nodiscard]] const char *skyNote() const;
 
     void cleanUp();
 

@@ -85,6 +85,32 @@ Each fetched scene carries its credit in `ATTRIBUTION.txt`; AssetANT's
 | `GltfTest`, `ShadowTest`, `Plane`, `plane.obj`, `suzanne.obj` | tracked, test fixtures | — |
 | OxidANT's `crates/assets/tests/assets` | the submodule; both renderers' glTF fixtures, which the C++ tests read in place | OxidANT's |
 
+## Running the engine
+
+```text
+BeschleunigerBallett [model] [--gpu=auto|dedicated|integrated] [--check_resources] [--version] [--help]
+```
+
+- `model`: a `.gltf`, `.glb` or `.obj` to start with, ahead of `KATAGLYPHIS_MODEL_OVERRIDE` and the
+  build's default scene. A missing or unusable file is logged and the start goes on without it.
+- Dropping a `.gltf`, `.glb` or `.obj` on the window replaces the scene; it loads in the background,
+  after a load still running.
+- A source build runs from the repository root, which holds `Resources/`; an installed one finds its
+  files beside itself.
+
+The keys, which the Camera tab's CONTROLS list repeats (`BuildIntegrity.GettingStartedListsTheEditorsKeys`
+holds the two together):
+
+| Key | Does |
+| --- | --- |
+| W A S D | Move forward, back and sideways, at the Camera tab's Fly speed (units per second) |
+| Q E | Turn left and right |
+| Right mouse | Hold to look around |
+| ESC | Leave the focused panel; pressed again, quit |
+| F1 | Show or hide the editor |
+| F5 | Reload all shaders |
+| F12 | Save the scene viewport, without the editor, as `screenshots/screenshot-NNN.png` below the working directory |
+
 ## Linux Workflow
 
 The helper in `scripts/linux/` configures, compiles the Slang shaders, then builds:

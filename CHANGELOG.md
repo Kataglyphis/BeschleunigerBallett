@@ -89,6 +89,27 @@ the GitHub releases themselves.
   `RendererFeedback::pathTracingAccumulatedSamples`, in place of frames times the current samples per pixel. The
   furnace, the editor's or `KATAGLYPHIS_PT_FURNACE`'s, is part of the path tracer's history key, so toggling it or
   changing its surface restarts the mean. `GoldenRender.PathTracingRestartAndTheFurnaceFollowTheEditor` grades both.
+- Editor parity with the Rust viewer (plan C9). F12 saves the scene viewport, without the editor, as
+  `screenshots/screenshot-NNN.png` below the working directory (the first number not taken). The frame copies the
+  swapchain image after post or FXAA and before the editor draws; a later frame collects the copy once the fence of the
+  frame that recorded it has signalled, at the latest when that frame's slot comes round again, and one worker writes
+  the PNGs in order, so the frame loop never waits for a readback or an encode unless F12 comes again before the copy
+  is collected. Rust's viewer renders a 1920x1080 image of its own with its full-frame camera instead; this shot is
+  the drawn frame's viewport, at window resolution and the viewport's aspect. `BeschleunigerBallett [model]` starts with a `.gltf`, `.glb` or `.obj` before
+  `KATAGLYPHIS_MODEL_OVERRIDE` and the default scene; a missing or unusable file is logged and the start goes on, a
+  second path is a usage error. A model dropped on the window replaces the scene through the asynchronous load, the old
+  scene drawing until it lands and staying when the load fails; a drop during a running parse waits for it to end
+  instead of freezing the window, and a file whose name the Windows code page cannot hold is skipped with a warning.
+  The Camera tab has Rust's Fly speed (W A S D's units per second, 0.001 to 1e6 on a log scale with three significant
+  digits, default 10), which a framed load fits to the scene; the Skybox's inspector title reads Procedural without a
+  cube map, and the Sky tab says so. Tests: `Integration.F12SavesTheSceneViewportWithoutTheEditor`,
+  `GoldenRender.F12SavesThePresentedSceneAsAPngOfItsSize`,
+  `Integration.ADroppedModelReplacesTheSceneThroughTheAsynchronousLoad`,
+  `Integration.TheFlySpeedSetsTheCamerasTravelPerSecond`, `GoldenRender.TheSkyboxTitleSaysWhetherACubeMapLoaded`,
+  the CPU suites `CommandLineUnit`, `ScreenshotWriterUnit`, `CaptureFenceUnit`, `ModelReplaceUnit`,
+  `ScreenshotRegionUnit` and `FlySpeedUnit`, `StudioWidgetsUnit`'s log slider, and
+  `BuildIntegrity.TheFlySpeedTakesOxidantsDefaultAndRange`, `TheEditorsShortcutKeysAreTheRustEditors`,
+  `GettingStartedListsTheEditorsKeys` and `EveryFlagIsInAFileHelpLists`.
 
 ### Changed
 
@@ -141,6 +162,8 @@ the GitHub releases themselves.
   hangs) ends the run as a failure and rebuilds nothing. The wait's result was dropped, and the recreation went on
   into `vkCreateSwapchainKHR`, whose failure aborts.
   `Integration.ALossFirstSeenBySwapchainRecreationLogsTheBreadcrumbsAndRebuildsNothing`.
+- `--help` lists `--gpu` and `--check_resources`: abseil shows only the flags of a file named after the program,
+  and `main` lives in `Main.cpp`, so it printed "No flags matched".
 - The profiling job's gcc build takes two units at a time too (`--mb-per-job 6500`): on arm64 run 46036623338
   (1721d469) lost its runner at 619 of 625 steps with `VulkanRenderer.ixx` compiling, at the default three jobs.
 - The riscv64 lane's `raster` GPU shard is four, `raster-1` to `raster-4`, each every fourth of its tests by ctest

@@ -5,6 +5,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <type_traits>
 
 #include <imgui.h>
@@ -400,6 +401,53 @@ inline auto studioSlider(const char *strId,
     }
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(5);
+    return changed;
+}
+
+// Rust's decimals_for: three significant digits, so a small value on a log scale never reads as zero.
+inline auto significantDecimals(float value) -> int
+{
+    const float magnitude = std::abs(value);
+    if (magnitude >= 100.0F) { return 0; }
+    if (magnitude >= 10.0F) { return 1; }
+    if (magnitude >= 1.0F) { return 2; }
+    if (magnitude >= 0.1F) { return 3; }
+    return 4;
+}
+
+// What studioLogSlider shows for `value`: its significant decimals, then `suffix`.
+inline auto studioLogSliderText(float value, const char *suffix) -> std::string
+{
+    std::array<char, 64> text{};
+    // ImGui's, not std::snprintf: a fortified glibc makes that an inline this module may not expose.
+    ImFormatString(text.data(), text.size(), "%.*f%s", significantDecimals(value), static_cast<double>(value), suffix);
+    return text.data();
+}
+
+// A logarithmic studioSlider showing studioLogSliderText. ImGui floors its log curve at the format's last decimal, so
+// a format that followed the value would move the curve under the mouse: it maps with one reaching `min` instead.
+inline auto studioLogSlider(const char *strId, float *value, float min, float max, const char *suffix) -> bool
+{
+    ImGuiWindow *window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) { return false; }
+    IM_ASSERT(min > 0.0F && max > min);
+    const int decimals = std::max(0, static_cast<int>(std::ceil(-std::log10(min) - 1e-3F)));
+    std::array<char, 16> mapping{};
+    ImFormatString(mapping.data(), mapping.size(), "%%.%df", decimals);
+
+    // Ctrl+click's text entry shows the typed digits in the text colour.
+    const bool typing = ImGui::TempInputIsActive(window->GetID(strId));
+    if (!typing) { ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0F, 0.0F, 0.0F, 0.0F)); }
+    const bool changed = studioSlider(
+      strId, value, min, max, mapping.data(), ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+    if (!typing) {
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemVisible()) {
+            const std::string text = studioLogSliderText(*value, suffix);
+            ImGui::RenderTextClipped(
+              ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), text.c_str(), nullptr, nullptr, ImVec2(0.5F, 0.5F));
+        }
+    }
     return changed;
 }
 

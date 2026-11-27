@@ -1,5 +1,7 @@
 module;
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
@@ -22,6 +24,10 @@ export inline constexpr float kMaxShadowDistance = 500.0F;
 // The Camera tab's field-of-view slider, which the renderer and a framed load hold the camera to.
 export inline constexpr float kMinCameraFov = 20.0F;
 export inline constexpr float kMaxCameraFov = 110.0F;
+// The Camera tab's fly speed in world units per second: OxidANT's fly_speed::SPEED_RANGE and DEFAULT_SPEED.
+export inline constexpr float kMinCameraFlySpeed = 0.001F;
+export inline constexpr float kMaxCameraFlySpeed = 1000000.0F;
+export inline constexpr float kDefaultCameraFlySpeed = 10.0F;
 
 // The other editor bounds OxidANT's setting_ranges() also reports; SceneSettingsDrift holds the two to each other.
 // The lower cloud bounds are the marshal's floors (kMinCloudDensityMultiplier, kMinCloudMeshExtent).
@@ -62,6 +68,10 @@ constexpr uint32_t shadowResolutionForIndex(int index)
     if (index >= kShadowMapResolutionCount) index = kShadowMapResolutionCount - 1;
     return kShadowMapResolutions[index];
 }
+
+// The speed the camera flies at: the Camera tab's range, the default for NaN and the infinities.
+inline float cameraFlySpeed(float speed)
+{ return std::isfinite(speed) ? std::clamp(speed, kMinCameraFlySpeed, kMaxCameraFlySpeed) : kDefaultCameraFlySpeed; }
 
 }// namespace Kataglyphis
 
@@ -138,6 +148,8 @@ export struct GUISceneSharedVars
     // release), so a single GUI default would contradict one of them;
     // that is a separate decision, not this one.
     float camera_fov = 45.0F;
+    // W A S D's world units per second; a framed load sets it for the scene's size, as OxidANT's framing does.
+    float camera_fly_speed = kDefaultCameraFlySpeed;
 
     // Model selection
     int selected_model_index = -1;

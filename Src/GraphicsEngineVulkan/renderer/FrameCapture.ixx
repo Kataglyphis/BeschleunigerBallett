@@ -20,6 +20,78 @@ import kataglyphis.vulkan.texture;
 
 export namespace Kataglyphis {
 
+// When a recorded copy has finished: its own frame's fence says, bound once, or the frame loop's wait on that fence
+// before it resets it for the slot's next frame. A later frame's fence proves nothing while that frame still runs.
+class CaptureFence
+{
+  public:
+    // The copy is in a command buffer not submitted yet.
+    void recorded()
+    {
+        state = State::Recorded;
+        fence = vk::Fence{};
+    }
+
+    // The recording frame's submit; the submits after it leave the copy's fence alone.
+    void submitted(vk::Fence submitFence)
+    {
+        if (state != State::Recorded) { return; }
+        state = State::Submitted;
+        fence = submitFence;
+    }
+
+    // The frame loop waited on `waitedFence` and is about to reset it: a copy it guards has finished.
+    void waited(vk::Fence waitedFence)
+    {
+        if (state == State::Submitted && fence == waitedFence) { finish(); }
+    }
+
+    // The device was drained: a submitted copy has finished, one never submitted never runs.
+    void drained()
+    {
+        if (state == State::Submitted) {
+            finish();
+        } else if (state == State::Recorded) {
+            clear();
+        }
+    }
+
+    // The recording frame was dropped before its submit; true when that dropped a copy.
+    bool abandon()
+    {
+        if (state != State::Recorded) { return false; }
+        clear();
+        return true;
+    }
+
+    void clear()
+    {
+        state = State::Idle;
+        fence = vk::Fence{};
+    }
+
+    [[nodiscard]] bool pending() const { return state != State::Idle; }
+    [[nodiscard]] bool wasSubmitted() const { return state == State::Submitted || state == State::Finished; }
+    // What take() waits on: none once the copy is known to have finished.
+    [[nodiscard]] vk::Fence waitFence() const { return state == State::Submitted ? fence : vk::Fence{}; }
+
+    // Never blocks: `fenceStatus` polls a fence.
+    template<typename FenceStatus> [[nodiscard]] bool finished(const FenceStatus &fenceStatus) const
+    { return state == State::Finished || (state == State::Submitted && fenceStatus(fence) == vk::Result::eSuccess); }
+
+  private:
+    enum class State : std::uint8_t { Idle, Recorded, Submitted, Finished };
+
+    void finish()
+    {
+        state = State::Finished;
+        fence = vk::Fence{};
+    }
+
+    State state{ State::Idle };
+    vk::Fence fence{};
+};
+
 // Owns the renderer's headless frame-capture state, extracted verbatim from
 // VulkanRenderer, mirroring the FrameSync/GpuTimingSubsystem extractions.
 //
@@ -30,7 +102,7 @@ export namespace Kataglyphis {
 // ahead: request() arms it, record() copies the swapchain image into a
 // host-visible staging buffer inside the next recorded command buffer,
 // bindSubmitFence() ties that copy to the frame's in-flight fence, and take()
-// waits on exactly that fence before handing back the pixels.
+// waits on exactly that fence (CaptureFence) before handing back the pixels.
 class FrameCapture
 {
   public:
@@ -41,6 +113,15 @@ class FrameCapture
     }
 
     [[nodiscard]] bool isArmed() const { return armed; }
+    // A copy is recorded and take() has not handed it over yet.
+    [[nodiscard]] bool isPending() const { return copyFence.pending(); }
+
+    // True once take() would not wait: the copy's own frame has finished. Never blocks.
+    [[nodiscard]] bool copyFinished(const VulkanDevice &device) const
+    {
+        return copyFence.finished(
+          [&device](vk::Fence fence) { return device.getLogicalDevice().getFenceStatus(fence); });
+    }
 
     // Arms a capture for the next recorded frame. Callers are expected to have
     // already checked supportsCapture() (VulkanRenderer::requestFrameCapture
@@ -49,8 +130,7 @@ class FrameCapture
     void request()
     {
         armed = true;
-        pending = false;
-        fence = vk::Fence{};
+        copyFence.clear();
     }
 
     // Copies the swapchain image at image_index into the staging buffer,
@@ -71,12 +151,37 @@ class FrameCapture
         recordCopy(device,
           commandBuffer,
           swapChain.getSwapChainImage(image_index).getImage(),
-          swapChain.getSwapChainExtent(),
+          vk::Rect2D{ {}, swapChain.getSwapChainExtent() },
           swapChain.getSwapChainFormat(),
           CopySource{ .layout = vk::ImageLayout::ePresentSrcKHR,
             .lastStages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             .lastAccess = vk::AccessFlagBits2::eColorAttachmentWrite,
-            .nextStages = vk::PipelineStageFlagBits2::eBottomOfPipe });
+            .nextStages = vk::PipelineStageFlagBits2::eBottomOfPipe,
+            .nextAccess = vk::AccessFlagBits2::eNone });
+    }
+
+    // The same copy of `region` from a colour attachment a pass just wrote, handed back for the next draw into it.
+    void recordAttachmentRegion(const std::shared_ptr<VulkanDevice> &device,
+      vk::CommandBuffer &commandBuffer,
+      vk::Image image,
+      vk::Rect2D region,
+      vk::Format imageFormat,
+      bool deviceLostDetected)
+    {
+        armed = false;
+
+        if (!device || deviceLostDetected || !image) { return; }
+
+        recordCopy(device,
+          commandBuffer,
+          image,
+          region,
+          imageFormat,
+          CopySource{ .layout = vk::ImageLayout::eColorAttachmentOptimal,
+            .lastStages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .lastAccess = vk::AccessFlagBits2::eColorAttachmentWrite,
+            .nextStages = vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            .nextAccess = vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite });
     }
 
     // The same copy from a colour image the frame leaves in `layout` after `lastStages` last touched it.
@@ -97,34 +202,39 @@ class FrameCapture
         recordCopy(device,
           commandBuffer,
           image,
-          extent,
+          vk::Rect2D{ {}, extent },
           imageFormat,
           CopySource{ .layout = layout,
             .lastStages = lastStages,
             .lastAccess = vk::AccessFlagBits2::eNone,
-            .nextStages = vk::PipelineStageFlagBits2::eAllCommands });
+            .nextStages = vk::PipelineStageFlagBits2::eAllCommands,
+            .nextAccess = vk::AccessFlagBits2::eNone });
     }
 
-    // Ties the just-submitted frame's in-flight fence to a pending capture, so
-    // take() knows exactly what to wait on. A no-op when nothing is pending.
-    void bindSubmitFence(vk::Fence submitFence)
-    {
-        if (pending) { fence = submitFence; }
-    }
+    // Ties the just-submitted frame's in-flight fence to the copy it recorded, so
+    // take() knows exactly what to wait on. A no-op for every later frame.
+    void bindSubmitFence(vk::Fence submitFence) { copyFence.submitted(submitFence); }
+
+    // The frame loop waited on `waitedFence` before resetting it for reuse.
+    void fenceWaited(vk::Fence waitedFence) { copyFence.waited(waitedFence); }
+
+    // Drops the copy of a frame that was not submitted; true when there was one.
+    bool abandonUnsubmitted() { return copyFence.abandon(); }
 
     // Drops a stale fence across a swapchain recreation (createSynchronization
     // destroys and recreates every fence). The caller must have already
-    // waited idle - that already guarantees a pending capture's copy has
+    // waited idle - that already guarantees a submitted capture's copy has
     // completed, so the staged pixels stay readable; only the now-dangling
     // fence handle goes away.
-    void invalidateFence() { fence = vk::Fence{}; }
+    void invalidateFence() { copyFence.drained(); }
 
     // Waits on the recorded fence (never waitIdle) and returns tightly packed
     // RGBA8 pixels, swizzled from BGRA when the swapchain used a B8G8R8A8
     // format, or the raw RGBA16F texels of a recordImage() copy of the HDR
-    // target. Returns an empty vector when nothing is pending, the device is
-    // lost, or the wait fails. On eErrorDeviceLost, sets deviceLostDetected so
-    // the caller's own device-lost bookkeeping stays in sync.
+    // target. Returns an empty vector when nothing is pending, the copy's frame
+    // was never submitted, the device is lost, or the wait fails. On
+    // eErrorDeviceLost, sets deviceLostDetected so the caller's own device-lost
+    // bookkeeping stays in sync.
     std::vector<uint8_t> take(const std::shared_ptr<VulkanDevice> &device,
       bool &deviceLostDetected,
       uint32_t &outWidth,
@@ -133,9 +243,13 @@ class FrameCapture
         outWidth = 0;
         outHeight = 0;
 
-        if (!pending || deviceLostDetected || !device) { return {}; }
+        if (!copyFence.pending() || deviceLostDetected || !device) { return {}; }
 
-        pending = false;
+        const bool submitted = copyFence.wasSubmitted();
+        const vk::Fence fence = copyFence.waitFence();
+        copyFence.clear();
+        // The staging buffer holds an earlier copy, or nothing, when the frame never reached the queue.
+        if (!submitted) { return {}; }
 
         if (fence) {
             const vk::Result wait_result =
@@ -170,8 +284,7 @@ class FrameCapture
         buffer.cleanUp();
         buffer_size = 0;
         armed = false;
-        pending = false;
-        fence = vk::Fence{};
+        copyFence.clear();
         width = 0;
         height = 0;
     }
@@ -184,15 +297,17 @@ class FrameCapture
         vk::PipelineStageFlags2 lastStages;
         vk::AccessFlags2 lastAccess;
         vk::PipelineStageFlags2 nextStages;
+        vk::AccessFlags2 nextAccess;
     };
 
     void recordCopy(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandBuffer &commandBuffer,
       vk::Image image,
-      vk::Extent2D extent,
+      vk::Rect2D region,
       vk::Format imageFormat,
       const CopySource &source)
     {
+        const vk::Extent2D extent = region.extent;
         const uint32_t texel_bytes = capturedTexelBytes(imageFormat);
         if (extent.width == 0 || extent.height == 0 || texel_bytes == 0U) { return; }
 
@@ -243,15 +358,15 @@ class FrameCapture
         before_copy.pImageMemoryBarriers = &to_transfer_source;
         commandBuffer.pipelineBarrier2(before_copy);
 
-        vk::BufferImageCopy region{};
-        region.bufferOffset = 0;
-        region.bufferRowLength = 0;// tightly packed
-        region.bufferImageHeight = 0;
-        region.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
-        region.imageOffset = vk::Offset3D{ 0, 0, 0 };
-        region.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
+        vk::BufferImageCopy copy{};
+        copy.bufferOffset = 0;
+        copy.bufferRowLength = 0;// tightly packed
+        copy.bufferImageHeight = 0;
+        copy.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+        copy.imageOffset = vk::Offset3D{ region.offset.x, region.offset.y, 0 };
+        copy.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
 
-        commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &region);
+        commandBuffer.copyImageToBuffer(image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &copy);
 
         // Restore the layout the image's next user expects.
         const vk::ImageMemoryBarrier2 back_to_source = Kataglyphis::buildImageMemoryBarrier(image,
@@ -260,7 +375,7 @@ class FrameCapture
           vk::PipelineStageFlagBits2::eCopy,
           vk::AccessFlagBits2::eTransferRead,
           source.nextStages,
-          vk::AccessFlagBits2::eNone);
+          source.nextAccess);
 
         // Make the copy visible to host reads of the staging buffer as well.
         vk::BufferMemoryBarrier2 buffer_to_host{};
@@ -284,15 +399,12 @@ class FrameCapture
         width = extent.width;
         height = extent.height;
         format = imageFormat;
-        pending = true;
-        // Set to the frame's in-flight fence by bindSubmitFence() right after
-        // the submit.
-        fence = vk::Fence{};
+        // bindSubmitFence() binds the frame's in-flight fence right after the submit.
+        copyFence.recorded();
     }
 
     bool armed{ false };
-    bool pending{ false };
-    vk::Fence fence{};
+    CaptureFence copyFence;
     VulkanBuffer buffer;
     vk::DeviceSize buffer_size{ 0 };
     uint32_t width{ 0 };

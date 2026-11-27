@@ -104,7 +104,8 @@ target_sources(
          FILES
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.ixx
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx
-         ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx)
+         ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx
+         ${CMAKE_SOURCE_DIR}/Src/shared/util/Utf8Path.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
 # SceneConfig.cpp names the engine's common/ headers from its root.
 target_include_directories(scene_config_fuzz_test PRIVATE ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan)

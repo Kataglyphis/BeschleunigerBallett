@@ -4,6 +4,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <memory>
 #include <optional>
@@ -27,6 +28,7 @@ import kataglyphis.vulkan.frame_sync;
 import kataglyphis.vulkan.gpu_breadcrumbs;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.global_ubo;
+import kataglyphis.vulkan.gui_overlay;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
@@ -46,6 +48,7 @@ import kataglyphis.vulkan.sky_box;
 import kataglyphis.vulkan.ambient_maps;
 import kataglyphis.vulkan.clouds;
 import kataglyphis.vulkan.scene_ubo;
+import kataglyphis.vulkan.screenshot_writer;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.texture;
@@ -170,6 +173,14 @@ class VulkanRenderer
     void requestBloomCapture() { bloomCapture.request(); }
     std::vector<uint8_t> takeCapturedBloomFrame(uint32_t &outWidth, uint32_t &outHeight);
 
+    // F12's PNGs go to `screenshots` below the working directory, as Rust's viewer writes them, unless a test says.
+    void setScreenshotDirectory(std::filesystem::path directory) { screenshotDirectory = std::move(directory); }
+    // Asked for and not yet handed to the writer.
+    [[nodiscard]] bool isScreenshotPending() const
+    { return screenshotCapture.isArmed() || screenshotCapture.isPending(); }
+    // Drains the GPU, hands a pending shot to the writer and waits until every PNG is on disk.
+    void waitForScreenshots();
+
     // False when the device failed its idle wait: the run ends and nothing was rebuilt.
     bool recreateSwapChain();
     void reprovisionPerImageResources();
@@ -208,6 +219,16 @@ class VulkanRenderer
     void handleVsyncChange(
       const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
     void handleShadowResolutionChange(const GUISceneSharedVars &sceneSettings);
+    void handleScreenshotRequest(
+      const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
+    // Hands a finished screenshot copy to the writer; `wait` takes one still in flight too.
+    void collectScreenshot(bool wait);
+    // Copies this frame's scene viewport before the editor draws, when a screenshot is armed; else no hook.
+    [[nodiscard]] Kataglyphis::VulkanRendererInternals::BeforeGuiHook screenshotHook(const RenderStageFrame &frame);
+    // A model dropped on the window replaces the scene through the asynchronous load.
+    void handleDroppedFiles();
+    // A frame dropped before its submit takes its captures' copies with it.
+    void abandonUnsubmittedCaptures();
     // Tears down and re-creates dirShadowMap against the resolution/cascade
     // count frameSettings holds and the swapchain's current image count.
     // Shared by handleShadowResolutionChange (GUI-driven resolution change)
@@ -392,6 +413,9 @@ class VulkanRenderer
     FrameCapture frameCapture;
     FrameCapture hdrCapture;
     FrameCapture bloomCapture;
+    FrameCapture screenshotCapture;
+    ScreenshotWriter screenshotWriter;
+    std::filesystem::path screenshotDirectory{ "screenshots" };
 
     // Released before the device, after the destructor drained the GPU, so a stage's captured resources go first.
     RenderStageRegistry renderStages;

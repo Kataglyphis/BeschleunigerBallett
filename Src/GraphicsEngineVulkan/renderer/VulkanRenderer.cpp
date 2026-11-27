@@ -34,6 +34,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <string>
@@ -79,6 +80,8 @@ import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.window;
 import kataglyphis.vulkan.color_attachment;
+import kataglyphis.vulkan.model_file_kind;
+import kataglyphis.shared.util.utf8_path;
 
 namespace {
 
@@ -179,6 +182,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
         (void)ambientMaps.bake(*cube_map, skyBox.getCubeFaceSize());
     }
+    output.skyIsAnalytic = skyBox.usesAnalyticSky();
 
     registerBuiltInStages();
 
@@ -208,6 +212,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
 
     // Clamped here: tests and config loads write the settings too. Readers use get_fov(), not the settings value.
     camera_data->set_fov(std::clamp(sceneSettings.camera_fov, kMinCameraFov, kMaxCameraFov));
+    camera_data->set_movement_speed(cameraFlySpeed(sceneSettings.camera_fly_speed));
 
     globalUBO.view = camera_data->calculate_viewmatrix();
     globalUBO.projection =
@@ -376,6 +381,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
     output.publishedSun.reset();
     output.publishedShadowDistance.reset();
     output.publishedFov.reset();
+    output.publishedFlySpeed.reset();
     const GUISceneSharedVars &sceneSettings = settings.scene;
 
     // Polled first, so the rest of the frame sees a model on the frame it arrives.
@@ -388,14 +394,16 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
             publishLoadedModel();
             published_load = true;
         }
-    } else if (load_was_pending && !scene->isModelLoadPending()) {
-        // A failed load leaves no model, so no credit may outlive the scene it named.
+    } else if (load_was_pending && !scene->isModelLoadPending() && scene->getLoadedModelPath().empty()) {
+        // A failed load leaves no model, so no credit may outlive the scene it named; a failed replace keeps both.
         output.loadedModelCredit.clear();
     }
+    handleDroppedFiles();
 
     handleShaderHotReloadRequest(settings.renderer);
     // The editor's Restart accumulation: the next path-traced frame starts the mean over.
     if (settings.renderer.pathTracingRestartRequested) { pathTracingAccumulatedSamples = 0; }
+    handleScreenshotRequest(settings.renderer);
     ensureRasterPathTargets();
     handleVsyncChange(settings.renderer);
 
@@ -406,6 +414,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
 
     // Last: the loads above decide whether a TLAS exists, and with it what this frame draws.
     output.tracingReady = device->supportsHardwareAcceleratedRRT() && asManager.hasTLAS();
+    output.skyIsAnalytic = skyBox.usesAnalyticSky();
     handleCloudDepthSourceChange();
     feedback = output;
 }
@@ -432,6 +441,7 @@ void Kataglyphis::VulkanRenderer::publishLoadedModel()
         camera->apply_pose(*start);
         output.publishedShadowDistance = start->shadowDistance;
         output.publishedFov = start->fov;
+        output.publishedFlySpeed = start->movementSpeed;
     }
     lastLoadFramed = framing.framed;
 }
@@ -755,7 +765,7 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[6].labelColor = std::array{ 0.55F, 0.85F, 0.55F, 1.0F };
     built_in[6].enabled = [this](const RenderStageFrame &frame) { return fxaaFiltersFrame(frame); };
     built_in[6].record = [this](const RenderStageFrame &frame) {
-        fxaaStage.recordCommands(frame.commandBuffer, frame.imageIndex);
+        fxaaStage.recordCommands(frame.commandBuffer, frame.imageIndex, screenshotHook(frame));
     };
     // The intermediates follow the swapchain's extent and image count.
     built_in[6].resize = [this](const RenderStageResize &) { fxaaStage.recreateFrameResources(); };
@@ -816,12 +826,14 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
 
     const auto abort_frame_with_fatal_error = [&](const char *message, vk::Result error_code) -> void {
         endRunOnVulkanError(message, error_code);
+        abandonUnsubmittedCaptures();
         end_imgui_frame_if_needed();
     };
 
     // Recoverable post-acquire returns: recreateSwapChain() retires the signaled, never-waited acquire semaphore.
     const auto abort_frame_after_acquire = [&](const char *message) -> void {
         spdlog::error(message);
+        abandonUnsubmittedCaptures();
         end_imgui_frame_if_needed();
         recreateSwapChain();
     };
@@ -867,6 +879,11 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
         abort_frame_with_fatal_error("Failed to wait for fences!", result);
         return;
     }
+    // Reset for this frame's submit below, so the copies it guarded are marked finished first.
+    frameCapture.fenceWaited(frameSync.inFlightFence());
+    hdrCapture.fenceWaited(frameSync.inFlightFence());
+    bloomCapture.fenceWaited(frameSync.inFlightFence());
+    screenshotCapture.fenceWaited(frameSync.inFlightFence());
 
     uint32_t image_index = 0;
     std::tie(result, image_index) = device->getLogicalDevice().acquireNextImageKHR(vulkanSwapChain.getSwapChain(),
@@ -986,6 +1003,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
     frameCapture.bindSubmitFence(frameSync.inFlightFence());
     hdrCapture.bindSubmitFence(frameSync.inFlightFence());
     bloomCapture.bindSubmitFence(frameSync.inFlightFence());
+    screenshotCapture.bindSubmitFence(frameSync.inFlightFence());
     exposureStage.bindCaptureFence(frameSync.inFlightFence());
 
     vk::PresentInfoKHR present_info{};
@@ -1061,6 +1079,7 @@ bool Kataglyphis::VulkanRenderer::recreateSwapChain()
     frameCapture.invalidateFence();
     hdrCapture.invalidateFence();
     bloomCapture.invalidateFence();
+    screenshotCapture.invalidateFence();
     exposureStage.invalidateCaptureFence();
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
@@ -1422,12 +1441,97 @@ void Kataglyphis::VulkanRenderer::recordPostStage(const RenderStageFrame &frame)
 {
     const std::array<vk::DescriptorSet, 1> post_descriptor_sets = { postDescriptors.sets()[frame.imageIndex] };
     vk::CommandBuffer commandBuffer = frame.commandBuffer;
+    const bool fxaa_filters = fxaaFiltersFrame(frame);
     postStage.recordCommands(commandBuffer,
       frame.imageIndex,
       post_descriptor_sets,
       frameSettings.scene.clouds_enabled,
       frameBloomStrength(frameSettings.renderer),
-      fxaaFiltersFrame(frame) ? &fxaaStage.getIntermediate() : nullptr);
+      fxaa_filters ? &fxaaStage.getIntermediate() : nullptr,
+      fxaa_filters ? Kataglyphis::VulkanRendererInternals::BeforeGuiHook{} : screenshotHook(frame));
+}
+
+auto Kataglyphis::VulkanRenderer::screenshotHook(const RenderStageFrame &frame)
+  -> Kataglyphis::VulkanRendererInternals::BeforeGuiHook
+{
+    if (!screenshotCapture.isArmed()) { return {}; }
+    const auto &viewport = frameSettings.renderer.scene_viewport;
+    // The part of the image the docks leave the scene, which the projection centres on, as the shot.
+    const ViewportPixels pixels = viewportPixels(frame.extent.width,
+      frame.extent.height,
+      sanitizeViewportFraction(viewport.x0, viewport.y0, viewport.x1, viewport.y1));
+    const vk::Rect2D region{ vk::Offset2D{ static_cast<int32_t>(pixels.x), static_cast<int32_t>(pixels.y) },
+        vk::Extent2D{ pixels.width, pixels.height } };
+    return [this, region, format = frame.swapchainFormat](vk::CommandBuffer commandBuffer, vk::Image image) {
+        screenshotCapture.recordAttachmentRegion(device, commandBuffer, image, region, format, device_lost_detected);
+    };
+}
+
+void Kataglyphis::VulkanRenderer::handleScreenshotRequest(
+  const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings)
+{
+    collectScreenshot(false);
+    if (!rendererSettings.screenshot_requested) { return; }
+    if (!supportsFrameCapture()) {
+        spdlog::warn("No screenshot: the swapchain cannot be copied (no transfer source, or not an 8-bit format).");
+        return;
+    }
+    // One staging buffer: a shot still in flight is taken first, the only time F12 waits for the GPU.
+    if (screenshotCapture.isPending()) { collectScreenshot(true); }
+    screenshotCapture.request();
+}
+
+void Kataglyphis::VulkanRenderer::collectScreenshot(bool wait)
+{
+    if (!screenshotCapture.isPending() || (!wait && !screenshotCapture.copyFinished(*device))) { return; }
+    uint32_t width = 0;
+    uint32_t height = 0;
+    std::vector<uint8_t> pixels = screenshotCapture.take(device, device_lost_detected, width, height);
+    if (pixels.empty()) {
+        spdlog::error("The screenshot's copy never finished; nothing was saved.");
+        return;
+    }
+    screenshotWriter.write(screenshotDirectory, std::move(pixels), width, height);
+}
+
+void Kataglyphis::VulkanRenderer::abandonUnsubmittedCaptures()
+{
+    frameCapture.abandonUnsubmitted();
+    hdrCapture.abandonUnsubmitted();
+    bloomCapture.abandonUnsubmitted();
+    if (screenshotCapture.abandonUnsubmitted()) {
+        spdlog::warn("The screenshot's frame was dropped before it reached the GPU; nothing was saved.");
+    }
+}
+
+void Kataglyphis::VulkanRenderer::waitForScreenshots()
+{
+    if (device) {
+        std::ignore = device->getLogicalDevice().waitIdle();
+        // The drain finished every submitted copy, so the take needs no fence.
+        screenshotCapture.invalidateFence();
+        collectScreenshot(true);
+    }
+    screenshotWriter.wait();
+}
+
+void Kataglyphis::VulkanRenderer::handleDroppedFiles()
+{
+    if (window == nullptr) { return; }
+    // The last model of a drop wins, as one open after another does in Rust's viewer.
+    std::optional<std::string> model;
+    for (const std::filesystem::path &dropped : window->take_dropped_paths()) {
+        std::optional<std::string> library = sceneConfig::libraryPathFor(dropped);
+        if (!library.has_value()) {
+            spdlog::warn("Ignoring the dropped {}: the system code page cannot name it.",
+              Kataglyphis::Shared::utf8PathText(dropped));
+        } else if (!Kataglyphis::isSupportedModelPath(*library)) {
+            spdlog::warn("Ignoring the dropped {}: not a .gltf, .glb or .obj file.", *library);
+        } else {
+            model = std::move(library);
+        }
+    }
+    if (model.has_value()) { scene->beginModelReplaceAsync(std::move(*model)); }
 }
 
 void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuffer,
@@ -1664,6 +1768,8 @@ Kataglyphis::VulkanRenderer::~VulkanRenderer()
     // Nothing may still be in flight when the members release; on a lost device the wait returns at once.
     std::ignore = device->getLogicalDevice().waitIdle();
     gpuTiming.writeJsonIfRequested();
+    // A shot taken in the last frame still reaches the disk.
+    waitForScreenshots();
 }
 
 auto Kataglyphis::VulkanRenderer::create_surface() -> vk::SurfaceKHR

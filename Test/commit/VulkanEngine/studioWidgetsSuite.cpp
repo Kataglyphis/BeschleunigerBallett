@@ -5,6 +5,8 @@
 #include <imgui_internal.h>
 
 #include <array>
+#include <cmath>
+#include <string>
 
 import kataglyphis.shared.imgui.widgets;
 
@@ -103,7 +105,82 @@ std::array<float, 3>
     return rgb;
 }
 
+// Presses a Fly speed slider holding `value` where its fill ends, holds a frame, then drags `drag` px: the three values.
+std::array<float, 3> press_log_slider_at_its_fill(float value, float drag)
+{
+    ImGuiContext *previous = ImGui::GetCurrentContext();
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ImGui::SetCurrentContext(ctx);
+    ImGuiIO &io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(640.0F, 480.0F);
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    constexpr float kMin = 0.001F;
+    constexpr float kMax = 1.0e6F;
+    const float fill = std::log(value / kMin) / std::log(kMax / kMin);
+    ImVec2 fill_end;
+    std::array<float, 3> seen{};
+    for (int frame = 0; frame < 6; ++frame) {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0.0F, 0.0F));
+        ImGui::SetNextWindowSize(ImVec2(600.0F, 120.0F));
+        ImGui::Begin("panel");
+        ImGui::SetNextItemWidth(400.0F);
+        Kataglyphis::Frontend::studioLogSlider("##speed", &value, kMin, kMax, " /s");
+        const ImRect rect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
+        ImGui::End();
+        ImGui::Render();
+        switch (frame) {
+        case 0:
+            fill_end = ImVec2(rect.Min.x + fill * rect.GetWidth(), rect.GetCenter().y);
+            io.AddMousePosEvent(fill_end.x, fill_end.y);
+            break;
+        case 1:
+            io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+            break;
+        case 2:
+            seen[0] = value;
+            break;
+        case 3:
+            seen[1] = value;
+            io.AddMousePosEvent(fill_end.x + drag, fill_end.y);
+            break;
+        case 4:
+            seen[2] = value;
+            io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+            break;
+        default:
+            break;
+        }
+    }
+    ImGui::DestroyContext(ctx);
+    ImGui::SetCurrentContext(previous);
+    return seen;
+}
+
 }// namespace
+
+// The Camera tab's Fly speed: ImGui once mapped 10 with a 0.1 floor, 128 with a 1 floor, so a press there set 461.
+TEST(StudioWidgetsUnit, ALogSliderTakesAPressAtItsFillsEndAsTheValueItShows)
+{
+    const std::array<float, 3> seen = press_log_slider_at_its_fill(10.0F, -1.0F);
+    const float tolerance = std::log(1.25F);
+    EXPECT_NEAR(std::log(seen[0] / 10.0F), 0.0F, tolerance) << "a press where the fill of 10 ends set " << seen[0];
+    EXPECT_NEAR(std::log(seen[1] / 10.0F), 0.0F, tolerance) << "held still, the next frame set " << seen[1];
+    // A pixel of the 9 decades over 400 px is a factor of about 1.05, not a jump to another curve.
+    EXPECT_LT(seen[2], seen[1]) << "dragged left, the speed did not fall";
+    EXPECT_GT(seen[2], seen[1] / 1.25F) << "one pixel left took " << seen[1] << " to " << seen[2];
+}
+
+// Rust's decimals_for: three significant digits, so 10 reads "10.0 /s" as Rust's editor test expects.
+TEST(StudioWidgetsUnit, ALogSliderShowsThreeSignificantDigits)
+{
+    using Kataglyphis::Frontend::studioLogSliderText;
+    EXPECT_EQ(studioLogSliderText(10.0F, " /s"), "10.0 /s");
+    EXPECT_EQ(studioLogSliderText(2.5F, " /s"), "2.50 /s");
+    EXPECT_EQ(studioLogSliderText(0.25F, " /s"), "0.250 /s");
+    EXPECT_EQ(studioLogSliderText(0.001F, " /s"), "0.0010 /s");
+    EXPECT_EQ(studioLogSliderText(123456.0F, " /s"), "123456 /s");
+}
 
 // The Sun's colour keeps [0, 1] for a value typed into its picker, whose float fields ImGui leaves unclamped.
 TEST(StudioWidgetsUnit, AColourPickerHoldsItsRangeForATypedValue)

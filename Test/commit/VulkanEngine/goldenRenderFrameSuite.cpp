@@ -1,5 +1,10 @@
 // Goldens: a frame draws, its stages run in order, timing, culling, framing and presentation hold, sync stays clean.
 
+#include "ImGuiInputDriver.hpp"
+#include "ScopedTempDir.hpp"
+#include "common/Globals.hpp"
+
+// Last: it imports the engine.
 #include "GoldenRenderHarness.hpp"
 
 import kataglyphis.vulkan.renderer;
@@ -794,6 +799,9 @@ TEST(GoldenRender, ASceneWithItsOwnCameraIsDrawnFromIt)
         // The renderer sets the lens from the Camera tab every frame, so the framing's must reach the tab.
         EXPECT_NEAR(harness.settings.scene.camera_fov, glm::degrees(0.4F), 1e-3F);
         EXPECT_NEAR(harness.camera->get_fov(), glm::degrees(0.4F), 1e-3F);
+        // The fly speed too, fitted to the card's 2.8-unit diagonal (OxidANT's quarter per second), not the default 10.
+        EXPECT_LT(harness.settings.scene.camera_fly_speed, 1.0F);
+        EXPECT_FLOAT_EQ(harness.camera->get_movement_speed(), harness.settings.scene.camera_fly_speed);
 
         uint32_t width = 0;
         uint32_t height = 0;
@@ -816,4 +824,70 @@ TEST(GoldenRender, ASceneWithItsOwnCameraIsDrawnFromIt)
         EXPECT_NEAR(share, 2.0 / (20.0 * std::tan(0.2)), 0.02) << card_rows << " of " << height << " rows";
     }
     std::filesystem::remove_all(dir, ignored);
+}
+
+// F12 saves the frame the harness grades, editor hidden, as Rust's viewer names it, once per press and never stalling.
+TEST(GoldenRender, F12SavesThePresentedSceneAsAPngOfItsSize)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const Kataglyphis::TestSupport::ScopedTempDir dir("f12-golden");
+    ASSERT_FALSE(dir.path().empty());
+    const std::filesystem::path shots = dir.path() / "screenshots";
+    harness.renderer->setScreenshotDirectory(shots);
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_EQ(frame.size(), static_cast<size_t>(width) * height * 4U);
+
+    Kataglyphis::TestSupport::ImGuiInputDriver input{ harness.window->get_window(),
+        [&harness] { harness.render_frame(); } };
+    ASSERT_TRUE(input.wired()) << "the window installed no GLFW input callbacks";
+    for (int press = 0; press < 2; ++press) {
+        input.pressKey(GLFW_KEY_F12);
+        // Collected without a wait by the frame after its slot's next wait, however far the device lags.
+        int frames = 0;
+        while (harness.renderer->isScreenshotPending() && frames < Kataglyphis::MAX_FRAME_DRAWS + 1) {
+            harness.render_frame();
+            ++frames;
+        }
+        EXPECT_FALSE(harness.renderer->isScreenshotPending())
+          << "press " << press << " was not collected within the frames in flight";
+        harness.renderer->waitForScreenshots();
+    }
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    EXPECT_FALSE(std::filesystem::exists(shots / "screenshot-002.png")) << "a press saved more than one shot";
+
+    for (const char *name : { "screenshot-000.png", "screenshot-001.png" }) {
+        int png_width = 0;
+        int png_height = 0;
+        int channels = 0;
+        stbi_uc *png = stbi_load((shots / name).string().c_str(), &png_width, &png_height, &channels, STBI_rgb_alpha);
+        ASSERT_NE(png, nullptr) << name << " is missing or no PNG";
+        EXPECT_EQ(png_width, static_cast<int>(width)) << name;
+        EXPECT_EQ(png_height, static_cast<int>(height)) << name;
+        if (png_width == static_cast<int>(width) && png_height == static_cast<int>(height)) {
+            // The same still scene as the capture: equal but for a rounding step, and opaque.
+            size_t off = 0;
+            size_t see_through = 0;
+            for (size_t i = 0; i < frame.size(); i += 4U) {
+                for (size_t channel = 0; channel < 3U; ++channel) {
+                    if (std::abs(static_cast<int>(png[i + channel]) - static_cast<int>(frame[i + channel])) > 2) {
+                        ++off;
+                        break;
+                    }
+                }
+                if (png[i + 3U] != 255) { ++see_through; }
+            }
+            EXPECT_LE(off, frame.size() / 4U / 1000U) << name << ": " << off << " pixels differ from the capture";
+            EXPECT_EQ(see_through, 0U) << name;
+        }
+        stbi_image_free(png);
+    }
 }

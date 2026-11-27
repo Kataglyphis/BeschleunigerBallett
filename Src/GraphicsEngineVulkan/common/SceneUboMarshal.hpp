@@ -54,6 +54,30 @@ constexpr auto viewportAspectRatio(uint32_t width, uint32_t height, ViewportFrac
     return (rectWidth > 0.0F && rectHeight > 0.0F) ? rectWidth / rectHeight : 1.0F;
 }
 
+// The rect in whole pixels of a width x height image, at least one a side: what an F12 screenshot copies.
+struct ViewportPixels
+{
+    uint32_t x = 0;
+    uint32_t y = 0;
+    uint32_t width = 0;
+    uint32_t height = 0;
+};
+
+inline auto viewportPixels(uint32_t width, uint32_t height, ViewportFraction rect) -> ViewportPixels
+{
+    if (width == 0U || height == 0U) { return {}; }
+    // NaN and the edges outside [0, 1] land on the image's border.
+    const auto edge = [](float fraction, uint32_t size) {
+        const float clamped = (fraction >= 0.0F) ? std::min(fraction, 1.0F) : 0.0F;
+        return static_cast<uint32_t>(std::lround(clamped * static_cast<float>(size)));
+    };
+    const uint32_t x0 = std::min(edge(rect.x0, width), width - 1U);
+    const uint32_t y0 = std::min(edge(rect.y0, height), height - 1U);
+    const uint32_t x1 = std::max(edge(rect.x1, width), x0 + 1U);
+    const uint32_t y1 = std::max(edge(rect.y1, height), y0 + 1U);
+    return { x0, y0, x1 - x0, y1 - y0 };
+}
+
 // Centres the camera on the rect; every pass still covers the whole image, the docks hide the rest.
 inline auto makeViewportRemap(ViewportFraction rect) -> glm::mat4
 {

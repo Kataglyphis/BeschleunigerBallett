@@ -8,6 +8,7 @@ module;
 export module kataglyphis.vulkan.post_stage;
 
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.gui_overlay;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.texture;
 
@@ -36,7 +37,8 @@ class PostStage
       std::span<const vk::DescriptorSet> descriptorSets,
       bool cloudsEnabled,
       float bloomStrength,
-      Kataglyphis::Texture *fxaaInput = nullptr);
+      Kataglyphis::Texture *fxaaInput = nullptr,
+      const BeforeGuiHook &beforeGui = {});
     void cleanUp();
 
     ~PostStage();

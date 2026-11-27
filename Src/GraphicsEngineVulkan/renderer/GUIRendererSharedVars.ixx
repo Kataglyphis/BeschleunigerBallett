@@ -202,6 +202,8 @@ struct GUIRendererSharedVars
     bool pathTracing = false;
 
     bool shader_hot_reload_triggered = false;
+    // F12: a PNG of the scene viewport without the editor, into the renderer's screenshot folder.
+    bool screenshot_requested = false;
     /// CPU frustum culling. A switch rather than a constant because culling
     /// is the one optimisation that can silently delete visible geometry -
     /// when something goes missing, being able to turn it off tells you in
@@ -291,6 +293,10 @@ struct RendererFeedback
     std::optional<float> publishedShadowDistance;
     /// Set with publishedShadowDistance: the framing's field of view becomes the Camera tab's, which the camera reads.
     std::optional<float> publishedFov;
+    /// Set with publishedFov: the framing's fly speed, fitted to the scene's size, becomes the Camera tab's.
+    std::optional<float> publishedFlySpeed;
+    /// No skybox faces loaded, so the Skybox is OxidANT's procedural sky.
+    bool skyIsAnalytic = false;
 
     /// Samples per pixel in the path tracer's running mean after the last frame it traced.
     uint64_t pathTracingAccumulatedSamples = 0;

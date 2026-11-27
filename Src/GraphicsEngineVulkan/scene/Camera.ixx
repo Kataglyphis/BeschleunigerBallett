@@ -42,6 +42,8 @@ export class Camera
     void set_near_plane(float near_plane);
     void set_far_plane(float far_plane);
     void set_fov(float fov);
+    // World units per second for W A S D.
+    void set_movement_speed(float speed);
     void set_camera_position(glm::vec3 new_camera_position);
     // Degrees, as the controller keeps them; front, right and up follow.
     void set_orientation(float yaw, float pitch);

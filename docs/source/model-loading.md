@@ -192,6 +192,23 @@ flowchart LR
     P -->|arrays moved| Poll --> A --> U --> Add
 ```
 
+**What the startup load reads**, Rust's chain: the command line's `[model]` (`App::run`'s
+`AppOptions`, from absl's positional argument in `Main.cpp`), else `KATAGLYPHIS_MODEL_OVERRIDE`,
+else the build's default. A given file that is missing, not a file or no `.gltf`, `.glb` or `.obj`
+is logged, and the chain goes on without it.
+
+**A dropped file replaces the scene through the same split.** `Window`'s drop callback queues the
+paths; the renderer takes the last model of a drop and `Scene::beginModelReplaceAsync` parses it on
+the worker while the old scene draws. A drop while a parse runs, the startup load's or an earlier
+drop's, waits for it to end (`queuedModelReplace`, the newest winning) instead of joining it on the
+frame thread, and then supersedes it. `pollModelLoad` uploads the result first, then drains the GPU
+and releases the old models, so a drop that does not parse or upload keeps the scene. A command-line
+or dropped file below `Resources/Models` goes by the path the library lists
+(`sceneConfig::libraryPathFor`), so the library marks its row; any other keeps its absolute path.
+The loaders take narrow paths, the ANSI code page on Windows, so a name that code page cannot hold
+is skipped with a warning. A library pick is still the synchronous `reloadModel`, which cancels a
+parse in flight and waits for it.
+
 ## One file, many meshes
 
 A `Model` holds `std::vector<Mesh>` (`scene/Model.ixx`). One file becomes a

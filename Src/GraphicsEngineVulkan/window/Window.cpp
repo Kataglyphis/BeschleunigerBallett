@@ -6,9 +6,13 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <iostream>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <vulkan/vulkan.hpp>
 
@@ -131,6 +135,7 @@ void Window::init_callbacks()
     glfwSetFramebufferSizeCallback(main_window, &framebuffer_size_callback);
     glfwSetWindowFocusCallback(main_window, &window_focus_callback);
     glfwSetCursorEnterCallback(main_window, &cursor_enter_callback);
+    glfwSetDropCallback(main_window, &drop_callback);
     // Always installed: ImGui's GLFW backend has no callbacks of its own and needs it; look mode gates the camera.
     glfwSetCursorPosCallback(main_window, &mouse_callback);
 }
@@ -163,6 +168,18 @@ void Window::cursor_enter_callback(GLFWwindow *window, int entered)
 { ImGui_ImplGlfw_CursorEnterCallback(window, entered); }
 
 void Window::reset_framebuffer_has_changed() { this->framebuffer_resized = false; }
+
+auto Window::take_dropped_paths() -> std::vector<std::filesystem::path> { return std::exchange(dropped_paths, {}); }
+
+void Window::drop_callback(GLFWwindow *window, int count, const char **paths)
+{
+    auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    for (int index = 0; index < count; ++index) {
+        // GLFW hands over UTF-8, which a narrow path would read in the Windows code page.
+        const std::string_view utf8(paths[index]);
+        the_window->dropped_paths.emplace_back(std::u8string(utf8.begin(), utf8.end()));
+    }
+}
 
 void Window::key_callback(GLFWwindow *window, int key, int scancode, int action, int mods)
 {

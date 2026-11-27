@@ -7,6 +7,7 @@ module;
 export module kataglyphis.vulkan.fxaa_stage;
 
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.gui_overlay;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.buffer;
@@ -38,7 +39,7 @@ class FxaaStage
     { return !descriptors.sets().empty() && intermediate != nullptr && static_cast<bool>(pipeline); }
 
     // Takes the swapchain image from the acquire and the intermediate post left for sampling; leaves it presentable.
-    void recordCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex);
+    void recordCommands(vk::CommandBuffer commandBuffer, uint32_t imageIndex, const BeforeGuiHook &beforeGui = {});
 
     void cleanUp();
 

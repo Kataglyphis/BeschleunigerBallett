@@ -21,6 +21,8 @@ build_release/
 build-*/
 build_*/
 logs/
+# F12's shots, below the working directory as the Rust viewer writes them.
+screenshots/
 
 dist
 .mypy_cache

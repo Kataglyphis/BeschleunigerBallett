@@ -6,6 +6,7 @@ module;
 
 #include <format>
 #include <memory>
+#include <string>
 
 #include "spdlog/spdlog.h"
 
@@ -25,7 +26,7 @@ import kataglyphis.vulkan.window;
 
 Kataglyphis::App::App() = default;
 
-auto Kataglyphis::App::run() -> int
+auto Kataglyphis::App::run(const AppOptions &options) -> int
 {
     // Room for the editor's docks around the scene; Window scales it to the monitor and keeps it on screen.
     int const window_width = 1600;
@@ -47,7 +48,8 @@ auto Kataglyphis::App::run() -> int
     Kataglyphis::RendererFeedback feedback;
 
     // The environment's loader options are read here once; the loaders themselves read none.
-    std::unique_ptr<Scene> const scene = std::make_unique<Scene>(gltfLoadOptionsFromEnvironment());
+    std::unique_ptr<Scene> const scene =
+      std::make_unique<Scene>(gltfLoadOptionsFromEnvironment(), options.startupModel);
     std::unique_ptr<Kataglyphis::Frontend::GUI> const gui =
       std::make_unique<Kataglyphis::Frontend::GUI>(window.get(), settings, feedback);
     std::unique_ptr<Camera> const camera = std::make_unique<Camera>();

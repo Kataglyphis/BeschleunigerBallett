@@ -4,6 +4,7 @@ module;
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -26,6 +27,10 @@ namespace Kataglyphis {
 Scene::Scene() = default;
 
 Scene::Scene(GltfLoadOptions in_gltfLoadOptions) : gltfLoadOptions(in_gltfLoadOptions) {}
+
+Scene::Scene(GltfLoadOptions in_gltfLoadOptions, std::string startupModel)
+  : gltfLoadOptions(in_gltfLoadOptions), startupModelPath(std::move(startupModel))
+{}
 
 void Scene::loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {
@@ -72,12 +77,29 @@ std::optional<uint32_t> Scene::loadAdditionalModel(const std::shared_ptr<VulkanD
 
 void Scene::beginModelLoadAsync()
 {
-    // Kept relative, as the library lists it: the editor marks the loaded model by this path once it arrives.
-    pendingModelPath = sceneConfig::startupModelRelativePath();
+    // The command line's model, else KATAGLYPHIS_MODEL_OVERRIDE, else the build's default: Rust's startup chain.
+    startModelParse(startupModelPath.empty() ? sceneConfig::startupModelRelativePath() : startupModelPath, false);
+}
+
+void Scene::beginModelReplaceAsync(std::string modelPath)
+{
+    // Starting now would join the running parse on this thread, freezing the window for the rest of it.
+    if (modelLoadPending && !pendingModelParse.isFinished()) {
+        queuedReplacePath = std::move(modelPath);
+        return;
+    }
+    startModelParse(std::move(modelPath), true);
+}
+
+void Scene::startModelParse(std::string modelPath, bool replacesScene)
+{
+    // Kept as given, relative where the library lists it: the editor marks the loaded model by this path.
+    pendingModelPath = std::move(modelPath);
     const std::string modelFileName = sceneConfig::resolveModelPath(pendingModelPath);
     spdlog::info("Loading model asynchronously: {}", modelFileName);
     pendingModelParse.start(modelFileName, gltfLoadOptions);
     modelLoadPending = true;
+    pendingLoadReplacesScene = replacesScene;
 }
 
 bool Scene::isModelLoadPending() const { return modelLoadPending; }
@@ -85,14 +107,22 @@ bool Scene::isModelLoadPending() const { return modelLoadPending; }
 bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {
     if (!modelLoadPending || !pendingModelParse.isFinished()) { return false; }
+    if (queuedReplacePath.has_value()) {
+        spdlog::info("Discarding the parse of {}: {} replaces it.", pendingModelPath, *queuedReplacePath);
+        std::string next = std::move(*queuedReplacePath);
+        queuedReplacePath.reset();
+        startModelParse(std::move(next), true);
+        return false;
+    }
 
     modelLoadPending = false;
+    const bool replaces_scene = std::exchange(pendingLoadReplacesScene, false);
 
     // Only the GPU upload runs here, on the device thread; the worker already parsed.
     std::shared_ptr<Model> new_model;
     std::unique_ptr<GltfLoader> parsed = pendingModelParse.takeResult();
     if (!parsed) {
-        spdlog::error("Asynchronous model parse failed; the scene stays empty.");
+        spdlog::error("Asynchronous model parse of {} failed; the scene keeps what it holds.", pendingModelPath);
         return false;
     }
     GltfLoader uploader(device, commandPool);
@@ -103,6 +133,14 @@ bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::Comma
         return false;
     }
 
+    if (replaces_scene) {
+        // The frames in flight still read the replaced models' buffers.
+        std::ignore = device->getLogicalDevice().waitIdle();
+        cleanUp();
+        model_list.clear();
+        object_descriptions.clear();
+        loadedModelPath.clear();
+    }
     const std::optional<uint32_t> model_index = add_model(new_model);
     if (model_index) {
         update_model_matrix(sceneConfig::getModelMatrix(), *model_index);
@@ -145,6 +183,8 @@ void Scene::cancelPendingModelLoad()
     pendingModelParse.waitForCompletion();
     pendingModelParse.takeResult();
     modelLoadPending = false;
+    pendingLoadReplacesScene = false;
+    queuedReplacePath.reset();
     spdlog::info("Discarded an in-flight asynchronous model parse; the scene is being replaced.");
 }
 

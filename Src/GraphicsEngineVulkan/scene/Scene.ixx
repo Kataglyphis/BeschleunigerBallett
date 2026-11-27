@@ -31,6 +31,8 @@ class Scene
     Scene();
     /// Every glTF this scene loads, from any path, parses with these.
     explicit Scene(GltfLoadOptions gltfLoadOptions);
+    /// `startupModel`, absolute or below Resources/, is what beginModelLoadAsync() loads; empty for the configured one.
+    Scene(GltfLoadOptions gltfLoadOptions, std::string startupModel);
 
     /// The block families every later load may hand a KTX2 over in; the renderer sets its device's before the first.
     void setBlockSupport(const BlockSupport &blocks) { gltfLoadOptions.blocks = blocks; }
@@ -176,12 +178,19 @@ class Scene
 
     void loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
-    /// Starts parsing the configured model on a worker thread and returns
+    /// Starts parsing the startup model on a worker thread and returns
     /// immediately. The scene has NO model until pollModelLoad() reports one.
     ///
     /// The parse is ~2800 ms of the ~2815 ms load (measured on the bundled
     /// 27 MB model), and the window froze for all of it.
     void beginModelLoadAsync();
+
+    /// Parses `modelPath` on the worker; pollModelLoad() replaces the whole scene with it, or keeps it on a failure.
+    /// While a parse runs it waits, the newest replacing an older one, and supersedes that parse when it ends.
+    void beginModelReplaceAsync(std::string modelPath);
+
+    /// The replace a running parse holds back; empty when none waits.
+    [[nodiscard]] const std::optional<std::string> &queuedModelReplace() const { return queuedReplacePath; }
 
     /// True between beginModelLoadAsync() and the model being installed.
     [[nodiscard]] bool isModelLoadPending() const;
@@ -229,11 +238,16 @@ class Scene
 
   private:
     GltfLoadOptions gltfLoadOptions{};
+    std::string startupModelPath{};
     AsyncModelParse pendingModelParse;
     bool modelLoadPending{ false };
+    bool pendingLoadReplacesScene{ false };
+    std::optional<std::string> queuedReplacePath{};
     std::string pendingModelPath{};
     std::string loadedModelPath{};
     std::vector<ObjectDescription> object_descriptions;
     std::vector<std::shared_ptr<Model>> model_list;
+
+    void startModelParse(std::string modelPath, bool replacesScene);
 };
 }// namespace Kataglyphis

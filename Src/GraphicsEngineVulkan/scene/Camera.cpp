@@ -110,6 +110,8 @@ void Camera::set_far_plane(float far_plane) { camera_state.far_plane = far_plane
 
 void Camera::set_fov(float fov) { camera_state.fov = fov; }
 
+void Camera::set_movement_speed(float speed) { camera_state.movement_speed = speed; }
+
 void Camera::set_camera_position(glm::vec3 new_camera_position) { camera_state.position = new_camera_position; }
 
 void Camera::set_orientation(float yaw, float pitch)

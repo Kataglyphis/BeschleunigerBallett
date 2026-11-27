@@ -20,6 +20,7 @@ module kataglyphis.vulkan.scene_config;
 
 import kataglyphis.vulkan.model_file_kind;
 import kataglyphis.shared.util.resource_paths;
+import kataglyphis.shared.util.utf8_path;
 
 namespace sceneConfig {
 
@@ -155,5 +156,28 @@ auto modelIndexOf(std::span<const std::string> availablePaths, std::string_view 
     // No fallback row: marking a model the scene does not hold is the bug this replaced.
     return -1;
 }
+
+auto libraryPathFor(const std::filesystem::path &file, const std::filesystem::path &resourcesRoot)
+  -> std::optional<std::string>
+{
+    std::error_code error;
+    const std::filesystem::path absolute =
+      std::filesystem::weakly_canonical(std::filesystem::absolute(file, error), error);
+    if (error) { return Kataglyphis::Shared::narrowPath(file); }
+    if (!resourcesRoot.empty()) {
+        const std::filesystem::path root = std::filesystem::weakly_canonical(resourcesRoot, error);
+        const std::filesystem::path relative = absolute.lexically_relative(root);
+        // The scan lists only Models/, and a ".." would leave the root.
+        if (!error && !relative.empty() && *relative.begin() == "Models"
+            && std::none_of(
+              relative.begin(), relative.end(), [](const std::filesystem::path &part) { return part == ".."; })) {
+            return Kataglyphis::Shared::narrowPath(relative);
+        }
+    }
+    return Kataglyphis::Shared::narrowPath(absolute);
+}
+
+auto libraryPathFor(const std::filesystem::path &file) -> std::optional<std::string>
+{ return libraryPathFor(file, findResourcesBasePath()); }
 
 }// namespace sceneConfig

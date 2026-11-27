@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <system_error>
 #include <tuple>
 #include <vector>
@@ -17,6 +18,7 @@
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
 #include "absl/flags/usage_config.h"
+#include "absl/strings/string_view.h"
 #include "shared/util/InstallPaths.hpp"
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
@@ -28,6 +30,7 @@
 
 // After the includes: GCC 16 redefines the standard library when a textual include follows an import that has it.
 import kataglyphis.vulkan.app;
+import kataglyphis.vulkan.command_line;
 import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.installed_resources;
 import kataglyphis.vulkan.oxidant_diagnostics;
@@ -200,13 +203,29 @@ auto main(int argc, char **argv) -> int
     std::ignore = std::signal(SIGABRT, onAbort);
 #endif
 
-    absl::SetProgramUsageMessage("Kataglyphis BeschleunigerBallett Graphics Engine");
+    absl::SetProgramUsageMessage("Kataglyphis BeschleunigerBallett Graphics Engine.\n\n" + std::string(Kataglyphis::kUsage)
+                                 + "\n  model  a .gltf, .glb or .obj file to start with, before "
+                                   "KATAGLYPHIS_MODEL_OVERRIDE and the default scene");
     absl::FlagsUsageConfig usage_config;
     usage_config.version_string = version_string;
+    const auto in_main = [](absl::string_view file) { return Kataglyphis::helpListsFlagsOf(file); };
+    usage_config.contains_helpshort_flags = in_main;
+    usage_config.contains_help_flags = in_main;
     absl::SetFlagsUsageConfig(usage_config);
-    absl::ParseCommandLine(argc, argv);
+    const std::vector<char *> positional = absl::ParseCommandLine(argc, argv);
 
     if (absl::GetFlag(FLAGS_check_resources)) { return Kataglyphis::checkInstalledResources(std::cout); }
+
+    // absl leaves the program's name first.
+    const Kataglyphis::StartupModelArgument model =
+      Kataglyphis::startupModelArgument(std::span<char *const>(positional).subspan(positional.empty() ? 0U : 1U));
+    if (model.tooMany) {
+        spdlog::error("{}: {}", Kataglyphis::kUsage, model.note);
+        showFatalMessage();
+        spdlog::shutdown();
+        return EXIT_FAILURE;
+    }
+    if (!model.note.empty()) { spdlog::warn("Starting without the command line's model: {}", model.note); }
 
     const std::string gpu_mode = absl::GetFlag(FLAGS_gpu);
     if (!gpu_mode.empty()) {
@@ -227,7 +246,7 @@ auto main(int argc, char **argv) -> int
     spdlog::info("OxidANT {}", Kataglyphis::oxidantVersion());
 
     // No try/catch: exceptions are disabled project-wide and vkCheck aborts on fatal failures.
-    const int result = Kataglyphis::App::run();
+    const int result = Kataglyphis::App::run(Kataglyphis::AppOptions{ .startupModel = model.model });
     if (result != EXIT_SUCCESS) { showFatalMessage(); }
     spdlog::shutdown();
     return result;

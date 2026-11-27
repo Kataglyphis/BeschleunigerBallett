@@ -5,3 +5,4 @@ docs/build/         # Sphinx output
 *.profraw           # llvm coverage
 logs/
 pipeline_cache/
+screenshots/        # F12's PNGs

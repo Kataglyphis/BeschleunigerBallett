@@ -19,14 +19,12 @@ module;
 #include "common/ViewportHelper.hpp"
 #include "renderer/FxaaUniforms.hpp"
 #include <glm/glm.hpp>
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include <spdlog/spdlog.h>
 
 module kataglyphis.vulkan.fxaa_stage;
 
-import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.gui_overlay;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.buffer;
@@ -144,7 +142,8 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::shaderHotReload()
 }
 
 void Kataglyphis::VulkanRendererInternals::FxaaStage::recordCommands(vk::CommandBuffer commandBuffer,
-  uint32_t imageIndex)
+  uint32_t imageIndex,
+  const BeforeGuiHook &beforeGui)
 {
     if (!ready()) {
         spdlog::error("FxaaStage::recordCommands: no set or pipeline for image {}", imageIndex);
@@ -175,11 +174,7 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::recordCommands(vk::Command
       vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptors.sets()[0], 0, nullptr);
     commandBuffer.draw(3, 1, 0, 0);
 
-    {
-        Kataglyphis::debug::ScopedCmdLabel const gui_label(commandBuffer, "gui", { 0.90F, 0.70F, 0.20F, 1.0F });
-        ImGui::Render();
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
-    }
+    recordGuiOverlay(commandBuffer, swap_chain_image.getImage(), swap_chain_image.getImageView(), extent, beforeGui);
 
     commandBuffer.endRendering();
 

@@ -4,7 +4,9 @@ module;
 
 #include "../../shared/frontend/WindowInputState.hpp"
 
+#include <filesystem>
 #include <span>
+#include <vector>
 
 export module kataglyphis.vulkan.window;
 
@@ -29,6 +31,8 @@ class Window
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
     [[nodiscard]] bool is_valid() const { return initialized && main_window != nullptr; }
+    // The files dropped on the window since the last call, in the order the platform gave them.
+    [[nodiscard]] std::vector<std::filesystem::path> take_dropped_paths();
 
     ~Window();
 
@@ -37,6 +41,7 @@ class Window
     Kataglyphis::Frontend::WindowInputState input_state;
     bool framebuffer_resized;
     bool initialized{ false };
+    std::vector<std::filesystem::path> dropped_paths;
 
     void init_callbacks();
     static void framebuffer_size_callback(GLFWwindow *window, int width, int height);
@@ -47,5 +52,6 @@ class Window
     static void char_callback(GLFWwindow *window, unsigned int codepoint);
     static void window_focus_callback(GLFWwindow *window, int focused);
     static void cursor_enter_callback(GLFWwindow *window, int entered);
+    static void drop_callback(GLFWwindow *window, int count, const char **paths);
 };
 }// namespace Kataglyphis::Frontend
