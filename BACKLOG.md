@@ -87,11 +87,6 @@ takes UTF-8 paths and runs inside `guarded()`.
 
 Loader:
 
-- [ ] `Assets` **WebP textures (`EXT_texture_webp`)** (S, owner decision 2026-11-26: raise the bridge's budget to
-  62). Since Phase 23 the bridge holds exactly 60 runtime packages on all five targets, the budget; `image`'s `webp`
-  feature adds `image-webp` and `quick-error`. Raise `cmake/CargoLicenses.cmake`'s budget to 62 in the same change,
-  stage both crates' licence texts through OxidANT's reviewed policy, decode WebP in `image_decode` for both
-  renderers, and add a golden that draws a WebP-only texture.
 - [ ] `Assets` **Colosseum-ktx2 in AssetANT** (M, owner decision 2026-11-26). A separate release-only asset: the
   Colosseum glTF with UASTC + Zstandard textures through `KHR_texture_basisu` and no PNG/JPEG copy; `Colosseum-gltf`
   stays. Phase 23 measured a local UASTC build (69 images, mipmapped): device memory 760 -> 190 MiB (BC7 on
@@ -107,7 +102,8 @@ Loader:
   blocks (WebGPU box-filters from level 0, C++ keeps the transcoded levels), and a short decoded BCn chain on an
   adapter without BC (C++ completes it to 1x1, WebGPU does not). Streaming chains per slot is not needed: no scene's
   chains reach the 1 GiB decode budget. Native ETC2 and ASTC upload is untested on a device that samples them
-  (llvmpipe and lavapipe sample neither).
+  (llvmpipe and lavapipe sample neither). The bridge sits at its budget again (62 runtime packages on all five
+  targets since Phase 24's WebP), so any new runtime crate needs a reviewed raise. An animated WebP is untested.
 
 C++ catches up:
 
