@@ -145,6 +145,9 @@ struct EngineHarness
         settings.renderer.fxaaMode = FxaaMode::Off;
         // Frames unpaced by the display, as before; VsyncTogglesBetweenFifoAndAnUncappedMode turns VSync on.
         settings.renderer.vsync = false;
+        // The goldens grade the frame as before the post chain: manual exposure at 0 EV multiplies by exactly 1.
+        settings.renderer.exposure_ev = 0.0F;
+        settings.renderer.auto_exposure = false;
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
         Kataglyphis::TestSupport::attachEditor(*gui, *renderer);

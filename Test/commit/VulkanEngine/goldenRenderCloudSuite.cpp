@@ -656,7 +656,8 @@ TEST(GoldenRender, HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch)
         const std::vector<uint8_t> full = capture(true, false);
         const std::vector<uint8_t> half = capture(true, true);
         EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-          (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "post" }))
+          (std::vector<std::string>{
+            "shadow_cascades", "main", "clouds", "cloud_upsample", "exposure_reduce", "post" }))
           << name;
         // The half target and its descriptors follow a swapchain recreation.
         harness.renderer->recreateSwapChain();

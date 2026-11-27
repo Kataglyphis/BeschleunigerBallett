@@ -136,14 +136,14 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
-    // The consumer is post.slang's fragment shader.
+    // The consumers are post.slang's fragment shader and the auto-exposure histogram's compute pass.
     Kataglyphis::recordImageBarrier(commandBuffer,
       Kataglyphis::buildImageMemoryBarrier(vulkanImage.getImage(),
         vk::ImageLayout::eGeneral,
         vk::ImageLayout::eShaderReadOnlyOptimal,
         vk::PipelineStageFlagBits2::eComputeShader,
         vk::AccessFlagBits2::eShaderStorageWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
         vk::AccessFlagBits2::eShaderSampledRead));
 }
 

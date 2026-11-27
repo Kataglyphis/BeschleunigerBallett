@@ -1,11 +1,14 @@
 import aces;
+import exposure;
 import fullscreen;
 
-// C++/Vulkan post pass (tonemap + clouds); the Rust renderer composites in tonemap.slang instead.
+// C++/Vulkan post pass (clouds, exposure, tonemap); the Rust renderer composites in tonemap.slang instead.
 
 // Combined image+sampler (Vulkan combined image sampler descriptor).
 [vk::binding(0, 0)] Sampler2D noisyTxt;
 [vk::binding(1, 0)] Sampler2D cloudTxt;
+// [adapted EV, target EV] from histogram.slang's cs_reduce_exposure, the one exposure source, as in tonemap.slang.
+[vk::binding(2, 0)] StructuredBuffer<float> exposureState;
 
 struct PushConstantPost
 {
@@ -45,6 +48,9 @@ float4 fs_main(VsOut In) : SV_Target
         float4 cloud = cloudTxt.Load(texel);
         color = cloud.rgb + color * (1.0 - cloud.a);
     }
+
+    // Exposure after the cloud composite, as tonemap.slang; ACES saturates long before 1e4 and stays off Inf/Inf there.
+    color = min(color * exposure_scale(exposureState[0]), float3(1e4));
 
     // ACES filmic tonemap (shared with Rust WebGPU renderer via aces.slang).
     float3 tonemapped = aces_tonemap(color);

@@ -295,6 +295,16 @@ inline double post_display_level(double linear)
     return srgb * 255.0;
 }
 
+// post_display_level's inverse below the clip: the linear radiance a 0..255 level shows, sRGB then ACES undone.
+inline double post_linear_level(double display)
+{
+    const double srgb = std::clamp(display / 255.0, 0.0, 1.0);
+    const double y = srgb <= 0.04045 ? srgb / 12.92 : std::pow((srgb + 0.055) / 1.055, 2.4);
+    const double qa = 2.51 - 2.43 * y;
+    const double qb = 0.03 - 0.59 * y;
+    return (-qb + std::sqrt(qb * qb + 4.0 * qa * 0.14 * y)) / (2.0 * qa);
+}
+
 // constants.slang's MIN_ROUGHNESS and brdf.slang's NDF denominator guard; BuildIntegrity.FurnaceOracleUsesBrdfSlangsConstants pins both.
 inline constexpr double kBrdfMinRoughness = 0.045;
 inline constexpr double kBrdfNdfDenominatorGuard = 1e-20;

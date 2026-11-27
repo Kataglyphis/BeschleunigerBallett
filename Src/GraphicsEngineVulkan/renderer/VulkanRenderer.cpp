@@ -15,6 +15,7 @@ module;
 #include "spdlog/spdlog.h"
 #include <optional>
 
+#include <cmath>
 #include <cstdint>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -111,6 +112,9 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), output.gpuTimings);
     create_uniform_buffers();
     create_command_buffers();
+    // Before the post descriptors, which bind its buffer; the first frame's reduce writes the starting EV.
+    exposureStage.init(device, vulkanSwapChain.getNumberSwapChainImages(), manualExposureEv(settings.renderer));
+    lastExposureSeconds = settings.time_seconds;
 
     createSynchronization();
 
@@ -274,6 +278,8 @@ void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLeve
 {
     // Frames before new geometry drew another scene: about 240 sky-only frames once outweighed six of Dinosaurs.
     if (rebuildBottomLevel) { gpuTiming.restart(output.gpuTimings); }
+    // A new scene adapts from the manual EV, as OxidANT's upload_scene resets it, not from the last scene's.
+    if (rebuildBottomLevel) { exposureStage.requestReset(manualExposureEv(frameSettings.renderer)); }
     // Skipping any step leaves the model invisible or traced through stale descriptors.
     rebuildObjectDescriptions();
 
@@ -528,7 +534,7 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 void Kataglyphis::VulkanRenderer::registerBuiltInStages()
 {
     using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
-    std::array<RenderStage, 7> built_in{};
+    std::array<RenderStage, 9> built_in{};
 
     built_in[0].name = "shadow_cascades";
     built_in[0].order = RenderStageOrder::ShadowCascades;
@@ -617,6 +623,30 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
         return frameSettings.scene.clouds_enabled && frameSettings.scene.cloud_half_resolution;
     };
     built_in[4].record = [this](const RenderStageFrame &frame) { recordCloudUpsampleStage(frame); };
+
+    // After the clouds, as Rust's histogram row: it meters the HDR target the scene passes left.
+    built_in[7].name = "histogram";
+    built_in[7].order = RenderStageOrder::Histogram;
+    built_in[7].timedPass = GpuTimedPass::Histogram;
+    built_in[7].labelColor = std::array{ 0.95F, 0.85F, 0.30F, 1.0F };
+    built_in[7].enabled = [this](const RenderStageFrame &) { return frameSettings.renderer.auto_exposure; };
+    built_in[7].record = [this](const RenderStageFrame &frame) {
+        exposureStage.recordHistogram(frame.commandBuffer, frame.imageIndex, frame.extent);
+    };
+    // A new image count needs a parameter buffer and a set per image; updateAllDescriptorSets rebinds the HDR targets.
+    built_in[7].resize = [this](const RenderStageResize &resize) {
+        exposureStage.recreateFrameResources(resize.imageCount);
+    };
+    built_in[7].shaderHotReload = [this] { exposureStage.shaderHotReload(); };
+
+    // Every frame: manual exposure writes the same buffer, so post always reads the EV from it.
+    built_in[8].name = "exposure_reduce";
+    built_in[8].order = RenderStageOrder::ExposureReduce;
+    built_in[8].timedPass = GpuTimedPass::ExposureReduce;
+    built_in[8].labelColor = std::array{ 0.95F, 0.75F, 0.25F, 1.0F };
+    built_in[8].record = [this](const RenderStageFrame &frame) {
+        exposureStage.recordReduce(frame.commandBuffer, frame.imageIndex, exposureFrameParams());
+    };
 
     built_in[3].name = "post";
     built_in[3].order = RenderStageOrder::Post;
@@ -861,6 +891,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
     // takeCapturedFrame() waits on this frame's in-flight fence.
     frameCapture.bindSubmitFence(frameSync.inFlightFence());
     hdrCapture.bindSubmitFence(frameSync.inFlightFence());
+    exposureStage.bindCaptureFence(frameSync.inFlightFence());
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
@@ -928,6 +959,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // createSynchronization() recreates every fence; after waitIdle the captured pixels stay readable.
     frameCapture.invalidateFence();
     hdrCapture.invalidateFence();
+    exposureStage.invalidateCaptureFence();
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
@@ -1441,7 +1473,8 @@ auto Kataglyphis::VulkanRenderer::create_surface() -> vk::SurfaceKHR
 void Kataglyphis::VulkanRenderer::create_post_descriptor_resources()
 {
     postDescriptors.addBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
+      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!postDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create post descriptor resources!");
@@ -1464,7 +1497,31 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
           clouds.getCloudOutputTexture()->getImageView(),
           vk::ImageLayout::eGeneral,
           clouds.getCloudOutputTexture()->getSampler());
+        postDescriptors.writeBuffer(i,
+          2,
+          exposureStage.exposureBuffer(),
+          Kataglyphis::VulkanRendererInternals::ExposureStage::kExposureStateBytes);
+        // The histogram meters the same target post reads.
+        exposureStage.bindHdrTarget(i, renderResult.getImageView());
     }
+}
+
+auto Kataglyphis::VulkanRenderer::exposureFrameParams() -> Kataglyphis::VulkanRendererInternals::ExposureFrameParams
+{
+    using namespace Kataglyphis::VulkanRendererInternals::FrontendShared;
+    const GUIRendererSharedVars &renderer_settings = frameSettings.renderer;
+    // A clock that ran backwards or stood still holds the exposure; the reduce treats dt <= 0 so.
+    const double delta = frameSettings.time_seconds - lastExposureSeconds;
+    lastExposureSeconds = frameSettings.time_seconds;
+    return Kataglyphis::VulkanRendererInternals::ExposureFrameParams{
+        .deltaSeconds = std::isfinite(delta) ? static_cast<float>(std::max(delta, 0.0)) : 0.0F,
+        .speed = sanitizePostSetting(renderer_settings.auto_exposure_speed,
+          kMinAutoExposureSpeed,
+          kMaxAutoExposureSpeed,
+          kDefaultAutoExposureSpeed),
+        .autoExposure = renderer_settings.auto_exposure,
+        .manualEv = manualExposureEv(renderer_settings),
+    };
 }
 
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorResources()

@@ -1,6 +1,7 @@
 module;
 #include "renderer/PathTracingHistory.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
@@ -28,6 +29,7 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
+import kataglyphis.vulkan.exposure_stage;
 import kataglyphis.vulkan.fxaa_stage;
 import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.render_settings;
@@ -128,6 +130,9 @@ class VulkanRenderer
     // The same arm-then-take pair for the HDR target post reads: raw RGBA16F texels, 8 bytes each.
     void requestHdrCapture();
     std::vector<uint8_t> takeCapturedHdrFrame(uint32_t &outWidth, uint32_t &outHeight);
+    // The same pair for the exposure state post read, [adapted EV, target EV]; empty when nothing was captured.
+    void requestExposureCapture() { exposureStage.requestCapture(); }
+    [[nodiscard]] std::optional<std::array<float, 2>> takeCapturedExposure() { return exposureStage.takeCapture(); }
 
     void recreateSwapChain();
     void reprovisionPerImageResources();
@@ -289,6 +294,11 @@ class VulkanRenderer
     void createTracedDepthResources();
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
     Kataglyphis::VulkanRendererInternals::FxaaStage fxaaStage;
+    // The histogram and the exposure buffer post reads; declared before postDescriptors, which bind that buffer.
+    Kataglyphis::VulkanRendererInternals::ExposureStage exposureStage;
+    // The settings' clock at the last reduce, whose difference is the adaptation's frame time.
+    double lastExposureSeconds{ 0.0 };
+    [[nodiscard]] Kataglyphis::VulkanRendererInternals::ExposureFrameParams exposureFrameParams();
 
     // Drawn inside the main stage, into the HDR target post reads.
     Kataglyphis::SkyBox skyBox;

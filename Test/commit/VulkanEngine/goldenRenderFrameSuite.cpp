@@ -72,18 +72,25 @@ TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
     harness.render_frames(1);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "cloud_upsample", "exposure_reduce", "post" }));
 
     // A full-resolution march fills the full-size target itself.
     scene_vars.cloud_half_resolution = false;
     harness.render_frame();
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
-      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "post" }));
+      (std::vector<std::string>{ "shadow_cascades", "main", "clouds", "exposure_reduce", "post" }));
 
     scene_vars.shadows_enabled = false;
     scene_vars.clouds_enabled = false;
     harness.render_frame();
-    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(), (std::vector<std::string>{ "main", "post" }));
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+      (std::vector<std::string>{ "main", "exposure_reduce", "post" }));
+
+    // Auto exposure meters the HDR target before the reduce.
+    harness.settings.renderer.auto_exposure = true;
+    harness.render_frame();
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+      (std::vector<std::string>{ "main", "histogram", "exposure_reduce", "post" }));
 }
 
 // What the registry is for: a pass added from outside VulkanRenderer records, resizes and leaves again.

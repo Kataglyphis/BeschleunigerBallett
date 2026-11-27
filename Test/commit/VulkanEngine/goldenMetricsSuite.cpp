@@ -21,6 +21,7 @@ using Kataglyphis::Test::GoldenMetrics::ggx_distribution;
 using Kataglyphis::Test::GoldenMetrics::GroundShadowPrediction;
 using Kataglyphis::Test::GoldenMetrics::kBrdfMinRoughness;
 using Kataglyphis::Test::GoldenMetrics::post_display_level;
+using Kataglyphis::Test::GoldenMetrics::post_linear_level;
 using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
 using Kataglyphis::Test::GoldenMetrics::ShadowAgreement;
 using Kataglyphis::Test::GoldenMetrics::WorldBox;
@@ -281,6 +282,16 @@ TEST(GoldenMetrics, PostDisplayLevelMapsMidGreyAndClipsOnlyAtTheTop)
         previous = level;
     }
     EXPECT_LT(post_display_level(4.0), 255.0) << "ACES compresses a highlight before clipping it.";
+}
+
+// The exposure goldens read radiance back off 8-bit levels; below the clip the two maps undo each other.
+TEST(GoldenMetrics, PostLinearLevelUndoesTheDisplayEncoding)
+{
+    EXPECT_DOUBLE_EQ(post_linear_level(0.0), 0.0);
+    for (const double linear : { 0.001, 0.02, 0.18, 0.5, 1.0, 3.0 }) {
+        EXPECT_NEAR(post_linear_level(post_display_level(linear)), linear, 1e-9 + 1e-9 * linear) << "at " << linear;
+    }
+    EXPECT_GT(post_linear_level(254.0), post_linear_level(200.0));
 }
 
 // The furnace goldens' oracle once guarded PI d^2 at 1e-6, which clipped every GGX peak below a roughness of 0.154.

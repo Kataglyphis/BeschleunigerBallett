@@ -4,14 +4,18 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <regex>
 #include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "BuildIntegrityScan.hpp"
@@ -402,4 +406,58 @@ TEST(BuildIntegrity, GpuTimingMatchesTheRustRenderersTaxonomy)
       << rust_path.string() << " has no AVERAGE_WINDOW";
     EXPECT_EQ(std::to_string(Kataglyphis::GpuTimingSubsystem::GpuPassAverage::WINDOW), window[1].str())
       << "the C++ GUI averages its pass times over another window than the Rust renderer's";
+}
+
+// The post settings take the Rust renderer's defaults and its Renderer tab's ranges; a change there must reach here.
+TEST(BuildIntegrity, PostSettingsTakeTheRustRenderersDefaultsAndRanges)
+{
+    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
+    const fs::path renderer = repoRoot() / "third_party" / "OxidANT" / "crates" / "webgpu_renderer" / "src";
+    if (!sourceExists(renderer)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const auto host = readFileText(renderer / "ui" / "editor" / "host.rs");
+    const auto inspector = readFileText(renderer / "ui" / "editor" / "inspector" / "renderer.rs");
+    ASSERT_TRUE(host.has_value() && inspector.has_value()) << "could not read OxidANT's editor sources";
+
+    // `field: value,` in RendererSettings::default(), the first rows after its impl.
+    const std::size_t default_impl = host->find("impl Default for RendererSettings");
+    ASSERT_NE(default_impl, std::string::npos) << "host.rs no longer implements Default for RendererSettings";
+    const std::string defaults_text = host->substr(default_impl);
+    const auto rust_default = [&](const std::string &field) -> std::string {
+        std::smatch match;
+        const std::regex row("\\n\\s*" + field + R"(:\s*([\w.]+),)");
+        return std::regex_search(defaults_text, match, row) ? match[1].str() : std::string{};
+    };
+    // `FillSlider::new(&mut settings.field, lo..=hi)` in the Renderer tab.
+    const auto rust_range = [&](const std::string &field) -> std::pair<double, double> {
+        std::smatch match;
+        const std::regex slider("settings\\." + field + R"(,\s*(-?[\d.]+)\.\.=(-?[\d.]+)\))");
+        if (!std::regex_search(*inspector, match, slider)) { return { 0.0, -1.0 }; }
+        return { std::stod(match[1].str()), std::stod(match[2].str()) };
+    };
+
+    const FrontendShared::GUIRendererSharedVars defaults{};
+    EXPECT_EQ(rust_default("auto_exposure"), defaults.auto_exposure ? "true" : "false");
+    // Compared as floats: the Rust literal is an f32, the C++ constant a float.
+    const std::vector<std::tuple<std::string, float, float, float>> floats = {
+        { "exposure_ev", defaults.exposure_ev, FrontendShared::kMinExposureEv, FrontendShared::kMaxExposureEv },
+        { "auto_exposure_speed",
+          defaults.auto_exposure_speed,
+          FrontendShared::kMinAutoExposureSpeed,
+          FrontendShared::kMaxAutoExposureSpeed },
+    };
+    for (const auto &[field, value, lowest, highest] : floats) {
+        const std::string rust = rust_default(field);
+        ASSERT_FALSE(rust.empty()) << "RendererSettings::default() sets no " << field << " - the scan broke";
+        EXPECT_FLOAT_EQ(std::stof(rust), value) << field << "'s default";
+        const auto [rust_lowest, rust_highest] = rust_range(field);
+        ASSERT_LE(rust_lowest, rust_highest) << "the Renderer tab has no " << field << " slider - the scan broke";
+        EXPECT_FLOAT_EQ(static_cast<float>(rust_lowest), lowest) << field << "'s lowest value";
+        EXPECT_FLOAT_EQ(static_cast<float>(rust_highest), highest) << field << "'s highest value";
+    }
+
+    // NaN and the infinities fall back to the default, the rest clamps into the range.
+    EXPECT_EQ(FrontendShared::sanitizePostSetting(std::nanf(""), -4.0F, 4.0F, 0.5F), 0.5F);
+    EXPECT_EQ(FrontendShared::sanitizePostSetting(-std::numeric_limits<float>::infinity(), -4.0F, 4.0F, 0.5F), 0.5F);
+    EXPECT_EQ(FrontendShared::sanitizePostSetting(9.0F, -4.0F, 4.0F, 0.5F), 4.0F);
+    EXPECT_EQ(FrontendShared::sanitizePostSetting(-1.5F, -4.0F, 4.0F, 0.5F), -1.5F);
 }

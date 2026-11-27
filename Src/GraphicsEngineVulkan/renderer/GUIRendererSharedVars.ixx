@@ -1,6 +1,8 @@
 module;
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -23,6 +25,18 @@ constexpr bool fxaaFilters(FxaaMode mode, bool tracedFrame, bool stageReady)
     return mode == FxaaMode::Always || !tracedFrame;
 }
 
+// The post chain's defaults and editor ranges, the Rust renderer's (its RendererSettings and the Renderer tab's POST).
+inline constexpr float kDefaultExposureEv = 0.0F;
+inline constexpr float kMinExposureEv = -4.0F;
+inline constexpr float kMaxExposureEv = 4.0F;
+inline constexpr float kDefaultAutoExposureSpeed = 3.0F;
+inline constexpr float kMinAutoExposureSpeed = 0.1F;
+inline constexpr float kMaxAutoExposureSpeed = 10.0F;
+
+// The editor's range; NaN and the infinities take the default, as every other setting the renderer reads.
+inline float sanitizePostSetting(float value, float lowest, float highest, float fallback)
+{ return std::isfinite(value) ? std::clamp(value, lowest, highest) : fallback; }
+
 // Passes bracketed by GPU timestamp pairs in VulkanRenderer::record_commands.
 // "Main" is forward/deferred rasterization or, in its place, the ray-/path-
 // tracing stage, and times the one of Forward, GBuffer + DeferredLighting,
@@ -42,6 +56,8 @@ enum class GpuTimedPass : int {
     CloudUpsample,
     PunctualShadows,
     Fxaa,
+    Histogram,
+    ExposureReduce,
     Count
 };
 
@@ -61,6 +77,8 @@ inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
   "Clouds upsample",
   "Point/spot shadows",
   "FXAA + GUI",
+  "Histogram",
+  "Exposure",
 });
 inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
@@ -82,6 +100,8 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "CloudUpsample",
   "PunctualShadows",
   "Fxaa",
+  "Histogram",
+  "ExposureReduce",
 });
 
 // The pass whose scope encloses each one, Count for a top-level pass: a frame sum adds only the top level.
@@ -94,6 +114,8 @@ inline constexpr std::array GPU_TIMED_PASS_PARENTS = std::to_array<GpuTimedPass>
   GpuTimedPass::Main,
   GpuTimedPass::Main,
   GpuTimedPass::Main,
+  GpuTimedPass::Count,
+  GpuTimedPass::Count,
   GpuTimedPass::Count,
   GpuTimedPass::Count,
   GpuTimedPass::Count,
@@ -189,7 +211,18 @@ struct GUIRendererSharedVars
     // accumulation history - a mean over two different estimators is biased.
     int pathTracingSamplesPerPixel = 8;
     int pathTracingMaxBounces = 8;
+
+    // In stops before the tonemap; auto exposure overrides it.
+    float exposure_ev = kDefaultExposureEv;
+    // Meters the frame's luminance histogram on the GPU and adapts towards middle grey.
+    bool auto_exposure = false;
+    // The adaptation's rate per second; higher settles faster.
+    float auto_exposure_speed = kDefaultAutoExposureSpeed;
 };
+
+// The manual EV a frame applies: the editor's range, the default for NaN.
+inline float manualExposureEv(const GUIRendererSharedVars &vars)
+{ return sanitizePostSetting(vars.exposure_ev, kMinExposureEv, kMaxExposureEv, kDefaultExposureEv); }
 
 /// A loaded glTF's first directional light: the unit direction towards it, as the editor stores it, and its colour.
 struct PublishedSun

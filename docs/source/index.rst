@@ -71,6 +71,7 @@ Build and maintenance guide for BeschleunigerBallett.
    model-loading.md
    path-tracing.md
    clouds.md
+   post-processing.md
    webgpu-srgb-audit.md
    gpu-golden-testing.md
    code-quality.md

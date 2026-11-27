@@ -136,6 +136,10 @@ namespace {
 using namespace Kataglyphis::Frontend::gui_detail;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::FXAA_MODE_LABELS;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxAutoExposureSpeed;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxExposureEv;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinAutoExposureSpeed;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinExposureEv;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::SceneViewport;
@@ -1330,6 +1334,26 @@ void GUI::renderRenderInspector()
         if (studioSegmented("##fxaa_mode", &fxaa_mode, FXAA_MODE_LABELS, {}, -1.0F)) {
             guiRendererSharedVars.fxaaMode = static_cast<FxaaMode>(fxaa_mode);
         }
+        endStudioProperties();
+    }
+
+    // Rust's POST rows, ranges and defaults.
+    sectionHeader("POST");
+    if (beginStudioProperties("##post", propertyLabelWidth())) {
+        studioBeginDisabled(guiRendererSharedVars.auto_exposure);
+        studioPropertyLabel("Exposure", "In stops; auto exposure overrides it");
+        studioSlider("##exposure_ev", &guiRendererSharedVars.exposure_ev, kMinExposureEv, kMaxExposureEv, "%.1f EV");
+        studioEndDisabled();
+        studioPropertyLabel("Auto exposure", "Meters the frame's histogram");
+        studioToggle("##auto_exposure", &guiRendererSharedVars.auto_exposure);
+        studioBeginDisabled(!guiRendererSharedVars.auto_exposure);
+        studioPropertyLabel("Adaptation", "Higher settles faster");
+        studioSlider("##auto_exposure_speed",
+          &guiRendererSharedVars.auto_exposure_speed,
+          kMinAutoExposureSpeed,
+          kMaxAutoExposureSpeed,
+          "%.1f");
+        studioEndDisabled();
         endStudioProperties();
     }
 

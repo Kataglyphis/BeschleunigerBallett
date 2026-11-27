@@ -1249,6 +1249,7 @@ rule above; its pages are listed in
 | `docs/source/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, the Linux CI run on llvmpipe, host verification loop, synchronization validation |
 | `docs/source/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
 | `docs/source/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
+| `docs/source/post-processing.md` | Post chain: exposure and auto exposure, the exposure buffer, the stages, settings and defaults, what the harness pins |
 | `docs/source/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) |
 | `docs/source/LICENSES-README.md` | Third-party license documentation |
 | `docs/source/` | The site: every guide above and `README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `literature.md`, plus `graphviz_files.rst`, which `graphviz_generator.py` writes during the docs build. A new page goes here and into `index.rst`'s toctree |

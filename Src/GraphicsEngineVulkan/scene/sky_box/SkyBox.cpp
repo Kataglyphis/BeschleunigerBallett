@@ -396,14 +396,14 @@ void SkyBox::recordTracedDraw(vk::CommandBuffer commandBuffer,
     recordDraw(commandBuffer, tracedPipeline, imageIndex);
     commandBuffer.endRendering();
 
-    // The consumer is post.slang's fragment shader.
+    // The consumers are post.slang's fragment shader and the auto-exposure histogram's compute pass.
     recordImageBarrier(commandBuffer,
       buildImageMemoryBarrier(target,
         vk::ImageLayout::eColorAttachmentOptimal,
         vk::ImageLayout::eShaderReadOnlyOptimal,
         vk::PipelineStageFlagBits2::eColorAttachmentOutput,
         vk::AccessFlagBits2::eColorAttachmentWrite,
-        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
         vk::AccessFlagBits2::eShaderSampledRead));
 }
 

@@ -44,4 +44,33 @@ inline void recordImageBarriers(vk::CommandBuffer commandBuffer, std::span<const
 inline void recordImageBarrier(vk::CommandBuffer commandBuffer, const vk::ImageMemoryBarrier2 &barrier)
 { recordImageBarriers(commandBuffer, std::span<const vk::ImageMemoryBarrier2>(&barrier, 1)); }
 
+// The whole buffer: the post chain's storage buffers hand all of their few words from one pass to the next.
+constexpr vk::BufferMemoryBarrier2 buildBufferMemoryBarrier(vk::Buffer buffer,
+  vk::PipelineStageFlags2 srcStage,
+  vk::AccessFlags2 srcAccess,
+  vk::PipelineStageFlags2 dstStage,
+  vk::AccessFlags2 dstAccess)
+{
+    return vk::BufferMemoryBarrier2{ srcStage,
+        srcAccess,
+        dstStage,
+        dstAccess,
+        vk::QueueFamilyIgnored,
+        vk::QueueFamilyIgnored,
+        buffer,
+        0,
+        vk::WholeSize };
+}
+
+inline void recordBufferBarriers(vk::CommandBuffer commandBuffer, std::span<const vk::BufferMemoryBarrier2> barriers)
+{
+    vk::DependencyInfo dependency_info{};
+    dependency_info.bufferMemoryBarrierCount = static_cast<uint32_t>(barriers.size());
+    dependency_info.pBufferMemoryBarriers = barriers.data();
+    commandBuffer.pipelineBarrier2(dependency_info);
+}
+
+inline void recordBufferBarrier(vk::CommandBuffer commandBuffer, const vk::BufferMemoryBarrier2 &barrier)
+{ recordBufferBarriers(commandBuffer, std::span<const vk::BufferMemoryBarrier2>(&barrier, 1)); }
+
 }// namespace Kataglyphis

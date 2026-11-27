@@ -45,6 +45,9 @@ namespace RenderStageOrder {
     inline constexpr int Clouds = 300;
     // Only while the clouds march at half resolution.
     inline constexpr int CloudUpsample = 350;
+    // Only with auto exposure on.
+    inline constexpr int Histogram = 400;
+    inline constexpr int ExposureReduce = 410;
     inline constexpr int Post = 500;
     // Only while FXAA filters the frame; post then renders into its LDR intermediate and this stage presents.
     inline constexpr int Fxaa = 520;

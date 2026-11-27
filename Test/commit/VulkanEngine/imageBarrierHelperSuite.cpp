@@ -185,3 +185,22 @@ TEST(ImageBarrierHelperUnit, MatchesFrameCaptureBackToPresentBarrier)
 }
 
 }// namespace
+
+// The exposure buffer's barriers: the whole buffer, no queue transfer, each side's stage and access kept apart.
+TEST(ImageBarrierHelperUnit, BufferBarrierCoversTheWholeBufferOnOneQueue)
+{
+    const vk::BufferMemoryBarrier2 barrier = Kataglyphis::buildBufferMemoryBarrier(vk::Buffer(nullptr),
+      Stage::eComputeShader,
+      Access::eShaderStorageWrite,
+      Stage::eFragmentShader,
+      Access::eShaderStorageRead);
+    EXPECT_EQ(barrier.srcStageMask, vk::PipelineStageFlags2(Stage::eComputeShader));
+    EXPECT_EQ(barrier.srcAccessMask, vk::AccessFlags2(Access::eShaderStorageWrite));
+    EXPECT_EQ(barrier.dstStageMask, vk::PipelineStageFlags2(Stage::eFragmentShader));
+    EXPECT_EQ(barrier.dstAccessMask, vk::AccessFlags2(Access::eShaderStorageRead));
+    EXPECT_EQ(barrier.srcQueueFamilyIndex, vk::QueueFamilyIgnored);
+    EXPECT_EQ(barrier.dstQueueFamilyIndex, vk::QueueFamilyIgnored);
+    EXPECT_EQ(barrier.offset, 0U);
+    EXPECT_EQ(barrier.size, vk::WholeSize);
+    EXPECT_EQ(barrier.pNext, nullptr);
+}

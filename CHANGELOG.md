@@ -14,6 +14,14 @@ the GitHub releases themselves.
 
 ### Added
 
+- Exposure and auto exposure (plan C5, OxidANT pin with `common/exposure.slang`). Post scales the composited HDR
+  radiance by `2^EV` before ACES, reading the EV from one two-float storage buffer, `[adapted EV, target EV]`, as the
+  Rust renderer does; a manual EV (default 0, -4 to 4) writes it every frame, and auto exposure (default off, rate 3
+  per second, 0.1 to 10) builds a 64-bin luminance histogram of the HDR target and adapts towards middle grey with
+  OxidANT's `histogram.slang`, compiled to SPIR-V. Nothing is read back on the frame path. The Renderer tab's POST
+  section holds the three settings, and `KATAGLYPHIS_GPU_TIMING_JSON` gains `Histogram` and `ExposureReduce`. At the
+  default 0 EV no golden changed; `GoldenRender.ExposureScalesTheRadianceBeforeTheTonemap` and
+  `GoldenRender.AutoExposureConvergesOnTheFramesLogAverageAndHolds` grade both against the frame's HDR capture.
 - `Colosseum-ktx2` (AssetANT release `Colosseum-ktx2-v1`, CC BY 4.0) is in `Resources/assets.lock`, fetched with
   `KATAGLYPHIS_FETCH_ALL_ASSETS` for the model picker: `Colosseum-gltf` with its 69 textures as UASTC KTX2 through
   `KHR_texture_basisu`. On llvmpipe they upload as BC7, 190 MiB of device memory against 760 MiB, and `load_flat`
