@@ -10,9 +10,10 @@ over OxidANT's `common/path_integrator.slang`, the path tracer both renderers
 run: `trace_path` walks a path over an `ITracedScene`, which this kernel
 implements with ray queries (`EnginePathScene`) and OxidANT's tracer over its
 compute BVH. It is dispatched by `PathTracing::recordCommands` between two image barriers that
-move the rasterizer's offscreen target (`rgba16f` since the HDR unit,
-`OUT_IMAGE_BINDING`) to `eGeneral` for the compute write and on to
-`eShaderReadOnlyOptimal` for the post pass. Both sit in the frame's graphics
+move the scene's HDR target (`rgba16f` since the HDR unit, `OUT_IMAGE_BINDING`), the one every mode
+and every frame in flight draws into, to `eGeneral` for the compute write and on to
+`eShaderReadOnlyOptimal` for the post pass; the first waits out the previous frame's post, bloom and
+histogram reads of it. Both sit in the frame's graphics
 command buffer, so no queue-family ownership transfer is involved. The post
 pass samples that target like any other mode: path tracing replaces the
 *lighting*, not the presentation path.

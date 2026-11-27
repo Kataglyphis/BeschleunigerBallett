@@ -33,19 +33,15 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
 import kataglyphis.vulkan.depth_attachment;
-import kataglyphis.vulkan.color_attachment;
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::init(const std::shared_ptr<VulkanDevice> &in_device,
-  VulkanSwapChain *swap_chain,
-  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-  vk::CommandPool &commandPool)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;
-    this->vulkanSwapChain = swap_chain;
+    depth_format = chooseDepthFormat(device->getPhysicalDevice());
 
-    createTextures(commandPool);
     createPushConstantRange();
     createGraphicsPipeline(descriptorSetLayouts);
 }
@@ -98,7 +94,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordDepthPrepass(vk::Co
         spdlog::error("Rasterizer::recordDepthPrepass called with an empty shared descriptor set span");
         return;
     }
-    const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Extent2D extent = targetExtent;
     const vk::Image depth_image = prepassDepthImage->getImage();
     const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
 
@@ -142,14 +138,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordDepthPrepass(vk::Co
         depth_aspect));
 }
 
-auto Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index) -> Kataglyphis::Texture &
-{ return *offscreenTextures[index]; }
-
 void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer push_constant)
 { this->pushConstant = push_constant; }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
-  uint32_t image_index,
+  Texture &sceneColor,
   Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const glm::vec3 &eye,
@@ -162,12 +155,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
         return;
     }
 
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
+    const vk::Image offscreen_image = sceneColor.getImage();
     const vk::Image depth_image = depthBufferImage->getImage();
     const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
 
-    // UNDEFINED: both cleared; the shared depth waits out the clouds' read, the offscreen image post and the tracers.
+    // UNDEFINED: both cleared; every frame in flight shares them, so this waits out the last one's reads and traces.
     const std::array<vk::ImageMemoryBarrier2, 2> to_attachment = {
         buildImageMemoryBarrier(offscreen_image,
           vk::ImageLayout::eUndefined,
@@ -189,12 +181,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     };
     recordImageBarriers(commandBuffer, to_attachment);
 
-    const vk::RenderingAttachmentInfo color_attachment =
-      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eStore,
-        vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } } });
+    const vk::RenderingAttachmentInfo color_attachment = buildRenderingAttachmentInfo(sceneColor.getImageView(),
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } } });
     // Stored: the clouds stop their march at it.
     const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(depthBufferImage->getImageView(),
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
@@ -202,11 +193,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
       vk::AttachmentStoreOp::eStore,
       vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
     const vk::RenderingInfo rendering_info = buildRenderingInfo(
-      swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), &depth_attachment);
+      targetExtent, std::span<const vk::RenderingAttachmentInfo>(&color_attachment, 1), &depth_attachment);
 
     commandBuffer.beginRendering(rendering_info);
 
-    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
+    setFullExtentViewportAndScissor(commandBuffer, targetExtent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
     // The set is identical for every mesh: bind once, not per draw.
@@ -290,22 +281,33 @@ Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
 {
-    for (const auto &texture : offscreenTextures) {
-        if (texture) { texture->cleanUp(); }
-    }
-    offscreenTextures.clear();
-
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
     if (prepassDepthImage) { prepassDepthImage->cleanUp(); }
     prepassDepthImage.reset();
 }
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::Extent2D extent,
+  vk::CommandPool commandPool)
 {
+    if (!hasFrameTargets()) { return; }
     releaseFrameTextures();
 
+    createFrameTargets(extent, commandPool);
+}
+
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createFrameTargets(vk::Extent2D extent,
+  vk::CommandPool commandPool)
+{
+    releaseFrameTextures();
+    targetExtent = extent;
     createTextures(commandPool);
+}
+
+auto Kataglyphis::VulkanRendererInternals::Rasterizer::frameTargetImages() const -> std::vector<vk::Image>
+{
+    if (!hasFrameTargets()) { return {}; }
+    return { depthBufferImage->getImage(), prepassDepthImage->getImage() };
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
@@ -316,35 +318,16 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
     push_constant_range.size = sizeof(PushConstantRasterizer);
 }
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::CommandPool &commandPool)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::CommandPool commandPool)
 {
-    offscreenTextures.resize(vulkanSwapChain->getNumberSwapChainImages());
-
-    for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
-        auto texture = std::make_unique<Texture>();
-        const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-
-        createColorAttachment(*texture,
-          device,
-          swap_chain_extent,
-          OFFSCREEN_FORMAT,
-          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-            | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
-          "forward hdr");
-
-        offscreenTextures[index] = std::move(texture);
-    }
-
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();
 
-    vk::ImageAspectFlags depth_aspect_flags =
-      depthStencilTransitionAspect(chooseDepthFormat(device->getPhysicalDevice()));
+    vk::ImageAspectFlags depth_aspect_flags = depthStencilTransitionAspect(depth_format);
 
     // Sampled view: exactly one aspect, not depth_aspect_flags. See depthStencilTransitionAspect's doc comment.
-    depth_format = createDepthAttachment(*depthBufferImage,
+    std::ignore = createDepthAttachment(*depthBufferImage,
       device,
-      swap_chain_extent,
+      targetExtent,
       vk::ImageUsageFlagBits::eSampled,
       vk::ImageAspectFlagBits::eDepth,
       "forward depth");
@@ -359,11 +342,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
       depth_aspect_flags,
       1);
 
-    // Sampleable from the start: SSAO's deferred frames bind it too, in its blur's unused depth slot.
+    // Sampleable from the start, the layout SSAO's forward sets name for it.
     prepassDepthImage = std::make_unique<Texture>();
     std::ignore = createDepthAttachment(*prepassDepthImage,
       device,
-      swap_chain_extent,
+      targetExtent,
       vk::ImageUsageFlagBits::eSampled,
       vk::ImageAspectFlagBits::eDepth,
       "forward depth prepass");

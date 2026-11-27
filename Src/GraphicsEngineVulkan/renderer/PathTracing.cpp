@@ -82,12 +82,13 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   bool trace_cloud_depth,
   bool skybox_enabled)
 {
-    // The output is overwritten (UNDEFINED) after raster and post; the history after the previous frame's dispatch.
+    // UNDEFINED: the output follows the last frame's post, bloom and histogram reads; the history its dispatch.
     const std::array<vk::ImageMemoryBarrier2, 2> before_dispatch = {
         Kataglyphis::buildImageMemoryBarrier(vulkanImage.getImage(),
           vk::ImageLayout::eUndefined,
           vk::ImageLayout::eGeneral,
-          vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eFragmentShader,
+          vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eFragmentShader
+            | vk::PipelineStageFlagBits2::eComputeShader,
           vk::AccessFlagBits2::eNone,
           vk::PipelineStageFlagBits2::eComputeShader,
           vk::AccessFlagBits2::eShaderStorageWrite),

@@ -70,19 +70,15 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::init(const std::shared_ptr
 void Kataglyphis::VulkanRendererInternals::FxaaStage::createFrameResources()
 {
     const vk::Extent2D extent = vulkanSwapChain->getSwapChainExtent();
-    const uint32_t count = vulkanSwapChain->getNumberSwapChainImages();
 
-    intermediates.resize(count);
-    for (uint32_t i = 0; i < count; ++i) {
-        auto texture = std::make_unique<Texture>();
-        createColorAttachment(*texture,
-          device,
-          extent,
-          vulkanSwapChain->getSwapChainFormat(),
-          vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
-          "fxaa intermediate");
-        intermediates[i] = std::move(texture);
-    }
+    // One for every frame in flight: post's barrier into it waits out the last frame's FXAA read.
+    intermediate = std::make_unique<Texture>();
+    createColorAttachment(*intermediate,
+      device,
+      extent,
+      vulkanSwapChain->getSwapChainFormat(),
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+      "fxaa intermediate");
 
     // The intermediate holds post's sRGB-encoded bytes, so the shader's luma needs no square root (params.z 0).
     const FxaaUniforms uniforms{ glm::vec4(1.0F / static_cast<float>(std::max(extent.width, 1U)),
@@ -94,25 +90,20 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::createFrameResources()
     descriptors.addBinding(kFxaaFrameBinding, vk::DescriptorType::eSampledImage, 1, vk::ShaderStageFlagBits::eFragment)
       .addBinding(kFxaaSamplerBinding, vk::DescriptorType::eSampler, 1, vk::ShaderStageFlagBits::eFragment)
       .addBinding(kFxaaUniformsBinding, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment);
-    if (!descriptors.create(device, count)) {
+    if (!descriptors.create(device, 1)) {
         spdlog::error("Failed to create FXAA descriptor resources!");
         return;
     }
-    for (uint32_t i = 0; i < count; ++i) {
-        descriptors.writeImage(
-          i, kFxaaFrameBinding, intermediates[i]->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-        descriptors.writeImage(i, kFxaaSamplerBinding, nullptr, vk::ImageLayout::eUndefined, sampler);
-        descriptors.writeBuffer(i, kFxaaUniformsBinding, uniformBuffer.getBuffer(), sizeof(FxaaUniforms));
-    }
+    descriptors.writeImage(0, kFxaaFrameBinding, intermediate->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+    descriptors.writeImage(0, kFxaaSamplerBinding, nullptr, vk::ImageLayout::eUndefined, sampler);
+    descriptors.writeBuffer(0, kFxaaUniformsBinding, uniformBuffer.getBuffer(), sizeof(FxaaUniforms));
 }
 
 void Kataglyphis::VulkanRendererInternals::FxaaStage::releaseFrameResources()
 {
     descriptors.cleanUp();
-    for (const auto &texture : intermediates) {
-        if (texture) { texture->cleanUp(); }
-    }
-    intermediates.clear();
+    if (intermediate) { intermediate->cleanUp(); }
+    intermediate.reset();
 }
 
 void Kataglyphis::VulkanRendererInternals::FxaaStage::recreateFrameResources()
@@ -155,7 +146,7 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::shaderHotReload()
 void Kataglyphis::VulkanRendererInternals::FxaaStage::recordCommands(vk::CommandBuffer commandBuffer,
   uint32_t imageIndex)
 {
-    if (!ready(imageIndex)) {
+    if (!ready()) {
         spdlog::error("FxaaStage::recordCommands: no set or pipeline for image {}", imageIndex);
         return;
     }
@@ -181,7 +172,7 @@ void Kataglyphis::VulkanRendererInternals::FxaaStage::recordCommands(vk::Command
     setFullExtentViewportAndScissor(commandBuffer, extent);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
     commandBuffer.bindDescriptorSets(
-      vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptors.sets()[imageIndex], 0, nullptr);
+      vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &descriptors.sets()[0], 0, nullptr);
     commandBuffer.draw(3, 1, 0, 0);
 
     {

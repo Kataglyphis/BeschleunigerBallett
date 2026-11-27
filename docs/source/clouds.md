@@ -70,8 +70,9 @@ three sets of that layout (`kCloudFullMarchSet`, `kCloudHalfMarchSet`, `kCloudUp
 `CloudDispatch.hpp`: the two marches differ only in binding 0's image) are single, not per
 swapchain image, so
 `VulkanRenderer::handleCloudDepthSourceChange` rewrites the binding in all three,
-after a `waitIdle`, only on the frame the source changes: a raster-path or
-render-mode switch, or the TLAS arriving with RT or PT selected.
+after a `waitIdle`, only on the frame the source changes: a render-mode switch,
+or the TLAS arriving with RT or PT selected. A raster-path switch rewrites it in
+`ensureRasterPathTargets`, after the drain that frees the other path's depth.
 `recreateSwapChain` rewrites it unconditionally, since it recreates every
 image the binding can name.
 

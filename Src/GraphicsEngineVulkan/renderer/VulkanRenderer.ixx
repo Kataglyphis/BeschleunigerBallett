@@ -50,6 +50,35 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.window;
 
 export namespace Kataglyphis {
+
+// Images of one kind of extent-sized target, and the bytes vkGetImageMemoryRequirements gives them.
+struct SceneTargetGroup
+{
+    uint32_t images = 0;
+    vk::DeviceSize bytes = 0;
+};
+
+// What the extent-sized targets hold right now; instrumentation for the tests and the memory measurement.
+struct SceneTargetFootprint
+{
+    vk::Extent2D extent{};
+    // The HDR target every mode draws into and post reads.
+    SceneTargetGroup color;
+    // The forward path's depth and SSAO prepass depth.
+    SceneTargetGroup forward;
+    // The G-buffer and its depth.
+    SceneTargetGroup deferred;
+    SceneTargetGroup fxaa;
+    // The path tracer's history and the traced depth, on a device with ray tracing.
+    SceneTargetGroup traced;
+    // Bloom's and SSAO's half-resolution targets.
+    SceneTargetGroup post;
+    SceneTargetGroup clouds;
+
+    [[nodiscard]] vk::DeviceSize totalBytes() const
+    { return color.bytes + forward.bytes + deferred.bytes + fxaa.bytes + traced.bytes + post.bytes + clouds.bytes; }
+};
+
 class VulkanRenderer
 {
   public:
@@ -142,6 +171,11 @@ class VulkanRenderer
     void recreateSwapChain();
     void reprovisionPerImageResources();
 
+    // The extent every scene target is sized at and the scene passes draw at; the swapchain's, until a render scale.
+    [[nodiscard]] vk::Extent2D sceneExtent() const { return sceneTargetExtent; }
+    // Test and measurement instrumentation: one set of scene targets, and only the drawn raster path's.
+    [[nodiscard]] SceneTargetFootprint sceneTargetFootprint();
+
     // A pass added here records, resizes and hot-reloads with the built-in ones, without editing this class.
     RenderStageRegistry::AddResult addRenderStage(RenderStage stage) { return renderStages.add(std::move(stage)); }
     // Drains the GPU first, since the stage's closures may own resources a frame in flight still reads.
@@ -163,8 +197,11 @@ class VulkanRenderer
     // -- decomposed updateStateDueToUserInput handlers
     void handleShaderHotReloadRequest(
       const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
-    void handleRasterizationModeChange(
-      const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
+    // Allocates the drawn raster path's targets and frees the other path's, as Rust's pool drops what a frame lacks.
+    void ensureRasterPathTargets();
+    // The swap alone, without the drain and the rebinds; true when it changed anything.
+    [[nodiscard]] bool allocateRasterPathTargets();
+    [[nodiscard]] bool rasterPathTargetsMatch() const;
     void handleVsyncChange(
       const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &rendererSettings);
     void handleShadowResolutionChange(const GUISceneSharedVars &sceneSettings);
@@ -183,16 +220,6 @@ class VulkanRenderer
     void handleModelReloadRequest(const GUISceneSharedVars &sceneSettings);
     // Reports what the scene now holds; applyRendererFeedback moves the editor's selection and inspector to it.
     void publishLoadedModel();
-
-    // The rasterization mode whose offscreen texture the post (and RT) input
-    // descriptors currently point at. The mode branch in record_commands is
-    // consulted every frame, but the DESCRIPTORS were written once at init -
-    // so switching to Deferred recorded a deferred frame into a texture the
-    // post pass never sampled, and the presented image silently stayed
-    // forward. Tracked so updateStateDueToUserInput can rebind on change.
-    Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode lastBoundRasterizationMode{
-        Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
-    };
 
     // helper class for managing our buffers
     VulkanBufferManager vulkanBufferManager;
@@ -232,10 +259,12 @@ class VulkanRenderer
     // The one rule post and the fxaa stage decide this frame's target by.
     [[nodiscard]] bool fxaaFiltersFrame(const RenderStageFrame &frame) const;
 
-    // Returns the offscreen colour texture of whichever raster path is active
-    // this frame (forward vs deferred), reading the mode once. The RT/PT and
-    // post input descriptors, and the RT/PT passes, all target this texture.
-    Texture &activeOffscreenTexture(uint32_t index);
+    // The scene extent: set from the swapchain's in updateSceneExtent, read by every scene target's creation.
+    vk::Extent2D sceneTargetExtent{};
+    void updateSceneExtent();
+    // The HDR target every mode draws into and post, bloom and the histogram read; one for all frames in flight.
+    Texture sceneColor;
+    void createSceneColor();
 
     // Records the active raster path (forward Rasterizer or deferred
     // DeferredRasterizer) for this frame and publishes its visibility stats.

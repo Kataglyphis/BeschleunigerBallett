@@ -86,12 +86,13 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
-    // eUndefined: rgen overwrites every pixel, whether or not the raster pass ran this frame.
+    // eUndefined: rgen overwrites every pixel, after the last frame's post, bloom and histogram reads of it.
     Kataglyphis::recordImageBarrier(commandBuffer,
       Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
         vk::ImageLayout::eUndefined,
         vk::ImageLayout::eGeneral,
-        vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits2::eColorAttachmentOutput | vk::PipelineStageFlagBits2::eFragmentShader
+          | vk::PipelineStageFlagBits2::eComputeShader,
         vk::AccessFlagBits2::eNone,
         vk::PipelineStageFlagBits2::eRayTracingShaderKHR,
         vk::AccessFlagBits2::eShaderStorageWrite));

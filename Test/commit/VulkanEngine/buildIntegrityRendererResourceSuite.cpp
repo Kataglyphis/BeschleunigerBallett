@@ -11,6 +11,7 @@
 #include <optional>
 #include <regex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "BuildIntegrityScan.hpp"
@@ -551,4 +552,39 @@ TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
       std::equal(files_with_pool_creation.begin(), files_with_pool_creation.end(), kExpected.begin(), kExpected.end()))
       << "expected only VulkanRenderer.cpp to create a vk::CommandPool, found:"
       << joinViolations(files_with_pool_creation);
+}
+
+// One set of scene targets serves every frame in flight, so none of them is counted out per swapchain image.
+TEST(BuildIntegrity, SceneTargetsAreNotMadePerSwapchainImage)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    // The raster paths' targets, FXAA's intermediate and its set; the per-image descriptor sets live elsewhere.
+    static const std::array<std::pair<const char *, const char *>, 3> kTargetFiles = { {
+      { "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp", "createDepthAttachment(" },
+      { "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp", "createColorAttachment(" },
+      { "Src/GraphicsEngineVulkan/renderer/FxaaStage.cpp", "createColorAttachment(" },
+    } };
+    for (const auto &[relative_path, creation] : kTargetFiles) {
+        const auto contents = readFileText(repo_root / relative_path);
+        ASSERT_TRUE(contents.has_value()) << "missing " << relative_path;
+        EXPECT_EQ(contents->find("getNumberSwapChainImages"), std::string::npos)
+          << relative_path << " sizes something by the swapchain's image count; its targets are one set";
+        EXPECT_NE(contents->find(creation), std::string::npos)
+          << relative_path << " no longer calls " << creation << " - the scan no longer sees what it guards";
+    }
+
+    const fs::path renderer_path = repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
+    const auto renderer = readFileText(renderer_path);
+    ASSERT_TRUE(renderer.has_value()) << "could not open " << renderer_path.string();
+    const auto scene_color = function_body_span(*renderer, "Kataglyphis::VulkanRenderer::createSceneColor");
+    ASSERT_TRUE(scene_color.has_value()) << "VulkanRenderer::createSceneColor was not found";
+    const std::string body = renderer->substr(scene_color->first, scene_color->second - scene_color->first);
+    EXPECT_NE(body.find("createColorAttachment(sceneColor"), std::string::npos)
+      << "createSceneColor no longer makes the one HDR target";
+    EXPECT_NE(body.find("sceneExtent()"), std::string::npos)
+      << "the HDR target must be sized by the scene extent, the one place a render scale will change";
+    EXPECT_EQ(body.find("getNumberSwapChainImages"), std::string::npos)
+      << "createSceneColor counts the HDR target out per swapchain image";
 }

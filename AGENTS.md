@@ -1142,6 +1142,10 @@ OFF, so none of them fetches Kompute's `fmt`.
   around it. There is no `VkRenderPass` or `VkFramebuffer`, so `recreateSwapChain` rebuilds none
   (`BuildIntegrity.NoPassUsesARenderPassFramebufferOrLegacyBarrier`). A device without
   `dynamicRendering` and `synchronization2` is rejected at selection, with the reason logged.
+- The scene targets are one set for every frame in flight, never one per swapchain image, and only
+  the drawn raster path's exist (`ensureRasterPathTargets`). A pass's first barrier on one therefore
+  waits out every stage the previous frame used it in, and its size is `VulkanRenderer::sceneExtent()`,
+  the one scene extent ([`post-processing.md`](docs/source/post-processing.md#the-scene-targets)).
 - Buffer/image memory goes through VMA (allocator owned by `VulkanDevice`);
   `VulkanBuffer`/`VulkanImage` are move-only with destructor release (`cleanUp()` remains for
   explicit early teardown and is idempotent).

@@ -23,6 +23,38 @@ passes are `bloom/bloom.slang`'s fragment entries behind `post.slang`'s `SV_Vulk
 and taps `common/bloom_filter.slang`. Both modules' vector files, `tests/vectors/exposure.json` and
 `bloom_filter.json`, run on both targets (`Integration.SharedSlangKernelsMeetTheirVectors`).
 
+## The scene targets
+
+One set serves every frame in flight, as the Rust renderer's `RenderTargets` does, never one per swapchain image,
+all at `VulkanRenderer::sceneExtent()`, the one scene extent (the swapchain's, until a render scale):
+
+| Target | Format | B/px | Exists |
+| --- | --- | --- | --- |
+| scene HDR (`sceneColor`) | RGBA16F | 8 | always: every mode draws into it, post, bloom and the histogram read it |
+| forward depth, SSAO prepass depth | D32 | 8 | while the forward path is picked |
+| G-buffer normal, albedo, material, its depth | RGBA16F, RGBA8 sRGB, RGBA16F, D32 | 24 | while the deferred path is picked |
+| FXAA intermediate | the swapchain's | 4 | always |
+| path-traced history, traced depth | RGBA32F, R32F | 20 | on a device with ray tracing |
+| bloom's two, SSAO's two | RGBA16F, R8, at half the extent | 4.5 | always |
+| clouds, full and half resolution | RGBA16F | 10 | always |
+
+- **A raster path's targets exist from its first frame until the switch away**, as Rust's transient pool drops
+  what a frame's graph does not declare. `ensureRasterPathTargets` drains the GPU, frees the other path's targets,
+  makes the picked path's and rebinds SSAO's depth, the G-buffer sets and the clouds' depth. It runs in
+  `updateStateDueToUserInput` and again before `drawFrame` records, so no frame records against the other path's
+  targets. A traced frame keeps the picked path's: without a TLAS the same pick draws raster.
+- **Frames overlap on the queue, so each target's first barrier in a frame waits out the stages the last frame used
+  it in**: a pipeline barrier orders against everything submitted before it, where the per-image fence the targets
+  relied on before only ordered against the frame that used the same swapchain image.
+- **What it saves**, measured on llvmpipe (4 swapchain images) as the allocator's growth from 1200x768 to 1920x1080,
+  which `sceneTargetFootprint()` matches to the byte: every extent-sized image together held 206.5 B/px in both
+  modes before, 54.5 forward and 70.5 deferred after, so at 1080p 108 MiB forward and 139 MiB deferred instead of
+  408 MiB. The raster targets and post's alone are 20.5 and 36.5 B/px: plan C6's 12 and 32 plus the SSAO prepass on
+  the forward path and bloom's and SSAO's 4.5.
+- `VulkanRenderer::sceneTargetFootprint()` sums `vkGetImageMemoryRequirements` by row of this table;
+  `Integration.SceneTargetsAreOneSetOfTheDrawnRasterPath` pins one HDR target and one FXAA intermediate, and the
+  absent path, across switches, a swapchain recreation and the traced modes.
+
 ## The exposure buffer
 
 One device-local storage buffer of two floats, `[adapted EV, target EV]`, as the Rust renderer's
@@ -50,8 +82,8 @@ two RGBA16F targets with one linear clamp-to-edge sampler:
 
 - **Bright pass**: the HDR target sampled at the half-resolution texel's centre, the 2x2 average, with the clouds
   composited first when they draw (a sun they hide must not glow), times the exposure buffer's `2^EV`, less 1 per
-  channel (`bloom_bright`): only what the tonemap would show past white glows. One set per swapchain image, as the
-  HDR targets are per image.
+  channel (`bloom_bright`): only what the tonemap would show past white glows. One set per swapchain image, for its
+  uniform buffer; every set binds the one HDR target.
 - **Blur**: the separable 9-tap Gaussian (`bloom_tap_weight`, weights 0.227 to 0.016, summing to one within 6e-7),
   horizontal into the scratch target, vertical back into the output. It moves energy four half-resolution texels
   and no further, and keeps it.

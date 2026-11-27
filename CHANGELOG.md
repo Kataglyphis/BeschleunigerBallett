@@ -52,6 +52,18 @@ the GitHub releases themselves.
 
 ### Changed
 
+- One set of C++ scene targets for every frame in flight (plan C6 step 1). The HDR target, the G-buffer and FXAA's
+  intermediate were one per swapchain image, and both raster paths' targets always existed; now one HDR target
+  serves forward, deferred, ray and path tracing, and only the picked raster path's depth or G-buffer exists, made
+  on its first frame and freed by the switch away, as the Rust renderer's transient pool keeps only what a frame
+  declares (`ensureRasterPathTargets`). Each target's first barrier in a frame waits out the previous frame's reads,
+  which the per-image fence covered before; sync validation over every GPU suite found no hazard, and with the
+  forward pass's colour barrier emptied it reports the `WRITE_AFTER_READ` against the previous frame's post. Every
+  extent-sized image together held 206.5 bytes a pixel on llvmpipe (4 swapchain images) and now holds 54.5 forward
+  and 70.5 deferred: at 1080p 108 and 139 MiB instead of 408. Every scene target takes its size from
+  `VulkanRenderer::sceneExtent()`, the one place a render scale will change. The goldens' frames are byte-identical;
+  `Integration.SceneTargetsAreOneSetOfTheDrawnRasterPath` and
+  `GoldenRender.SharedSceneTargetsAreFreeOfCrossFrameHazards` pin the set and its barriers.
 - A KTX2 texture uploads as the blocks the device samples instead of an RGBA8 chain (plan B5 step 3, OxidANT pin
   `f0a325e`). `VulkanDevice` enables `textureCompressionBC`, `ETC2` and `ASTC_LDR` where offered and counts a family
   when each of its formats, sRGB and UNORM, samples, filters linearly and takes a copy (`BlockSupport`,

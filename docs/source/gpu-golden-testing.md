@@ -348,7 +348,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=108 runnable=106 integration=15 total=121 excluded=3 -->
+<!-- golden-counts: defined=109 runnable=107 integration=16 total=123 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -585,6 +585,16 @@ WRITE-AFTER-WRITE classes, both fixed the same day:
 
 `GoldenRender.DeferredFramesAndBlasRebuildsAreFreeOfSyncHazards` pins both: it turns sync
 validation on for its own harness, so it holds on any lane with validation layers.
+
+**The scene targets are one set for every frame in flight**
+([`post-processing.md`](post-processing.md#the-scene-targets)), so consecutive frames overlap on them
+and no fence orders one frame's reads before the next one's writes; the first barrier of each writer
+does, as a barrier's first scope holds everything submitted before it on the queue. The layer checks
+across submissions: with the forward pass's colour barrier given an empty source scope it reports
+`WRITE_AFTER_READ` at that barrier, on the scene HDR target post's draw read in another command buffer.
+`GoldenRender.SharedSceneTargetsAreFreeOfCrossFrameHazards` drives forward, deferred, RT and PT back
+to back with every reader of the HDR target on (histogram, bloom, post, FXAA), under its own sync
+validation.
 
 **`validate_sync` alone misses two classes**, both off by default in the 1.4.363 layer
 (measured 2026-11-16, with the barriers removed: 0 hazards by default):

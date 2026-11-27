@@ -670,6 +670,46 @@ TEST(GoldenRender, CloudCompositeAndTracedSkyAreFreeOfSyncHazards)
          "after the trace (SkyBox.cpp) or post after the clouds' dispatch (VulkanRenderer.cpp)";
 }
 
+// Every frame in flight shares the scene targets, so each first write must wait out the last frame's reads of them.
+TEST(GoldenRender, SharedSceneTargetsAreFreeOfCrossFrameHazards)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    ScopedSyncValidation sync_validation;
+    EngineHarness harness;
+    auto &renderer_vars = harness.useForwardRaster();
+    // Every reader of the HDR target: the histogram's compute pass, bloom's bright pass, post, and FXAA after it.
+    renderer_vars.auto_exposure = true;
+    renderer_vars.bloom_strength = 0.6F;
+    renderer_vars.ssao_strength = 0.7F;
+    renderer_vars.fxaaMode = FxaaMode::Always;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 1;
+    // From the first frame: the layer reports one message id ten times, then goes quiet, so warmup would spend them.
+    ScopedValidationErrorCounter validation_errors;
+    harness.render_frames(WARMUP_FRAMES);
+    // Back to back, each mode's first writer follows frames of its own and, on the switch, another mode's.
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    harness.render_frames(SETTLE_FRAMES);
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        renderer_vars.raytracing = true;
+        harness.render_frames(SETTLE_FRAMES);
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = true;
+        harness.render_frames(SETTLE_FRAMES);
+        renderer_vars.pathTracing = false;
+    }
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "synchronization validation logged an error - SYNC-HAZARD-WRITE-AFTER-READ if a pass's first barrier on the "
+         "shared HDR target, G-buffer or FXAA intermediate no longer waits out the previous frame's reads "
+         "(Rasterizer.cpp, DeferredRasterizer.cpp, Raytracing.cpp, PathTracing.cpp, PostStage.cpp)";
+}
+
 // Nothing else recreates the swapchain, so a dangling fence or stale framebuffer would pass every other test.
 TEST(GoldenRender, SwapchainRecreationKeepsRendering)
 {

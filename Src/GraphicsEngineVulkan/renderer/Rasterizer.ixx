@@ -12,7 +12,6 @@ module;
 export module kataglyphis.vulkan.rasterizer;
 
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
@@ -35,14 +34,19 @@ class Rasterizer
     Rasterizer(const Rasterizer &) = delete;
     Rasterizer &operator=(const Rasterizer &) = delete;
 
+    // Builds the pipelines only; the depth targets wait for createFrameTargets, as a deferred frame needs none.
     void init(const std::shared_ptr<VulkanDevice> &in_device,
-      VulkanSwapChain *swap_chain,
-      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-      vk::CommandPool &commandPool);
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
-    Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
+    // The depth and prepass depth at the scene extent, which recordCommands then draws at.
+    void createFrameTargets(vk::Extent2D extent, vk::CommandPool commandPool);
+    void releaseFrameTargets() { releaseFrameTextures(); }
+    [[nodiscard]] bool hasFrameTargets() const { return depthBufferImage != nullptr; }
+    // The images createFrameTargets made, none while released.
+    [[nodiscard]] std::vector<vk::Image> frameTargetImages() const;
+
     vk::ImageView getDepthImageView() const { return depthBufferImage->getImageView(); }
     // SSAO's depth: the prepass's, which the forward pass does not share, left in eShaderReadOnlyOptimal.
     vk::ImageView getPrepassDepthImageView() const { return prepassDepthImage->getImageView(); }
@@ -57,8 +61,9 @@ class Rasterizer
     /// deletes shadows rather than saving work.
     /// `eye` orders the glTF BLEND meshes, drawn after the opaque ones, back to front.
     /// `drawSky` records the sky between the two, inside the pass, with its depth attached.
+    /// `sceneColor` is the HDR target every frame in flight shares, so its barrier waits out the last frame's reads.
     void recordCommands(vk::CommandBuffer &commandBuffer,
-      uint32_t image_index,
+      Kataglyphis::Texture &sceneColor,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const glm::vec3 &eye,
@@ -77,7 +82,8 @@ class Rasterizer
     unsigned int getMeshesDrawn() const { return meshesDrawn; }
     unsigned int getMeshesConsidered() const { return meshesConsidered; }
 
-    void recreateFrameResources(vk::CommandPool commandPool);
+    // At a new scene extent; a released path stays released.
+    void recreateFrameResources(vk::Extent2D extent, vk::CommandPool commandPool);
 
     void cleanUp();
 
@@ -96,13 +102,12 @@ class Rasterizer
     unsigned int meshesDrawn{ 0 };
     unsigned int meshesConsidered{ 0 };
     std::shared_ptr<VulkanDevice> device{ nullptr };
-    VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
     std::unique_ptr<Kataglyphis::Texture> prepassDepthImage;
-    // Resolved once by createTextures(), which init() always runs before
-    // createGraphicsPipeline() - reuse it there rather than querying again, so the
+    // The extent the targets were made at, which both passes render at.
+    vk::Extent2D targetExtent{};
+    // Resolved once by init(), before createGraphicsPipeline() and any target, so the
     // pipeline's depth format and the image it renders to cannot diverge.
     vk::Format depth_format{ vk::Format::eUndefined };
 
@@ -116,7 +121,7 @@ class Rasterizer
     vk::Pipeline prepass_pipeline{};
     vk::PipelineLayout pipeline_layout{};
 
-    void createTextures(vk::CommandPool &commandPool);
+    void createTextures(vk::CommandPool commandPool);
     void releaseFrameTextures();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void destroyTransparentPipeline();

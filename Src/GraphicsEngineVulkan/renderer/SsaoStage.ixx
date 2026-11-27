@@ -1,5 +1,6 @@
 module;
 
+#include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
@@ -47,6 +48,9 @@ class SsaoStage
     [[nodiscard]] Kataglyphis::Texture &getOcclusion() { return *blurred; }
     [[nodiscard]] vk::Sampler getSampler() const { return sampler; }
     [[nodiscard]] vk::Extent2D getExtent() const { return extent; }
+    // Both half-resolution targets, for the scene-target footprint.
+    [[nodiscard]] std::array<vk::Image, 2> targetImages() const
+    { return { raw ? raw->getImage() : vk::Image{}, blurred ? blurred->getImage() : vk::Image{} }; }
 
     void cleanUp();
 

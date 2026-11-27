@@ -8,6 +8,7 @@
 #include <functional>
 #include <glm/glm.hpp>
 #include <span>
+#include <tuple>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -37,13 +38,11 @@ using namespace Kataglyphis::VulkanRendererInternals;
 DeferredRasterizer::DeferredRasterizer() = default;
 
 void DeferredRasterizer::init(const std::shared_ptr<VulkanDevice> &in_device,
-  VulkanSwapChain *swap_chain,
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     device = in_device;
-    vulkanSwapChain = swap_chain;
+    depth_format = chooseDepthFormat(device->getPhysicalDevice());
 
-    createTextures();
     createPushConstantRange();
     createPipelines(descriptorSetLayouts);
 }
@@ -56,59 +55,52 @@ void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout
     createPipelines(descriptor_set_layouts);
 }
 
-Kataglyphis::Texture &DeferredRasterizer::getOffscreenTexture(uint32_t index) { return *offscreenTextures[index]; }
-
 void DeferredRasterizer::setPushConstant(PushConstantRasterizer push_constant) { pushConstant = push_constant; }
 
 void DeferredRasterizer::createTextures()
 {
-    uint32_t count = vulkanSwapChain->getNumberSwapChainImages();
-    offscreenTextures.resize(count);
-    gBufferNormals.resize(count);
-    gBufferAlbedos.resize(count);
-    gBufferMaterials.resize(count);
-
-    const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
-    auto createAttachment = [&](std::vector<std::unique_ptr<Texture>> &textures,
-                              vk::Format format,
-                              vk::ImageUsageFlags usage,
-                              const char *name) {
-        for (uint32_t i = 0; i < count; i++) {
-            auto tex = std::make_unique<Texture>();
-            createColorAttachment(*tex, device, extent, format, usage, name);
-            textures[i] = std::move(tex);
-        }
+    const vk::Extent2D extent = targetExtent;
+    auto createAttachment = [&](vk::Format format, vk::ImageUsageFlags usage, const char *name) {
+        auto tex = std::make_unique<Texture>();
+        createColorAttachment(*tex, device, extent, format, usage, name);
+        return tex;
     };
 
-    // Use specific formats for GBuffer
-    createAttachment(offscreenTextures,
-      FINAL_FORMAT,
-      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-        | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc,
-      "deferred hdr");
     // Sampled, no position target: the lighting pass texel-fetches these and rebuilds position from depth.
-    createAttachment(gBufferNormals,
-      GBUFFER_NORMAL_FORMAT,
+    gBufferNormal = createAttachment(GBUFFER_NORMAL_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
       "g-buffer normal");
-    createAttachment(gBufferAlbedos,
-      GBUFFER_ALBEDO_FORMAT,
+    gBufferAlbedo = createAttachment(GBUFFER_ALBEDO_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
       "g-buffer albedo");
-    createAttachment(gBufferMaterials,
-      GBUFFER_MATERIAL_FORMAT,
+    gBufferMaterial = createAttachment(GBUFFER_MATERIAL_FORMAT,
       vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
       "g-buffer material");
 
     // No transition here: recordCommands() performs the first one from eUndefined every frame.
     depthBufferImage = std::make_unique<Texture>();
     // Sampled view: exactly one aspect, not depthStencilTransitionAspect. See its doc comment.
-    depth_format = createDepthAttachment(*depthBufferImage,
+    std::ignore = createDepthAttachment(*depthBufferImage,
       device,
       extent,
       vk::ImageUsageFlagBits::eSampled,
       vk::ImageAspectFlagBits::eDepth,
       "deferred depth");
+}
+
+void DeferredRasterizer::createFrameTargets(vk::Extent2D extent)
+{
+    releaseFrameTextures();
+    targetExtent = extent;
+    createTextures();
+}
+
+auto DeferredRasterizer::frameTargetImages() const -> std::vector<vk::Image>
+{
+    if (!hasFrameTargets()) { return {}; }
+    return {
+        gBufferNormal->getImage(), gBufferAlbedo->getImage(), gBufferMaterial->getImage(), depthBufferImage->getImage()
+    };
 }
 
 void DeferredRasterizer::createPushConstantRange()
@@ -146,31 +138,20 @@ void DeferredRasterizer::destroyTransparentPipeline()
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextures()
 {
-    for (auto &tex : offscreenTextures) {
-        if (tex) tex->cleanUp();
+    for (auto *tex : { &gBufferNormal, &gBufferAlbedo, &gBufferMaterial }) {
+        if (*tex) { (*tex)->cleanUp(); }
+        tex->reset();
     }
-    offscreenTextures.clear();
-    for (auto &tex : gBufferNormals) {
-        if (tex) tex->cleanUp();
-    }
-    gBufferNormals.clear();
-    for (auto &tex : gBufferAlbedos) {
-        if (tex) tex->cleanUp();
-    }
-    gBufferAlbedos.clear();
-    for (auto &tex : gBufferMaterials) {
-        if (tex) tex->cleanUp();
-    }
-    gBufferMaterials.clear();
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
 }
 
-void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources(vk::Extent2D extent)
 {
+    if (!hasFrameTargets()) { return; }
     releaseFrameTextures();
 
-    createTextures();
+    createFrameTargets(extent);
 }
 
 void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
@@ -234,7 +215,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 }
 
 unsigned int DeferredRasterizer::recordSkyAndTransparentPass(vk::CommandBuffer &commandBuffer,
-  uint32_t image_index,
+  Kataglyphis::Texture &sceneColor,
   Kataglyphis::Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const std::vector<BlendDraw> &blend_draws,
@@ -242,7 +223,7 @@ unsigned int DeferredRasterizer::recordSkyAndTransparentPass(vk::CommandBuffer &
   vk::ImageAspectFlags depth_aspect,
   const std::function<void(vk::CommandBuffer)> &drawSky)
 {
-    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
+    const vk::Image offscreen_image = sceneColor.getImage();
     const vk::Image depth_image = depthBufferImage->getImage();
 
     // The sky and BLEND go onto the lit colour; the depth the lighting pass sampled goes back to an attachment for the test.
@@ -265,12 +246,11 @@ unsigned int DeferredRasterizer::recordSkyAndTransparentPass(vk::CommandBuffer &
     };
     recordImageBarriers(commandBuffer, to_blend);
 
-    const vk::RenderingAttachmentInfo colour_attachment =
-      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::AttachmentLoadOp::eLoad,
-        vk::AttachmentStoreOp::eStore,
-        vk::ClearValue{});
+    const vk::RenderingAttachmentInfo colour_attachment = buildRenderingAttachmentInfo(sceneColor.getImageView(),
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AttachmentLoadOp::eLoad,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{});
     // Kept: the clouds stop their march at it.
     const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(depthBufferImage->getImageView(),
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
@@ -308,7 +288,7 @@ unsigned int DeferredRasterizer::recordSkyAndTransparentPass(vk::CommandBuffer &
 }
 
 void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
-  uint32_t image_index,
+  Kataglyphis::Texture &sceneColor,
   Kataglyphis::Scene *scene,
   std::span<const vk::DescriptorSet> descriptorSets,
   const glm::vec3 &eye,
@@ -323,15 +303,14 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
         return;
     }
 
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    const vk::Image offscreen_image = offscreenTextures[image_index]->getImage();
-    const std::array<vk::Image, 3> gbuffer_images = { gBufferNormals[image_index]->getImage(),
-        gBufferAlbedos[image_index]->getImage(),
-        gBufferMaterials[image_index]->getImage() };
+    const vk::Image offscreen_image = sceneColor.getImage();
+    const std::array<vk::Image, 3> gbuffer_images = {
+        gBufferNormal->getImage(), gBufferAlbedo->getImage(), gBufferMaterial->getImage()
+    };
     const vk::Image depth_image = depthBufferImage->getImage();
     const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
 
-    // UNDEFINED: all cleared; the shared depth waits out the clouds' read, the colour targets their last sampling.
+    // UNDEFINED: all cleared; every frame in flight shares them, so this waits out the last one's reads and traces.
     const auto colour_to_attachment = [](vk::Image image) {
         return buildImageMemoryBarrier(image,
           vk::ImageLayout::eUndefined,
@@ -360,17 +339,17 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     // Geometry pass: the three G-buffer targets and depth.
     const vk::ClearValue clear_zero{ vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } } };
     const std::array<vk::RenderingAttachmentInfo, 3> gbuffer_attachments = {
-        buildRenderingAttachmentInfo(gBufferNormals[image_index]->getImageView(),
+        buildRenderingAttachmentInfo(gBufferNormal->getImageView(),
           vk::ImageLayout::eColorAttachmentOptimal,
           vk::AttachmentLoadOp::eClear,
           vk::AttachmentStoreOp::eStore,
           clear_zero),
-        buildRenderingAttachmentInfo(gBufferAlbedos[image_index]->getImageView(),
+        buildRenderingAttachmentInfo(gBufferAlbedo->getImageView(),
           vk::ImageLayout::eColorAttachmentOptimal,
           vk::AttachmentLoadOp::eClear,
           vk::AttachmentStoreOp::eStore,
           clear_zero),
-        buildRenderingAttachmentInfo(gBufferMaterials[image_index]->getImageView(),
+        buildRenderingAttachmentInfo(gBufferMaterial->getImageView(),
           vk::ImageLayout::eColorAttachmentOptimal,
           vk::AttachmentLoadOp::eClear,
           vk::AttachmentStoreOp::eStore,
@@ -382,9 +361,9 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
       vk::AttachmentLoadOp::eClear,
       vk::AttachmentStoreOp::eStore,
       vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
-    commandBuffer.beginRendering(buildRenderingInfo(swap_chain_extent, gbuffer_attachments, &depth_attachment));
+    commandBuffer.beginRendering(buildRenderingInfo(targetExtent, gbuffer_attachments, &depth_attachment));
 
-    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
+    setFullExtentViewportAndScissor(commandBuffer, targetExtent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
@@ -427,16 +406,15 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
     if (beforeLighting) { beforeLighting(commandBuffer); }
 
     // Lighting pass: one fullscreen triangle into the offscreen target.
-    const vk::RenderingAttachmentInfo lighting_attachment =
-      buildRenderingAttachmentInfo(offscreenTextures[image_index]->getImageView(),
-        vk::ImageLayout::eColorAttachmentOptimal,
-        vk::AttachmentLoadOp::eClear,
-        vk::AttachmentStoreOp::eStore,
-        clear_zero);
-    commandBuffer.beginRendering(buildRenderingInfo(
-      swap_chain_extent, std::span<const vk::RenderingAttachmentInfo>(&lighting_attachment, 1), nullptr));
+    const vk::RenderingAttachmentInfo lighting_attachment = buildRenderingAttachmentInfo(sceneColor.getImageView(),
+      vk::ImageLayout::eColorAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      clear_zero);
+    commandBuffer.beginRendering(
+      buildRenderingInfo(targetExtent, std::span<const vk::RenderingAttachmentInfo>(&lighting_attachment, 1), nullptr));
 
-    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
+    setFullExtentViewportAndScissor(commandBuffer, targetExtent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, lightingPipeline);
 
@@ -454,7 +432,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
 
     const std::vector<BlendDraw> blend_draws = collectBlendDraws(scene, cameraFrustum, eye);
     meshesDrawn += recordSkyAndTransparentPass(
-      commandBuffer, image_index, scene, descriptorSets, blend_draws, swap_chain_extent, depth_aspect, drawSky);
+      commandBuffer, sceneColor, scene, descriptorSets, blend_draws, targetExtent, depth_aspect, drawSky);
 
     // Post samples the lit result.
     recordImageBarrier(commandBuffer,

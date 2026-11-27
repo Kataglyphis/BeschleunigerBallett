@@ -1,5 +1,6 @@
 module;
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -55,6 +56,9 @@ class BloomStage
     [[nodiscard]] Kataglyphis::Texture &getOutput() { return *output; }
     [[nodiscard]] vk::Sampler getSampler() const { return sampler; }
     [[nodiscard]] vk::Extent2D getExtent() const { return extent; }
+    // Both half-resolution targets, for the scene-target footprint.
+    [[nodiscard]] std::array<vk::Image, 2> targetImages() const
+    { return { output ? output->getImage() : vk::Image{}, scratch ? scratch->getImage() : vk::Image{} }; }
 
     void cleanUp();
 

@@ -12,7 +12,6 @@ module;
 export module kataglyphis.vulkan.deferred_rasterizer;
 
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
@@ -28,16 +27,22 @@ class DeferredRasterizer
     DeferredRasterizer(const DeferredRasterizer &) = delete;
     DeferredRasterizer &operator=(const DeferredRasterizer &) = delete;
 
+    // Builds the pipelines only; the G-buffer waits for createFrameTargets, as a forward frame needs none.
     void init(const std::shared_ptr<VulkanDevice> &in_device,
-      VulkanSwapChain *swap_chain,
       std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
-    Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
-    vk::ImageView getGBufferNormal(uint32_t index) const { return gBufferNormals[index]->getImageView(); }
-    vk::ImageView getGBufferAlbedo(uint32_t index) const { return gBufferAlbedos[index]->getImageView(); }
-    vk::ImageView getGBufferMaterial(uint32_t index) const { return gBufferMaterials[index]->getImageView(); }
+    // The G-buffer and its depth at the scene extent, which recordCommands then draws at.
+    void createFrameTargets(vk::Extent2D extent);
+    void releaseFrameTargets() { releaseFrameTextures(); }
+    [[nodiscard]] bool hasFrameTargets() const { return depthBufferImage != nullptr; }
+    // The images createFrameTargets made, none while released.
+    [[nodiscard]] std::vector<vk::Image> frameTargetImages() const;
+
+    vk::ImageView getGBufferNormal() const { return gBufferNormal->getImageView(); }
+    vk::ImageView getGBufferAlbedo() const { return gBufferAlbedo->getImageView(); }
+    vk::ImageView getGBufferMaterial() const { return gBufferMaterial->getImageView(); }
     vk::ImageView getDepthBufferImageView() const { return depthBufferImage->getImageView(); }
     vk::Format getDepthFormat() const { return depth_format; }
 
@@ -51,8 +56,9 @@ class DeferredRasterizer
     /// deletes shadows rather than saving work.
     /// `afterGeometryPass` runs right after the G-buffer pass, `beforeLighting` once its targets are sampleable (SSAO).
     /// `drawSky` records the sky into the lit target before BLEND, inside a pass with the G-buffer depth attached.
+    /// `sceneColor` is the HDR target every frame in flight shares, the lighting pass's and BLEND's.
     void recordCommands(vk::CommandBuffer &commandBuffer,
-      uint32_t image_index,
+      Kataglyphis::Texture &sceneColor,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const glm::vec3 &eye,
@@ -67,7 +73,8 @@ class DeferredRasterizer
     unsigned int getMeshesDrawn() const { return meshesDrawn; }
     unsigned int getMeshesConsidered() const { return meshesConsidered; }
 
-    void recreateFrameResources();
+    // At a new scene extent; a released path stays released.
+    void recreateFrameResources(vk::Extent2D extent);
 
     void cleanUp();
 
@@ -90,19 +97,16 @@ class DeferredRasterizer
     unsigned int meshesDrawn{ 0 };
     unsigned int meshesConsidered{ 0 };
     std::shared_ptr<VulkanDevice> device{ nullptr };
-    VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    // The final color output (offscreen texture, consumed by PostStage)
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
-
-    // GBuffer attachments: written by the geometry pass, sampled by the lighting pass
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferNormals;
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferAlbedos;
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials;// Metallic, Roughness, AO
+    // GBuffer attachments: written by the geometry pass, sampled by the lighting pass; one for every frame in flight.
+    std::unique_ptr<Kataglyphis::Texture> gBufferNormal;
+    std::unique_ptr<Kataglyphis::Texture> gBufferAlbedo;
+    std::unique_ptr<Kataglyphis::Texture> gBufferMaterial;// Metallic, Roughness, AO
 
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
-    // Resolved once by createTextures(), which init() always runs before
-    // createPipelines() - reuse it there rather than querying again, so the
+    // The extent the targets were made at, which every pass here renders at.
+    vk::Extent2D targetExtent{};
+    // Resolved once by init(), before createPipelines() and any target, so the
     // pipeline's depth format and the image it renders to cannot diverge.
     vk::Format depth_format{ vk::Format::eUndefined };
 
@@ -125,7 +129,7 @@ class DeferredRasterizer
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void destroyTransparentPipeline();
     unsigned int recordSkyAndTransparentPass(vk::CommandBuffer &commandBuffer,
-      uint32_t image_index,
+      Kataglyphis::Texture &sceneColor,
       Kataglyphis::Scene *scene,
       std::span<const vk::DescriptorSet> descriptorSets,
       const std::vector<BlendDraw> &blend_draws,

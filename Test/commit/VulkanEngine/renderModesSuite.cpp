@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -179,7 +180,7 @@ TEST(RenderModeUnit, FxaaFiltersRasterFramesOrEveryFrame)
         EXPECT_FALSE(fxaaFilters(mode, false, false))
           << "post rendered into the intermediate of an FXAA that cannot run";
     }
-    EXPECT_FALSE(FxaaStage{}.ready(0)) << "a stage without its sets and pipeline reported ready";
+    EXPECT_FALSE(FxaaStage{}.ready()) << "a stage without its sets and pipeline reported ready";
     // Forward has no MSAA yet, so the editor starts with FXAA on every frame.
     EXPECT_EQ(GUIRendererSharedVars{}.fxaaMode, FxaaMode::Always);
     // The labels the editor shows, in the enum's order.
@@ -270,4 +271,97 @@ TEST(Integration, RasterSegmentCancelsAPendingTracingPick)
       << "the press reached no item: the switch's ID scope moved, so this test presses nothing";
     EXPECT_FALSE(renderer_vars.raytracing) << "pressing the shown Raster segment left the pending ray-tracing pick";
     EXPECT_FALSE(renderer_vars.pathTracing);
+}
+
+// One set of scene targets serves every frame in flight, and only the drawn raster path's exist, as Rust's pool keeps.
+TEST(Integration, SceneTargetsAreOneSetOfTheDrawnRasterPath)
+{
+    SKIP_WITHOUT_GPU();
+
+    // A small scene: the targets are measured, and its TLAS lets the traced frames run.
+    const ScopedEnvVar rig("KATAGLYPHIS_MODEL_OVERRIDE", "Models/ShadowTest/shadow_rig.obj");
+    EditorEngine engine;
+    auto &renderer_vars = engine.settings.renderer;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    run_frames(engine, 2, "forward");
+    ASSERT_GE(engine.renderer->swapChainImageCount(), 2U) << "one swapchain image cannot tell one set from one each";
+
+    const auto expect_targets_of = [&engine](RasterizationMode drawn, const std::string &when) {
+        const Kataglyphis::SceneTargetFootprint footprint = engine.renderer->sceneTargetFootprint();
+        const vk::Extent2D extent = engine.renderer->sceneExtent();
+        EXPECT_EQ(footprint.extent, extent) << when;
+        const vk::DeviceSize pixels = static_cast<vk::DeviceSize>(extent.width) * extent.height;
+        // RGBA16F, so one image holds at least 8 bytes a pixel and a second one would double it.
+        EXPECT_EQ(footprint.color.images, 1U) << when << ": the HDR target is not one for every frame in flight";
+        EXPECT_GE(footprint.color.bytes, pixels * 8U) << when;
+        EXPECT_LT(footprint.color.bytes, pixels * 16U) << when;
+        EXPECT_EQ(footprint.fxaa.images, 1U) << when << ": FXAA's intermediate is not one for every frame in flight";
+        const bool forward = drawn == RasterizationMode::Forward;
+        // The depth and the SSAO prepass; the three G-buffer targets and their depth.
+        EXPECT_EQ(footprint.forward.images, forward ? 2U : 0U) << when << ": the forward targets";
+        EXPECT_EQ(footprint.deferred.images, forward ? 0U : 4U) << when << ": the deferred targets";
+        if (forward) {
+            EXPECT_GE(footprint.forward.bytes, pixels * 8U) << when;
+        } else {
+            EXPECT_GE(footprint.deferred.bytes, pixels * 24U) << when;
+        }
+    };
+    expect_targets_of(RasterizationMode::Forward, "forward start");
+
+    // The first deferred frame allocates the G-buffer, and the forward depth goes.
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    run_frames(engine, 2, "deferred");
+    expect_targets_of(RasterizationMode::Deferred, "deferred");
+
+    // A resize recreates only the drawn path's.
+    engine.renderer->recreateSwapChain();
+    run_frames(engine, 1, "deferred-resized");
+    expect_targets_of(RasterizationMode::Deferred, "deferred after a swapchain recreation");
+
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    run_frames(engine, 2, "forward-again");
+    expect_targets_of(RasterizationMode::Forward, "forward again");
+
+    // The footprint holds every extent-sized image, so a target made per swapchain image grows the allocator past it.
+    const auto allocated = [&engine] {
+        VmaTotalStatistics stats{};
+        vmaCalculateStatistics(engine.renderer->sharedDevice()->getVmaAllocator(), &stats);
+        return static_cast<double>(stats.total.statistics.allocationBytes);
+    };
+    const double allocated_before = allocated();
+    const double footprint_before = static_cast<double>(engine.renderer->sceneTargetFootprint().totalBytes());
+    glfwSetWindowSize(engine.window->get_window(), 1000, 640);
+    run_frames(engine, 2, "forward-smaller");
+    int framebuffer_width = 0;
+    int framebuffer_height = 0;
+    glfwGetFramebufferSize(engine.window->get_window(), &framebuffer_width, &framebuffer_height);
+    ASSERT_EQ(engine.renderer->sceneExtent(),
+      (vk::Extent2D{ static_cast<uint32_t>(framebuffer_width), static_cast<uint32_t>(framebuffer_height) }))
+      << "the scene extent did not follow the window";
+    const double footprint_shrink =
+      footprint_before - static_cast<double>(engine.renderer->sceneTargetFootprint().totalBytes());
+    ASSERT_GT(footprint_shrink, 0.0) << "a smaller window freed no target memory";
+    EXPECT_NEAR(allocated_before - allocated(), footprint_shrink, 0.01 * footprint_shrink + 65536.0)
+      << "the allocator shrank by more or less than the scene targets did: an extent-sized image is missing from "
+         "sceneTargetFootprint(), or is made once per swapchain image";
+    expect_targets_of(RasterizationMode::Forward, "forward at a smaller extent");
+
+    // A traced frame keeps the picked raster path's: without a TLAS the same pick draws raster again.
+    if (engine.renderer->supportsHardwareRaytracing()) {
+        // One path per pixel and frame: the targets are measured, not the image.
+        renderer_vars.pathTracingSamplesPerPixel = 1;
+        renderer_vars.pathTracingMaxBounces = 1;
+        renderer_vars.raytracing = true;
+        run_frames(engine, 2, "ray traced");
+        ASSERT_TRUE(engine.feedback.tracingReady) << "the shadow rig has no TLAS";
+        expect_targets_of(RasterizationMode::Forward, "ray traced");
+        EXPECT_EQ(engine.renderer->sceneTargetFootprint().traced.images, 2U) << "the path tracer's history and depth";
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = true;
+        renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+        run_frames(engine, 2, "path traced");
+        expect_targets_of(RasterizationMode::Deferred, "path traced with deferred picked");
+        renderer_vars.pathTracing = false;
+    }
+    ASSERT_FALSE(engine.renderer->hasDeviceLost());
 }
