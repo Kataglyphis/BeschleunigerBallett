@@ -1,4 +1,5 @@
 module;
+#include "renderer/BreadcrumbTrail.hpp"
 #include "renderer/PathTracingHistory.hpp"
 #include <algorithm>
 #include <array>
@@ -23,6 +24,7 @@ import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.frame_capture;
 import kataglyphis.vulkan.frame_sync;
+import kataglyphis.vulkan.gpu_breadcrumbs;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.frustum;
@@ -120,7 +122,7 @@ class VulkanRenderer
     // that App::run() still tears down normally, but the run itself must
     // still be reported as a failure.
     [[nodiscard]] bool hasFatalFrameError() const { return fatal_frame_error; }
-    // Test seam, called by no production code: every later fence wait reports eErrorDeviceLost, as after a real loss.
+    // Test seam, called by no production code: later fence and idle waits report eErrorDeviceLost, as after a loss.
     void simulateDeviceLossForTesting() { device_loss_simulated = true; }
     // Test seam, called by no production code: fresh ambient maps whose bake bails, as after a failed skybox upload.
     void simulateFailedAmbientBakeForTesting();
@@ -168,7 +170,8 @@ class VulkanRenderer
     void requestBloomCapture() { bloomCapture.request(); }
     std::vector<uint8_t> takeCapturedBloomFrame(uint32_t &outWidth, uint32_t &outHeight);
 
-    void recreateSwapChain();
+    // False when the device failed its idle wait: the run ends and nothing was rebuilt.
+    bool recreateSwapChain();
     void reprovisionPerImageResources();
 
     // The extent every scene target is sized at and the scene passes draw at; the swapchain's, until a render scale.
@@ -376,6 +379,13 @@ class VulkanRenderer
     // slice sizing and the "never read an unrecorded slice" guard are
     // load-bearing).
     GpuTimingSubsystem gpuTiming;
+    // A marker at every label scope of a frame, read back after a device loss; sized per swapchain image too.
+    GpuBreadcrumbs breadcrumbs;
+    // Ends the run on a failed Vulkan call; a device loss also logs its breadcrumbs, once.
+    void endRunOnVulkanError(const char *message, vk::Result errorCode);
+    // Logs the breadcrumbs and the fault info once per device, on whichever path first saw the loss.
+    void reportDeviceLossOnce();
+    bool device_loss_reported{ false };
 
     // -- headless frame capture (see requestFrameCapture above); see
     // kataglyphis.vulkan.frame_capture for the arm/record/bind/take lifecycle.

@@ -74,6 +74,15 @@ the GitHub releases themselves.
   `Invoke-VulkanValidationRun -GpuAssisted` (ANTfrastructure pin). `BuildIntegrity.GpuAvJobRunsItsGoldenListWithGpuAvOn`
   holds the list to runnable goldens, since ctest ignores a line that names no test, and the job's ctest step to both
   settings and to a list path that resolves from its build directory, where ctest runs.
+- Device-loss breadcrumbs and `VK_EXT_device_fault` (plan C10). A device loss now logs one block, once: for each
+  swapchain image's last submitted frame, the last scope the GPU completed and the first it did not
+  (`main > pathtracing` for the tracer inside the unlabelled main stage), read from `VK_AMD_buffer_marker` markers at
+  every debug-label scope or from `VK_NV_device_diagnostic_checkpoints`, or, with neither, the scopes each frame
+  recorded; then `vkGetDeviceFaultInfoEXT`'s description, faulting address ranges and vendor codes. Each extension,
+  and `VK_AMD_device_coherent_memory` for the marker buffer, is requested only where the device lists it and its
+  feature; the startup log names what is on. `GpuBreadcrumbsUnit.*` test the trail, the analysis and the report with
+  fake markers, `Integration.SimulatedDeviceLossLogsTheBreadcrumbsOfEachImagesLastFrameOnce` the block after a
+  simulated loss. How to read the block: `docs/source/gpu-golden-testing.md`.
 
 ### Changed
 
@@ -111,6 +120,10 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- A device loss first seen by a swapchain recreation's idle wait (a resize, or a present out of date, while the GPU
+  hangs) ends the run as a failure and rebuilds nothing. The wait's result was dropped, and the recreation went on
+  into `vkCreateSwapchainKHR`, whose failure aborts.
+  `Integration.ALossFirstSeenBySwapchainRecreationLogsTheBreadcrumbsAndRebuildsNothing`.
 - The profiling job's gcc build takes two units at a time too (`--mb-per-job 6500`): on arm64 run 46036623338
   (1721d469) lost its runner at 619 of 625 steps with `VulkanRenderer.ixx` compiling, at the default three jobs.
 - The riscv64 lane's `raster` GPU shard is four, `raster-1` to `raster-4`, each every fourth of its tests by ctest

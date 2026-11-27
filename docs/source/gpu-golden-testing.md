@@ -348,7 +348,7 @@ an image transition, or the loader upload path:
    plus every `Integration` test; the counts are in the machine-readable marker below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the suite source.
 
-<!-- golden-counts: defined=110 runnable=108 integration=16 total=124 excluded=3 -->
+<!-- golden-counts: defined=110 runnable=108 integration=18 total=126 excluded=3 -->
 
 This makes what the container can only compile-check (device creation, image barriers, the
 deferred/forward command streams, path/ray tracing) verifiable.
@@ -691,6 +691,49 @@ VMA packs buffers side by side into shared blocks (`VulkanBuffer::create`). Plan
   `vk_layer_settings.txt` for that run; pass `-GtestFilter` with the list's names joined by `:` to
   run the same goldens.
 
+## Device loss: breadcrumbs and fault info
+
+A device loss (`VK_ERROR_DEVICE_LOST` from a fence wait, a submit, a capture's wait or the idle
+wait before a swapchain recreation, which then rebuilds nothing) logs one block at error level,
+once per device. Its header lines start with `Device loss`, its detail lines with two spaces:
+
+```
+Device loss breadcrumbs from VK_AMD_buffer_marker, each image's last submitted frame, oldest first:
+  frame 812 (image 1): completed
+  frame 813 (image 2): last completed none, first unfinished 'main > pathtracing' (started)
+  frame 814 (image 0): not started
+Device loss fault info: <the driver's description>
+  invalid read at 0x00000001a2b3c000..0x00000001a2b3cfff
+  vendor fault 0x2a, data 0xbeef: <the driver's description>
+```
+
+- **The scopes** are the frame's debug labels and the stages around them. `GpuBreadcrumbs`
+  observes every `beginCmdLabel` and `endCmdLabel` while `record_commands` runs, with or without
+  `VK_EXT_debug_utils`, and the stage bracket adds the stages that carry no label, so the tracer
+  is `main > pathtracing`. Each swapchain image's command buffer keeps one trail of names on the CPU.
+- **The markers.** With `VK_AMD_buffer_marker` each begin and end writes its marker at the top and
+  at the bottom of the pipe, each into its own slot of a host-visible buffer, device-coherent and
+  uncached where `VK_AMD_device_coherent_memory` is offered, so a hang strands no marker in a
+  cache. A bottom marker lands once every command before it finished, a top one once the GPU's
+  front end got there, which may be far ahead of the stuck work. So the last bottom marker
+  decides: the first unfinished scope is the innermost one open there, else the next one to
+  begin, `started` only if its top marker landed. With `VK_NV_device_diagnostic_checkpoints` the
+  same points set a checkpoint, read per queue with `vkGetQueueCheckpointData2NV`. With neither,
+  the block lists the scopes of each swapchain image's last submitted frame.
+- **Fault info.** With `VK_EXT_device_fault` and its `deviceFault` feature the block adds
+  `vkGetDeviceFaultInfoEXT`'s description, faulting address ranges and vendor codes. The vendor
+  binary dump stays off.
+- **Gated by the device.** Each extension and feature is requested only where the device lists it,
+  so a device without them is created as before and records no marker; the startup line
+  `Device-loss diagnostics:` says what is on. The Linux image's llvmpipe offers none of these
+  extensions, so CI sees the scope lists; the markers and the fault query run only on a GPU that lists them.
+- **Tested without a loss.** `GpuBreadcrumbsUnit.*` drive the trail, the analysis and the report
+  with fake marker values, `PhysicalDeviceChoicesUnit` the gating, and
+  `Integration.SimulatedDeviceLossLogsTheBreadcrumbsOfEachImagesLastFrameOnce` and
+  `ALossFirstSeenBySwapchainRecreationLogsTheBreadcrumbsAndRebuildsNothing` the block after
+  `simulateDeviceLossForTesting()`. A simulated loss skips the checkpoint and fault queries, which
+  are valid only on a lost device.
+
 ## Known issue: path-tracing compute device-lost on the large dinosaur mesh
 
 `GoldenRender.PathTracingAccumulatesAndConverges`,
@@ -698,11 +741,13 @@ VMA packs buffers side by side into shared blocks (`VulkanBuffer::create`). Plan
 `Integration.RenderModesSelectableInGui` hard-aborted (`VK_ERROR_DEVICE_LOST`, zero preceding
 validation errors) on the RX 9070 XT when path tracing ran against the shipped debug scene
 (`Models/Dinosaurs/dinosaurs.obj`, hundreds of thousands of vertices); GPU capture tooling
-(RenderDoc/PIX/AMD crash dumps) was not available here. The cause was found 2026-08-05 and the
-three now pass on llvmpipe in CI. What is left is the `BACKLOG.md` entry "Confirm on the RX 9070
-XT that the path-tracing device loss is gone", which also says when to retire this section. The
-full bisection was the "Localize (and fix if cheap) the path-tracing compute
-`VK_ERROR_DEVICE_LOST`" entry, in `BACKLOG.md`'s history before `dbcc8873`.
+(RenderDoc/PIX/AMD crash dumps) was not available here; a recurrence now logs the
+[device-loss block](#device-loss-breadcrumbs-and-fault-info), which names the scope it hit. The
+cause was found 2026-08-05 and the three now pass on llvmpipe in CI. What is left is the
+`BACKLOG.md` entry "Confirm on the RX 9070 XT that the path-tracing device loss is gone", which
+also says when to retire this section. The full bisection was the "Localize (and fix if cheap)
+the path-tracing compute `VK_ERROR_DEVICE_LOST`" entry, in `BACKLOG.md`'s history before
+`dbcc8873`.
 
 As of 2026-07-31 the bug is confirmed scoped to `path_tracing.slang`/RayQuery compute, not the
 shared vertex-upload/buffer-device-address path:

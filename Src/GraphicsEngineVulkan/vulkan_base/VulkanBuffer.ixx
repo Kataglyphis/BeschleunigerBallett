@@ -17,11 +17,13 @@ class VulkanBuffer
     VulkanBuffer(VulkanBuffer &&other) noexcept;
     VulkanBuffer &operator=(VulkanBuffer &&other) noexcept;
 
+    // buffer_preferred_flags steer VMA among the memory types that have every required flag, never past them.
     void create(const std::shared_ptr<VulkanDevice> &vulkanDevice,
       vk::DeviceSize buffer_size,
       vk::BufferUsageFlags buffer_usage_flags,
       vk::MemoryPropertyFlags buffer_propertiy_flags,
-      vk::MemoryAllocateFlags buffer_allocate_flags = {});
+      vk::MemoryAllocateFlags buffer_allocate_flags = {},
+      vk::MemoryPropertyFlags buffer_preferred_flags = {});
 
     void cleanUp();
 

@@ -3,11 +3,16 @@
 #include "vulkan_base/PhysicalDeviceChoices.hpp"
 
 #include <cstdint>
+#include <string>
 #include <vector>
 
 import kataglyphis.vulkan.queue_family_indices;
 
 namespace {
+
+// By text: two copies of one literal need not share an address.
+std::vector<std::string> extensionNames(const std::vector<const char *> &extensions)
+{ return std::vector<std::string>(extensions.begin(), extensions.end()); }
 
 vk::PhysicalDeviceProperties makeProperties(vk::PhysicalDeviceType type, uint32_t maxImageDimension2D)
 {
@@ -75,6 +80,71 @@ TEST(PhysicalDeviceChoicesUnit, RenderingNeedsVulkan13WithDynamicRenderingAndSyn
       "the dynamicRendering feature");
     EXPECT_STREQ(Kataglyphis::firstMissingRenderingRequirement(VK_API_VERSION_1_3, VK_TRUE, VK_FALSE),
       "the synchronization2 feature");
+}
+
+TEST(PhysicalDeviceChoicesUnit, DeviceLossDiagnosticsPreferTheBufferMarker)
+{
+    using Kataglyphis::BreadcrumbBackend;
+    using Kataglyphis::DeviceDiagnosticsOffer;
+    const auto both_markers = Kataglyphis::chooseDeviceDiagnostics(DeviceDiagnosticsOffer{ .bufferMarker = true,
+      .checkpoints = true,
+      .deviceCoherentMemoryListed = true,
+      .deviceCoherentMemoryFeature = VK_TRUE,
+      .deviceFaultListed = false,
+      .deviceFaultFeature = VK_FALSE });
+    EXPECT_EQ(both_markers.backend, BreadcrumbBackend::BufferMarker);
+    EXPECT_TRUE(both_markers.deviceCoherentMemory);
+    EXPECT_EQ(extensionNames(Kataglyphis::deviceDiagnosticExtensions(both_markers)),
+      (std::vector<std::string>{ VK_AMD_BUFFER_MARKER_EXTENSION_NAME, VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME }));
+
+    // Coherent memory serves only the buffer marker, so a checkpoint device leaves it off.
+    const auto checkpoints = Kataglyphis::chooseDeviceDiagnostics(DeviceDiagnosticsOffer{ .bufferMarker = false,
+      .checkpoints = true,
+      .deviceCoherentMemoryListed = true,
+      .deviceCoherentMemoryFeature = VK_TRUE,
+      .deviceFaultListed = true,
+      .deviceFaultFeature = VK_TRUE });
+    EXPECT_EQ(checkpoints.backend, BreadcrumbBackend::Checkpoints);
+    EXPECT_FALSE(checkpoints.deviceCoherentMemory);
+    EXPECT_TRUE(checkpoints.deviceFault);
+    EXPECT_EQ(extensionNames(Kataglyphis::deviceDiagnosticExtensions(checkpoints)),
+      (std::vector<std::string>{
+        VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME, VK_EXT_DEVICE_FAULT_EXTENSION_NAME }));
+}
+
+TEST(PhysicalDeviceChoicesUnit, ADiagnosticExtensionListedWithoutItsFeatureStaysOff)
+{
+    using Kataglyphis::DeviceDiagnosticsOffer;
+    const auto without_features = Kataglyphis::chooseDeviceDiagnostics(DeviceDiagnosticsOffer{ .bufferMarker = true,
+      .checkpoints = false,
+      .deviceCoherentMemoryListed = true,
+      .deviceCoherentMemoryFeature = VK_FALSE,
+      .deviceFaultListed = true,
+      .deviceFaultFeature = VK_FALSE });
+    EXPECT_FALSE(without_features.deviceCoherentMemory) << "VMA's coherent-memory flag needs the feature";
+    EXPECT_FALSE(without_features.deviceFault) << "vkGetDeviceFaultInfoEXT needs the deviceFault feature";
+    EXPECT_EQ(extensionNames(Kataglyphis::deviceDiagnosticExtensions(without_features)),
+      (std::vector<std::string>{ VK_AMD_BUFFER_MARKER_EXTENSION_NAME }));
+
+    // A feature reported for an extension the device does not list cannot be enabled either.
+    const auto unlisted = Kataglyphis::chooseDeviceDiagnostics(DeviceDiagnosticsOffer{ .bufferMarker = true,
+      .checkpoints = false,
+      .deviceCoherentMemoryListed = false,
+      .deviceCoherentMemoryFeature = VK_TRUE,
+      .deviceFaultListed = false,
+      .deviceFaultFeature = VK_TRUE });
+    EXPECT_FALSE(unlisted.deviceCoherentMemory);
+    EXPECT_FALSE(unlisted.deviceFault);
+}
+
+TEST(PhysicalDeviceChoicesUnit, ADeviceOfferingNoDiagnosticsRequestsNoExtensionForThem)
+{
+    const auto none = Kataglyphis::chooseDeviceDiagnostics(Kataglyphis::DeviceDiagnosticsOffer{});
+    EXPECT_EQ(none.backend, Kataglyphis::BreadcrumbBackend::None);
+    EXPECT_FALSE(none.deviceCoherentMemory);
+    EXPECT_FALSE(none.deviceFault);
+    EXPECT_TRUE(Kataglyphis::deviceDiagnosticExtensions(none).empty());
+    EXPECT_STREQ(Kataglyphis::breadcrumbBackendName(none.backend), "none");
 }
 
 TEST(QueueFamilyIndicesUnit, CreatesNoQueueOnTheComputeFamily)

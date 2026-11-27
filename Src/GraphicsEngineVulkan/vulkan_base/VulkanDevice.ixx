@@ -2,6 +2,7 @@ module;
 
 #include "renderer/SwapChainDetails.hpp"
 #include "scene/TextureFit.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <memory>
 #include <vector>
 #include <vk_mem_alloc.h>
@@ -75,6 +76,10 @@ class VulkanDevice
     // timestampValidBits of the graphics queue family; 0 means the queue
     // family does not support timestamp queries at all.
     uint32_t getGraphicsQueueTimestampValidBits() const { return graphics_queue_timestamp_valid_bits; };
+    // The device-loss diagnostics this device enabled; each stays off where the device does not list it.
+    BreadcrumbBackend breadcrumbBackend() const { return diagnostics.backend; };
+    bool supportsDeviceCoherentMemory() const { return diagnostics.deviceCoherentMemory; };
+    bool supportsDeviceFault() const { return diagnostics.deviceFault; };
 
     ~VulkanDevice();
 
@@ -100,6 +105,7 @@ class VulkanDevice
     uint32_t maxMultiviewViewCount = 0;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
+    DeviceDiagnostics diagnostics{};
 
     // VMA allocator owning all buffer/image memory. Created right after the
     // logical device; destroyed in the destructor right before the logical device.

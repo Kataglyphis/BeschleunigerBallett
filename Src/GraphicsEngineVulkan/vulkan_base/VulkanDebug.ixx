@@ -10,9 +10,39 @@ export namespace Kataglyphis::debug {
 extern int validationLayerCount;
 extern const char *validationLayerNames[];
 
-// Command-buffer debug label helpers (VK_EXT_debug_utils). All of them
-// no-op when the instance did not enable the extension (its loader lists
-// none): they check the dynamically dispatched function pointers before use.
+// Sees every label scope this thread records, with or without debug_utils, so the device-loss breadcrumbs follow them.
+class CmdLabelObserver
+{
+  public:
+    CmdLabelObserver() = default;
+    CmdLabelObserver(const CmdLabelObserver &) = delete;
+    CmdLabelObserver &operator=(const CmdLabelObserver &) = delete;
+    CmdLabelObserver(CmdLabelObserver &&) = delete;
+    CmdLabelObserver &operator=(CmdLabelObserver &&) = delete;
+    virtual ~CmdLabelObserver() = default;
+
+    virtual void labelBegun(vk::CommandBuffer commandBuffer, const char *name) = 0;
+    virtual void labelEnded(vk::CommandBuffer commandBuffer) = 0;
+};
+
+// Installs observer for this thread until it goes, then restores the one before.
+class ScopedCmdLabelObserver
+{
+  public:
+    explicit ScopedCmdLabelObserver(CmdLabelObserver *observer);
+    ScopedCmdLabelObserver(const ScopedCmdLabelObserver &) = delete;
+    ScopedCmdLabelObserver &operator=(const ScopedCmdLabelObserver &) = delete;
+    ScopedCmdLabelObserver(ScopedCmdLabelObserver &&) = delete;
+    ScopedCmdLabelObserver &operator=(ScopedCmdLabelObserver &&) = delete;
+    ~ScopedCmdLabelObserver();
+
+  private:
+    CmdLabelObserver *previous;
+};
+
+// Command-buffer debug label helpers (VK_EXT_debug_utils). They record no
+// label when the instance did not enable the extension (its loader lists
+// none), but still tell this thread's CmdLabelObserver.
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color);
 void endCmdLabel(vk::CommandBuffer commandBuffer);
 

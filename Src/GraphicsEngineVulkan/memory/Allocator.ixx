@@ -14,7 +14,8 @@ class Allocator
     Allocator(const vk::Device &device,
       const vk::PhysicalDevice &physicalDevice,
       const vk::Instance &instance,
-      bool enableBufferDeviceAddress = true);
+      bool enableBufferDeviceAddress = true,
+      bool enableDeviceCoherentMemory = false);
 
     // Owns a single VmaAllocator handle, so it is move-only with RAII cleanup -
     // same ownership model as VulkanBuffer / VulkanImage. Copying would let two

@@ -52,7 +52,8 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
   vk::DeviceSize buffer_size,
   vk::BufferUsageFlags buffer_usage_flags,
   vk::MemoryPropertyFlags buffer_propertiy_flags,
-  vk::MemoryAllocateFlags buffer_allocate_flags)
+  vk::MemoryAllocateFlags buffer_allocate_flags,
+  vk::MemoryPropertyFlags buffer_preferred_flags)
 {
     cleanUp();
 
@@ -74,6 +75,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
     VmaAllocationCreateInfo allocation_create_info{};
     allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
     allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(buffer_propertiy_flags);
+    allocation_create_info.preferredFlags = static_cast<VkMemoryPropertyFlags>(buffer_preferred_flags);
     if (buffer_propertiy_flags & vk::MemoryPropertyFlagBits::eHostVisible) {
         allocation_create_info.flags |=
           VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;

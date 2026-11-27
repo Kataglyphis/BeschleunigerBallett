@@ -502,6 +502,56 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         features2.pNext = &computeDerivativeFeatures;
     }
 
+    // Device-loss diagnostics: an extension and its feature ride along only where the device lists both.
+    const bool coherent_memory_listed =
+      supportsExtension(availableExtensions, VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME);
+    const bool device_fault_listed = supportsExtension(availableExtensions, VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+    vk::PhysicalDeviceCoherentMemoryFeaturesAMD availableCoherentMemoryFeatures{};
+    vk::PhysicalDeviceFaultFeaturesEXT availableFaultFeatures{};
+    {
+        // Chained only for a listed extension: the validation layer flags a query struct of an unsupported one.
+        void *diagnostics_chain = nullptr;
+        if (coherent_memory_listed) {
+            availableCoherentMemoryFeatures.pNext = diagnostics_chain;
+            diagnostics_chain = &availableCoherentMemoryFeatures;
+        }
+        if (device_fault_listed) {
+            availableFaultFeatures.pNext = diagnostics_chain;
+            diagnostics_chain = &availableFaultFeatures;
+        }
+        if (diagnostics_chain != nullptr) {
+            vk::PhysicalDeviceFeatures2 availableDiagnosticsFeatures2{};
+            availableDiagnosticsFeatures2.pNext = diagnostics_chain;
+            physical_device.getFeatures2(&availableDiagnosticsFeatures2);
+        }
+    }
+    diagnostics = chooseDeviceDiagnostics(DeviceDiagnosticsOffer{
+      .bufferMarker = supportsExtension(availableExtensions, VK_AMD_BUFFER_MARKER_EXTENSION_NAME),
+      .checkpoints = supportsExtension(availableExtensions, VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME),
+      .deviceCoherentMemoryListed = coherent_memory_listed,
+      .deviceCoherentMemoryFeature = availableCoherentMemoryFeatures.deviceCoherentMemory,
+      .deviceFaultListed = device_fault_listed,
+      .deviceFaultFeature = availableFaultFeatures.deviceFault,
+    });
+    for (const char *extensionName : deviceDiagnosticExtensions(diagnostics)) { extensions.push_back(extensionName); }
+    vk::PhysicalDeviceCoherentMemoryFeaturesAMD coherentMemoryFeatures{};
+    if (diagnostics.deviceCoherentMemory) {
+        coherentMemoryFeatures.deviceCoherentMemory = availableCoherentMemoryFeatures.deviceCoherentMemory;
+        coherentMemoryFeatures.pNext = features2.pNext;
+        features2.pNext = &coherentMemoryFeatures;
+    }
+    vk::PhysicalDeviceFaultFeaturesEXT faultFeatures{};
+    if (diagnostics.deviceFault) {
+        // Its vendor binary stays off: nothing keeps the dump, and the report needs only the description and addresses.
+        faultFeatures.deviceFault = availableFaultFeatures.deviceFault;
+        faultFeatures.pNext = features2.pNext;
+        features2.pNext = &faultFeatures;
+    }
+    spdlog::info("Device-loss diagnostics: breadcrumbs {}, device-coherent markers {}, VK_EXT_device_fault {}",
+      breadcrumbBackendName(diagnostics.backend),
+      diagnostics.deviceCoherentMemory,
+      diagnostics.deviceFault);
+
     // information to create logical device (sometimes called "device")
     vk::DeviceCreateInfo device_create_info{};
     device_create_info.queueCreateInfoCount =
@@ -535,9 +585,12 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     graphics_queue = logical_device.getQueue(static_cast<uint32_t>(indices.graphics_family), 0);
     presentation_queue = logical_device.getQueue(static_cast<uint32_t>(indices.presentation_family), 0);
 
-    // Ask VMA for buffer device addresses only when the logical device enabled the feature.
-    allocator =
-      Allocator(logical_device, physical_device, instance->getVulkanInstance(), deviceSupportsBufferDeviceAddress);
+    // Ask VMA for buffer device addresses and device-coherent memory only when the logical device enabled them.
+    allocator = Allocator(logical_device,
+      physical_device,
+      instance->getVulkanInstance(),
+      deviceSupportsBufferDeviceAddress,
+      diagnostics.deviceCoherentMemory);
 }
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice)

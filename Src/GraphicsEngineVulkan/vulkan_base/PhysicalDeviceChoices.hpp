@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis {
@@ -64,6 +65,70 @@ inline auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties,
 // A device may support only the linear bit; requesting quads there fails vkCreateDevice outright.
 constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
 { return extensionPresent && quadsSupported == VK_TRUE; }
+
+// What a device-loss breadcrumb writes: AMD's marker lands in memory per command buffer, NV's checkpoint per queue.
+enum class BreadcrumbBackend : std::uint8_t { None, BufferMarker, Checkpoints };
+
+// What the device lists, and the features it reports for the listed extensions that have one.
+struct DeviceDiagnosticsOffer
+{
+    bool bufferMarker = false;
+    bool checkpoints = false;
+    bool deviceCoherentMemoryListed = false;
+    vk::Bool32 deviceCoherentMemoryFeature = VK_FALSE;
+    bool deviceFaultListed = false;
+    vk::Bool32 deviceFaultFeature = VK_FALSE;
+};
+
+struct DeviceDiagnostics
+{
+    BreadcrumbBackend backend = BreadcrumbBackend::None;
+    bool deviceCoherentMemory = false;
+    bool deviceFault = false;
+};
+
+constexpr DeviceDiagnostics chooseDeviceDiagnostics(const DeviceDiagnosticsOffer &offer)
+{
+    DeviceDiagnostics chosen{};
+    if (offer.bufferMarker) {
+        chosen.backend = BreadcrumbBackend::BufferMarker;
+    } else if (offer.checkpoints) {
+        chosen.backend = BreadcrumbBackend::Checkpoints;
+    }
+    // Uncached device-coherent memory keeps the last markers out of the caches a hang strands them in.
+    chosen.deviceCoherentMemory = chosen.backend == BreadcrumbBackend::BufferMarker && offer.deviceCoherentMemoryListed
+                                  && offer.deviceCoherentMemoryFeature == VK_TRUE;
+    // The fault query needs the deviceFault feature, so the extension alone buys nothing.
+    chosen.deviceFault = offer.deviceFaultListed && offer.deviceFaultFeature == VK_TRUE;
+    return chosen;
+}
+
+// Empty for a device that offers none of them, so its creation requests exactly what it did before.
+inline std::vector<const char *> deviceDiagnosticExtensions(const DeviceDiagnostics &diagnostics)
+{
+    std::vector<const char *> extensions;
+    if (diagnostics.backend == BreadcrumbBackend::BufferMarker) {
+        extensions.push_back(VK_AMD_BUFFER_MARKER_EXTENSION_NAME);
+    } else if (diagnostics.backend == BreadcrumbBackend::Checkpoints) {
+        extensions.push_back(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
+    }
+    if (diagnostics.deviceCoherentMemory) { extensions.push_back(VK_AMD_DEVICE_COHERENT_MEMORY_EXTENSION_NAME); }
+    if (diagnostics.deviceFault) { extensions.push_back(VK_EXT_DEVICE_FAULT_EXTENSION_NAME); }
+    return extensions;
+}
+
+constexpr const char *breadcrumbBackendName(BreadcrumbBackend backend)
+{
+    switch (backend) {
+    case BreadcrumbBackend::BufferMarker:
+        return VK_AMD_BUFFER_MARKER_EXTENSION_NAME;
+    case BreadcrumbBackend::Checkpoints:
+        return VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME;
+    case BreadcrumbBackend::None:
+    default:
+        return "none";
+    }
+}
 
 // Every pass renders through dynamic rendering and records sync2 barriers: nullptr, or the first thing missing.
 constexpr const char *

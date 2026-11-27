@@ -36,6 +36,7 @@ module;
 #include <cstring>
 #include <memory>
 #include <span>
+#include <string>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -111,6 +112,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     vulkanSwapChain.initVulkanContext(device, window, device->getSurface(), settings.renderer.vsync);
     updateSceneExtent();
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), output.gpuTimings);
+    breadcrumbs.create(device, vulkanSwapChain.getNumberSwapChainImages());
     create_uniform_buffers();
     create_command_buffers();
     // Before the post descriptors, which bind its buffer; the first frame's reduce writes the starting EV.
@@ -811,12 +813,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
     };
 
     const auto abort_frame_with_fatal_error = [&](const char *message, vk::Result error_code) -> void {
-        spdlog::error(fmt::format("{} (vk::Result={})", message, static_cast<int>(error_code)));
-        fatal_frame_error = true;
-        if (error_code == vk::Result::eErrorDeviceLost) { device_lost_detected = true; }
-        if (window != nullptr && window->get_window() != nullptr) {
-            glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
-        }
+        endRunOnVulkanError(message, error_code);
         end_imgui_frame_if_needed();
     };
 
@@ -838,7 +835,10 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
 
     // Checked last: checkChangedFramebufferSize() clears the flag, so a blocked recreate would lose the resize.
     if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty() && checkChangedFramebufferSize()) {
-        recreateSwapChain();
+        if (!recreateSwapChain()) {
+            end_imgui_frame_if_needed();
+            return;
+        }
     }
 
     if (frameSync.currentFrame() >= frameSync.inFlightFenceCount()
@@ -978,6 +978,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
         abort_frame_with_fatal_error("Failed to submit command buffer to queue!", result);
         return;
     }
+    breadcrumbs.markSubmitted(image_index);
 
     // takeCapturedFrame() waits on this frame's in-flight fence.
     frameCapture.bindSubmitFence(frameSync.inFlightFence());
@@ -996,7 +997,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
     result = device->getPresentationQueue().presentKHR(&present_info);
 
     if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
-        recreateSwapChain();
+        if (!recreateSwapChain()) { return; }
     } else if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to present image!", result);
         return;
@@ -1037,7 +1038,7 @@ void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
     skyBox.createFrameResources(vulkanSwapChain.getNumberSwapChainImages());
 }
 
-void Kataglyphis::VulkanRenderer::recreateSwapChain()
+bool Kataglyphis::VulkanRenderer::recreateSwapChain()
 {
     int width = 0, height = 0;
     glfwGetFramebufferSize(window->get_window(), &width, &height);
@@ -1046,7 +1047,13 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
         glfwWaitEvents();
     }
 
-    std::ignore = device->getLogicalDevice().waitIdle();
+    vk::Result idle = device->getLogicalDevice().waitIdle();
+    if (device_loss_simulated) { idle = vk::Result::eErrorDeviceLost; }
+    // Nothing is rebuilt on a failed device, and a loss seen first here logs the trails before they are reset.
+    if (idle != vk::Result::eSuccess) {
+        endRunOnVulkanError("Failed to wait for the device before recreating the swapchain!", idle);
+        return false;
+    }
 
     // createSynchronization() recreates every fence; after waitIdle the captured pixels stay readable.
     frameCapture.invalidateFence();
@@ -1060,8 +1067,9 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     vulkanSwapChain.recreate(device, device->getSurface(), frameSettings.renderer.vsync);
     updateSceneExtent();
 
-    // The query pool is sized per swapchain image.
+    // The query pool and the breadcrumb trails are sized per swapchain image.
     gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), output.gpuTimings);
+    breadcrumbs.create(device, vulkanSwapChain.getNumberSwapChainImages());
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
@@ -1081,6 +1089,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     create_command_buffers();
     createSynchronization();
+    return true;
 }
 
 bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
@@ -1194,6 +1203,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
     // Per-pass GPU timing: the query slice must be reset outside any render pass.
     gpuTiming.beginFrame(commandBuffer, image_index);
+    // Every label recorded from here on leaves a breadcrumb, so a device loss can name the scope it hit.
+    breadcrumbs.beginRecording(commandBuffer, image_index);
+    const Kataglyphis::debug::ScopedCmdLabelObserver breadcrumb_trail(&breadcrumbs);
 
     Texture &swap_chain_image = vulkanSwapChain.getSwapChainImage(image_index);
     const RenderStageFrame frame{
@@ -1210,9 +1222,16 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     renderStages.recordFrame(frame, [&](const RenderStage &stage, bool begin) {
         if (begin && stage.labelColor.has_value()) {
             Kataglyphis::debug::beginCmdLabel(commandBuffer, stage.name.c_str(), *stage.labelColor);
+        } else if (begin) {
+            // An unlabelled stage such as main still leaves a breadcrumb, so the labels inside it keep their parent.
+            breadcrumbs.beginScope(commandBuffer, stage.name);
         }
         if (stage.timedPass.has_value()) { gpuTiming.writeTimestamp(commandBuffer, *stage.timedPass, begin); }
-        if (!begin && stage.labelColor.has_value()) { Kataglyphis::debug::endCmdLabel(commandBuffer); }
+        if (!begin && stage.labelColor.has_value()) {
+            Kataglyphis::debug::endCmdLabel(commandBuffer);
+        } else if (!begin) {
+            breadcrumbs.endScope(commandBuffer);
+        }
     });
 
     // Capture copies from the ePresentSrcKHR image and restores that layout before the present.
@@ -1243,8 +1262,29 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     }
 
     gpuTiming.endFrame(image_index);
+    breadcrumbs.endRecording();
 
     return true;
+}
+
+void Kataglyphis::VulkanRenderer::endRunOnVulkanError(const char *message, vk::Result errorCode)
+{
+    spdlog::error(fmt::format("{} (vk::Result={})", message, static_cast<int>(errorCode)));
+    fatal_frame_error = true;
+    if (errorCode == vk::Result::eErrorDeviceLost) {
+        device_lost_detected = true;
+        reportDeviceLossOnce();
+    }
+    if (window != nullptr && window->get_window() != nullptr) {
+        glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
+    }
+}
+
+void Kataglyphis::VulkanRenderer::reportDeviceLossOnce()
+{
+    if (!device_lost_detected || device_loss_reported) { return; }
+    device_loss_reported = true;
+    for (const std::string &line : breadcrumbs.reportDeviceLoss(device_loss_simulated)) { spdlog::error(line); }
 }
 
 void Kataglyphis::VulkanRenderer::recordShadowStage(const RenderStageFrame &frame)
@@ -1547,7 +1587,11 @@ void Kataglyphis::VulkanRenderer::requestFrameCapture()
 }
 
 auto Kataglyphis::VulkanRenderer::takeCapturedFrame(uint32_t &outWidth, uint32_t &outHeight) -> std::vector<uint8_t>
-{ return frameCapture.take(device, device_lost_detected, outWidth, outHeight); }
+{
+    std::vector<uint8_t> pixels = frameCapture.take(device, device_lost_detected, outWidth, outHeight);
+    reportDeviceLossOnce();
+    return pixels;
+}
 
 void Kataglyphis::VulkanRenderer::requestHdrCapture() { hdrCapture.request(); }
 
@@ -1581,11 +1625,19 @@ auto Kataglyphis::VulkanRenderer::sceneTargetFootprint() -> SceneTargetFootprint
 }
 
 auto Kataglyphis::VulkanRenderer::takeCapturedHdrFrame(uint32_t &outWidth, uint32_t &outHeight) -> std::vector<uint8_t>
-{ return hdrCapture.take(device, device_lost_detected, outWidth, outHeight); }
+{
+    std::vector<uint8_t> texels = hdrCapture.take(device, device_lost_detected, outWidth, outHeight);
+    reportDeviceLossOnce();
+    return texels;
+}
 
 auto Kataglyphis::VulkanRenderer::takeCapturedBloomFrame(uint32_t &outWidth, uint32_t &outHeight)
   -> std::vector<uint8_t>
-{ return bloomCapture.take(device, device_lost_detected, outWidth, outHeight); }
+{
+    std::vector<uint8_t> texels = bloomCapture.take(device, device_lost_detected, outWidth, outHeight);
+    reportDeviceLossOnce();
+    return texels;
+}
 
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {

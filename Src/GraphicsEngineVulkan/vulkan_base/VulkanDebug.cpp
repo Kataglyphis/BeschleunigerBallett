@@ -88,8 +88,19 @@ void freeDebugCallback(vk::Instance instance)
     }
 }
 
+namespace {
+    // Per thread: a command buffer records on one thread at a time.
+    thread_local CmdLabelObserver *labelObserver = nullptr;
+}// namespace
+
+ScopedCmdLabelObserver::ScopedCmdLabelObserver(CmdLabelObserver *observer) : previous(labelObserver)
+{ labelObserver = observer; }
+
+ScopedCmdLabelObserver::~ScopedCmdLabelObserver() { labelObserver = previous; }
+
 void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
 {
+    if (labelObserver != nullptr) { labelObserver->labelBegun(commandBuffer, name); }
     // Null when the instance enabled no debug_utils, as on a loader that does not list it.
     if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT == nullptr) { return; }
 
@@ -104,8 +115,8 @@ void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std:
 
 void endCmdLabel(vk::CommandBuffer commandBuffer)
 {
-    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT == nullptr) { return; }
-    commandBuffer.endDebugUtilsLabelEXT();
+    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT != nullptr) { commandBuffer.endDebugUtilsLabelEXT(); }
+    if (labelObserver != nullptr) { labelObserver->labelEnded(commandBuffer); }
 }
 
 bool labelsAvailable()

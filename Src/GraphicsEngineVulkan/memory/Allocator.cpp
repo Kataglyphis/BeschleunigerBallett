@@ -32,11 +32,16 @@ Allocator &Allocator::operator=(Allocator &&other) noexcept
 Allocator::Allocator(const vk::Device &device,
   const vk::PhysicalDevice &physicalDevice,
   const vk::Instance &instance,
-  bool enableBufferDeviceAddress)
+  bool enableBufferDeviceAddress,
+  bool enableDeviceCoherentMemory)
 {
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
     // The BDA flag requires the bufferDeviceAddress feature on the logical device.
-    if (enableBufferDeviceAddress) { allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT; }
+    if (enableBufferDeviceAddress) { allocatorCreateInfo.flags |= VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT; }
+    // Needs VK_AMD_device_coherent_memory and its feature; VMA then hands out those types only when asked for them.
+    if (enableDeviceCoherentMemory) {
+        allocatorCreateInfo.flags |= VMA_ALLOCATOR_CREATE_AMD_DEVICE_COHERENT_MEMORY_BIT;
+    }
     allocatorCreateInfo.vulkanApiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;
     allocatorCreateInfo.physicalDevice = static_cast<VkPhysicalDevice>(physicalDevice);
     allocatorCreateInfo.device = static_cast<VkDevice>(device);
