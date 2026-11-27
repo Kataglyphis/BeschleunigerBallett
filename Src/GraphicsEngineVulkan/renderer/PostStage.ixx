@@ -35,6 +35,7 @@ class PostStage
       uint32_t image_index,
       std::span<const vk::DescriptorSet> descriptorSets,
       bool cloudsEnabled,
+      float bloomStrength,
       Kataglyphis::Texture *fxaaInput = nullptr);
     void cleanUp();
 

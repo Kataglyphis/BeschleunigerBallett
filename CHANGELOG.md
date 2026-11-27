@@ -22,6 +22,12 @@ the GitHub releases themselves.
   section holds the three settings, and `KATAGLYPHIS_GPU_TIMING_JSON` gains `Histogram` and `ExposureReduce`. At the
   default 0 EV no golden changed; `GoldenRender.ExposureScalesTheRadianceBeforeTheTonemap` and
   `GoldenRender.AutoExposureConvergesOnTheFramesLogAverageAndHolds` grade both against the frame's HDR capture.
+- Bloom (plan C5, OxidANT's `bloom/bloom.slang` and its new `common/bloom_filter.slang`, compiled to SPIR-V): a
+  half-resolution bright pass over the exposed, clouded HDR target keeps what lies past white, a separable 9-tap
+  Gaussian spreads it four texels and keeps its energy, and post adds it times the strength before ACES. The default
+  strength is the Rust renderer's 0.6 (0 to 2, the Renderer tab's Bloom row); 0 records no pass.
+  `KATAGLYPHIS_GPU_TIMING_JSON` gains `Bloom`. The harness pins bloom at 0, so no golden changed;
+  `GoldenRender.BloomSpreadsABrightCardsEnergyAndConservesIt` grades its energy, reach and composite.
 - `Colosseum-ktx2` (AssetANT release `Colosseum-ktx2-v1`, CC BY 4.0) is in `Resources/assets.lock`, fetched with
   `KATAGLYPHIS_FETCH_ALL_ASSETS` for the model picker: `Colosseum-gltf` with its 69 textures as UASTC KTX2 through
   `KHR_texture_basisu`. On llvmpipe they upload as BC7, 190 MiB of device memory against 760 MiB, and `load_flat`

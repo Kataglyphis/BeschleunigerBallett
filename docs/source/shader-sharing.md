@@ -314,7 +314,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (`render::ibl::SKY_ZENITH`/`SKY_HORIZON`/`SKY_GROUND`, consumed by
   `EnvironmentImage::sky`'s panorama).
 
-**Entry-point shader targets:** three entry-point sources serve both renderers.
+**Entry-point shader targets:** four entry-point sources serve both renderers.
 `sky/sky.slang` is the sky each draws into its HDR target: the C++ engine
 compiles its `vs_vulkan_main` (`SV_VulkanVertexID`, since `SV_VertexID` needs
 draw parameters a Raspberry Pi 5's v3dv lacks) and `fs_main` to SPIR-V through
@@ -325,7 +325,8 @@ tonemap: the C++ engine compiles only its `fs_main`, behind `post.slang`'s
 `SV_VulkanVertexID` vertex, and fills `FxaaUniforms` from
 `renderer/FxaaUniforms.hpp` (z 0: post's intermediate holds sRGB-encoded
 bytes). `histogram/histogram.slang` is auto exposure: the C++ engine dispatches its three kernels as they are,
-over the same two-float exposure buffer `post.slang` reads ([`post-processing.md`](post-processing.md)). Every
+over the same two-float exposure buffer `post.slang` reads, and `bloom/bloom.slang` is bloom, whose three fragment
+entries the C++ engine compiles behind `post.slang`'s vertex ([`post-processing.md`](post-processing.md)). Every
 other source compiles to one target. `tonemap/tonemap.slang` (WGSL) and `post/post.slang` (SPIR-V) look
 like one pass but are separate sources: the C++ side's `post/post.slang`
 also composites clouds via push constants, so it never merged with the Rust
@@ -334,7 +335,7 @@ tonemap shader.
 <!-- shader-targets:begin -->
 | File | Target |
 | --- | --- |
-| `bloom/bloom.slang` | wgsl |
+| `bloom/bloom.slang` | both |
 | `clouds/cloud_march.slang` | wgsl |
 | `clouds/cloud_noise.slang` | wgsl |
 | `compute/clouds.slang` | spirv |
@@ -370,7 +371,7 @@ tonemap shader.
 `brdf`, `noise`, `path_estimator`, `hdr_safe`, `aces`, `fullscreen`,
 `camera_ray`, `ambient`, `gltf_material`, `cascade_visibility`,
 `punctual_shadow`, `surface_lighting`, `gbuffer`, `cloud_upsample`, `drawn_sky`,
-`path_integrator`, `sun_mask` and `exposure`, run every
+`path_integrator`, `sun_mask`, `exposure` and `bloom_filter`, run every
 public function of their `common/` module once per case of
 `tests/vectors/<module>.json` (inputs, f64 references, a tolerance per output;
 OxidANT's `docs/shaders.md` § Vector kernels). Both targets are checked on a
@@ -418,6 +419,7 @@ imports.
 | `common/ambient.slang` | both |
 | `common/ambient_maps.slang` | spirv |
 | `common/base_color.slang` | spirv |
+| `common/bloom_filter.slang` | both |
 | `common/brdf.slang` | both |
 | `common/brdf_energy_fit.slang` | both |
 | `common/camera_ray.slang` | both |

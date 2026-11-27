@@ -148,6 +148,8 @@ struct EngineHarness
         // The goldens grade the frame as before the post chain: manual exposure at 0 EV multiplies by exactly 1.
         settings.renderer.exposure_ev = 0.0F;
         settings.renderer.auto_exposure = false;
+        // Bloom adds a glow the goldens predate; BloomSpreadsABrightCardsEnergyAndConservesIt turns it on.
+        settings.renderer.bloom_strength = 0.0F;
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
         Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
@@ -189,6 +191,20 @@ struct EngineHarness
         renderer->requestHdrCapture();
         render_frame();
         const std::vector<uint8_t> raw = renderer->takeCapturedHdrFrame(width, height);
+        std::vector<float> rgba(raw.size() / 2U);
+        for (size_t i = 0; i < rgba.size(); ++i) {
+            const auto half = static_cast<uint16_t>(raw[2U * i] | (raw[2U * i + 1U] << 8U));
+            rgba[i] = glm::unpackHalf1x16(half);
+        }
+        return rgba;
+    }
+
+    // The half-resolution bloom post added, linear RGBA, at the bloom's own extent.
+    std::vector<float> capture_bloom_frame(uint32_t &width, uint32_t &height)
+    {
+        renderer->requestBloomCapture();
+        render_frame();
+        const std::vector<uint8_t> raw = renderer->takeCapturedBloomFrame(width, height);
         std::vector<float> rgba(raw.size() / 2U);
         for (size_t i = 0; i < rgba.size(); ++i) {
             const auto half = static_cast<uint16_t>(raw[2U * i] | (raw[2U * i + 1U] << 8U));

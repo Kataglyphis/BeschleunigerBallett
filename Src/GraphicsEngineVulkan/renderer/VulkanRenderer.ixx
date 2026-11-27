@@ -30,6 +30,7 @@ import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
 import kataglyphis.vulkan.exposure_stage;
+import kataglyphis.vulkan.bloom_stage;
 import kataglyphis.vulkan.fxaa_stage;
 import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.render_settings;
@@ -133,6 +134,9 @@ class VulkanRenderer
     // The same pair for the exposure state post read, [adapted EV, target EV]; empty when nothing was captured.
     void requestExposureCapture() { exposureStage.requestCapture(); }
     [[nodiscard]] std::optional<std::array<float, 2>> takeCapturedExposure() { return exposureStage.takeCapture(); }
+    // The same pair for the half-resolution bloom post adds: raw RGBA16F texels, 8 bytes each.
+    void requestBloomCapture() { bloomCapture.request(); }
+    std::vector<uint8_t> takeCapturedBloomFrame(uint32_t &outWidth, uint32_t &outHeight);
 
     void recreateSwapChain();
     void reprovisionPerImageResources();
@@ -299,6 +303,8 @@ class VulkanRenderer
     // The settings' clock at the last reduce, whose difference is the adaptation's frame time.
     double lastExposureSeconds{ 0.0 };
     [[nodiscard]] Kataglyphis::VulkanRendererInternals::ExposureFrameParams exposureFrameParams();
+    // bloom.slang's passes; declared before postDescriptors, which bind its output.
+    Kataglyphis::VulkanRendererInternals::BloomStage bloomStage;
 
     // Drawn inside the main stage, into the HDR target post reads.
     Kataglyphis::SkyBox skyBox;
@@ -341,6 +347,7 @@ class VulkanRenderer
     // kataglyphis.vulkan.frame_capture for the arm/record/bind/take lifecycle.
     FrameCapture frameCapture;
     FrameCapture hdrCapture;
+    FrameCapture bloomCapture;
 
     // Released before the device, after the destructor drained the GPU, so a stage's captured resources go first.
     RenderStageRegistry renderStages;

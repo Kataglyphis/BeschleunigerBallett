@@ -142,6 +142,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
     fxaaStage.init(device, &vulkanSwapChain);
+    bloomStage.init(device, &vulkanSwapChain, graphics_command_pool.get());
 
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorResources();
@@ -534,7 +535,7 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 void Kataglyphis::VulkanRenderer::registerBuiltInStages()
 {
     using Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass;
-    std::array<RenderStage, 9> built_in{};
+    std::array<RenderStage, 10> built_in{};
 
     built_in[0].name = "shadow_cascades";
     built_in[0].order = RenderStageOrder::ShadowCascades;
@@ -647,6 +648,22 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[8].record = [this](const RenderStageFrame &frame) {
         exposureStage.recordReduce(frame.commandBuffer, frame.imageIndex, exposureFrameParams());
     };
+
+    // After the reduce, whose EV the bright pass exposes by, and the clouds, which it composites first.
+    built_in[9].name = "bloom";
+    built_in[9].order = RenderStageOrder::Bloom;
+    built_in[9].timedPass = GpuTimedPass::Bloom;
+    built_in[9].labelColor = std::array{ 0.95F, 0.60F, 0.85F, 1.0F };
+    built_in[9].enabled = [this](
+                            const RenderStageFrame &) { return frameBloomStrength(frameSettings.renderer) > 0.0F; };
+    built_in[9].record = [this](const RenderStageFrame &frame) {
+        bloomStage.recordCommands(frame.commandBuffer, frame.imageIndex, frameSettings.scene.clouds_enabled);
+    };
+    // The half-resolution targets follow the swapchain's extent, the bright pass's sets its image count.
+    built_in[9].resize = [this](const RenderStageResize &) {
+        bloomStage.recreateFrameResources(graphics_command_pool.get());
+    };
+    built_in[9].shaderHotReload = [this] { bloomStage.shaderHotReload(); };
 
     built_in[3].name = "post";
     built_in[3].order = RenderStageOrder::Post;
@@ -891,6 +908,7 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
     // takeCapturedFrame() waits on this frame's in-flight fence.
     frameCapture.bindSubmitFence(frameSync.inFlightFence());
     hdrCapture.bindSubmitFence(frameSync.inFlightFence());
+    bloomCapture.bindSubmitFence(frameSync.inFlightFence());
     exposureStage.bindCaptureFence(frameSync.inFlightFence());
 
     vk::PresentInfoKHR present_info{};
@@ -959,6 +977,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // createSynchronization() recreates every fence; after waitIdle the captured pixels stay readable.
     frameCapture.invalidateFence();
     hdrCapture.invalidateFence();
+    bloomCapture.invalidateFence();
     exposureStage.invalidateCaptureFence();
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
@@ -1145,6 +1164,17 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
           vk::PipelineStageFlagBits2::eFragmentShader,
           device_lost_detected);
     }
+    // The glow post just added, still RGBA16F; without a bloom pass this frame it is the last one's, or black.
+    if (bloomCapture.isArmed()) {
+        bloomCapture.recordImage(device,
+          commandBuffer,
+          bloomStage.getOutput().getImage(),
+          bloomStage.getExtent(),
+          Kataglyphis::VulkanRendererInternals::BloomStage::kFormat,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::PipelineStageFlagBits2::eFragmentShader,
+          device_lost_detected);
+    }
 
     gpuTiming.endFrame(image_index);
 
@@ -1288,6 +1318,7 @@ void Kataglyphis::VulkanRenderer::recordPostStage(const RenderStageFrame &frame)
       frame.imageIndex,
       post_descriptor_sets,
       frameSettings.scene.clouds_enabled,
+      frameBloomStrength(frameSettings.renderer),
       fxaaFiltersFrame(frame) ? &fxaaStage.getIntermediate(frame.imageIndex) : nullptr);
 }
 
@@ -1443,6 +1474,10 @@ void Kataglyphis::VulkanRenderer::requestHdrCapture() { hdrCapture.request(); }
 auto Kataglyphis::VulkanRenderer::takeCapturedHdrFrame(uint32_t &outWidth, uint32_t &outHeight) -> std::vector<uint8_t>
 { return hdrCapture.take(device, device_lost_detected, outWidth, outHeight); }
 
+auto Kataglyphis::VulkanRenderer::takeCapturedBloomFrame(uint32_t &outWidth, uint32_t &outHeight)
+  -> std::vector<uint8_t>
+{ return bloomCapture.take(device, device_lost_detected, outWidth, outHeight); }
+
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
     // Buffers are persistently mapped by VMA; unmapping happens on destruction.
@@ -1474,7 +1509,8 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_resources()
 {
     postDescriptors.addBinding(0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
       .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      .addBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment);
+      .addBinding(2, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment)
+      .addBinding(3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!postDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create post descriptor resources!");
@@ -1501,8 +1537,17 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
           2,
           exposureStage.exposureBuffer(),
           Kataglyphis::VulkanRendererInternals::ExposureStage::kExposureStateBytes);
-        // The histogram meters the same target post reads.
+        postDescriptors.writeImage(i,
+          3,
+          bloomStage.getOutput().getImageView(),
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          bloomStage.getSampler());
+        // The histogram meters the same target post reads, and the bloom's bright pass thresholds it.
         exposureStage.bindHdrTarget(i, renderResult.getImageView());
+        bloomStage.bindInputs(i,
+          renderResult.getImageView(),
+          clouds.getCloudOutputTexture()->getImageView(),
+          exposureStage.exposureBuffer());
     }
 }
 

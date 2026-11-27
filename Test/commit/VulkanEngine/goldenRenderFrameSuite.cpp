@@ -91,6 +91,12 @@ TEST(GoldenRender, BuiltInStagesRecordInTheFrameOrder)
     harness.render_frame();
     EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
       (std::vector<std::string>{ "main", "histogram", "exposure_reduce", "post" }));
+
+    // Bloom thresholds the exposed frame, so it follows the reduce; post adds it.
+    harness.settings.renderer.bloom_strength = 0.6F;
+    harness.render_frame();
+    EXPECT_EQ(harness.renderer->renderStageRegistry().lastRecorded(),
+      (std::vector<std::string>{ "main", "histogram", "exposure_reduce", "bloom", "post" }));
 }
 
 // What the registry is for: a pass added from outside VulkanRenderer records, resizes and leaves again.

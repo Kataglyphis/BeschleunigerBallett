@@ -350,7 +350,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
           sizeof(PushConstantPathTracing),
           alignof(PushConstantPathTracing) },
         { "PushConstantPost_std430",
-          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) } },
+          { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
+            { "bloom_strength", offsetof(PushConstantPost, bloom_strength) } },
           sizeof(PushConstantPost),
           alignof(PushConstantPost) },
         // OxidANT's fxaa.slang, which FxaaStage fills from FxaaUniforms.hpp.

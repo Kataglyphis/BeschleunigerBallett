@@ -137,6 +137,7 @@ using namespace Kataglyphis::Frontend::gui_detail;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::FXAA_MODE_LABELS;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxAutoExposureSpeed;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxBloomStrength;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxExposureEv;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinAutoExposureSpeed;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinExposureEv;
@@ -1340,6 +1341,8 @@ void GUI::renderRenderInspector()
     // Rust's POST rows, ranges and defaults.
     sectionHeader("POST");
     if (beginStudioProperties("##post", propertyLabelWidth())) {
+        studioPropertyLabel("Bloom", "The glow around radiance past white; 0 turns it off");
+        studioSlider("##bloom_strength", &guiRendererSharedVars.bloom_strength, 0.0F, kMaxBloomStrength, "%.2f");
         studioBeginDisabled(guiRendererSharedVars.auto_exposure);
         studioPropertyLabel("Exposure", "In stops; auto exposure overrides it");
         studioSlider("##exposure_ev", &guiRendererSharedVars.exposure_ev, kMinExposureEv, kMaxExposureEv, "%.1f EV");

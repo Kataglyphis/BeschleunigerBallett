@@ -4,6 +4,9 @@
 namespace Kataglyphis::VulkanRendererInternals {
 
 struct PushConstantPost
-{ uint clouds_enabled; };
+{
+    uint clouds_enabled;
+    float bloom_strength;
+};
 
 }// namespace Kataglyphis::VulkanRendererInternals

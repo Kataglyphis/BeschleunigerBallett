@@ -2,17 +2,20 @@ import aces;
 import exposure;
 import fullscreen;
 
-// C++/Vulkan post pass (clouds, exposure, tonemap); the Rust renderer composites in tonemap.slang instead.
+// C++/Vulkan post pass (clouds, exposure, bloom, tonemap); the Rust renderer composites in tonemap.slang instead.
 
 // Combined image+sampler (Vulkan combined image sampler descriptor).
 [vk::binding(0, 0)] Sampler2D noisyTxt;
 [vk::binding(1, 0)] Sampler2D cloudTxt;
 // [adapted EV, target EV] from histogram.slang's cs_reduce_exposure, the one exposure source, as in tonemap.slang.
 [vk::binding(2, 0)] StructuredBuffer<float> exposureState;
+// bloom.slang's half-resolution glow, already exposed; filtered up to the swapchain, as tonemap.slang samples it.
+[vk::binding(3, 0)] Sampler2D bloomTxt;
 
 struct PushConstantPost
 {
     uint clouds_enabled;
+    float bloom_strength;
 };
 [[vk::push_constant]] PushConstantPost pc_post;
 
@@ -49,8 +52,12 @@ float4 fs_main(VsOut In) : SV_Target
         color = cloud.rgb + color * (1.0 - cloud.a);
     }
 
-    // Exposure after the cloud composite, as tonemap.slang; ACES saturates long before 1e4 and stays off Inf/Inf there.
-    color = min(color * exposure_scale(exposureState[0]), float3(1e4));
+    // Exposure after the cloud composite, then the bloom, as tonemap.slang; ACES saturates long before 1e4.
+    color *= exposure_scale(exposureState[0]);
+    // A branch, not a multiply: a frame without bloom never wrote the target, and 0 times a NaN is a NaN.
+    if (pc_post.bloom_strength > 0.0)
+        color += bloomTxt.SampleLevel(In.uv, 0.0).rgb * pc_post.bloom_strength;
+    color = min(color, float3(1e4));
 
     // ACES filmic tonemap (shared with Rust WebGPU renderer via aces.slang).
     float3 tonemapped = aces_tonemap(color);

@@ -48,6 +48,8 @@ namespace RenderStageOrder {
     // Only with auto exposure on.
     inline constexpr int Histogram = 400;
     inline constexpr int ExposureReduce = 410;
+    // Only above zero bloom strength.
+    inline constexpr int Bloom = 450;
     inline constexpr int Post = 500;
     // Only while FXAA filters the frame; post then renders into its LDR intermediate and this stage presents.
     inline constexpr int Fxaa = 520;
