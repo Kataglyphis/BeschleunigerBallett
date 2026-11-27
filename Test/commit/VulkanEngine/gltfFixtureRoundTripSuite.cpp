@@ -166,6 +166,28 @@ void expectRangesTileTheArrays(const GltfLoader &loader, const ox::GltfModel &br
     EXPECT_EQ(nextIndex, indices.size()) << "the ranges leave indices no mesh uploads";
 }
 
+// A model's corners, position then normal, sorted: two files agree whatever order their writers chose.
+std::vector<std::array<float, 6>> sortedCorners(std::span<const Vertex> vertices)
+{
+    std::vector<std::array<float, 6>> corners;
+    corners.reserve(vertices.size());
+    for (const Vertex &vertex : vertices) {
+        const glm::vec3 &position = vertex.position;
+        const glm::vec3 &normal = vertex.normal;
+        corners.push_back({ position.x, position.y, position.z, normal.x, normal.y, normal.z });
+    }
+    std::sort(corners.begin(), corners.end());
+    return corners;
+}
+
+// Every float survives the codecs, and the cube's corners and axis normals both filters, so the match is exact.
+void expectCubeGltfsCorners(const GltfLoader &loader)
+{
+    GltfLoader original;
+    ASSERT_TRUE(original.parseCpu(oxidantGltfFixture("cube.gltf")));
+    EXPECT_EQ(sortedCorners(loader.getVertices()), sortedCorners(original.getVertices()));
+}
+
 // What a fixture of each kind must carry through: the categories the plan names, so a mapping drop shows by name.
 const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFacts()
 {
@@ -199,6 +221,9 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
               EXPECT_EQ(loader.getMaterials().at(0).textureID, 0);
               EXPECT_EQ(loader.getTextures()[0].width, 2U) << "the 2x2 PNG, not the broken KTX2";
           } },
+        // gltfpack's EXT_meshopt_compression cubes: the codecs alone, then the EXPONENTIAL and OCTAHEDRAL filters too.
+        { "cube_meshopt.glb", expectCubeGltfsCorners },
+        { "cube_meshopt_filters.glb", expectCubeGltfsCorners },
         { "cube_normal_transform.gltf",
           [](const GltfLoader &loader) {
               const ObjMaterial &material = loader.getMaterials().at(0);

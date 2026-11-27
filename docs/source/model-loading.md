@@ -64,6 +64,19 @@ gives a primitive without `NORMAL` one vertex per corner with its face's
 normal, keeps only the vertices a primitive's indices use, and hands textures
 over decoded, deduped on `(image sources, sampler settings, srgb)`.
 
+**`EXT_meshopt_compression` views are decoded before an accessor reads them**
+(`crates/assets/src/meshopt.rs`, plan N4): gltfpack's `-c` and `-cc` output
+loads, in both renderers. Each compressed bufferView's stream is decoded in safe
+Rust (`meshopt_codec.rs`: the attribute codec's version 0, the triangle and index
+codecs, the octahedral, quaternion and exponential filters, as meshoptimizer's
+scalar decoder does) in place into the parent view's range: of its fallback
+buffer, which is never read, of a URI-less placeholder, or of a buffer with data.
+A view that breaks the extension's layout rules, a stream that ends early or runs
+on, and a placeholder declaring more than its views decode (each rounded up to 16
+bytes) fail the load. One file's views decode to at most 1 GiB.
+`KHR_meshopt_compression` (gltfpack's `-cz`, the attribute codec's version 1 and
+the colour filter) is not read.
+
 **Textures are decoded in Rust, on every core of the parse thread** (plan B5).
 Each slot is a mip chain, level 0 first and packed back to back (`levels.rs`'s
 `TextureChain`, tagged with its `ChainFormat`), which `Texture::createFromLevels`

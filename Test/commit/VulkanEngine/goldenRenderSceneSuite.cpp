@@ -144,6 +144,69 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
                                "model's (flat white) texture slots.";
 }
 
+// gltfpack's EXT_meshopt_compression cubes, decoded by OxidANT's loader, draw as the cube they were packed from.
+TEST(GoldenRender, MeshoptCompressedCubesDrawLikeTheirUncompressedOriginal)
+{
+    SKIP_WITHOUT_GPU();
+
+    const std::string original = Kataglyphis::TestSupport::oxidantGltfFixture("cube.gltf");
+    ScopedModelOverride cube(original.c_str());
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    harness.useForwardRaster();
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Load n sits 50 units along x, seen from its +x+y+z corner: the crop holds three faces and their decoded normals.
+    constexpr float kSpacing = 50.0F;
+    const auto crop_at = [&](float x) {
+        harness.camera->set_camera_position(glm::vec3(x + 1.5F, 1.3F, 1.9F));
+        harness.camera->set_orientation(-128.3F, -28.2F);
+        harness.render_frames(SETTLE_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        std::vector<int> crop;
+        if (frame.empty()) { return crop; }
+        for (uint32_t y = height / 2U - 60U; y < height / 2U + 60U; ++y) {
+            for (uint32_t px = width / 2U - 150U; px < width / 2U + 150U; ++px) {
+                const size_t base = (static_cast<size_t>(y) * width + px) * 4U;
+                for (size_t channel = 0; channel < 3U; ++channel) { crop.push_back(frame[base + channel]); }
+            }
+        }
+        return crop;
+    };
+    const auto mean_difference = [](const std::vector<int> &a, const std::vector<int> &b) {
+        double sum = 0.0;
+        for (size_t i = 0; i < a.size(); ++i) { sum += std::abs(a[i] - b[i]); }
+        return sum / static_cast<double>(a.size());
+    };
+
+    const std::vector<int> drawn = crop_at(0.0F);
+    const std::vector<int> empty = crop_at(kSpacing * 3.0F);
+    ASSERT_FALSE(drawn.empty() || empty.empty());
+    const double cover = mean_difference(drawn, empty);
+    GTEST_LOG_(INFO) << "the original cube against the empty sky: " << cover;
+    ASSERT_GT(cover, 20.0) << "the original cube does not fill the crop - check the framing";
+
+    // Both decode to cube.gltf's corners exactly (the round-trip suite), so only rasterization noise may differ.
+    constexpr double kLimit = 0.5;
+    const std::array<const char *, 2> packed{ "cube_meshopt.glb", "cube_meshopt_filters.glb" };
+    for (uint32_t index = 1; index <= packed.size(); ++index) {
+        const char *name = packed[index - 1U];
+        const float x = kSpacing * static_cast<float>(index);
+        const glm::mat4 placed = glm::translate(glm::mat4(1.0F), glm::vec3(x, 0.0F, 0.0F));
+        ASSERT_EQ(harness.renderer->addModel(Kataglyphis::TestSupport::oxidantGltfFixture(name), placed),
+          std::optional<uint32_t>(index))
+          << name << " did not load";
+        const std::vector<int> compressed = crop_at(x);
+        ASSERT_FALSE(compressed.empty());
+        const double difference = mean_difference(compressed, drawn);
+        GTEST_LOG_(INFO) << name << " against the original: " << difference;
+        EXPECT_LT(difference, kLimit) << name << " draws unlike the cube it was packed from";
+    }
+    EXPECT_FALSE(harness.renderer->hasDeviceLost());
+}
+
 // RT/PT see only the acceleration structure, so addModel must rebuild it or the model is invisible to them.
 TEST(GoldenRender, AddedModelAppearsInPathTracing)
 {

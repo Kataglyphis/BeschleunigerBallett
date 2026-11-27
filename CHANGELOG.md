@@ -14,6 +14,18 @@ the GitHub releases themselves.
 
 ### Added
 
+- `EXT_meshopt_compression` (plan N4, OxidANT pin `354ea61`): OxidANT's loader decodes gltfpack's `-c` and `-cc`
+  output for both renderers, in safe Rust and with no new crate (the bridge stays at 62 runtime packages): the
+  attribute codec's version 0, the triangle and index codecs and the octahedral, quaternion and exponential filters,
+  as meshoptimizer's scalar decoder does, whose MIT text the bridge's licences now carry. Each compressed view is
+  decoded in place into its parent's range (of a fallback buffer, which is never read, a URI-less placeholder or a
+  buffer with data) before an accessor reads it; before, a glTF requiring the extension failed to load. A broken
+  layout or stream fails the load, one file's views decode to at most 1 GiB, and a placeholder may declare no more
+  bytes than its views decode, each rounded up to 16.
+  `GoldenRender.MeshoptCompressedCubesDrawLikeTheirUncompressedOriginal` draws two gltfpack cubes, the codecs alone
+  and with the filters, against `cube.gltf` from a corner, so three faces' normals count, and the round trip matches
+  their corners with its. The WebGPU demo's wasm
+  grows by 25 KB, to 11.0 MB of its 12 MiB budget. `KHR_meshopt_compression` (`-cz`) is not read.
 - Exposure and auto exposure (plan C5, OxidANT pin with `common/exposure.slang`). Post scales the composited HDR
   radiance by `2^EV` before ACES, reading the EV from one two-float storage buffer, `[adapted EV, target EV]`, as the
   Rust renderer does; a manual EV (default 0, -4 to 4) writes it every frame, and auto exposure (default off, rate 3
