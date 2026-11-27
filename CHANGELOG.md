@@ -28,6 +28,15 @@ the GitHub releases themselves.
   strength is the Rust renderer's 0.6 (0 to 2, the Renderer tab's Bloom row); 0 records no pass.
   `KATAGLYPHIS_GPU_TIMING_JSON` gains `Bloom`. The harness pins bloom at 0, so no golden changed;
   `GoldenRender.BloomSpreadsABrightCardsEnergyAndConservesIt` grades its energy, reach and composite.
+- SSAO (plan C5, OxidANT's `ssao/ssao.slang`, compiled to SPIR-V): half-resolution depth-only occlusion and its 3x3
+  blur, which darkens the ambient and IBL light only, never the direct light (the owner's rule for both renderers,
+  so plan C11's AO rule is in). It reads a depth before the pass that lights the scene: the G-buffer's on the deferred
+  path, a new single-sample depth prepass of the opaque and MASK meshes on the forward one; the lit shaders multiply
+  OxidANT's `screen_space_occlusion` into their ambient term, a BLEND surface excepted. The default strength is the
+  Rust renderer's 0.7 (0 to 1, the Renderer tab's SSAO row); 0 records neither pass. `KATAGLYPHIS_GPU_TIMING_JSON`
+  gains `Ssao`, inside `Main`. The harness pins it at 0, so no golden changed;
+  `GoldenRender.SsaoDarkensTheAmbientLightAndNeverTheDirectLight` proves the rule on both raster paths. On llvmpipe
+  the forward prepass costs what the forward draw does (`Ssao` 491 ms against 4 on the deferred path).
 - `Colosseum-ktx2` (AssetANT release `Colosseum-ktx2-v1`, CC BY 4.0) is in `Resources/assets.lock`, fetched with
   `KATAGLYPHIS_FETCH_ALL_ASSETS` for the model picker: `Colosseum-gltf` with its 69 textures as UASTC KTX2 through
   `KHR_texture_basisu`. On llvmpipe they upload as BC7, 190 MiB of device memory against 760 MiB, and `load_flat`

@@ -139,6 +139,7 @@ using Kataglyphis::VulkanRendererInternals::FrontendShared::FxaaMode;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxAutoExposureSpeed;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxBloomStrength;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxExposureEv;
+using Kataglyphis::VulkanRendererInternals::FrontendShared::kMaxSsaoStrength;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinAutoExposureSpeed;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::kMinExposureEv;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES;
@@ -1343,6 +1344,8 @@ void GUI::renderRenderInspector()
     if (beginStudioProperties("##post", propertyLabelWidth())) {
         studioPropertyLabel("Bloom", "The glow around radiance past white; 0 turns it off");
         studioSlider("##bloom_strength", &guiRendererSharedVars.bloom_strength, 0.0F, kMaxBloomStrength, "%.2f");
+        studioPropertyLabel("SSAO", "Ambient occlusion strength; 0 turns it off");
+        studioSlider("##ssao_strength", &guiRendererSharedVars.ssao_strength, 0.0F, kMaxSsaoStrength, "%.2f");
         studioBeginDisabled(guiRendererSharedVars.auto_exposure);
         studioPropertyLabel("Exposure", "In stops; auto exposure overrides it");
         studioSlider("##exposure_ev", &guiRendererSharedVars.exposure_ev, kMinExposureEv, kMaxExposureEv, "%.1f EV");

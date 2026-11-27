@@ -445,6 +445,7 @@ TEST(BuildIntegrity, PostSettingsTakeTheRustRenderersDefaultsAndRanges)
           FrontendShared::kMinAutoExposureSpeed,
           FrontendShared::kMaxAutoExposureSpeed },
         { "bloom_strength", defaults.bloom_strength, 0.0F, FrontendShared::kMaxBloomStrength },
+        { "ssao_strength", defaults.ssao_strength, 0.0F, FrontendShared::kMaxSsaoStrength },
     };
     for (const auto &[field, value, lowest, highest] : floats) {
         const std::string rust = rust_default(field);

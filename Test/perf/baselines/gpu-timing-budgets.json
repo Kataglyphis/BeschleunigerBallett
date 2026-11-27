@@ -3,15 +3,17 @@
   "hosts": {
     "wsl-aarch64-llvmpipe": {
       "device": "llvmpipe (LLVM 21.1.8, 256 bits) in the :latest CI image, aarch64 WSL2, 8 cores",
-      "measured": "2026-11-22, linux-debug-clang through run-ctest.sh --virtual-display, 5 runs in two sessions after a warm-up run that fills Mesa's shader cache, 3 frames each now that timings start at the model's arrival: Main 478.47-498.55 ms, Forward (nested in Main) 474.25-494.09, Post 2.69-3.02, ShadowCascades 1345.61-1377.68; shares of the top-level passes 0.26-0.27, 0.26-0.27, 0.00, 0.73-0.74. A cold cache compiles Forward inside its first frame (1028 and 1032 ms) and fails this budget. ASan, not the layer, makes these about 7 times the Profile build's (Forward 76 ms, ShadowCascades 180 in linux-profile-clang). Until then (2026-11-16 to 2026-11-21) about 240 sky-only frames drawn while Dinosaurs parsed held Main at 7.43-15.31 ms",
+      "measured": "2026-11-27, linux-debug-clang through run-ctest.sh --virtual-display, 5 runs in one session after a warm-up run that fills Mesa's shader cache, 3 frames each: Main 474.86-489.51 ms, Forward (nested in Main) 468.23-483.91, Post 2.77-3.32, ExposureReduce 0.69-0.85, ShadowCascades 1335.53-1373.69; shares of the top-level passes 0.26, 0.26, 0.00, 0.00, 0.73-0.74. The exposure reduce runs every frame; the harness pins bloom and SSAO at 0 and auto exposure off, so Bloom, Ssao and Histogram do not. On 2026-11-22, before the exposure reduce: Main 478.47-498.55 ms, Forward 474.25-494.09, Post 2.69-3.02, ShadowCascades 1345.61-1377.68. A cold cache compiles Forward inside its first frame (1028 and 1032 ms) and fails this budget. ASan, not the layer, makes these about 7 times the Profile build's (Forward 76 ms, ShadowCascades 180 in linux-profile-clang). Until 2026-11-21 about 240 sky-only frames drawn while Dinosaurs parsed held Main at 7.43-15.31 ms",
       "rule": "max_ms 1.5x the slowest run, max_share the largest share plus 0.1",
       "max_ms": {
-        "Forward": 741.2,
-        "Main": 747.9,
-        "Post": 4.6,
-        "ShadowCascades": 2066.6
+        "ExposureReduce": 1.3,
+        "Forward": 725.9,
+        "Main": 734.3,
+        "Post": 5.0,
+        "ShadowCascades": 2060.6
       },
       "max_share": {
+        "ExposureReduce": 0.11,
         "Forward": 0.37,
         "Main": 0.37,
         "Post": 0.11,

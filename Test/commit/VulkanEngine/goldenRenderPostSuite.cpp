@@ -1,4 +1,4 @@
-// Goldens: the post chain's exposure, auto exposure and bloom, each graded against the frame's own HDR radiance.
+// Goldens: the post chain's exposure, auto exposure, bloom and SSAO, each graded against the frame's own radiance.
 
 #include <map>
 
@@ -114,6 +114,8 @@ TEST(GoldenRender, ExposureScalesTheRadianceBeforeTheTonemap)
     SKIP_WITHOUT_FRAME_CAPTURE(harness);
     harness.useForwardRaster();
     auto &renderer_vars = harness.settings.renderer;
+    // The cascades cost most of an llvmpipe frame (and a QEMU shard's), and nothing here grades them.
+    harness.settings.scene.shadows_enabled = false;
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
@@ -163,11 +165,12 @@ TEST(GoldenRender, AutoExposureConvergesOnTheFramesLogAverageAndHolds)
     // Looking down onto the lit ground: from the golden view the photo sky's fixed radiance outweighs any Sun.
     harness.camera->set_camera_position(glm::vec3(0.0F, 8.0F, 12.0F));
     harness.camera->set_orientation(-90.0F, -45.0F);
+    scene_vars.shadows_enabled = false;
     harness.render_frames(WARMUP_FRAMES);
 
-    constexpr double kSpeed = 3.0;
-    constexpr int kAdaptFrames = 40;
-    // One frame of 0.1 s at rate 3 covers 1 - e^-0.3 of the distance, the reduce's framerate-independent step.
+    constexpr double kSpeed = 5.0;
+    constexpr int kAdaptFrames = 25;
+    // One frame of 0.1 s at rate 5 covers 1 - e^-0.5 of the distance, the reduce's framerate-independent step.
     const double first_step = 1.0 - std::exp(-kFrameSeconds * kSpeed);
 
     struct Lighting
@@ -447,4 +450,61 @@ TEST(GoldenRender, BloomSpreadsABrightCardsEnergyAndConservesIt)
         harness.render_frames(SETTLE_FRAMES);
     }
     EXPECT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost blooming clouds or a traced frame.";
+}
+
+// SSAO scales the ambient light only: the Sun alone renders the same with it, the sky alone darkens, on both paths.
+TEST(GoldenRender, SsaoDarkensTheAmbientLightAndNeverTheDirectLight)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    auto &renderer_vars = harness.useForwardRaster();
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.shadows_enabled = false;
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture = [&](float ssao) {
+        renderer_vars.ssao_strength = ssao;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    for (const RasterizationMode path : { RasterizationMode::Forward, RasterizationMode::Deferred }) {
+        const char *name = path == RasterizationMode::Forward ? "forward" : "deferred";
+        renderer_vars.rasterizationMode = path;
+
+        // The Sun alone: no ambient term, so SSAO has nothing it may darken.
+        scene_vars.directional_light_radiance = 5.0F;
+        scene_vars.directional_light_ambient = 0.0F;
+        const std::vector<uint8_t> sun_without = capture(0.0F);
+        const std::vector<uint8_t> sun_with = capture(1.0F);
+        ASSERT_FALSE(sun_without.empty());
+        EXPECT_EQ(sun_with, sun_without) << name << ": SSAO changed a frame the Sun alone lights";
+
+        // The sky alone, through the baked environment.
+        scene_vars.directional_light_radiance = 0.0F;
+        scene_vars.directional_light_ambient = 1.0F;
+        const std::vector<uint8_t> sky_without = capture(0.0F);
+        const std::vector<uint8_t> sky_with = capture(1.0F);
+        ASSERT_EQ(sky_with.size(), sky_without.size());
+        std::size_t darkened = 0;
+        std::size_t brightened = 0;
+        double removed = 0.0;
+        const std::size_t pixels = sky_with.size() / 4U;
+        for (std::size_t pixel = 0; pixel < pixels; ++pixel) {
+            const double delta = luminance_of(sky_without, pixel) - luminance_of(sky_with, pixel);
+            removed += delta;
+            if (delta >= 3.0) { ++darkened; }
+            if (delta <= -1.0) { ++brightened; }
+        }
+        GTEST_LOG_(INFO) << name << ": SSAO darkened " << darkened << " of " << pixels
+                         << " pixels by 3 levels or more, " << removed / static_cast<double>(pixels)
+                         << " levels a pixel";
+        // Measured on llvmpipe: 1.3 % on both paths, at the dinosaurs' feet and folds.
+        EXPECT_GT(darkened * 200U, pixels) << name << ": SSAO darkened under 0.5 % of the frame's ambient light";
+        EXPECT_EQ(brightened, 0U) << name << ": SSAO brightened pixels, which only darkening may do";
+        EXPECT_FALSE(harness.renderer->hasDeviceLost()) << name;
+    }
 }

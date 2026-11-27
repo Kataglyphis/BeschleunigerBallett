@@ -1,12 +1,13 @@
 # Post-processing
 
-What the C++ engine does to the HDR target between the scene passes and the swapchain: exposure, auto
-exposure, bloom and the tonemap, with the Rust WebGPU renderer's shaders, buffers and defaults. Everything here is
-**shipped** behaviour; open work lives in `BACKLOG.md`.
+What the C++ engine does around the HDR target: SSAO before the scene is lit, then exposure, auto exposure,
+bloom and the tonemap between the scene passes and the swapchain, with the Rust WebGPU renderer's shaders, buffers
+and defaults. Everything here is **shipped** behaviour; open work lives in `BACKLOG.md`.
 
 ## Pipeline shape
 
-Each frame records these stages after `main` (and the clouds), in `RenderStageOrder`:
+SSAO records inside `main`, before the pass that lights the scene (below). Each frame records these stages after
+`main` (and the clouds), in `RenderStageOrder`:
 
 | Stage | Order | Runs | Pass |
 | --- | --- | --- | --- |
@@ -44,7 +45,7 @@ composited radiance by `exposure_scale`, `exp2`, before ACES; nothing reads it b
 
 ## Bloom
 
-`renderer/BloomStage.cpp`, at half the swapchain's extent rounded down (`bloomExtent`, OxidANT's `post_half`), into
+`renderer/BloomStage.cpp`, at half the swapchain's extent rounded down (`postHalfExtent`, OxidANT's `post_half`), into
 two RGBA16F targets with one linear clamp-to-edge sampler:
 
 - **Bright pass**: the HDR target sampled at the half-resolution texel's centre, the 2x2 average, with the clouds
@@ -60,6 +61,25 @@ two RGBA16F targets with one linear clamp-to-edge sampler:
   post binds the output on every frame. Each pass's barriers discard the target it overwrites after the previous
   frame's reads.
 
+## SSAO
+
+`renderer/SsaoStage.cpp` runs OxidANT's `ssao/ssao.slang` at half resolution into two R8 targets: 12 hemisphere taps
+around the normal rebuilt from the depth's neighbours (radius 0.6, bias 0.02, intensity 1, the Rust renderer's), then a
+3x3 box blur. It darkens the **ambient and IBL light only**, never the direct light, in both renderers, so it must read
+a depth before the scene is lit:
+
+- **Deferred**: the G-buffer's depth, in `DeferredRasterizer`'s `beforeLighting` hook, after the G-buffer turned
+  sampleable.
+- **Forward**: a single-sample depth prepass of the opaque and MASK meshes (`Rasterizer::recordDepthPrepass`,
+  `rasterizer.slang`'s `fs_depth_prepass`, the forward pass's culling and draw walk) into its own depth image, which
+  the forward pass does not share, so its depth test is unchanged.
+- The forward and deferred lighting read the blurred occlusion at their pixel through `SSAO_BINDING` and
+  `SceneUBO::screenOcclusion` (strength, 1 / extent) and multiply OxidANT's `screen_space_occlusion` into the ambient
+  term (`common/screen_occlusion.slang`); a BLEND surface takes none, as its texel belongs to the surface behind it.
+  The traced modes run no SSAO.
+- The occlusion starts white and sampleable; at strength 0 neither the prepass nor SSAO records and the factor is 1.
+- `KATAGLYPHIS_GPU_TIMING_JSON` names the scope `Ssao`, nested in `Main` as in the Rust renderer, prepass included.
+
 ## Settings
 
 The Renderer tab's POST section, with the Rust renderer's defaults and ranges (`GUIRendererSharedVars`):
@@ -70,27 +90,33 @@ The Renderer tab's POST section, with the Rust renderer's defaults and ranges (`
 | `auto_exposure` | off | |
 | `auto_exposure_speed` | 3 per second | 0.1 to 10 |
 | `bloom_strength` | 0.6 | 0 to 2 |
+| `ssao_strength` | 0.7 | 0 to 1 |
 
 The renderer clamps each into its range and takes the default for NaN or an infinity (`sanitizePostSetting`).
 
 ## The goldens
 
-The harness pins manual exposure at 0 EV and bloom at 0 (`GoldenRenderHarness.hpp`): 0 EV multiplies by exactly 1
-and a strength of 0 records no bloom pass, so no golden that predates the post chain changed: post's added `min(..., 1e4)` sits above 7.24, where ACES already shows
-white. `goldenRenderPostSuite.cpp` grades each effect against the frame's own HDR capture:
+The harness pins manual exposure at 0 EV, bloom at 0 and SSAO at 0 (`GoldenRenderHarness.hpp`): 0 EV multiplies by
+exactly 1 and a strength of 0 records neither pass, so no golden that predates the post chain changed: post's added
+`min(..., 1e4)` sits above 7.24, where ACES already shows white. `goldenRenderPostSuite.cpp` grades each effect
+against the frame's own HDR capture:
 
 - `ExposureScalesTheRadianceBeforeTheTonemap`: at -1, 0 and +1 EV every sampled pixel is post's encoding of its
   HDR radiance times `2^EV` within 1.5 levels, the buffer holds `[EV, EV]`, and the radiance read back off the
   levels doubles and halves (median ratio 2 and 0.5).
 - `AutoExposureConvergesOnTheFramesLogAverageAndHolds`: from a dark and a bright Sun the target lies within a
-  quarter EV of the HDR capture's log-average, the first frame moves `1 - e^(-0.3)` of the way, every frame moves
-  towards the target and none past it, 40 frames converge, a static scene holds, and post shows the radiance at
+  quarter EV of the HDR capture's log-average, the first frame moves `1 - e^(-0.5)` of the way, every frame moves
+  towards the target and none past it, 25 frames converge, a static scene holds, and post shows the radiance at
   the adapted EV.
 - `BloomSpreadsABrightCardsEnergyAndConservesIt`: an emissive card at radiance 6 on the navy: the blurred target
   is the CPU bright pass's 9-tap Gaussian texel for texel within the half floats' rounding, holds its energy within
-  2 %, spills some of it outside the card's texels and none further than four texels, every pixel is post's encoding of the radiance plus 0.6 times the bilinear bloom within 1.5
-  levels, and a pixel the bloom does not reach is unchanged. It then blooms with the clouds and on a path-traced
+  2 %, spills some of it outside the card's texels and none further than four texels, every pixel is post's
+  encoding of the radiance plus 0.6 times the bilinear bloom within 1.5 levels, and a pixel the bloom does not
+  reach is unchanged. It then blooms with the clouds and on a path-traced
   frame, which the sync validation of the GPU run watches.
+- `SsaoDarkensTheAmbientLightAndNeverTheDirectLight`: on both raster paths, the Sun alone renders byte-identical with
+  SSAO at 0 and 1, and the sky alone darkens over 0.5 % of the frame by 3 levels or more (1.3 % on llvmpipe) and
+  brightens no pixel.
 
-`KATAGLYPHIS_GPU_TIMING_JSON` names the passes `Histogram`, `ExposureReduce` and `Bloom`, as the Rust renderer's
-`TimedPass`.
+`KATAGLYPHIS_GPU_TIMING_JSON` names the passes `Histogram`, `ExposureReduce`, `Bloom` and `Ssao`, as the Rust
+renderer's `TimedPass`.

@@ -32,5 +32,6 @@ TEST(SceneUboLayoutUnit, MatchesTheCompiledStd140Block)
     EXPECT_EQ(offsetof(SceneUBO, cloudAmbientTop), 352U);
     EXPECT_EQ(offsetof(SceneUBO, cloudAmbientBottom), 368U);
     EXPECT_EQ(offsetof(SceneUBO, iblParams), 384U);
-    EXPECT_EQ(sizeof(SceneUBO), 400U);
+    EXPECT_EQ(offsetof(SceneUBO, screenOcclusion), 400U);
+    EXPECT_EQ(sizeof(SceneUBO), 416U);
 }

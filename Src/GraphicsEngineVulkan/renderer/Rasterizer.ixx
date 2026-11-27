@@ -44,6 +44,8 @@ class Rasterizer
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
     vk::ImageView getDepthImageView() const { return depthBufferImage->getImageView(); }
+    // SSAO's depth: the prepass's, which the forward pass does not share, left in eShaderReadOnlyOptimal.
+    vk::ImageView getPrepassDepthImageView() const { return prepassDepthImage->getImageView(); }
     vk::Format getDepthFormat() const { return depth_format; }
 
     void setPushConstant(PushConstantRasterizer push_constant);
@@ -62,6 +64,12 @@ class Rasterizer
       const glm::vec3 &eye,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt,
       const std::function<void(vk::CommandBuffer)> &drawSky = {});
+
+    /// The opaque and MASK meshes' depth alone, for SSAO before the forward pass shades; culled as recordCommands culls.
+    void recordDepthPrepass(vk::CommandBuffer &commandBuffer,
+      Kataglyphis::Scene *scene,
+      std::span<const vk::DescriptorSet> descriptorSets,
+      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
     /// Meshes drawn / considered by the most recent recordCommands call.
     /// Reset at the start of each call, so a frame that records nothing
@@ -92,6 +100,7 @@ class Rasterizer
 
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
+    std::unique_ptr<Kataglyphis::Texture> prepassDepthImage;
     // Resolved once by createTextures(), which init() always runs before
     // createGraphicsPipeline() - reuse it there rather than querying again, so the
     // pipeline's depth format and the image it renders to cannot diverge.
@@ -103,6 +112,8 @@ class Rasterizer
     vk::Pipeline graphics_pipeline{};
     // glTF BLEND meshes, after the opaque ones; shares pipeline_layout.
     vk::Pipeline transparent_pipeline{};
+    // SSAO's depth prepass; shares pipeline_layout.
+    vk::Pipeline prepass_pipeline{};
     vk::PipelineLayout pipeline_layout{};
 
     void createTextures(vk::CommandPool &commandPool);

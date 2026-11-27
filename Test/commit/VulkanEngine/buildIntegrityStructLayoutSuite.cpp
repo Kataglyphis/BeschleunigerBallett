@@ -23,6 +23,7 @@
 #include "renderer/FxaaUniforms.hpp"
 #include "renderer/GlobalUBO.hpp"
 #include "renderer/SceneUBO.hpp"
+#include "renderer/SsaoUniforms.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
@@ -260,7 +261,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "cloudParameters", offsetof(SceneUBO, cloudParameters) },
             { "cloudAmbientTop", offsetof(SceneUBO, cloudAmbientTop) },
             { "cloudAmbientBottom", offsetof(SceneUBO, cloudAmbientBottom) },
-            { "iblParams", offsetof(SceneUBO, iblParams) } },
+            { "iblParams", offsetof(SceneUBO, iblParams) },
+            { "screenOcclusion", offsetof(SceneUBO, screenOcclusion) } },
           sizeof(SceneUBO),
           alignof(SceneUBO),
           { { "cascadeLightSpaceMatrices", sizeof(SceneUBO::cascadeLightSpaceMatrices[0]) } } },
@@ -354,6 +356,13 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "bloom_strength", offsetof(PushConstantPost, bloom_strength) } },
           sizeof(PushConstantPost),
           alignof(PushConstantPost) },
+        // OxidANT's ssao.slang, which SsaoStage fills from SsaoUniforms.hpp.
+        { "SsaoUniforms_std140",
+          { { "proj", offsetof(Kataglyphis::VulkanRendererInternals::SsaoUniforms, proj) },
+            { "inv_proj", offsetof(Kataglyphis::VulkanRendererInternals::SsaoUniforms, inv_proj) },
+            { "params", offsetof(Kataglyphis::VulkanRendererInternals::SsaoUniforms, params) } },
+          sizeof(Kataglyphis::VulkanRendererInternals::SsaoUniforms),
+          alignof(Kataglyphis::VulkanRendererInternals::SsaoUniforms) },
         // OxidANT's fxaa.slang, which FxaaStage fills from FxaaUniforms.hpp.
         { "FxaaUniforms_std140",
           { { "params", offsetof(Kataglyphis::VulkanRendererInternals::FxaaUniforms, params) } },

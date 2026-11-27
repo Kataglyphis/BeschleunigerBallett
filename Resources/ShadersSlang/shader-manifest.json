@@ -116,6 +116,15 @@
       ]
     },
     {
+      "_comment": "SSAO's depth prepass on the forward path (SPIR-V only).",
+      "file": "rasterizer/rasterizer.slang",
+      "entry": "fs_depth_prepass",
+      "stage": "fragment",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
       "_comment": "Deferred geometry + lighting (SPIR-V only).",
       "file": "deferred/deferred.slang",
       "entry": "geometry_vs_main",

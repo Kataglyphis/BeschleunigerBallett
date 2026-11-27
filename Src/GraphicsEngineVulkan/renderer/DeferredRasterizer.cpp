@@ -314,7 +314,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   const glm::vec3 &eye,
   const std::optional<FrustumPlanes> &cameraFrustum,
   const std::function<void(vk::CommandBuffer)> &afterGeometryPass,
-  const std::function<void(vk::CommandBuffer)> &drawSky)
+  const std::function<void(vk::CommandBuffer)> &drawSky,
+  const std::function<void(vk::CommandBuffer)> &beforeLighting)
 {
     // Both passes bind descriptorSets[0], as Clouds::recordComputeCommands' dispatch does.
     if (descriptorSets.empty()) {
@@ -423,6 +424,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
           vk::AccessFlagBits2::eShaderSampledRead,
           depth_aspect) };
     recordImageBarriers(commandBuffer, gbuffer_to_sampled);
+    if (beforeLighting) { beforeLighting(commandBuffer); }
 
     // Lighting pass: one fullscreen triangle into the offscreen target.
     const vk::RenderingAttachmentInfo lighting_attachment =

@@ -19,6 +19,8 @@ static const int PUNCTUAL_SHADOW_MAP_BINDING = 7;
 static const int IBL_IRRADIANCE_BINDING = 8;
 static const int IBL_PREFILTERED_BINDING = 9;
 static const int IBL_BRDF_LUT_BINDING = 10;
+// SSAO's half-resolution occlusion (SsaoStage), which the raster paths' ambient light takes.
+static const int SSAO_BINDING = 11;
 
 // Ray-tracing set (ray- and path-traced shaders only).
 static const int TLAS_BINDING = 0;

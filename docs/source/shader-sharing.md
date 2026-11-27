@@ -314,7 +314,7 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   (`render::ibl::SKY_ZENITH`/`SKY_HORIZON`/`SKY_GROUND`, consumed by
   `EnvironmentImage::sky`'s panorama).
 
-**Entry-point shader targets:** four entry-point sources serve both renderers.
+**Entry-point shader targets:** five entry-point sources serve both renderers.
 `sky/sky.slang` is the sky each draws into its HDR target: the C++ engine
 compiles its `vs_vulkan_main` (`SV_VulkanVertexID`, since `SV_VertexID` needs
 draw parameters a Raspberry Pi 5's v3dv lacks) and `fs_main` to SPIR-V through
@@ -326,8 +326,8 @@ tonemap: the C++ engine compiles only its `fs_main`, behind `post.slang`'s
 `renderer/FxaaUniforms.hpp` (z 0: post's intermediate holds sRGB-encoded
 bytes). `histogram/histogram.slang` is auto exposure: the C++ engine dispatches its three kernels as they are,
 over the same two-float exposure buffer `post.slang` reads, and `bloom/bloom.slang` is bloom, whose three fragment
-entries the C++ engine compiles behind `post.slang`'s vertex ([`post-processing.md`](post-processing.md)). Every
-other source compiles to one target. `tonemap/tonemap.slang` (WGSL) and `post/post.slang` (SPIR-V) look
+entries the C++ engine compiles behind `post.slang`'s vertex, as `ssao/ssao.slang`'s occlusion and blur
+([`post-processing.md`](post-processing.md)). Every other source compiles to one target. `tonemap/tonemap.slang` (WGSL) and `post/post.slang` (SPIR-V) look
 like one pass but are separate sources: the C++ side's `post/post.slang`
 also composites clouds via push constants, so it never merged with the Rust
 tonemap shader.
@@ -359,7 +359,7 @@ tonemap shader.
 | `raytracing/raytrace.rmiss.slang` | spirv |
 | `raytracing/shadow.rmiss.slang` | spirv |
 | `sky/sky.slang` | both |
-| `ssao/ssao.slang` | wgsl |
+| `ssao/ssao.slang` | both |
 | `tex_quad/tex_quad.slang` | wgsl |
 | `tonemap/tonemap.slang` | wgsl |
 | `tracer/trace_debug.slang` | wgsl |
@@ -447,6 +447,7 @@ imports.
 | `common/push_constants.slang` | spirv |
 | `common/raster_geometry.slang` | spirv |
 | `common/scene_types.slang` | spirv |
+| `common/screen_occlusion.slang` | spirv |
 | `common/shared_constants.slang` | spirv |
 | `common/shadow_pcf.slang` | both |
 | `common/sky_model.slang` | both |

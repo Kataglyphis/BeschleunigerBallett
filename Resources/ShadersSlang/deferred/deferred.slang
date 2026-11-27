@@ -12,6 +12,7 @@ import fullscreen;
 import gbuffer;
 import hdr_safe;
 import punctual_lights;
+import screen_occlusion;
 
 // Deferred geometry pass (writes the G-buffer) and lighting pass.
 
@@ -140,8 +141,9 @@ float4 lighting_fs_main(FullscreenVsOut In) : SV_Target
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
     float3 punctual = punctual_lighting(s.position, s.n, V, s.albedo, s.metallic, s.roughness, f0, energy,
                                         sceneUBO_lighting.punctualShadowCount);
-    // The sky lights what the sun cannot reach, as far as the surface's occlusion lets it.
+    // The sky lights what the sun cannot reach, as far as the surface's occlusion and SSAO let it.
     float3 ambient = sceneUBO_lighting.dirLight.direction.w * s.occlusion
+                     * scene_screen_occlusion(sceneUBO_lighting, In.svPosition, false)
                      * scene_sky_ambient(sceneUBO_lighting, s.n, V, s.albedo, s.metallic, s.roughness, f0, energy);
 
     // Emitted light is not shadowed.

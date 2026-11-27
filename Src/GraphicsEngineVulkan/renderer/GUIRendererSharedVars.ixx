@@ -34,6 +34,8 @@ inline constexpr float kMinAutoExposureSpeed = 0.1F;
 inline constexpr float kMaxAutoExposureSpeed = 10.0F;
 inline constexpr float kDefaultBloomStrength = 0.6F;
 inline constexpr float kMaxBloomStrength = 2.0F;
+inline constexpr float kDefaultSsaoStrength = 0.7F;
+inline constexpr float kMaxSsaoStrength = 1.0F;
 
 // The editor's range; NaN and the infinities take the default, as every other setting the renderer reads.
 inline float sanitizePostSetting(float value, float lowest, float highest, float fallback)
@@ -61,6 +63,7 @@ enum class GpuTimedPass : int {
     Histogram,
     ExposureReduce,
     Bloom,
+    Ssao,
     Count
 };
 
@@ -83,6 +86,7 @@ inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
   "Histogram",
   "Exposure",
   "Bloom",
+  "  SSAO",
 });
 inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
@@ -107,6 +111,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
   "Histogram",
   "ExposureReduce",
   "Bloom",
+  "Ssao",
 });
 
 // The pass whose scope encloses each one, Count for a top-level pass: a frame sum adds only the top level.
@@ -126,6 +131,7 @@ inline constexpr std::array GPU_TIMED_PASS_PARENTS = std::to_array<GpuTimedPass>
   GpuTimedPass::Count,
   GpuTimedPass::Count,
   GpuTimedPass::Count,
+  GpuTimedPass::Main,
 });
 
 static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(),
@@ -226,6 +232,8 @@ struct GUIRendererSharedVars
     float auto_exposure_speed = kDefaultAutoExposureSpeed;
     // How much of the half-resolution glow around radiance past white post adds; 0 turns the pass off.
     float bloom_strength = kDefaultBloomStrength;
+    // How far SSAO darkens the ambient and IBL light, never the direct light; 0 turns it and its prepass off.
+    float ssao_strength = kDefaultSsaoStrength;
 };
 
 // The manual EV a frame applies: the editor's range, the default for NaN.
@@ -235,6 +243,10 @@ inline float manualExposureEv(const GUIRendererSharedVars &vars)
 // The bloom strength a frame applies: the editor's range, the default for NaN; 0 records no bloom pass.
 inline float frameBloomStrength(const GUIRendererSharedVars &vars)
 { return sanitizePostSetting(vars.bloom_strength, 0.0F, kMaxBloomStrength, kDefaultBloomStrength); }
+
+// The SSAO strength a frame applies: the editor's range, the default for NaN; 0 records no SSAO pass.
+inline float frameSsaoStrength(const GUIRendererSharedVars &vars)
+{ return sanitizePostSetting(vars.ssao_strength, 0.0F, kMaxSsaoStrength, kDefaultSsaoStrength); }
 
 /// A loaded glTF's first directional light: the unit direction towards it, as the editor stores it, and its colour.
 struct PublishedSun

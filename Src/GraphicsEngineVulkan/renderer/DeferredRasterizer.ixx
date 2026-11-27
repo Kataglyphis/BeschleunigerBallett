@@ -49,7 +49,7 @@ class DeferredRasterizer
     /// the SHADOW pass must do exactly that: geometry behind or beside the
     /// camera still casts into view, so culling casters by the camera frustum
     /// deletes shadows rather than saving work.
-    /// `afterGeometryPass` runs between the G-buffer pass and the lighting pass, e.g. to stamp their GPU times.
+    /// `afterGeometryPass` runs right after the G-buffer pass, `beforeLighting` once its targets are sampleable (SSAO).
     /// `drawSky` records the sky into the lit target before BLEND, inside a pass with the G-buffer depth attached.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
@@ -58,7 +58,8 @@ class DeferredRasterizer
       const glm::vec3 &eye,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt,
       const std::function<void(vk::CommandBuffer)> &afterGeometryPass = {},
-      const std::function<void(vk::CommandBuffer)> &drawSky = {});
+      const std::function<void(vk::CommandBuffer)> &drawSky = {},
+      const std::function<void(vk::CommandBuffer)> &beforeLighting = {});
 
     /// Meshes drawn / considered by the most recent recordCommands call.
     /// Reset at the start of each call, so a frame that records nothing

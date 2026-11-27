@@ -31,6 +31,7 @@ import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
 import kataglyphis.vulkan.exposure_stage;
 import kataglyphis.vulkan.bloom_stage;
+import kataglyphis.vulkan.ssao_stage;
 import kataglyphis.vulkan.fxaa_stage;
 import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.render_settings;
@@ -305,6 +306,10 @@ class VulkanRenderer
     [[nodiscard]] Kataglyphis::VulkanRendererInternals::ExposureFrameParams exposureFrameParams();
     // bloom.slang's passes; declared before postDescriptors, which bind its output.
     Kataglyphis::VulkanRendererInternals::BloomStage bloomStage;
+    // ssao.slang's passes over the raster paths' depth; declared before the shared sets, which bind its occlusion.
+    Kataglyphis::VulkanRendererInternals::SsaoStage ssaoStage;
+    // Points SSAO at the forward prepass's and the G-buffer's depth, after either was (re)created.
+    void bindSsaoDepths();
 
     // Drawn inside the main stage, into the HDR target post reads.
     Kataglyphis::SkyBox skyBox;

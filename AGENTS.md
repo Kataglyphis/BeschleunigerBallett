@@ -887,7 +887,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 116 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 120 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -909,7 +909,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster-1` to `raster-3`: every GPU test in no other shard (95 today, two of them disabled), every third
+  - `raster-1` to `raster-3`: every GPU test in no other shard (99 today, two of them disabled), every third
     by ctest number in each (`-I k,,3`, which intersects with the filter), 90 min per test. As one `raster`
     job they passed GitHub's 6 h job limit: run 45969392334 had finished 64 of 95 in 5.7 h of tests, which a
     split by number leaves at 1.7-2.0 h per shard;
@@ -1249,7 +1249,7 @@ rule above; its pages are listed in
 | `docs/source/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, the Linux CI run on llvmpipe, host verification loop, synchronization validation |
 | `docs/source/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
 | `docs/source/clouds.md` | Volumetric clouds: pipeline shape, estimator, UBO/constants tables, queue ownership, compositing contract |
-| `docs/source/post-processing.md` | Post chain: exposure, auto exposure and bloom, the exposure buffer, the stages, settings and defaults, what the harness pins |
+| `docs/source/post-processing.md` | Post chain: exposure, auto exposure, bloom and SSAO, the exposure buffer, the stages, settings and defaults, what the harness pins |
 | `docs/source/renderer-bounds-invariant.md` | **Pointer only.** WebGPU renderer bounds invariant; owned by OxidANT at [`third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md`](third_party/OxidANT/crates/webgpu_renderer/docs/renderer-bounds-invariant.md) |
 | `docs/source/LICENSES-README.md` | Third-party license documentation |
 | `docs/source/` | The site: every guide above and `README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `literature.md`, plus `graphviz_files.rst`, which `graphviz_generator.py` writes during the docs build. A new page goes here and into `index.rst`'s toctree |

@@ -129,6 +129,9 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
 
     rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool.get());
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
+    // Before the shared sets' first write, which binds its occlusion.
+    ssaoStage.init(device, &vulkanSwapChain, graphics_command_pool.get());
+    bindSsaoDepths();
 
     clouds.init(device,
       graphics_command_pool.get(),
@@ -268,6 +271,18 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
     fillSceneUboCloudAmbient(sceneUBO, sceneSettings.skybox_enabled, skyBox.getCloudAmbient());
     fillSceneUboAmbientMaps(
       sceneUBO, sceneSettings.skybox_enabled, ambientMaps.baked(), ambientMaps.prefilteredTopMip());
+    // The lit fragments find their SSAO texel by their pixel, as the occlusion covers the whole image.
+    sceneUBO.screenOcclusion = glm::vec4(frameSsaoStrength(settings.renderer),
+      1.0F / static_cast<float>(std::max(extent.width, 1U)),
+      1.0F / static_cast<float>(std::max(extent.height, 1U)),
+      0.0F);
+}
+
+void Kataglyphis::VulkanRenderer::bindSsaoDepths()
+{
+    using Kataglyphis::VulkanRendererInternals::SsaoDepthSource;
+    ssaoStage.bindDepth(SsaoDepthSource::ForwardPrepass, rasterizer.getPrepassDepthImageView());
+    ssaoStage.bindDepth(SsaoDepthSource::Deferred, deferredRasterizer.getDepthBufferImageView());
 }
 
 auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
@@ -577,6 +592,9 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[1].resize = [this](const RenderStageResize &) {
         rasterizer.recreateFrameResources(graphics_command_pool.get());
         deferredRasterizer.recreateFrameResources();
+        // Half the new extent; updateAllDescriptorSets rebinds its occlusion in the shared sets afterwards.
+        ssaoStage.recreateFrameResources(graphics_command_pool.get());
+        bindSsaoDepths();
         // The accumulation history is extent-sized; recreating it also resets the frame counter.
         if (device->supportsHardwareAcceleratedRRT()) {
             createPathTracingAccumulationResources();
@@ -590,6 +608,8 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
             sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout()
         };
         deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
+        // SSAO records inside the raster paths, before their lighting.
+        ssaoStage.shaderHotReload();
         // The sky draws inside the main stage's passes.
         skyBox.shaderHotReload();
         if (Kataglyphis::Texture *cube_map = skyBox.getCubeMapTexture(); cube_map != nullptr) {
@@ -1333,7 +1353,21 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
     const auto draw_sky = [this, image_index](
                             vk::CommandBuffer passes) { skyBox.recordRasterDraw(passes, image_index); };
 
+    // SSAO scales only the ambient light, so it reads a depth before the pass that lights the scene.
+    const bool ssao = frameSsaoStrength(frameSettings.renderer) > 0.0F;
+    const auto record_ssao = [&](
+                               vk::CommandBuffer passes, Kataglyphis::VulkanRendererInternals::SsaoDepthSource source) {
+        Kataglyphis::debug::ScopedCmdLabel const label(passes, "ssao", { 0.50F, 0.50F, 0.55F, 1.0F });
+        gpuTiming.writeTimestamp(passes, GpuTimedPass::Ssao, true);
+        if (source == Kataglyphis::VulkanRendererInternals::SsaoDepthSource::ForwardPrepass) {
+            rasterizer.recordDepthPrepass(passes, scene, rasterizer_descriptor_sets, camera_frustum);
+        }
+        ssaoStage.recordCommands(passes, image_index, source, globalUBO.projection);
+        gpuTiming.writeTimestamp(passes, GpuTimedPass::Ssao, false);
+    };
+
     if (raster_mode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
+        if (ssao) { record_ssao(commandBuffer, Kataglyphis::VulkanRendererInternals::SsaoDepthSource::ForwardPrepass); }
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::Forward, true);
         rasterizer.recordCommands(commandBuffer,
@@ -1356,11 +1390,12 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
           deferred_sets,
           glm::vec3(sceneUBO.cam_pos),
           camera_frustum,
-          [this](vk::CommandBuffer passes) {
-              gpuTiming.writeTimestamp(passes, GpuTimedPass::GBuffer, false);
+          [this](vk::CommandBuffer passes) { gpuTiming.writeTimestamp(passes, GpuTimedPass::GBuffer, false); },
+          draw_sky,
+          [&](vk::CommandBuffer passes) {
+              if (ssao) { record_ssao(passes, Kataglyphis::VulkanRendererInternals::SsaoDepthSource::Deferred); }
               gpuTiming.writeTimestamp(passes, GpuTimedPass::DeferredLighting, true);
-          },
-          draw_sky);
+          });
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::DeferredLighting, false);
     }
 
@@ -1793,7 +1828,9 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       // The skybox's baked environment, read by the raster and traced modes' ambient term and the path tracer's bounce sky.
       .addBinding(IBL_IRRADIANCE_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
       .addBinding(IBL_PREFILTERED_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
-      .addBinding(IBL_BRDF_LUT_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages);
+      .addBinding(IBL_BRDF_LUT_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, ambient_map_stages)
+      // SSAO's occlusion, read by the forward and deferred lighting shaders' ambient term.
+      .addBinding(SSAO_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!sharedRenderDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create shared render descriptor resources!");
@@ -1897,6 +1934,14 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
               vk::ImageLayout::eShaderReadOnlyOptimal,
               cubes->getSampler());
         }
+    }
+
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        sharedRenderDescriptors.writeImage(i,
+          SSAO_BINDING,
+          ssaoStage.getOcclusion().getImageView(),
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          ssaoStage.getSampler());
     }
 
     if (ambientMaps.ready()) {

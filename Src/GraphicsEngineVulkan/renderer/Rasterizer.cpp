@@ -89,6 +89,59 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
+void Kataglyphis::VulkanRendererInternals::Rasterizer::recordDepthPrepass(vk::CommandBuffer &commandBuffer,
+  Scene *scene,
+  std::span<const vk::DescriptorSet> descriptorSets,
+  const std::optional<FrustumPlanes> &cameraFrustum)
+{
+    if (descriptorSets.empty()) {
+        spdlog::error("Rasterizer::recordDepthPrepass called with an empty shared descriptor set span");
+        return;
+    }
+    const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Image depth_image = prepassDepthImage->getImage();
+    const vk::ImageAspectFlags depth_aspect = depthStencilTransitionAspect(depth_format);
+
+    // The last frame's SSAO sampled it; the clear overwrites it.
+    recordImageBarrier(commandBuffer,
+      buildImageMemoryBarrier(depth_image,
+        vk::ImageLayout::eUndefined,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eNone,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        depth_aspect));
+
+    const vk::RenderingAttachmentInfo depth_attachment = buildRenderingAttachmentInfo(prepassDepthImage->getImageView(),
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eStore,
+      vk::ClearValue{ vk::ClearDepthStencilValue{ 1.0F, 0 } });
+    commandBuffer.beginRendering(buildRenderingInfo(extent, {}, &depth_attachment));
+    setFullExtentViewportAndScissor(commandBuffer, extent);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, prepass_pipeline);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
+    std::ignore = recordSceneMeshDraws(commandBuffer,
+      pipeline_layout,
+      vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+      scene,
+      cameraFrustum,
+      pushConstant);
+    commandBuffer.endRendering();
+
+    // SSAO's occlusion pass reads it in its fragment shader.
+    recordImageBarrier(commandBuffer,
+      buildImageMemoryBarrier(depth_image,
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+        vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+        vk::PipelineStageFlagBits2::eFragmentShader,
+        vk::AccessFlagBits2::eShaderSampledRead,
+        depth_aspect));
+}
+
 auto Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index) -> Kataglyphis::Texture &
 { return *offscreenTextures[index]; }
 
@@ -227,6 +280,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyTransparentPipelin
         device->getLogicalDevice().destroyPipeline(transparent_pipeline);
         transparent_pipeline = nullptr;
     }
+    if (prepass_pipeline) {
+        device->getLogicalDevice().destroyPipeline(prepass_pipeline);
+        prepass_pipeline = nullptr;
+    }
 }
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
@@ -240,6 +297,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
 
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
+    if (prepassDepthImage) { prepassDepthImage->cleanUp(); }
+    prepassDepthImage.reset();
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
@@ -299,6 +358,22 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
       depth_aspect_flags,
       1);
+
+    // Sampleable from the start: SSAO's deferred frames bind it too, in its blur's unused depth slot.
+    prepassDepthImage = std::make_unique<Texture>();
+    std::ignore = createDepthAttachment(*prepassDepthImage,
+      device,
+      swap_chain_extent,
+      vk::ImageUsageFlagBits::eSampled,
+      vk::ImageAspectFlagBits::eDepth,
+      "forward depth prepass");
+    prepassDepthImage->getVulkanImage().transitionImageLayout(device->getLogicalDevice(),
+      device->getGraphicsQueue(),
+      commandPool,
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
+      depth_aspect_flags,
+      1);
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
@@ -337,4 +412,16 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 
     transparent_pipeline = buildTransparentScenePipeline(device, pipeline_layout, OFFSCREEN_FORMAT, depth_format);
+
+    ShaderStagePair prepass_stages{
+        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_depth_prepass.spv"
+    };
+    prepass_pipeline =
+      PipelineBuilder()
+        .setShaderStages({ prepass_stages.stages().begin(), prepass_stages.stages().end() })
+        .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
+        .setDynamicCulling(true)
+        .setRenderingFormats({}, depth_format)
+        .setDebugName("depth prepass")
+        .build(device->getLogicalDevice(), pipeline_layout, device->getPipelineCache());
 }

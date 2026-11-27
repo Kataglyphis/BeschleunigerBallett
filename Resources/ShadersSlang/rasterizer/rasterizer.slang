@@ -10,6 +10,7 @@ import raster_geometry;
 import material_textures;
 import hdr_safe;
 import punctual_lights;
+import screen_occlusion;
 import surface_lighting;
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
@@ -85,12 +86,29 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // The cascades shadow the sun only; the first point and spot lights have their own cubes.
     float3 punctual = punctual_lighting(
         In.worldPosition, N, V, albedo, metallic, roughness, f0, energy, sceneUBO.punctualShadowCount);
-    // The sky lights what the sun cannot reach, as far as the surface's occlusion lets it.
+    // The sky lights what the sun cannot reach, as far as the surface's occlusion and SSAO let it.
     float3 ambient = sceneUBO.dirLight.direction.w * resolved_occlusion(obj, material, In.texCoords)
+                     * scene_screen_occlusion(sceneUBO, In.svPosition, material.alphaMode == ALPHA_BLEND)
                      * scene_sky_ambient(sceneUBO, N, V, albedo, metallic, roughness, f0, energy);
 
     // Emitted light is not shadowed.
     return float4(surface_lighting(sunDirect, sunVisibility, sceneUBO.cascadedShadowIntensity, punctual, ambient,
                                    resolved_emission(obj, material, In.texCoords)),
                   coverage);
+}
+// SSAO's depth on the forward path, drawn before fs_main shades: the opaque and MASK fragments it keeps.
+[shader("fragment")]
+void fs_depth_prepass(RasterVsOut In, uint primitiveID : SV_PrimitiveID)
+{
+    ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
+    ObjMaterial material = fetch_material(obj, primitiveID);
+    float sampledAlpha = In.fragmentColor.a;
+    if (material.alphaTextureID >= 0)
+        sampledAlpha *= sample_alpha(obj, material, In.texCoords);
+    if (material.textureID >= 0)
+    {
+        int textureId = resolve_texture_slot(obj, material);
+        sampledAlpha *= textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material)).a;
+    }
+    if (material_masked_out(material, sampledAlpha)) discard;
 }

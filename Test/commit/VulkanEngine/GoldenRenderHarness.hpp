@@ -150,6 +150,8 @@ struct EngineHarness
         settings.renderer.auto_exposure = false;
         // Bloom adds a glow the goldens predate; BloomSpreadsABrightCardsEnergyAndConservesIt turns it on.
         settings.renderer.bloom_strength = 0.0F;
+        // The goldens predate SSAO; SsaoDarkensTheAmbientLightAndNeverTheDirectLight turns it on.
+        settings.renderer.ssao_strength = 0.0F;
         renderer =
           std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), camera.get(), settings, feedback);
         Kataglyphis::TestSupport::attachEditor(*gui, *renderer);
