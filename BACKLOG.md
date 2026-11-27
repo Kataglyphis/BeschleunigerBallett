@@ -105,13 +105,9 @@ C++ catches up:
   is about 30-50 s per renderer: read the next weekly riscv64 `raster-*` shards and Windows lavapipe times. If it
   matters, either cache the bake per process (results unchanged, but test-only readback code in the engine) or
   cut the irradiance taps in the shared `ibl.slang` (changes Rust too); spherical harmonics are the third way.
-- [ ] `C++` **Exposure, bloom, SSAO and auto exposure** (L, plan C5; the HDR sky is in since Phase 3, the
-  Slang histogram since Phase 6). Exposure as Rust's two-float storage buffer, bloom from OxidANT's shader,
-  SSAO on the ambient and IBL terms only (owner 2026-11-19, both renderers), auto exposure once the histogram
-  is Slang.
 - [ ] `C++` **One set of C++ scene targets** (M-L, plan C6 step 1). One set per swapchain image, and both
-  raster paths always allocated, cost 116 B/px (about 229 MiB at 1080p); afterwards 12 B/px forward or
-  32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
+  raster paths always allocated, cost about 124.5 B/px since Phase 26's post targets (a forward depth prepass
+  4, bloom 4, SSAO 0.5; about 245 MiB at 1080p); afterwards 12 B/px forward or 32 deferred. Allocate the inactive raster path lazily. Cross-frame hazards change: sync validation.
 - [b] `C++` **Render scale with the Rust AutoScaler** (L, plan C6 step 2; after one set of targets).
   Every pass reads the swapchain extent today and must take a scene extent instead.
 - [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
@@ -146,7 +142,7 @@ C++ catches up:
   the coarser-cascade retry (C++ counts a missed cascade as lit), then each rule the owner decided on
   2026-11-19 in both renderers, with a golden on each side: BLEND materials cast opaque shadows in every
   mode (Rust's raster casts none today), a path-traced camera miss shows the drawn sky (both draw a
-  gradient today), AO darkens the ambient and IBL terms only (Rust darkens direct light too).
+  gradient today). The AO rule (ambient and IBL terms only) is in since Phase 26, in both renderers.
 - [b] `C++` **4x MSAA on the forward path** (L, plan C3 step 2; after FXAA). PipelineBuilder hard-codes one
   sample; a depth resolve for the clouds.
 
@@ -154,7 +150,8 @@ New in both:
 
 - [ ] `Shared` **A tonemapper choice and dither** (M, plan N2, in both renderers; the HDR sky is in since
   Phase 3). Narkowicz ACES, Khronos PBR Neutral and AgX selected by a uniform; dither in the encoded domain.
-  Both renderers invert ACES for the LDR cube today, and AgX has no closed-form inverse.
+  Both renderers invert ACES for the LDR cube today, and AgX has no closed-form inverse. Each tonemapper reads
+  Phase 26's exposure buffer (`[adapted EV, target EV]`) as ACES does now.
 - [b] `Shared` **Path-traced reference mode, firefly clamp and .hdr export** (L, plan N7; after the
   shared integrator). A target sample count with a resolve-only path in C++, `clamp_sample` off by default,
   a Radiance `.hdr` encoder in a wgpu-free crate returning bytes, EXR natively.
@@ -178,6 +175,16 @@ New in both:
 ### P3: low
 
 - [b] `Rust` **WebXR** (XL) — parked.
+- [ ] `Shared` **Make the forward SSAO prepass pay for itself** (M, both renderers). Since Phase 26 the forward
+  path draws a single-sample depth prepass for SSAO (opaque and MASK), and SSAO defaults to 0.7 as in Rust, so it
+  runs by default: on llvmpipe (Dinosaurs, 1200x768) `Ssao` takes 491 ms in forward against 4 ms deferred, as much
+  as the forward draw (`Main` 1012 ms against 516 for `Forward`). Reuse the prepass as the forward pass's depth
+  (LessEqual, no depth write; needs invariant positions), or measure on a GPU host first and decide the default.
+- [ ] `CI` **Time the four post goldens under QEMU** (S). Phase 26's `goldenRenderPostSuite.cpp` (exposure, auto
+  exposure, bloom, SSAO; 24-61 s each on llvmpipe) joined the riscv64 `raster-*` shards unmeasured.
+- [ ] `C++` **A GPU timing budget for the post chain** (S). The pinned budget workload keeps auto exposure, bloom
+  and SSAO off; with them at their defaults the frame fails `wsl-aarch64-llvmpipe`'s `Main` share (0.40 against
+  0.37). Add a workload with the chain on, and show the adapted EV in the editor.
 - [ ] `C++` **A test unit that imports the renderer costs GCC 5-6 GB and 40-65 s** (M). Clang needs about 1 GB.
   Measured in Phase 22 on arm64 Debug: the import alone holds 4.9 GB under GCC, so the seven golden files cost
   5.7 GB each however short. The eleven such units (the goldens, `commitSuite`, `deviceLossSuite`,
