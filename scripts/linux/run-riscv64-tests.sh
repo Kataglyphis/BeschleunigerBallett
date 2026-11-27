@@ -25,8 +25,8 @@ RISCV64_GPU_CLOUD_TESTS+='|CloudsCompositeOverTheSkyAsOverGeometry|CloudsInFront
 RISCV64_GPU_CLOUD_TESTS+='|CloudsAreLitByTheSkyTheyDraw|CloudWindMovesTheNoiseAndRepeatsWithItsPeriod'
 RISCV64_GPU_CLOUD_TESTS+='|HalfResolutionCloudsKeepOffTheSlabAndCloseToTheFullMarch'
 RISCV64_GPU_SWEEP_TEST='GuiInputSweepNeverCrashesOrLosesTheDevice'
-# The rest splits by ctest number, every third test a shard: as one, run 45969392334 hit the 6 h job limit at 64 of 95.
-RISCV64_GPU_RASTER_SHARDS=3
+# The rest splits by ctest number, every fourth test a shard; at three, run 46021554231's slowest took 4 h 46 of 6 h.
+RISCV64_GPU_RASTER_SHARDS=4
 
 # The weekly matrix reads its shards here, before any hub library loads, so the list has one home.
 if [[ "${1:-}" == "--list-gpu-shards" ]]; then
