@@ -94,7 +94,8 @@ emit, so sharing goes through Slang's module system, not textual `#include`:
   `scene_sky_ambient` over `AmbientMaps`'s bake of the drawn skybox (OxidANT's
   `ibl.slang`, its `fs_skybox_to_cube` untonemapping the faces as `sky.slang`
   draws them, without the sun `fs_find_sun` finds in them: OxidANT's
-  `common/sun_mask.slang`, so the directional Sun alone lights with it),
+  `common/sun_mask.slang` caps 10 degrees around it at the 12-degree ring and
+  fades the cap out by the ring, so the directional Sun alone lights with it),
   scaled by `dirLight.direction.w` (the Sky tab's Ambient slider) and the
   occlusion map; a switched-off skybox lights with the analytic sky. In
   OxidANT `forward_lighting.slang` and the tracer's `trace_shading.slang` call

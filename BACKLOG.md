@@ -220,11 +220,6 @@ New in both:
   (owner 2026-11-19). The three C++ cube lookups (with post's cloud composite) take a yaw; Rust needs only a
   flag in `sky.slang`. The IBL bake must then read the sky as drawn, turned, so `sun_mask.slang`'s search
   still finds the drawn sun; the search itself does not care which way the sky faces.
-- [ ] `Shared` **Feather the sun mask's edge** (S). Since Phase 19 the bake caps every channel within 10° of the
-  sky's own sun at its 12° ring (`sun_mask.slang`), so a near-mirror shows a circle where the photo's green and
-  blue glow is cut to the ring's mean. A blend from 10° to 12° joins it to the sky; it moves the `sun_mask`
-  vectors and the goldens Phase 19 moved. A patch that outshines its ring 3x in every channel within 10° (an
-  interior `.hdr`'s window) is masked like a sun; no product path loads one today.
 - [ ] `Assets` **Skybox faces and the cloud ambient from Rust** (M, plan B4). One
   face decode and average for both renderers; the navy gate needs a new form.
 - [ ] `C++` **Fit the cascades in Rust** (M, plan B7). The first per-frame bridge call (about 1 µs, no

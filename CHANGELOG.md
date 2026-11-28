@@ -52,6 +52,16 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The skybox's bake feathers its sun mask (OxidANT pin `8ec3cdc`). The cap that brings every channel within 10 degrees
+  of the sky's sun down to the 12-degree ring now fades out by 12 degrees (OxidANT's `sun_masked`, a smoothstep in the
+  cosine), so the photo's green and blue glow, which outshines the ring, no longer jumps back at 10 degrees, and a
+  near-mirror facing the sun shows no circle. `sun_mask.json` gains six feather cases, which
+  `Integration.SharedSlangKernelsMeetTheirVectors` checks on the SPIR-V. The goldens the sun mask moved hold and dim
+  a little: on aarch64 llvmpipe `AMirrorFacingThePhotoSunReflectsTheSkyAroundIt` reads 0.905 of the drawn ring in
+  forward and ray tracing (0.908 with the hard edge), 0.901 deferred (0.903) and 0.923 path traced (unchanged), and
+  `TheSkyLightsShadowedGroundInEveryRasterAndRayTracedFrame`'s shadowed ground went from (0.0496, 0.0759, 0.1663) to
+  (0.0495, 0.0754, 0.1642).
+
 - One set of C++ scene targets for every frame in flight (plan C6 step 1). The HDR target, the G-buffer and FXAA's
   intermediate were one per swapchain image, and both raster paths' targets always existed; now one HDR target
   serves forward, deferred, ray and path tracing, and only the picked raster path's depth or G-buffer exists, made
