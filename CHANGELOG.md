@@ -57,7 +57,9 @@ the GitHub releases themselves.
   `Should Be` and its kin take their dashed forms, and file- and block-level setup moved into `BeforeAll`, which Pester
   5 and 6 run after discovering a file; what it sets for the tests is a `$script:` variable. `Resolve-BuildModule`'s
   missing-module case uses `Should -Throw -PassThru`, which 3.4.0 could not. All 78 tests pass under 6.2.0 locally,
-  three runs in a row, as under 3.4.0 before, and the hub's lint gate finds no trap and no analyzer warning.
+  three runs in a row, as under 3.4.0 before, and the hub's lint gate finds no trap and no analyzer warning. The
+  Linux mutation driver `scripts/linux/tests/test-msix-license.ps1` runs `MsixLogoWiring` under the image's Pester
+  instead of the hub harness's `Describe` and `It`, which have no `BeforeAll`; the `msix.*` entries bite again.
 
 - One set of C++ scene targets for every frame in flight (plan C6 step 1). The HDR target, the G-buffer and FXAA's
   intermediate were one per swapchain image, and both raster paths' targets always existed; now one HDR target
