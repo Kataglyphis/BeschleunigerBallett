@@ -109,33 +109,32 @@ C++ catches up:
   targets serves every frame in flight and only the drawn raster path is allocated: 54.5 B/px forward and 70.5
   deferred against 206.5 (four swapchain images on llvmpipe), 1080p's VMA total 226 or 257 MiB against 526. They
   are sized at `VulkanRenderer::sceneExtent()`, which `updateSceneExtent()` sets from the swapchain; scale it there.
-  Still on the swapchain's extent and to move to the scene's: Raytracing/PathTracing's dispatch size,
-  BloomStage/SsaoStage's `postHalfExtent`, and `RenderStageFrame`/`RenderStageResize::extent` (split into a scene
+  Still on the swapchain's extent and to move to the scene's: Raytracing's dispatch size (PathTracing's
+  takes `sceneExtent()` since C8), BloomStage/SsaoStage's `postHalfExtent`, and `RenderStageFrame`/`RenderStageResize::extent` (split into a scene
   and an output extent). Post, FXAA and the capture stay at the output's, post sampling the scaled target.
 - [ ] `C++` **Remove the stalls on the C++ frame path** (L, plan C7). Move the PNG/JPEG decode from the
   device thread onto the `AsyncModelParse` worker and batch texture uploads through a staging ring; route
   the editor reload through the worker and keep the old scene until the new one lands (a failed reload
-  empties the scene today); keep the TLAS with `eAllowUpdate` and update it in the frame's command buffer
+  empties the scene today; a library pick still joins a running parse on the frame thread, where a drop waits
+  as `beginModelReplaceAsync` does since C9); keep the TLAS with `eAllowUpdate` and update it in the frame's command buffer
   instead of `waitIdle` plus a rebuild on every transform change, resetting the path-traced mean
   explicitly. `addModel` stays synchronous for its 33 golden callers.
-- [ ] `C++` **Tile the path-tracer dispatch; furnace, sample count and restart in the editor** (M, plan
-  C8). Port Rust's `plan()`: at most 4 M path segments per dispatch in 256 px tiles and sample chunks, the
-  mean counting samples, the seed from the absolute sample index. At the GUI maxima one dispatch can hold
-  about 2,000 rays per pixel against Windows' 2 s TDR.
-- [ ] `C++` **Editor parity: F12 screenshot, model argument, drop, fly speed, sky label** (M, plan C9).
-  An offscreen F12 capture into `screenshots/`, an absl positional model argument, `glfwSetDropCallback`
-  through the asynchronous load, a fly-speed slider, and the Skybox subtitle reading Procedural when
-  `skyIsAnalytic()`.
-- [ ] `C++` **Device-loss breadcrumbs and `VK_EXT_device_fault`** (M, plan C10). Markers at the debug-label
-  scopes (the path tracer records inside `main`), `vkCmdWriteBufferMarker2AMD` or NV checkpoints where
-  present, the fault query after a loss; feature-gated, best effort.
 - [ ] `C++` **Name every Vulkan object** (M, plan X8's remainder). Since Phase 5 `VK_EXT_debug_utils` is on
   wherever the loader lists it and the per-pass targets, the graphics, compute and ray-tracing pipelines carry
   names (`nameObject`, `PipelineBuilder::setDebugName`); buffers, descriptor sets, samplers, acceleration
   structures and command buffers are still unnamed in a capture.
-- [ ] `CI` **GPU-assisted validation for buffer-device-address reads** (M, plan X6). `robustBufferAccess`
-  is off and every shader reads materials through raw BDA. A weekly GPU-AV subset on Linux llvmpipe and an
-  `Invoke-SyncValidation.ps1` switch; scan the log for GPU-AV VUIDs.
+- [ ] `C++` **The library scan and the start path survive a name the code page cannot hold** (S, Windows,
+  follows C9). `scanModelsDirectory` (`it->path().string()`, `rel.string()`) and `resolveModelPath`'s
+  `current_path().string()` abort the engine when a file under `Resources/Models`, or the working directory, has a
+  name the ANSI code page cannot hold. Route them through `Shared::narrowPath` and skip with a warning, as the drop
+  and the command line do since C9.
+- [b] `C++` **See the device-loss breadcrumbs on a marker GPU** (S, follows C10; **waits for a host run**). No CI
+  device lists `VK_AMD_buffer_marker`, `VK_NV_device_diagnostic_checkpoints` or `VK_EXT_device_fault`, so the
+  marker writes, their readback, the bottom-marker analysis and the fault query never ran. On the RX 9070 XT the
+  startup line must read `breadcrumbs VK_AMD_buffer_marker`,
+  `Integration.SimulatedDeviceLossLogsTheBreadcrumbsOfEachImagesLastFrameOnce` must log `from VK_AMD_buffer_marker`
+  with `completed` frames, and `Invoke-SyncValidation.ps1` must stay free of SYNC-HAZARD and VUID with the markers
+  recorded. An env-gated endless loop in a compute pass would show a real `first unfinished` and the fault info.
 - [ ] `CI` **Compare the two renderers' frames in Linux CI** (M, plan X1). Move the frame metrics into
   `GoldenMetrics.hpp` with tests (one bucket rule; the PowerShell copy uses Rec. 601, the goldens Rec.
   709), render Dinosaurs with `headless_render` on llvmpipe in the `static-analysis` job and grade it
@@ -163,9 +162,10 @@ New in both:
 - [b] `Shared` **Cloud shadows** (M-L, plan N3; after the shared shadow Slang and integrator). Bake
   T = exp(-light_optical_depth) into a light-space map covering the cloud box's projection; raster, RT and
   both path tracers read the same map.
-- [ ] `Assets` **EXT_meshopt_compression** (M-L, plan N4). A pure-Rust decoder, fuzzed through `load_flat`'s
-  proptest, with a licence row; then Colosseum-web can be republished through gltfpack. Since Phase 5 gltfpack
-  output without `-cc` loads (`KHR_mesh_quantization`, OxidANT 0bbea5a).
+- [b] `Assets` **Republish Colosseum-web through gltfpack** (S; **an AssetANT release: owner decision**). Both
+  loaders read `EXT_meshopt_compression` since N4, so `gltfpack -kv -c` (or `-cc`) can shrink the 61 MB demo GLB.
+  A new AssetANT release, its lock line in `docs-build-web.sh`'s fetch, then the demo's load checked in OxidANT's
+  web-browser lane.
 - [b] `Shared` **A view file shared by both renderers** (L, plan N6; after the settings schema and the
   framing). serde types bridged as `view_to_json`/`view_from_json`, `--view` in both applications and the
   golden dump; it unblocks a per-pixel renderer comparison.
@@ -211,6 +211,28 @@ New in both:
 - [ ] `Assets` **Credit and framing polish** (S). The Rust renderer credits from `asset.copyright` only; give it
   `scene_meta::credit`'s ATTRIBUTION.txt fallback, so its OBJ scenes are credited as the engine's are. C++ shows the
   credit in About only; a library-row tooltip as Rust's would show it before a load.
+- [ ] `Shared` **One dispatch when a frame fits the segment budget** (S each, both renderers). Since C8 a
+  1200x768 path-traced frame is 15 dispatches with a global barrier between each, far below 4 M segments. Against
+  develop's run before it on llvmpipe, the cheap lone-card path-traced goldens took 1.15-1.33x their time (the
+  raster goldens 1.09x, the heavy ones unchanged). Rust's `plan()` tiles the same way: change both or neither.
+- [ ] `Rust` **Seed each path sample from its index in the mean** (S, OxidANT). Since C8 the C++ kernel seeds
+  `path_rng_seed(pixel, accumulated + i)` per sample, so a split frame matches the whole one within a half-float
+  step (`GoldenRender.PathTracingSplitsAFrameWithoutChangingItsMean`). `traced.slang` seeds a dispatch from its
+  first sample and continues that stream, so its chunk size changes which samples a pixel draws. Port the seed
+  and regenerate the WGSL.
+- [b] `C++` **F12 at Rust's size** (S; after render scale). OxidANT's viewer renders an offscreen 1920x1080 image
+  with its full-frame camera; the C++ shot (C9) is the drawn scene viewport at window resolution and aspect.
+  Render it offscreen at 1920x1080 once the scene targets no longer follow the swapchain.
+- [ ] `C++` **Rust's Frame the scene button and a startup notice line** (S). The Camera tab's button (back to the
+  start view, fly speed refitted), and one notice line for startup notes such as a missing command-line model or
+  missing scenes, as Rust's `Notice::Hint`.
+- [ ] `C++` **The other idle waits end the run on a loss** (S). Since C10 a swapchain recreation whose idle wait
+  fails ends the run through `endRunOnVulkanError`; the raster-path target switch, the shader hot reload and the
+  scene changes still drop their `waitIdle` results.
+- [ ] `Assets` **KHR_meshopt_compression** (S-M). gltfpack's `-cz` output: the attribute codec's version 1
+  (control bytes, 1-bit groups, u16 delta and u32 xor channels) and the COLOR filter, beside N4's EXT decoder in
+  `kataglyphis_assets::meshopt_codec`, its reference streams from meshoptimizer's own encoder as in
+  `meshopt_codec_reference.json`.
 - [ ] `C++` **Editor parity, part 2: adapter by name, orbit and wheel zoom, one key table** (M, plan C9).
   `--adapter` or `KATAGLYPHIS_ADAPTER` by name substring with the list in the Renderer tab; orbit and
   zoom with Rust's constants; one table drives the handlers and the key panel.
@@ -406,6 +428,15 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
   `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
+
+- **[P3] The whole GPU suite under GPU-AV, monthly.** The weekly `gpu-av` job (X6) runs eight goldens: 571 s of
+  ctest in CI, 607 s against 319 s without GPU-AV on 6 aarch64 cores. The other GPU tests read the same buffers
+  through other paths (clouds, sky, picking, hot reload); a monthly dispatch over every GPU test with
+  `VK_KHRONOS_VALIDATION_GPUAV_ENABLE=1` would cost about twice clang-tests' GPU run.
+- **[P3] Bound-checked material reads.** GPU-AV reports only a read outside every buffer: a planted read one past
+  each mesh's last material went unreported, and only the goldens' pixels caught it. A debug-only check of the
+  material index against a per-object material count in `fetch_material`, or a guard region after each materials
+  buffer, would catch an off-by-one read in scenes the goldens do not cover.
 
 ## Recurring validation runs
 
