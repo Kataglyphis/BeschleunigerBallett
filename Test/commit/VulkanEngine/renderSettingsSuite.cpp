@@ -22,6 +22,7 @@ RenderSettings settingsWithEveryRequestRaised()
     settings.scene.model_transform_changed = true;
     settings.scene.model_reload_requested = true;
     settings.renderer.shader_hot_reload_triggered = true;
+    settings.renderer.pathTracingRestartRequested = true;
     settings.scene.selected_model_index = 3;
     settings.scene.model_position[0] = 1.0F;
     settings.scene.model_position[2] = -2.0F;
@@ -43,6 +44,7 @@ TEST(RenderSettingsUnit, ApplyingFeedbackSpendsEveryOneShotRequest)
     EXPECT_FALSE(settings.scene.model_transform_changed);
     EXPECT_FALSE(settings.scene.model_reload_requested);
     EXPECT_FALSE(settings.renderer.shader_hot_reload_triggered);
+    EXPECT_FALSE(settings.renderer.pathTracingRestartRequested);
 }
 
 // Without a load, the editor's selection and transform are the user's and must survive.

@@ -1377,16 +1377,21 @@ void GUI::renderRenderInspector()
         studioSlider("##samples_per_pixel", &guiRendererSharedVars.pathTracingSamplesPerPixel, 1, 64);
         studioPropertyLabel("Max bounces", "Segments per path; a change restarts the accumulation");
         studioSlider("##max_bounces", &guiRendererSharedVars.pathTracingMaxBounces, 1, 16);
+        studioPropertyLabel(
+          "White furnace", "A white surface everywhere under a uniform sky of radiance 1, without the sun");
+        studioToggle("##white_furnace", &guiRendererSharedVars.pathTracingFurnace);
         studioPropertyLabel("Accumulated", "Samples per pixel in the running mean");
         std::array<char, 32> accumulated{};
         std::snprintf(accumulated.data(),
           accumulated.size(),
           "%llu samples",
-          static_cast<unsigned long long>(rendererFeedback.pathTracingAccumulatedFrames)
-            * static_cast<unsigned long long>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)));
+          static_cast<unsigned long long>(rendererFeedback.pathTracingAccumulatedSamples));
         ImGui::AlignTextToFramePadding();
         mutedText(accumulated.data());
         endStudioProperties();
+    }
+    if (ImGui::Button("Restart accumulation", ImVec2(-FLT_MIN, 0.0F))) {
+        guiRendererSharedVars.pathTracingRestartRequested = true;
     }
     studioEndDisabled();
 

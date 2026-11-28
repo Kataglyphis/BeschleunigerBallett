@@ -29,6 +29,7 @@ inline void applyRendererFeedback(RenderSettings &settings, const RendererFeedba
     settings.scene.model_transform_changed = false;
     settings.scene.model_reload_requested = false;
     settings.renderer.shader_hot_reload_triggered = false;
+    settings.renderer.pathTracingRestartRequested = false;
     if (feedback.publishedModelIndex.has_value()) {
         settings.scene.selected_model_index = *feedback.publishedModelIndex;
         std::fill(std::begin(settings.scene.model_position), std::end(settings.scene.model_position), 0.0F);

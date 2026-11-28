@@ -73,4 +73,18 @@ inline void recordBufferBarriers(vk::CommandBuffer commandBuffer, std::span<cons
 inline void recordBufferBarrier(vk::CommandBuffer commandBuffer, const vk::BufferMemoryBarrier2 &barrier)
 { recordBufferBarriers(commandBuffer, std::span<const vk::BufferMemoryBarrier2>(&barrier, 1)); }
 
+// A global barrier over every resource the two scopes touch, for work that changes no layout.
+inline void recordMemoryBarrier(vk::CommandBuffer commandBuffer,
+  vk::PipelineStageFlags2 srcStage,
+  vk::AccessFlags2 srcAccess,
+  vk::PipelineStageFlags2 dstStage,
+  vk::AccessFlags2 dstAccess)
+{
+    const vk::MemoryBarrier2 barrier{ srcStage, srcAccess, dstStage, dstAccess };
+    vk::DependencyInfo dependency_info{};
+    dependency_info.memoryBarrierCount = 1;
+    dependency_info.pMemoryBarriers = &barrier;
+    commandBuffer.pipelineBarrier2(dependency_info);
+}
+
 }// namespace Kataglyphis

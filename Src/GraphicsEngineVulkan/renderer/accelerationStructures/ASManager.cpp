@@ -1,4 +1,5 @@
 module;
+#include "common/ImageBarrierHelper.hpp"
 #include "common/Utilities.hpp"
 #include "renderer/accelerationStructures/BlasCompaction.hpp"
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
@@ -117,17 +118,11 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(const std::shar
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
 
         // The next model's build writes the same scratch buffer, so a read-only dst scope left a WAW (sync validation).
-        vk::MemoryBarrier2 barrier;
-        barrier.srcStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
-        barrier.srcAccessMask = vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
-        barrier.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
-        barrier.dstAccessMask =
-          vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR;
-
-        vk::DependencyInfo dependency_info{};
-        dependency_info.memoryBarrierCount = 1;
-        dependency_info.pMemoryBarriers = &barrier;
-        command_buffer.pipelineBarrier2(dependency_info);
+        Kataglyphis::recordMemoryBarrier(command_buffer,
+          vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+          vk::AccessFlagBits2::eAccelerationStructureWriteKHR,
+          vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+          vk::AccessFlagBits2::eAccelerationStructureReadKHR | vk::AccessFlagBits2::eAccelerationStructureWriteKHR);
     }
 
     bool const build_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
@@ -371,15 +366,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
         reinterpret_cast<VkBufferDeviceAddressInfo *>(&geometry_instance_buffer_device_address_info));
 
     // The build reads its instance buffer as a shader read (vkCmdBuildAccelerationStructuresKHR's input-buffer rule).
-    vk::MemoryBarrier2 barrier;
-    barrier.srcStageMask = vk::PipelineStageFlagBits2::eTransfer;
-    barrier.srcAccessMask = vk::AccessFlagBits2::eTransferWrite;
-    barrier.dstStageMask = vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR;
-    barrier.dstAccessMask = vk::AccessFlagBits2::eShaderRead;
-    vk::DependencyInfo dependency_info{};
-    dependency_info.memoryBarrierCount = 1;
-    dependency_info.pMemoryBarriers = &barrier;
-    command_buffer.pipelineBarrier2(dependency_info);
+    Kataglyphis::recordMemoryBarrier(command_buffer,
+      vk::PipelineStageFlagBits2::eTransfer,
+      vk::AccessFlagBits2::eTransferWrite,
+      vk::PipelineStageFlagBits2::eAccelerationStructureBuildKHR,
+      vk::AccessFlagBits2::eShaderRead);
 
     vk::AccelerationStructureGeometryInstancesDataKHR acceleration_structure_geometry_instances_data{};
     acceleration_structure_geometry_instances_data.data.deviceAddress = geometry_instance_buffer_address;

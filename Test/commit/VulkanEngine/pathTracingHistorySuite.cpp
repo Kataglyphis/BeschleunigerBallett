@@ -11,10 +11,11 @@ namespace {
 
 using Kataglyphis::VulkanRendererInternals::DirectionalLightData;
 using Kataglyphis::VulkanRendererInternals::makePathTracingHistoryKey;
+using Kataglyphis::VulkanRendererInternals::PathTracingFurnace;
 
 // The renderer's own key for `light`, so the tests hold whatever the key keeps of it.
 auto key_for(const DirectionalLightData &light) -> PathTracingHistoryKey
-{ return makePathTracingHistoryKey(glm::mat4(1.0F), glm::mat4(1.0F), light, 4, 3, true); }
+{ return makePathTracingHistoryKey(glm::mat4(1.0F), glm::mat4(1.0F), light, 4, 3, true, PathTracingFurnace{}); }
 
 auto make_key() -> PathTracingHistoryKey
 {
@@ -90,4 +91,22 @@ TEST(PathTracingHistoryUnit, TheAmbientInTheLightsWInvalidatesTheHistory)
     bright.direction.w = 2.0F;
 
     EXPECT_TRUE(key_for(dim) != key_for(bright)) << "an Ambient change kept the path-traced mean";
+}
+
+// The editor's White furnace swaps every surface and the sky, so a mean across the toggle blends two scenes.
+TEST(PathTracingHistoryUnit, TheFurnaceAndItsSurfaceInvalidateTheHistory)
+{
+    const PathTracingHistoryKey off = make_key();
+    EXPECT_FALSE(off.furnace.on) << "a key made without the furnace holds it on";
+    PathTracingHistoryKey on = make_key();
+    on.furnace.on = true;
+    EXPECT_TRUE(off != on) << "the White furnace toggle kept the path-traced mean";
+
+    for (const auto edit : { +[](PathTracingFurnace &furnace) { furnace.radiance = 2.0F; },
+           +[](PathTracingFurnace &furnace) { furnace.metallic = 1.0F; },
+           +[](PathTracingFurnace &furnace) { furnace.roughness = 0.25F; } }) {
+        PathTracingHistoryKey changed = on;
+        edit(changed.furnace);
+        EXPECT_TRUE(on != changed) << "a furnace surface change kept the path-traced mean";
+    }
 }

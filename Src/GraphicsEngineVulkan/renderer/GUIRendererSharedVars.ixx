@@ -223,6 +223,10 @@ struct GUIRendererSharedVars
     // accumulation history - a mean over two different estimators is biased.
     int pathTracingSamplesPerPixel = 8;
     int pathTracingMaxBounces = 8;
+    // The Rust editor's White furnace: one white surface under a uniform sky of radiance 1, without the sun.
+    bool pathTracingFurnace = false;
+    // One-shot, spent by applyRendererFeedback: the next path-traced frame starts the running mean over.
+    bool pathTracingRestartRequested = false;
 
     // In stops before the tonemap; auto exposure overrides it.
     float exposure_ev = kDefaultExposureEv;
@@ -288,8 +292,8 @@ struct RendererFeedback
     /// Set with publishedShadowDistance: the framing's field of view becomes the Camera tab's, which the camera reads.
     std::optional<float> publishedFov;
 
-    /// Frames in the path tracer's running mean after the last frame it traced; a restart begins at 1.
-    unsigned int pathTracingAccumulatedFrames = 0;
+    /// Samples per pixel in the path tracer's running mean after the last frame it traced.
+    uint64_t pathTracingAccumulatedSamples = 0;
 };
 
 // 0 raster, 1 ray traced, 2 path traced: the one rule the renderer draws by and the editor shows.

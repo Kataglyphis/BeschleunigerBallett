@@ -6,17 +6,16 @@
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <mutex>
 #include <regex>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <spdlog/sinks/callback_sink.h>
 #include <spdlog/spdlog.h>
 
 #include "RepoFiles.hpp"
+#include "ScopedLogCapture.hpp"
 #include "oxidant_bridge/diagnostics.h"
 
 import kataglyphis.vulkan.gltf_loader;
@@ -24,41 +23,8 @@ import kataglyphis.vulkan.oxidant_diagnostics;
 
 namespace {
 
-struct CapturedRecord
-{
-    spdlog::level::level_enum level;
-    std::string text;
-};
-
-// What the default logger receives while it lives, from any thread.
-class ScopedLogCapture
-{
-  public:
-    ScopedLogCapture()
-      : sink_(std::make_shared<spdlog::sinks::callback_sink_mt>([this](const spdlog::details::log_msg &msg) {
-            const std::lock_guard<std::mutex> lock(mutex_);
-            records_.push_back({ msg.level, std::string(msg.payload.data(), msg.payload.size()) });
-        }))
-    { spdlog::default_logger()->sinks().push_back(sink_); }
-    ScopedLogCapture(const ScopedLogCapture &) = delete;
-    ScopedLogCapture &operator=(const ScopedLogCapture &) = delete;
-    ~ScopedLogCapture()
-    {
-        auto &sinks = spdlog::default_logger()->sinks();
-        sinks.erase(std::remove(sinks.begin(), sinks.end(), sink_), sinks.end());
-    }
-
-    std::vector<CapturedRecord> records() const
-    {
-        const std::lock_guard<std::mutex> lock(mutex_);
-        return records_;
-    }
-
-  private:
-    std::shared_ptr<spdlog::sinks::callback_sink_mt> sink_;
-    mutable std::mutex mutex_;
-    std::vector<CapturedRecord> records_;
-};
+using Kataglyphis::TestSupport::CapturedRecord;
+using Kataglyphis::TestSupport::ScopedLogCapture;
 
 // Three vertices and two triangles, the second naming vertex 7: OxidANT drops it with a warning.
 constexpr const char *kOutOfRangeIndexGltf = R"GLTF({

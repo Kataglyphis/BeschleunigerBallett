@@ -319,11 +319,11 @@ class VulkanRenderer
     Kataglyphis::VulkanRendererInternals::PathTracing pathTracing;
     // Path-tracing temporal accumulation: ONE persistent full-float history
     // image (deliberately not per swapchain image - it must survive across
-    // frames), the number of frames accumulated since the last reset, and the
+    // frames), the samples per pixel accumulated since the last reset, and the
     // key (camera view, light, quality) that history was accumulated against
     // - any change to it invalidates the history.
     Texture pathTracingAccumulation;
-    uint32_t pathTracingAccumulatedFrames{ 0 };
+    uint64_t pathTracingAccumulatedSamples{ 0 };
     Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey pathTracingLastHistory{};
     void createPathTracingAccumulationResources();
     // RT/PT's primary-hit NDC depth, which the clouds read in place of a raster depth buffer.

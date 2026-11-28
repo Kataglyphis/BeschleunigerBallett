@@ -18,8 +18,15 @@ struct PushConstantPathTracing
     float4 clearColor;
     uint width;
     uint height;
-    uint frame_index;
-    uint samples_per_pixel;
+    // The dispatch's tile of the frame, in pixels.
+    uint tile_x;
+    uint tile_y;
+    uint tile_width;
+    uint tile_height;
+    // The first of this dispatch's samples among the frame's, the samples it adds, and the samples a pixel held before.
+    uint first_sample;
+    uint samples;
+    uint accumulated;
     uint max_bounces;
     // Furnace mode's white surface: its metallic and roughness, for the dielectric and the metal furnace alike.
     float furnace_metallic;
@@ -122,31 +129,33 @@ struct EnginePathScene : ITracedScene
 [numthreads(8, 8, 1)]
 void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 {
-    uint2 resolution = uint2(pc_ray.width, pc_ray.height);
-    if (tid.x >= resolution.x || tid.y >= resolution.y)
+    // One tile of the frame per dispatch (PathTracingDispatch.hpp's plan), so none outlasts a GPU watchdog.
+    if (tid.x >= pc_ray.tile_width || tid.y >= pc_ray.tile_height)
         return;
-
-    // RNG state: frame index folded in so every frame draws different samples.
-    uint rngState = path_rng_seed(resolution.x * tid.y + tid.x, pc_ray.frame_index);
+    uint2 pixel = uint2(pc_ray.tile_x, pc_ray.tile_y) + tid.xy;
+    uint2 resolution = uint2(pc_ray.width, pc_ray.height);
+    uint pixelIndex = resolution.x * pixel.y + pixel.x;
 
     float4x4 clipToWorld = clip_to_world(globalUBO);
     EnginePathScene scene;
 
-    // The clouds' depth: the unjittered centre ray, through the first sample's pass, and only when they read it.
-    CameraRay centre = camera_ray_through_pixel(clipToWorld, float2(tid.xy) + 0.5, float2(resolution));
+    // The clouds' depth: the unjittered centre ray, through the frame's first sample's pass, and only when they read it.
+    bool depthWanted = pc_ray.trace_cloud_depth != 0u && pc_ray.first_sample == 0u;
+    CameraRay centre = camera_ray_through_pixel(clipToWorld, float2(pixel) + 0.5, float2(resolution));
     PathDepth probe = no_depth();
-    probe.wanted = pc_ray.trace_cloud_depth != 0u;
+    probe.wanted = depthWanted;
     probe.ray.origin = centre.origin;
     probe.ray.tmin = 0.0;
     probe.ray.direction = centre.direction;
     probe.ray.tmax = centre.length;
 
-    int numSamples = int(pc_ray.samples_per_pixel);
     float3 summedColor = float3(0.0);
-    for (int sampleIdx = 0; sampleIdx < numSamples; sampleIdx++)
+    for (uint sampleIdx = 0u; sampleIdx < pc_ray.samples; sampleIdx++)
     {
+        // The sample's index in the mean picks its stream, so tiles and chunks never change what a pixel draws.
+        uint rngState = path_rng_seed(pixelIndex, pc_ray.accumulated + sampleIdx);
         // Jitter within the pixel so accumulation anti-aliases edges instead of only denoising.
-        float2 pixelCenter = float2(tid.xy) + float2(rng_next(rngState), rng_next(rngState));
+        float2 pixelCenter = float2(pixel) + float2(rng_next(rngState), rng_next(rngState));
         // The camera segment runs from the near plane to the far plane, as raster sees; later ones leave a surface.
         CameraRay camera = camera_ray_through_pixel(clipToWorld, pixelCenter, float2(resolution));
         TracedSegment segment;
@@ -159,26 +168,17 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         probe.wanted = false;
     }
 
-    float3 avgColor = summedColor / float(numSamples);
-
-    if (pc_ray.trace_cloud_depth != 0u)
+    if (depthWanted)
     {
         float4 clip = mul(globalUBO.projection, mul(globalUBO.view, float4(probe.position, 1.0)));
         // 1 on a miss, like a cleared depth buffer.
-        tracedDepth[tid.xy] = probe.hit ? clip.z / clip.w : 1.0;
+        tracedDepth[pixel] = probe.hit ? clip.z / clip.w : 1.0;
     }
 
-    // Temporal accumulation: running mean across frames.
-    if (pc_ray.frame_index > 0)
-    {
-        float4 prev = accumulationImage[tid.xy];
-        float3 accumColor = (prev.rgb * float(pc_ray.frame_index) + avgColor) / float(pc_ray.frame_index + 1);
-        accumulationImage[tid.xy] = float4(accumColor, 1.0);
-        image[tid.xy] = float4(hdr_safe(accumColor), 1.0);
-    }
-    else
-    {
-        accumulationImage[tid.xy] = float4(avgColor, 1.0);
-        image[tid.xy] = float4(hdr_safe(avgColor), 1.0);
-    }
+    // The running mean weighs every sample alike, however the frames and their dispatches split them.
+    float before = float(pc_ray.accumulated);
+    float3 previous = pc_ray.accumulated > 0u ? accumulationImage[pixel].rgb : float3(0.0);
+    float3 mean = (previous * before + summedColor) / (before + float(pc_ray.samples));
+    accumulationImage[pixel] = float4(mean, 1.0);
+    image[pixel] = float4(hdr_safe(mean), 1.0);
 }

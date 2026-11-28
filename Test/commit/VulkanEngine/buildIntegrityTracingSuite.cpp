@@ -352,11 +352,14 @@ TEST(BuildIntegrity, PathTracedCloudDepthIsTracedOnlyForTheClouds)
     const fs::path shader_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto shader = readFileText(shader_path);
     ASSERT_TRUE(shader.has_value()) << "could not open " << shader_path.string();
-    // The depth probe rides the first sample's closest-hit pass, wanted only when the clouds read it.
-    EXPECT_NE(shader->find("probe.wanted = pc_ray.trace_cloud_depth != 0u;"), std::string::npos)
-      << shader_path.string() << " probes the cloud depth whether or not clouds are on";
-    const std::size_t gate = shader->find("if (pc_ray.trace_cloud_depth != 0u)");
-    const std::size_t write = shader->find("tracedDepth[tid.xy] = probe.hit");
+    // The depth probe rides the frame's first sample's closest-hit pass, wanted only when the clouds read it.
+    EXPECT_NE(shader->find("bool depthWanted = pc_ray.trace_cloud_depth != 0u && pc_ray.first_sample == 0u;"),
+      std::string::npos)
+      << shader_path.string() << " probes the cloud depth whether or not clouds are on, or in every sample chunk";
+    EXPECT_NE(shader->find("probe.wanted = depthWanted;"), std::string::npos)
+      << shader_path.string() << " no longer gates its depth probe on depthWanted";
+    const std::size_t gate = shader->find("if (depthWanted)");
+    const std::size_t write = shader->find("tracedDepth[pixel] = probe.hit");
     ASSERT_NE(write, std::string::npos) << shader_path.string() << " no longer writes the probed depth";
     ASSERT_NE(gate, std::string::npos) << shader_path.string()
                                        << " writes the cloud depth whether or not clouds are on";

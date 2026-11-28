@@ -426,7 +426,7 @@ TEST(BuildIntegrity, EveryHdrTargetWriteGoesThroughHdrSafe)
       { "rasterizer/rasterizer.slang", "return float4(", 2U },
       { "deferred/deferred.slang", "return float4(", 2U },
       { "raytracing/raytrace.rgen.slang", "image[", 1U },
-      { "path_tracing/path_tracing.slang", "image[tid.xy] =", 2U },
+      { "path_tracing/path_tracing.slang", "image[pixel] =", 1U },
       { "path_tracing/path_tracing.slang", "summedColor += hdr_safe(", 1U },
     } };
 

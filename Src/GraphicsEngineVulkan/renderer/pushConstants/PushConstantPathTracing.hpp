@@ -8,10 +8,18 @@ struct PushConstantPathTracing
     vec4 clearColor;
     uint width;
     uint height;
-    // Frames since the last history reset; 0 discards history. Also seeds the RNG.
-    uint frame_index;
-    // GUI-driven quality: samples per pixel per frame and the bounce cap.
-    uint samples_per_pixel;
+    // The dispatch's tile of the frame (PathTracingDispatch.hpp's plan), in pixels.
+    uint tile_x;
+    uint tile_y;
+    uint tile_width;
+    uint tile_height;
+    // The first of this dispatch's samples among the frame's; only the frame's first chunk probes the clouds' depth.
+    uint first_sample;
+    // Samples this dispatch adds to each pixel of its tile.
+    uint samples;
+    // Samples each pixel held before this dispatch; 0 discards the history. Plus the sample's index, it seeds the RNG.
+    uint accumulated;
+    // GUI-driven quality: the bounce cap.
     uint max_bounces;
     // Furnace mode's white surface (clearColor.w > 0.5): a dielectric at metallic 0, a white metal at 1.
     float furnace_metallic;

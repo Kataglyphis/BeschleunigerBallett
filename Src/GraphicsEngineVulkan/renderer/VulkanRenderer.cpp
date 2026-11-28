@@ -394,6 +394,8 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
     }
 
     handleShaderHotReloadRequest(settings.renderer);
+    // The editor's Restart accumulation: the next path-traced frame starts the mean over.
+    if (settings.renderer.pathTracingRestartRequested) { pathTracingAccumulatedSamples = 0; }
     ensureRasterPathTargets();
     handleVsyncChange(settings.renderer);
 
@@ -673,7 +675,7 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
             raytracingStage.shaderHotReload(layouts);
             pathTracing.shaderHotReload(layouts);
             // A reloaded kernel is another estimator: averaging its samples into the old mean biases it.
-            pathTracingAccumulatedFrames = 0;
+            pathTracingAccumulatedSamples = 0;
         }
     };
 
@@ -1542,34 +1544,40 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     } else if (mode == 2) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
 
-        // A camera, light or quality change restarts the running mean.
+        // A camera, light, quality or furnace change restarts the running mean.
+        const Kataglyphis::VulkanRendererInternals::PathTracingFurnace furnace =
+          Kataglyphis::VulkanRendererInternals::resolvePathTracingFurnace(rendererSettings.pathTracingFurnace);
         const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history =
           Kataglyphis::VulkanRendererInternals::makePathTracingHistoryKey(camera->calculate_viewmatrix(),
             globalUBO.projection,
             sceneUBO.dirLight,
             rendererSettings.pathTracingSamplesPerPixel,
             rendererSettings.pathTracingMaxBounces,
-            frameSettings.scene.skybox_enabled);
+            frameSettings.scene.skybox_enabled,
+            furnace);
         if (current_history != pathTracingLastHistory) {
-            pathTracingAccumulatedFrames = 0;
+            pathTracingAccumulatedSamples = 0;
             pathTracingLastHistory = current_history;
         }
 
+        const Kataglyphis::VulkanRendererInternals::PathTracingFrame frame{
+            .accumulated = pathTracingAccumulatedSamples,
+            .samples_per_pixel = static_cast<uint32_t>(std::max(rendererSettings.pathTracingSamplesPerPixel, 1)),
+            .max_bounces = static_cast<uint32_t>(std::max(rendererSettings.pathTracingMaxBounces, 1)),
+            .furnace = furnace,
+            .trace_cloud_depth = clouds_enabled,
+            .skybox_enabled = frameSettings.scene.skybox_enabled,
+        };
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::PathTrace, true);
         pathTracing.recordCommands(commandBuffer,
-          image_index,
           sceneColor.getVulkanImage(),
           pathTracingAccumulation.getVulkanImage(),
-          &vulkanSwapChain,
+          sceneExtent(),
           raytracing_descriptor_sets,
-          pathTracingAccumulatedFrames,
-          static_cast<uint32_t>(std::max(rendererSettings.pathTracingSamplesPerPixel, 1)),
-          static_cast<uint32_t>(std::max(rendererSettings.pathTracingMaxBounces, 1)),
-          clouds_enabled,
-          frameSettings.scene.skybox_enabled);
+          frame);
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::PathTrace, false);
-        ++pathTracingAccumulatedFrames;
-        output.pathTracingAccumulatedFrames = pathTracingAccumulatedFrames;
+        pathTracingAccumulatedSamples += frame.samples_per_pixel;
+        output.pathTracingAccumulatedSamples = pathTracingAccumulatedSamples;
     }
 }
 
@@ -1777,7 +1785,7 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
         return;
     }
 
-    pathTracingAccumulatedFrames = 0;
+    pathTracingAccumulatedSamples = 0;
 }
 
 void Kataglyphis::VulkanRenderer::createTracedDepthResources()
@@ -1885,7 +1893,7 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
     if (!vulkanTLAS) { return; }
 
     // The traced world changed, so history from the half-loaded scene must not stay in the mean.
-    pathTracingAccumulatedFrames = 0;
+    pathTracingAccumulatedSamples = 0;
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) { writeRaytracingDescriptorsForImage(i); }
 }

@@ -19,6 +19,8 @@
 #include <vector>
 
 #include "BuildIntegrityScan.hpp"
+#include "renderer/PathTracingDispatch.hpp"
+#include "renderer/PathTracingHistory.hpp"
 
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
@@ -462,4 +464,95 @@ TEST(BuildIntegrity, PostSettingsTakeTheRustRenderersDefaultsAndRanges)
     EXPECT_EQ(FrontendShared::sanitizePostSetting(-std::numeric_limits<float>::infinity(), -4.0F, 4.0F, 0.5F), 0.5F);
     EXPECT_EQ(FrontendShared::sanitizePostSetting(9.0F, -4.0F, 4.0F, 0.5F), 4.0F);
     EXPECT_EQ(FrontendShared::sanitizePostSetting(-1.5F, -4.0F, 4.0F, 0.5F), -1.5F);
+}
+
+// The path tracer takes the Rust tracer's dispatch budget, its editor's defaults and furnace, and its PATH TRACING rows.
+TEST(BuildIntegrity, PathTracingTakesTheRustTracersPlanDefaultsAndRows)
+{
+    const fs::path renderer = repoRoot() / "third_party" / "OxidANT" / "crates" / "webgpu_renderer" / "src";
+    if (!sourceExists(renderer)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const fs::path modes = renderer / "render" / "tracer" / "modes";
+    const auto dispatch = readFileText(modes / "dispatch.rs");
+    const auto settings = readFileText(modes / "settings.rs");
+    const auto inspector = readFileText(renderer / "ui" / "editor" / "inspector" / "renderer.rs");
+    const fs::path gui_path = repoRoot() / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp";
+    const auto gui = readFileText(gui_path);
+    ASSERT_TRUE(dispatch && settings && inspector) << "could not read OxidANT's tracer and editor sources";
+    ASSERT_TRUE(gui.has_value()) << "could not open " << gui_path.string();
+
+    std::smatch match;
+    ASSERT_TRUE(std::regex_search(*dispatch, match, std::regex(R"(pub const TILE_SIZE: u32 = (\d+);)")))
+      << "dispatch.rs has no TILE_SIZE - the scan broke";
+    EXPECT_EQ(match[1].str(), std::to_string(Kataglyphis::kPathTracingTileSize)) << "the tile side";
+    ASSERT_TRUE(std::regex_search(*dispatch, match, std::regex(R"(pub const DISPATCH_SEGMENTS: u64 = 1 << (\d+);)")))
+      << "dispatch.rs has no DISPATCH_SEGMENTS - the scan broke";
+    EXPECT_EQ(uint64_t{ 1 } << std::stoul(match[1].str()), Kataglyphis::kPathTracingDispatchSegments)
+      << "the segment budget of one dispatch";
+
+    // The ranges in settings.rs against the C++ sliders, the defaults against GUIRendererSharedVars'.
+    const std::size_t trace_impl = settings->find("impl Default for TraceSettings");
+    ASSERT_NE(trace_impl, std::string::npos) << "settings.rs no longer implements Default for TraceSettings";
+    const std::string trace_defaults = settings->substr(trace_impl);
+    const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars defaults{};
+    const std::vector<std::tuple<std::string, std::string, std::string, int>> quality = {
+        { "SAMPLES_PER_PIXEL", "samples_per_pixel", "pathTracingSamplesPerPixel", defaults.pathTracingSamplesPerPixel },
+        { "MAX_BOUNCES", "max_bounces", "pathTracingMaxBounces", defaults.pathTracingMaxBounces },
+    };
+    for (const auto &[range, field, member, cpp_default] : quality) {
+        ASSERT_TRUE(
+          std::regex_search(*settings, match, std::regex(range + R"(: RangeInclusive<u32> = (\d+)\.\.=(\d+);)")))
+          << "settings.rs has no " << range << " - the scan broke";
+        const std::string rust_range = match[1].str() + ", " + match[2].str();
+        EXPECT_TRUE(
+          std::regex_search(*gui, std::regex("&guiRendererSharedVars\\." + member + ",\\s*" + rust_range + "\\)")))
+          << "the editor's " << member << " slider does not span the Rust range " << rust_range;
+        ASSERT_TRUE(std::regex_search(trace_defaults, match, std::regex("\\n\\s*" + field + R"(:\s*(\d+),)")))
+          << "TraceSettings::default() sets no " << field << " - the scan broke";
+        EXPECT_EQ(match[1].str(), std::to_string(cpp_default)) << field << "'s default";
+    }
+
+    const std::size_t furnace_impl = settings->find("impl Default for FurnaceSettings");
+    ASSERT_NE(furnace_impl, std::string::npos) << "settings.rs no longer implements Default for FurnaceSettings";
+    const std::string furnace_text = settings->substr(furnace_impl);
+    const Kataglyphis::VulkanRendererInternals::PathTracingFurnace furnace{};
+    for (const auto &[field, value] : { std::pair{ "radiance", furnace.radiance },
+           std::pair{ "metallic", furnace.metallic },
+           std::pair{ "roughness", furnace.roughness } }) {
+        ASSERT_TRUE(
+          std::regex_search(furnace_text, match, std::regex(std::string(R"(\n\s*)") + field + R"(:\s*([\d.]+),)")))
+          << "FurnaceSettings::default() sets no " << field << " - the scan broke";
+        EXPECT_FLOAT_EQ(std::stof(match[1].str()), value) << "the White furnace's " << field;
+    }
+    EXPECT_FALSE(defaults.pathTracingFurnace) << "TraceSettings::default() starts without the furnace";
+
+    // Every row of Rust's path_tracing(), its label and its hover text, and the restart button.
+    const std::size_t section = inspector->find("fn path_tracing(");
+    ASSERT_NE(section, std::string::npos) << "renderer.rs has no path_tracing() section - the scan broke";
+    const std::string rows = inspector->substr(section, inspector->find("\nfn ", section + 1) - section);
+    const std::regex row(R"re(property_row\(\s*ui,\s*"([^"]+)",\s*Some\("([^"]+)"\))re");
+    const auto literal = [](const std::string &text) {
+        return std::regex_replace(text, std::regex(R"([.^$|()\[\]{}*+?\\])"), R"(\$&)");
+    };
+    std::size_t rows_found = 0;
+    for (auto it = std::sregex_iterator(rows.begin(), rows.end(), row); it != std::sregex_iterator(); ++it) {
+        ++rows_found;
+        const std::string label = (*it)[1].str();
+        const std::regex cpp_row(
+          "studioPropertyLabel\\(\\s*\"" + literal(label) + "\",\\s*\"" + literal((*it)[2].str()) + "\"\\)");
+        EXPECT_TRUE(std::regex_search(*gui, cpp_row)) << "the editor's PATH TRACING has no '" << label
+                                                      << "' row with the Rust hover text '" << (*it)[2].str() << "'";
+    }
+    EXPECT_EQ(rows_found, 4U) << "renderer.rs's path_tracing() changed its rows - the scan or this list needs updating";
+    ASSERT_NE(rows.find("Button::new(\"Restart accumulation\")"), std::string::npos) << "the Rust restart button moved";
+    EXPECT_NE(gui->find("ImGui::Button(\"Restart accumulation\""), std::string::npos)
+      << "the editor has no Restart accumulation button";
+    // The labels alone could front other settings: the toggle must set the furnace, the button the one-shot restart.
+    EXPECT_TRUE(std::regex_search(*gui,
+      std::regex(
+        R"re("White furnace",[^;]*\);\s*studioToggle\("[^"]*",\s*&guiRendererSharedVars\.pathTracingFurnace\);)re")))
+      << "the editor's White furnace row does not toggle pathTracingFurnace";
+    EXPECT_TRUE(std::regex_search(*gui,
+      std::regex(
+        R"re(ImGui::Button\("Restart accumulation"[^{]*\{\s*guiRendererSharedVars\.pathTracingRestartRequested = true;)re")))
+      << "the editor's Restart accumulation button does not request pathTracingRestartRequested";
 }

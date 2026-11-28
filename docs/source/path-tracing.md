@@ -18,6 +18,28 @@ command buffer, so no queue-family ownership transfer is involved. The post
 pass samples that target like any other mode: path tracing replaces the
 *lighting*, not the presentation path.
 
+A frame is several dispatches, Rust's `plan()` (`render/tracer/modes/dispatch.rs`)
+ported to `planPathTracingDispatches` (`renderer/PathTracingDispatch.hpp`): 256 px
+tiles, and the frame's samples in chunks, so one dispatch traces at most
+`kPathTracingDispatchSegments` (4 M) path segments, `max_bounces` per sample.
+The chunks run in order, each over every tile, and a compute barrier orders
+every dispatch after the one before: a later chunk reads what the earlier one
+wrote, and sync validation tracks a storage image whole, so it reports even
+disjoint tiles as a write-after-write (wgpu orders Rust's dispatches so
+too). At the editor's maxima, 64 paths of 16 bounces, one unplanned dispatch
+put about 2,000 rays into every pixel, which can outlast Windows' 2 s TDR; planned, a 1200 x 768 frame is 16 chunks of 4
+samples over 15 tiles. At the defaults (8 spp, 8 bounces) a chunk holds the
+whole frame's samples, so only the tiles split it. The renderer logs the plan
+(`path tracer: N dispatches a frame, up to S samples of B bounces each`)
+whenever one of the three changes, and `KATAGLYPHIS_PT_DISPATCH_SEGMENTS=<n>`,
+read per frame, lowers the budget for a device whose watchdog is shorter, or
+for a test; a value at or above Rust's, zero or not a whole number keeps
+Rust's (`pathTracingDispatchBudget`), so it cannot lift a dispatch past it.
+The split has a fixed cost per dispatch. Against develop's last run, the heavy
+path-traced goldens took 0.98-1.12 times their time on Linux x64's llvmpipe,
+where the raster goldens took 1.09 times theirs, and the cheap lone-card ones
+1.15-1.33 times; Windows x64's lavapipe showed the same split.
+
 Every sample's radiance and the kernel's output pass through `hdr_safe`
 (`common/hdr_safe.slang`): radiance past fp16's 65504 would store as +Inf in
 the `rgba16f` target, ACES would turn that into NaN, and one NaN sample would
@@ -58,7 +80,12 @@ the test passes; not committing is the discard. The shadow ray keeps
 Per pixel and frame, `samples_per_pixel` independent paths (GUI slider,
 default 8), each up to `max_bounces` segments (GUI slider, default 8).
 Changing either slider resets the accumulation (a mean over two different
-estimators is biased).
+estimators is biased). Each sample seeds its RNG from the pixel and its
+index in the running mean (`path_rng_seed(pixel, accumulated + i)`), so the
+tiles and chunks a frame is split into never change which samples a pixel
+draws: only the float summation order moves. Rust seeds a dispatch from its
+first sample's index and lets the chunk continue that stream, so there a
+different chunk size draws other samples of the same mean.
 
 - **Primary ray** from OxidANT's `camera_ray_through_pixel`
   (`common/camera_ray.slang`) over `clip_to_world(globalUBO)`, the product of
@@ -168,15 +195,19 @@ estimators is biased).
 Self-intersection is guarded by a 1e-4 offset along the face normal **and**
 ray-query `t_min = 0.001` (matches the RT path).
 
+The editor's **White furnace** row (Rust's, off by default) or
 `KATAGLYPHIS_PT_FURNACE=<radiance>` gives every hit one white surface (albedo
-1) and replaces both skies with a uniform `<radiance>` environment, with no
-next-event estimation (a furnace has no lights, in both renderers); the
-shader gates on `pc_ray.clearColor.w > 0.5`. `KATAGLYPHIS_PT_FURNACE_METALLIC`
-(default 0) and `KATAGLYPHIS_PT_FURNACE_ROUGHNESS` (default 0.5, clamped to
+1) and replaces both skies with a uniform environment, radiance 1 for the row
+and `<radiance>` for the variable, with no next-event estimation (a furnace
+has no lights, in both renderers); the shader gates on
+`pc_ray.clearColor.w > 0.5`. `KATAGLYPHIS_PT_FURNACE_METALLIC` (default 0) and
+`KATAGLYPHIS_PT_FURNACE_ROUGHNESS` (default 0.5, clamped to
 `material_roughness`'s 0.045 floor) pick that surface, through the push
-constants' `furnace_metallic` and `furnace_roughness`. All three are read via
-`getenv` once per `recordCommands` call, not cached, so several tests sharing
-one process each see their own setting.
+constants' `furnace_metallic` and `furnace_roughness`; the defaults are Rust's
+`FurnaceSettings`, and a value that is not finite falls back to them, as
+Rust's `clamped()` heals one. `resolvePathTracingFurnace` reads all three
+every frame, not cached, so several tests sharing one process each see their
+own setting, and the result is part of the history key.
 
 A single-scatter microfacet lobe returns only its directional albedo `E(mu)`
 of the sky: Schlick-GGX Smith masks at grazing angles, and at roughness 1 half
@@ -218,13 +249,19 @@ It measures 0.9997 and must stay in 0.994-1.005, which a furnace albedo of
 
 ## Temporal accumulation
 
-The kernel folds the frame index into the RNG seed (without it, every frame
-drew bit-identical samples) and keeps a running mean in a dedicated `rgba32f`
-history image (`ACCUMULATION_IMAGE_BINDING`): full float, because averaging in
-the output target (`rgba8` before the HDR unit) would quantize and stall after
-a few frames. There is exactly **one** history image, deliberately not per
-swapchain image; a compute→compute barrier orders each frame's
-read-modify-write against the previous frame's dispatch across command
+The kernel folds each sample's index in the mean into the RNG seed (without
+it, every frame drew bit-identical samples) and keeps a running mean in a
+dedicated `rgba32f` history image (`ACCUMULATION_IMAGE_BINDING`): full float,
+because averaging in the output target (`rgba8` before the HDR unit) would
+quantize and stall after a few frames. The mean counts samples, not frames, as
+Rust's `Accumulation` does: a dispatch adds its `samples` to the `accumulated`
+a pixel held, `(previous * accumulated + sum) / (accumulated + samples)`, and
+0 overwrites. The editor's **Accumulated** row shows that count
+(`RendererFeedback::pathTracingAccumulatedSamples`), and **Restart
+accumulation** (`pathTracingRestartRequested`, spent by
+`applyRendererFeedback`) sets it to 0. There is exactly **one** history image,
+deliberately not per swapchain image; a compute→compute barrier orders each
+frame's read-modify-write against the previous frame's dispatch across command
 buffers.
 
 The history resets whenever its premises die:
@@ -234,6 +271,8 @@ The history resets whenever its premises die:
 | Camera moved or projection changed (view and projection compare: FOV, docks, F1) | `PathTracingHistoryKey`, PT branch of `recordRaytracingOrPathTracing` |
 | Light direction, colour or radiance changed | same |
 | Quality sliders changed (different estimator = biased mean) | same |
+| White furnace toggled, or its radiance or surface changed | same |
+| The editor's Restart accumulation | `updateStateDueToUserInput` |
 | Swapchain resize (extent-sized image is recreated) | `recreateSwapChain` |
 | AS rebuilt - model load/reload OR GUI transform moved the traced world | `updateRaytracingDescriptorSets` |
 
@@ -244,9 +283,9 @@ golden pass with per-frame sampling disabled.
 
 ## Verification
 
-<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, PathTracingHonorsTheUntexturedMetallicFactor, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, PathTracingPassesTheWhiteMetalFurnaceTest, PathTracingFloorsAZeroRoughnessTexel, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
+<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, PathTracingHonorsTheUntexturedMetallicFactor, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, PathTracingPassesTheWhiteMetalFurnaceTest, PathTracingFloorsAZeroRoughnessTexel, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround, PathTracingSplitsAFrameWithoutChangingItsMean, PathTracingRestartAndTheFurnaceFollowTheEditor -->
 
-Eleven PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderTracingSuite.cpp`,
+Thirteen PT- and RT-facing goldens in `Test/commit/VulkanEngine/goldenRenderTracingSuite.cpp`,
 each red/green-proven against the pre-fix shader. Numbers are post-HDR: before
 the HDR unit, lit surfaces clamped at the UNORM ceiling (186 after tonemap)
 and hid most of every light response; lifting it widened several margins
@@ -327,6 +366,27 @@ dramatically.
   seeds its payload with the unlit albedo (`e852ac99`); the sky's ambient,
   which the closest-hit shader adds since 2026-11-23, gives 43.4 vs 229 at
   the default 0.35, so the test zeroes it.
+- `PathTracingSplitsAFrameWithoutChangingItsMean` - a lone card at 4 spp and
+  2 bounces, 12 samples per pixel after a restart, once at the default budget
+  (15 dispatches a frame, all four samples in each) and once at one sample of
+  a tile per dispatch (`KATAGLYPHIS_PT_DISPATCH_SEGMENTS`, 60 dispatches): the
+  log must name the warm-up's plan at one bounce, the whole frame's and the
+  split frame's, each once, and the HDR frames must agree within 1 % per
+  channel and 1e-4 on average. Measured 9.7e-4 at most, one half-float step,
+  and 3.9e-8 on average. Seeding a dispatch from its first sample and
+  continuing that stream through the chunk, as Rust does, gives 0.745 and
+  0.027, a chunk that counts no earlier chunk's samples 0.897 and 0.029, and
+  a plan log keyed without the bounces drops the second line; each fails.
+- `PathTracingRestartAndTheFurnaceFollowTheEditor` - Restart accumulation must
+  leave one frame's samples in the count and repeat the first frame after a
+  reset bit for bit (measured 0; four samples move it 0.030 on average), and
+  the White furnace toggle must restart the mean and show its sky of 1 in a
+  corner the card leaves (exactly 1, against (0.070, 0.102, 0.161) without
+  it), match `KATAGLYPHIS_PT_FURNACE=1` bit for bit, and give the scene back
+  when it is off. Each break fails it: a Restart that resets nothing
+  leaves 5 samples after it and a frame 0.935 away from the first; a key
+  without the toggle keeps 2 samples across it both ways, its corner then
+  0.53-0.58 instead of 1.
 
 Eight more goldens cover the kernel without the `PathTracing` prefix the
 marker counts: `PathTracedMetalCardReflectsTheSkyAndTheSun` (a white metal at

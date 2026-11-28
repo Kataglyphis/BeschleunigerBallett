@@ -33,13 +33,18 @@ class ImGuiInputDriver
         glfwSetMouseButtonCallback(window_, mouseButton_);
         key_ = glfwSetKeyCallback(window_, nullptr);
         glfwSetKeyCallback(window_, key_);
+        scroll_ = glfwSetScrollCallback(window_, nullptr);
+        glfwSetScrollCallback(window_, scroll_);
         // A pointer outside the window makes ImGui's backend poll the OS cursor, which would undo every move here.
         if (cursorEnter_ != nullptr) { cursorEnter_(window_, GLFW_TRUE); }
     }
 
     /// False if the window installed no input callbacks, so nothing sent here could reach ImGui.
     [[nodiscard]] bool wired() const
-    { return cursorEnter_ != nullptr && cursorPos_ != nullptr && mouseButton_ != nullptr && key_ != nullptr; }
+    {
+        return cursorEnter_ != nullptr && cursorPos_ != nullptr && mouseButton_ != nullptr && key_ != nullptr
+               && scroll_ != nullptr;
+    }
 
     void frames(int count)
     {
@@ -67,6 +72,14 @@ class ImGuiInputDriver
             button(GLFW_PRESS);
             button(GLFW_RELEASE);
         }
+    }
+
+    /// The wheel over `point`, `notches` toward the bottom when negative, as GLFW reports a mouse wheel.
+    void wheel(ImVec2 point, double notches)
+    {
+        moveTo(point);
+        scroll_(window_, 0.0, notches);
+        frames(1);
     }
 
     void pressKey(int glfwKey)
@@ -117,6 +130,7 @@ class ImGuiInputDriver
     GLFWcursorposfun cursorPos_ = nullptr;
     GLFWmousebuttonfun mouseButton_ = nullptr;
     GLFWkeyfun key_ = nullptr;
+    GLFWscrollfun scroll_ = nullptr;
 };
 
 /// The child `childStrId` of `parentName` drawn last frame; a tab's child exists per tab, only the shown one active.

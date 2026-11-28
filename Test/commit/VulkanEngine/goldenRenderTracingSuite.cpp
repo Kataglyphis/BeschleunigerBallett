@@ -1,5 +1,8 @@
 // Goldens: ray- and path-traced frames: convergence, controls, materials, the white furnaces and the traced sky.
 
+#include "ScopedLogCapture.hpp"
+#include "renderer/PathTracingDispatch.hpp"
+
 #include "GoldenRenderHarness.hpp"
 
 import kataglyphis.vulkan.renderer;
@@ -20,6 +23,41 @@ constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf"
 constexpr const char *FULL_ROUGHNESS_PNG =
   "data:image/png;base64,"
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNg+M8AAAICAQB7CYF4AAAAAElFTkSuQmCC";
+// Largest and mean relative difference of two HDR captures' RGB, against a floor that keeps black from dividing.
+struct HdrDifference
+{
+    double largest = 0.0;
+    double mean = 0.0;
+};
+
+HdrDifference hdr_difference(const std::vector<float> &a, const std::vector<float> &b)
+{
+    HdrDifference difference;
+    std::size_t channels = 0;
+    for (std::size_t i = 0; i + 3U < a.size() && i + 3U < b.size(); i += 4U) {
+        for (std::size_t c = 0; c < 3U; ++c) {
+            const auto x = static_cast<double>(a[i + c]);
+            const auto y = static_cast<double>(b[i + c]);
+            const double relative = std::abs(x - y) / std::max({ std::abs(x), std::abs(y), 1.0e-3 });
+            difference.largest = std::max(difference.largest, relative);
+            difference.mean += relative;
+            ++channels;
+        }
+    }
+    difference.mean /= static_cast<double>(std::max<std::size_t>(channels, 1U));
+    return difference;
+}
+
+// The renderer's "path tracer: N dispatches a frame, ..." lines, in the order it logged them.
+std::vector<std::string> dispatch_plan_lines(const Kataglyphis::TestSupport::ScopedLogCapture &capture)
+{
+    std::vector<std::string> lines;
+    for (const auto &record : capture.records()) {
+        if (record.text.starts_with("path tracer: ")) { lines.push_back(record.text); }
+    }
+    return lines;
+}
+
 // Four float32 VEC3 normals (sin 70, 0, cos 70): a card facing +Z whose vertex normals lean 70 degrees toward +X.
 constexpr const char *LEANING_VERTEX_NORMALS =
   "data:application/octet-stream;base64,so9wPwAAAABEHa8+so9wPwAAAABEHa8+so9wPwAAAABEHa8+so9wPwAAAABEHa8+";
@@ -492,18 +530,164 @@ TEST(GoldenRender, ShaderHotReloadRestartsThePathTracedMean)
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_TRUE(harness.feedback.tracingReady) << "no TLAS after the warm-up, so nothing was path traced";
-    const unsigned int before = harness.feedback.pathTracingAccumulatedFrames;
+    const uint64_t before = harness.feedback.pathTracingAccumulatedSamples;
     ASSERT_GE(before, 3U) << "the running mean did not accumulate across the warm-up frames";
 
     renderer_vars.shader_hot_reload_triggered = true;
     harness.render_frame();
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost after the shader reload.";
     EXPECT_FALSE(renderer_vars.shader_hot_reload_triggered) << "the reload request was not spent";
-    EXPECT_EQ(harness.feedback.pathTracingAccumulatedFrames, 1U)
-      << "the reloaded kernel's first frame was averaged into the old kernel's " << before << "-frame mean";
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 1U)
+      << "the reloaded kernel's first frame was averaged into the old kernel's " << before << "-sample mean";
 
     harness.render_frame();
-    EXPECT_EQ(harness.feedback.pathTracingAccumulatedFrames, 2U) << "the restarted mean does not accumulate";
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 2U) << "the restarted mean does not accumulate";
+}
+
+// Tiles and sample chunks change only the float summation order: each sample's index in the mean seeds it.
+TEST(GoldenRender, PathTracingSplitsAFrameWithoutChangingItsMean)
+{
+    SKIP_WITHOUT_GPU();
+
+    const Kataglyphis::TestSupport::ScopedLogCapture capture;
+    // A lone card at 4 spp and two bounces: the sun's NEE, a bounce and the sky, in a few cheap frames.
+    ScopedModelOverride card(METALLIC_CARD_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+    auto &renderer_vars = harness.settings.renderer;
+    renderer_vars.pathTracing = true;
+    renderer_vars.pathTracingSamplesPerPixel = 4;
+    // One bounce while warming up: the same split at two, so only the bounces can log the plan again.
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.feedback.tracingReady) << "no TLAS after the warm-up, so nothing was path traced";
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 2.0F));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+
+    // Each run restarts the mean and traces the same 12 samples per pixel in three frames.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto traced_mean = [&] {
+        renderer_vars.pathTracingRestartRequested = true;
+        harness.render_frames(2);
+        std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 12U) << "the restart did not start the mean over";
+        return radiance;
+    };
+    const std::vector<float> whole = traced_mean();
+    // One sample of a whole tile per dispatch.
+    const uint64_t one_sample = uint64_t{ Kataglyphis::kPathTracingTileSize } * Kataglyphis::kPathTracingTileSize * 2U;
+    std::vector<float> split;
+    {
+        const ScopedEnvVar budget("KATAGLYPHIS_PT_DISPATCH_SEGMENTS", std::to_string(one_sample).c_str());
+        split = traced_mean();
+    }
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(whole.empty());
+    ASSERT_EQ(split.size(), whole.size());
+
+    // The default budget holds a tile's four samples in one dispatch and the small one splits them, as the plan says.
+    const std::size_t tiles = Kataglyphis::planPathTracingDispatches(width, height, 4, 2, 0).size();
+    const std::size_t chunks = Kataglyphis::planPathTracingDispatches(width, height, 4, 2, 0, one_sample).size();
+    ASSERT_EQ(chunks, 4U * tiles) << "the small budget does not split the samples";
+    const auto plan_line = [](std::size_t dispatches, uint32_t samples, uint32_t bounces) {
+        return "path tracer: " + std::to_string(dispatches) + " dispatches a frame, up to " + std::to_string(samples)
+               + " samples of " + std::to_string(bounces) + " bounces each";
+    };
+    const std::vector<std::string> expected_plans = {
+        plan_line(tiles, 4, 1), plan_line(tiles, 4, 2), plan_line(chunks, 1, 2)
+    };
+    EXPECT_EQ(dispatch_plan_lines(capture), expected_plans)
+      << "the renderer must log the warm-up's, the whole and the split frame's plan, each once";
+
+    const HdrDifference difference = hdr_difference(whole, split);
+    GTEST_LOG_(INFO) << "split against whole frames: largest relative difference " << difference.largest << ", mean "
+                     << difference.mean;
+    // Half-float rounding of fp32 means that differ in their last bits; a sample drawn differently moves far more.
+    EXPECT_LT(difference.largest, 0.01) << "a split frame traced other samples than the whole one";
+    EXPECT_LT(difference.mean, 1.0e-4) << "a split frame's mean drifted from the whole frame's";
+}
+
+// The editor's Restart accumulation and White furnace: what Rust's PATH TRACING rows do, through the same settings.
+TEST(GoldenRender, PathTracingRestartAndTheFurnaceFollowTheEditor)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride card(METALLIC_CARD_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+    auto &renderer_vars = harness.settings.renderer;
+    renderer_vars.pathTracing = true;
+    renderer_vars.pathTracingSamplesPerPixel = 1;
+    renderer_vars.pathTracingMaxBounces = 2;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_TRUE(harness.feedback.tracingReady) << "no TLAS after the warm-up, so nothing was path traced";
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 2.0F));
+    harness.camera->set_orientation(-90.0F, 0.0F);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto first_frame_after_restart = [&] {
+        renderer_vars.pathTracingRestartRequested = true;
+        std::vector<float> radiance = harness.capture_hdr_frame(width, height);
+        EXPECT_FALSE(renderer_vars.pathTracingRestartRequested) << "the restart request was not spent";
+        EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 1U) << "the restarted mean holds older samples";
+        return radiance;
+    };
+
+    // A restarted mean draws the samples of the first frame after any reset again, so the frame repeats exactly.
+    const std::vector<float> first = first_frame_after_restart();
+    harness.render_frames(2);
+    const std::vector<float> deeper = harness.capture_hdr_frame(width, height);
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 4U) << "the mean does not count its samples";
+    const std::vector<float> again = first_frame_after_restart();
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(first.empty());
+    ASSERT_EQ(again.size(), first.size());
+    const HdrDifference restarted = hdr_difference(first, again);
+    const HdrDifference accumulated = hdr_difference(first, deeper);
+    GTEST_LOG_(INFO) << "restarted frame against the first: largest " << restarted.largest << "; four samples: mean "
+                     << accumulated.mean;
+    EXPECT_LT(restarted.largest, 1.0e-6) << "the restarted frame is not the first frame after a reset";
+    EXPECT_GT(accumulated.mean, 1.0e-3) << "four samples left the one-sample frame unchanged - the mean is frozen";
+
+    // The furnace's sky has radiance 1, so the corners, where every camera ray misses the card, read exactly 1.
+    const auto corner = [&](const std::vector<float> &radiance) {
+        const std::size_t pixel = (static_cast<std::size_t>(height / 8U) * width + width / 8U) * 4U;
+        return glm::vec3(radiance[pixel], radiance[pixel + 1U], radiance[pixel + 2U]);
+    };
+    GTEST_LOG_(INFO) << "corner without the furnace: (" << corner(first).r << ", " << corner(first).g << ", "
+                     << corner(first).b << ")";
+    EXPECT_GT(glm::length(corner(first) - glm::vec3(1.0F)), 0.05F) << "the scene's sky already reads 1 at the corner";
+
+    renderer_vars.pathTracingFurnace = true;
+    const std::vector<float> editor_furnace = harness.capture_hdr_frame(width, height);
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 1U) << "the White furnace toggle kept the scene's mean";
+    ASSERT_FALSE(editor_furnace.empty());
+    EXPECT_EQ(corner(editor_furnace), glm::vec3(1.0F)) << "the editor's furnace sky is not a uniform 1";
+
+    // The goldens' KATAGLYPHIS_PT_FURNACE=1 is the same furnace: radiance 1, a white dielectric at roughness 0.5.
+    renderer_vars.pathTracingFurnace = false;
+    std::vector<float> variable_furnace;
+    {
+        const ScopedEnvVar furnace("KATAGLYPHIS_PT_FURNACE", "1.0");
+        variable_furnace = first_frame_after_restart();
+    }
+    ASSERT_EQ(variable_furnace.size(), editor_furnace.size());
+    EXPECT_LT(hdr_difference(editor_furnace, variable_furnace).largest, 1.0e-6)
+      << "the editor's White furnace is not the furnace KATAGLYPHIS_PT_FURNACE=1 draws";
+
+    const std::vector<float> scene = harness.capture_hdr_frame(width, height);
+    EXPECT_EQ(harness.feedback.pathTracingAccumulatedSamples, 1U) << "leaving the furnace kept the furnace's mean";
+    EXPECT_LT(hdr_difference(first, scene).largest, 1.0e-6) << "the scene did not come back after the furnace";
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
 }
 
 // Nothing rewrites the traced sets per frame, so each change they depend on must reach updateAllDescriptorSets.

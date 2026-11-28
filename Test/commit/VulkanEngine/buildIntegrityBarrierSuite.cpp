@@ -126,12 +126,15 @@ TEST(BuildIntegrity, OneShotCopiesNameTheAccessesTheSpecRequires)
     ASSERT_TRUE(as_manager.has_value()) << "could not open ASManager.cpp";
     const std::size_t create_tlas = as_manager->find("ASManager::createTLAS(");
     ASSERT_NE(create_tlas, std::string::npos) << "ASManager::createTLAS not found";
-    const std::size_t transfer_src = as_manager->find("vk::AccessFlagBits2::eTransferWrite;", create_tlas);
-    ASSERT_NE(transfer_src, std::string::npos) << "the instance upload's barrier was not found in createTLAS";
-    const std::size_t dst_access = as_manager->find("barrier.dstAccessMask = ", transfer_src);
-    ASSERT_NE(dst_access, std::string::npos) << "the instance upload's barrier has no destination access";
-    const std::size_t dst_access_end = as_manager->find(';', dst_access);
-    EXPECT_NE(as_manager->substr(dst_access, dst_access_end - dst_access).find("eShaderRead"), std::string::npos)
+    const std::size_t upload_barrier = as_manager->find("recordMemoryBarrier(", create_tlas);
+    ASSERT_NE(upload_barrier, std::string::npos) << "createTLAS records no global barrier for its instance upload";
+    const std::size_t call_end = as_manager->find(");", upload_barrier);
+    ASSERT_NE(call_end, std::string::npos) << "the instance upload's barrier call does not end";
+    const std::string call = as_manager->substr(upload_barrier, call_end - upload_barrier);
+    ASSERT_NE(call.find("vk::AccessFlagBits2::eTransferWrite"), std::string::npos)
+      << "createTLAS's first global barrier is not the instance upload's: " << call;
+    // (commandBuffer, srcStage, srcAccess, dstStage, dstAccess): the last argument is what the build reads.
+    EXPECT_NE(call.substr(call.rfind(',')).find("eShaderRead"), std::string::npos)
       << "a TLAS build reads its instance buffer as VK_ACCESS_2_SHADER_READ_BIT, so the upload's barrier must name it";
 
     const auto capture = readFileText(repo_root / "Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx");
@@ -274,6 +277,44 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
       << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier2 declarations under "
          "Src/GraphicsEngineVulkan/:"
       << joinViolations(violations);
+}
+
+// A global barrier is one call of recordMemoryBarrier, as an image barrier is one of buildImageMemoryBarrier.
+TEST(BuildIntegrity, GlobalMemoryBarriersGoThroughTheSharedHelper)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(sourceExists(src_root)) << "missing " << src_root.string();
+    static const std::string kHelper = "Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp";
+    static const std::string kHandRolled = "vk::MemoryBarrier2";
+
+    std::vector<std::string> violations;
+    std::size_t helper_declarations = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        const auto text = readFileText(path);
+        if (!text) { continue; }
+        std::size_t count = 0;
+        for (std::size_t at = text->find(kHandRolled); at != std::string::npos; at = text->find(kHandRolled, at + 1)) {
+            ++count;
+        }
+        if (relative_file == kHelper) {
+            helper_declarations = count;
+        } else if (count > 0) {
+            violations.push_back(relative_file + ": " + std::to_string(count)
+                                 + " vk::MemoryBarrier2 - record it with Kataglyphis::recordMemoryBarrier");
+        }
+    }
+    EXPECT_EQ(helper_declarations, 1U) << "recordMemoryBarrier no longer builds the one vk::MemoryBarrier2 - the scan "
+                                          "needs updating";
+    EXPECT_TRUE(violations.empty()) << joinViolations(violations);
 }
 
 TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)

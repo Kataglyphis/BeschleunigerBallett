@@ -209,12 +209,16 @@ TEST(Integration, OutlinerRendererRowOpensTheTabWhoseSwitchTogglesCulling)
 
     const ImGuiWindow *body = activeChildWindow("##studio_inspector", "##inspector_body");
     ASSERT_NE(body, nullptr) << "the inspector drew no tab body";
+    // The tab outgrows the dock at 1200 x 768, and only SHADERS follows the switch, so the body's end shows it.
+    input.wheel(body->InnerClipRect.GetCenter(), -100.0);
     // captionLine right-aligns the switch, so it ends where the body's work rect does.
     const ImGuiID culling_switch = ImGui::GetIDWithSeed("##frustum_culling", nullptr, body->ID);
     const std::optional<ImVec2> switch_point =
       input.pointAtOnVertical(culling_switch, body->InnerClipRect, body->WorkRect.Max.x - 4.0F);
     ASSERT_TRUE(switch_point.has_value())
-      << "the inspector's shown tab has no culling switch: the Renderer row did not open the Renderer tab";
+      << "the inspector's shown tab has no culling switch: the Renderer row did not open the Renderer tab, or the "
+         "wheel left it out of view (scrolled "
+      << body->Scroll.y << " of " << body->ScrollMax.y << " px)";
 
     input.click(*switch_point);
     input.frames(1);

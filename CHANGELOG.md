@@ -83,6 +83,12 @@ the GitHub releases themselves.
   feature; the startup log names what is on. `GpuBreadcrumbsUnit.*` test the trail, the analysis and the report with
   fake markers, `Integration.SimulatedDeviceLossLogsTheBreadcrumbsOfEachImagesLastFrameOnce` the block after a
   simulated loss. How to read the block: `docs/source/gpu-golden-testing.md`.
+- The editor's PATH TRACING section has the Rust editor's **White furnace** row (a white surface everywhere under a
+  uniform sky of radiance 1, without the sun; Rust's `FurnaceSettings` defaults, off by default) and its **Restart
+  accumulation** button (plan C8), and its **Accumulated** row reads the renderer's sample count,
+  `RendererFeedback::pathTracingAccumulatedSamples`, in place of frames times the current samples per pixel. The
+  furnace, the editor's or `KATAGLYPHIS_PT_FURNACE`'s, is part of the path tracer's history key, so toggling it or
+  changing its surface restarts the mean. `GoldenRender.PathTracingRestartAndTheFurnaceFollowTheEditor` grades both.
 
 ### Changed
 
@@ -117,6 +123,17 @@ the GitHub releases themselves.
   block chain at whole blocks, and `Texture::getFormat` reports the image's format. PNG and JPEG stay RGBA8, so
   `Colosseum-gltf` is unchanged. Its 69 images encoded as UASTC KTX2 (a local measurement scene) now take 190 MiB
   of device memory as BC7 instead of 760 MiB, and the parse peaks at 711-714 MiB instead of 1363-1416 MiB.
+- The path tracer dispatches a frame in 256 px tiles and sample chunks (plan C8), Rust's `plan()` ported to
+  `planPathTracingDispatches`: no dispatch traces more than 4 M path segments, where at the editor's maxima (64 paths
+  of 16 bounces) one dispatch put about 2,000 rays into every pixel, past what Windows' 2 s TDR allows a slow GPU.
+  A compute barrier orders each dispatch after the one before, as wgpu orders Rust's. The running mean counts
+  samples, not frames, and each sample seeds its RNG from its index in the mean, so a split changes only the float
+  summation order. Every path-traced frame draws other samples than before: the path-traced goldens held their
+  bounds on Linux x64's llvmpipe and Windows x64's lavapipe, and the four riscv64 light variants on aarch64 llvmpipe
+  (the furnace rig 0.9997); the riscv64 shards themselves have not run on it. The renderer logs the plan whenever
+  its dispatches, samples or bounces change, and `KATAGLYPHIS_PT_DISPATCH_SEGMENTS` lowers the budget, never raises
+  it. `GoldenRender.PathTracingSplitsAFrameWithoutChangingItsMean` splits a frame into 60 one-sample dispatches and
+  matches the 15-dispatch frame within one half-float step.
 
 ### Fixed
 

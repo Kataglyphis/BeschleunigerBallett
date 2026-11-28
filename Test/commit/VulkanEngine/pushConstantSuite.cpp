@@ -59,14 +59,19 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
     EXPECT_EQ(offsetof(PushConstantPathTracing, clearColor), 0U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, width), 16U);
     EXPECT_EQ(offsetof(PushConstantPathTracing, height), 20U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, frame_index), 24U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, samples_per_pixel), 28U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, max_bounces), 32U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_metallic), 36U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_roughness), 40U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, trace_cloud_depth), 44U);
-    EXPECT_EQ(offsetof(PushConstantPathTracing, skybox_enabled), 48U);
-    EXPECT_GE(sizeof(PushConstantPathTracing), 52U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, tile_x), 24U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, tile_y), 28U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, tile_width), 32U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, tile_height), 36U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, first_sample), 40U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, samples), 44U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, accumulated), 48U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, max_bounces), 52U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_metallic), 56U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, furnace_roughness), 60U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, trace_cloud_depth), 64U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, skybox_enabled), 68U);
+    EXPECT_GE(sizeof(PushConstantPathTracing), 72U);
     EXPECT_LE(sizeof(PushConstantPathTracing), 128U);
 }
 

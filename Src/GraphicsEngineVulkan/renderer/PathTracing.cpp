@@ -4,12 +4,16 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <span>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -17,6 +21,7 @@
 #include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "renderer/PathTracingDispatch.hpp"
+#include "renderer/PathTracingHistory.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 
 module kataglyphis.vulkan.path_tracing;
@@ -29,29 +34,43 @@ import kataglyphis.vulkan.shader_helper;
 
 namespace {
 
-struct FurnaceSurface
+// A furnace variable as a float, or nullopt when it is unset, empty or not finite, as Rust's clamped() heals one.
+std::optional<float> furnaceVariable(const char *name)
 {
-    float metallic = 0.0F;
-    float roughness = 0.5F;
-};
+    const auto value = Kataglyphis::environmentVariable(name);
+    if (!value.has_value() || value->empty()) { return std::nullopt; }
+    const float parsed = std::strtof(value->c_str(), nullptr);
+    return std::isfinite(parsed) ? std::optional<float>(parsed) : std::nullopt;
+}
 
-// KATAGLYPHIS_PT_FURNACE_METALLIC and _ROUGHNESS pick the furnace's white surface; unset, a dielectric at 0.5.
-FurnaceSurface furnaceSurfaceFromEnvironment()
+// Read per frame, as the furnace's variables are: several tests share one process.
+uint64_t dispatchSegmentsFromEnvironment()
 {
-    FurnaceSurface surface;
-    if (const auto metallic = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE_METALLIC");
-      metallic.has_value() && !metallic->empty()) {
-        surface.metallic = std::clamp(std::strtof(metallic->c_str(), nullptr), 0.0F, 1.0F);
-    }
-    // 0.045 is material_roughness()'s floor, which keeps the GGX lobe finite.
-    if (const auto roughness = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE_ROUGHNESS");
-      roughness.has_value() && !roughness->empty()) {
-        surface.roughness = std::clamp(std::strtof(roughness->c_str(), nullptr), 0.045F, 1.0F);
-    }
-    return surface;
+    const auto value = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_DISPATCH_SEGMENTS");
+    return Kataglyphis::pathTracingDispatchBudget(value.has_value() ? std::string_view(*value) : std::string_view{});
 }
 
 }// namespace
+
+auto Kataglyphis::VulkanRendererInternals::resolvePathTracingFurnace(bool editor_furnace) -> PathTracingFurnace
+{
+    // Read per frame, not cached, because several tests share one process.
+    PathTracingFurnace furnace;
+    furnace.on = editor_furnace || Kataglyphis::environmentFlag("KATAGLYPHIS_PT_FURNACE");
+    if (const std::optional<float> radiance = furnaceVariable("KATAGLYPHIS_PT_FURNACE"); radiance.has_value()) {
+        furnace.radiance = std::max(*radiance, 0.0F);
+    }
+    if (const std::optional<float> metallic = furnaceVariable("KATAGLYPHIS_PT_FURNACE_METALLIC");
+      metallic.has_value()) {
+        furnace.metallic = std::clamp(*metallic, 0.0F, 1.0F);
+    }
+    // 0.045 is material_roughness()'s floor, which keeps the GGX lobe finite.
+    if (const std::optional<float> roughness = furnaceVariable("KATAGLYPHIS_PT_FURNACE_ROUGHNESS");
+      roughness.has_value()) {
+        furnace.roughness = std::clamp(*roughness, 0.045F, 1.0F);
+    }
+    return furnace;
+}
 
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
@@ -71,16 +90,11 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::CommandBuffer &commandBuffer,
-  uint32_t /*image_index*/,
   VulkanImage &vulkanImage,
   VulkanImage &accumulationImage,
-  VulkanSwapChain *vulkanSwapChain,
+  vk::Extent2D extent,
   std::span<const vk::DescriptorSet> descriptorSets,
-  uint32_t frame_index,
-  uint32_t samples_per_pixel,
-  uint32_t max_bounces,
-  bool trace_cloud_depth,
-  bool skybox_enabled)
+  const PathTracingFrame &frame)
 {
     // UNDEFINED: the output follows the last frame's post, bloom and histogram reads; the history its dispatch.
     const std::array<vk::ImageMemoryBarrier2, 2> before_dispatch = {
@@ -102,40 +116,64 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     };
     Kataglyphis::recordImageBarriers(commandBuffer, before_dispatch);
 
-    vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
-    push_constant.width = imageSize.width;
-    push_constant.height = imageSize.height;
-    // White-furnace mode; read per record, not cached, because several tests share one process.
-    const auto furnace_value = Kataglyphis::environmentVariable("KATAGLYPHIS_PT_FURNACE");
-    if (furnace_value.has_value() && !furnace_value->empty()) {
-        const float furnace_radiance = std::strtof(furnace_value->c_str(), nullptr);
-        push_constant.clearColor = { furnace_radiance, furnace_radiance, furnace_radiance, 1.0F };
-    } else {
-        push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
-    }
-    const FurnaceSurface furnace_surface = furnaceSurfaceFromEnvironment();
-    push_constant.furnace_metallic = furnace_surface.metallic;
-    push_constant.furnace_roughness = furnace_surface.roughness;
-    push_constant.frame_index = frame_index;
-    push_constant.samples_per_pixel = std::max(samples_per_pixel, 1U);
-    push_constant.max_bounces = std::max(max_bounces, 1U);
-    push_constant.trace_cloud_depth = trace_cloud_depth ? 1U : 0U;
-    push_constant.skybox_enabled = skybox_enabled ? 1U : 0U;
-
-    commandBuffer.pushConstants(
-      pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);
+    push_constant.width = extent.width;
+    push_constant.height = extent.height;
+    const PathTracingFurnace &furnace = frame.furnace;
+    push_constant.clearColor =
+      furnace.on ? vec4(furnace.radiance, furnace.radiance, furnace.radiance, 1.0F) : vec4(0.0F, 0.0F, 0.0F, 0.0F);
+    push_constant.furnace_metallic = furnace.metallic;
+    push_constant.furnace_roughness = furnace.roughness;
+    const uint32_t max_bounces = std::max(frame.max_bounces, 1U);
+    push_constant.max_bounces = max_bounces;
+    push_constant.trace_cloud_depth = frame.trace_cloud_depth ? 1U : 0U;
+    push_constant.skybox_enabled = frame.skybox_enabled ? 1U : 0U;
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
 
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline_layout, 0, descriptorSets, nullptr);
 
-    uint32_t const workGroupCountX = std::max(
-      (imageSize.width + Kataglyphis::kPathTracingWorkgroupSizeX - 1) / Kataglyphis::kPathTracingWorkgroupSizeX, 1U);
-    uint32_t const workGroupCountY = std::max(
-      (imageSize.height + Kataglyphis::kPathTracingWorkgroupSizeY - 1) / Kataglyphis::kPathTracingWorkgroupSizeY, 1U);
-    uint32_t const workGroupCountZ = 1;
-
-    commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
+    const std::vector<Kataglyphis::PathTracingDispatch> dispatches =
+      Kataglyphis::planPathTracingDispatches(extent.width,
+        extent.height,
+        frame.samples_per_pixel,
+        max_bounces,
+        frame.accumulated,
+        dispatchSegmentsFromEnvironment());
+    // Logged when it changes: how a frame splits is what keeps it under a GPU watchdog, and the goldens read it.
+    const std::tuple<std::size_t, uint32_t, uint32_t> plan_shape{
+        dispatches.size(), dispatches.front().samples, max_bounces
+    };
+    if (plan_shape != logged_plan_shape) {
+        logged_plan_shape = plan_shape;
+        spdlog::info("path tracer: {} dispatches a frame, up to {} samples of {} bounces each",
+          std::get<0>(plan_shape),
+          std::get<1>(plan_shape),
+          std::get<2>(plan_shape));
+    }
+    for (std::size_t index = 0; index < dispatches.size(); ++index) {
+        const Kataglyphis::PathTracingDispatch &tile = dispatches[index];
+        // A later chunk reads what the one before wrote; within one, sync validation tracks a storage image whole.
+        if (index > 0) {
+            Kataglyphis::recordMemoryBarrier(commandBuffer,
+              vk::PipelineStageFlagBits2::eComputeShader,
+              vk::AccessFlagBits2::eShaderStorageWrite,
+              vk::PipelineStageFlagBits2::eComputeShader,
+              vk::AccessFlagBits2::eShaderStorageRead | vk::AccessFlagBits2::eShaderStorageWrite);
+        }
+        push_constant.tile_x = tile.x;
+        push_constant.tile_y = tile.y;
+        push_constant.tile_width = tile.width;
+        push_constant.tile_height = tile.height;
+        push_constant.first_sample = tile.first_sample;
+        push_constant.samples = tile.samples;
+        push_constant.accumulated = tile.accumulated;
+        commandBuffer.pushConstants(
+          pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);
+        commandBuffer.dispatch(
+          (tile.width + Kataglyphis::kPathTracingWorkgroupSizeX - 1) / Kataglyphis::kPathTracingWorkgroupSizeX,
+          (tile.height + Kataglyphis::kPathTracingWorkgroupSizeY - 1) / Kataglyphis::kPathTracingWorkgroupSizeY,
+          1);
+    }
 
     // The consumers are post.slang's fragment shader and the auto-exposure histogram's compute pass.
     Kataglyphis::recordImageBarrier(commandBuffer,

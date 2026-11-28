@@ -913,14 +913,14 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster-1` to `raster-4`: every GPU test in no other shard (102 today, two of them disabled), every fourth
+  - `raster-1` to `raster-4`: every GPU test in no other shard (106 today, two of them disabled), every fourth
     by ctest number in each (`-I k,,4`, which intersects with the filter), 90 min per test. As one `raster`
     job they passed GitHub's 6 h job limit (run 45969392334: 64 of 95 in 5.7 h of tests). Split in three (run
     46021554231, 95 tests) the jobs took 2 h 50, 3 h 42 and 4 h 46, the slowest on a runner 1.4-1.8x slower
     than the first run's (`WorldUpIsScreenUp` 749 s against 418);
     the same times split in four come to 2.3-2.9 h of tests per shard;
   - `clouds`: the ten cloud goldens, 150 min per test;
-  - one solo shard each, 300 min, for the twelve path-traced tests (the eight
+  - one solo shard each, 300 min, for the twelve path-traced tests (eight of the ten
     `GoldenRender.PathTracing*`, `PathTracedMaskCardShowsItsCutout`,
     `PathTracedMetalCardReflectsTheSkyAndTheSun`, `AddedModelAppearsInPathTracing`,
     `ReloadedModelIsVisibleInPathTracing`) and for `RaytracingFrameSkipsTheRasterPass`, the
@@ -936,7 +936,9 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   `NormalMappedBackFaceFlipsItsWholeTangentFrame` and `TwoChannelNormalMapShadesAsItsThreeChannelTwin` at about 20 min.
   `ShaderHotReloadRestartsThePathTracedMean`
   path-traces a lone card at 1 spp and one bounce for about seven frames around a reload of every
-  pipeline, and thirteen more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
+  pipeline; `PathTracingSplitsAFrameWithoutChangingItsMean` one at 4 spp and two bounces for six frames, three
+  of them in 60 dispatches, and `PathTracingRestartAndTheFurnaceFollowTheEditor` one at 1 spp and two bounces for
+  eight (6.6 and 8.4 s natively); and thirteen more path-trace besides a raster or ray-traced frame: `NormalMappedBackFaceFlipsItsWholeTangentFrame` and
   `MirroredModelKeepsItsWindingAndNormalMapRelief` (4 spp for 12 frames each, after forward,
   deferred and ray-traced ones), `TracedSecondModelResolvesItsOwnMeshAndTextures` (a lone cube,
   2 spp for 8 frames),
