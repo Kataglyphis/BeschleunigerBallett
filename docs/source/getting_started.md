@@ -127,7 +127,8 @@ It is made for the family's Linux CI image, which has the toolchain and the Vulk
 there with the checkout mounted at `/workspace`.
 
 Other helpers: `scripts/linux/run-ctest.sh`, `scripts/linux/build-coverage-gcovr.sh`,
-`scripts/linux/build-coverage-llvm.sh`, `scripts/linux/run-perf-suite.sh`.
+`scripts/linux/build-coverage-llvm.sh`, `scripts/linux/run-perf-suite.sh`,
+`scripts/linux/compare-renderer-pixels.sh` (both renderers' Dinosaurs frames, graded structurally).
 
 ## Windows Workflow
 

@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
@@ -26,7 +27,18 @@ using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
 using Kataglyphis::Test::GoldenMetrics::ShadowAgreement;
 using Kataglyphis::Test::GoldenMetrics::WorldBox;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
+using Kataglyphis::Test::GoldenMetrics::distinct_luminance_buckets;
+using Kataglyphis::Test::GoldenMetrics::fraction_above;
+using Kataglyphis::Test::GoldenMetrics::frame_structure;
+using Kataglyphis::Test::GoldenMetrics::FrameStructure;
+using Kataglyphis::Test::GoldenMetrics::kFrameLitLevel;
+using Kataglyphis::Test::GoldenMetrics::luminance_bucket;
+using Kataglyphis::Test::GoldenMetrics::luminance_of;
+using Kataglyphis::Test::GoldenMetrics::luminance_stddev;
+using Kataglyphis::Test::GoldenMetrics::mean_luminance;
 using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
+using Kataglyphis::Test::GoldenMetrics::renderer_mean_ratio;
+using Kataglyphis::Test::GoldenMetrics::renderer_mean_ratio_holds;
 using Kataglyphis::Test::GoldenMetrics::sky_silhouette;
 using Kataglyphis::Test::GoldenMetrics::SkySilhouette;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
@@ -56,6 +68,26 @@ std::vector<uint8_t> checkerboard_frame()
 }
 
 Crop full_frame_crop() { return Crop{ 0U, WIDTH, 0U, HEIGHT }; }
+
+// One opaque pixel per entry, in a single row.
+std::vector<uint8_t> row_frame(const std::vector<std::array<uint8_t, 3>> &colours)
+{
+    std::vector<uint8_t> rgba;
+    rgba.reserve(colours.size() * 4U);
+    for (const auto &[r, g, b] : colours) { rgba.insert(rgba.end(), { r, g, b, 255U }); }
+    return rgba;
+}
+
+// Every grey level once: 256 pixels.
+std::vector<uint8_t> grey_ramp_frame()
+{
+    std::vector<std::array<uint8_t, 3>> colours;
+    for (int level = 0; level < 256; ++level) {
+        const auto grey = static_cast<uint8_t>(level);
+        colours.push_back({ grey, grey, grey });
+    }
+    return row_frame(colours);
+}
 
 // Grey levels from PathTracingAntiAliasesGeometricEdges on lavapipe: sky, slab, the edge row with and without jitter.
 constexpr uint8_t SKY_LEVEL = 195U;
@@ -324,4 +356,101 @@ TEST(GoldenMetrics, FurnaceOracleResolvesTheNarrowestLobeTheFloorAllows)
     }
     // A 4000-step angle grid and a fine half-vector grid agree on 0.9667 here; the 320-step grid gave 0.730.
     EXPECT_NEAR(white_single_scatter_albedo(0.3, 0.12, 1.0), 0.9667, 0.002);
+}
+
+// The PowerShell copy used Rec. 601, which reads pure green 149.685; both now weigh the stored bytes by Rec. 709.
+TEST(GoldenMetrics, LuminanceWeighsTheChannelsByRec709)
+{
+    const std::vector<uint8_t> primaries = row_frame({ { 255U, 0U, 0U }, { 0U, 255U, 0U }, { 0U, 0U, 255U } });
+    EXPECT_NEAR(luminance_of(primaries, 0U), 54.213, 1e-9);
+    EXPECT_NEAR(luminance_of(primaries, 1U), 182.376, 1e-9);
+    EXPECT_NEAR(luminance_of(primaries, 2U), 18.411, 1e-9);
+}
+
+TEST(GoldenMetrics, LuminanceBucketIsTheNearestLevelHalvesUp)
+{
+    EXPECT_EQ(luminance_bucket(8.49), 8U);
+    EXPECT_EQ(luminance_bucket(8.5), 9U);
+    EXPECT_EQ(luminance_bucket(-3.0), 0U);
+    EXPECT_EQ(luminance_bucket(300.0), 255U);
+    // White's luma sums to 254.99999999999997, which a floor put a bucket low.
+    EXPECT_EQ(luminance_bucket(luminance_of(row_frame({ { 255U, 255U, 255U } }), 0U)), 255U);
+}
+
+// A floor of the luma counted 203: 62 greys sum to just below their level.
+TEST(GoldenMetrics, EveryGreyLevelIsItsOwnBucket) { EXPECT_EQ(distinct_luminance_buckets(grey_ramp_frame()), 256U); }
+
+TEST(GoldenMetrics, LuminanceStddevDividesByThePixelCount)
+{
+    const std::vector<uint8_t> frame = row_frame({ { 0U, 0U, 0U }, { 255U, 255U, 255U } });
+    EXPECT_NEAR(mean_luminance(frame), 127.5, 1e-9);
+    EXPECT_NEAR(luminance_stddev(frame), 127.5, 1e-9);
+}
+
+TEST(GoldenMetrics, FractionAboveCountsOnlyBrighterPixels)
+{
+    const std::vector<uint8_t> frame = row_frame({ { 7U, 7U, 7U }, { 9U, 9U, 9U }, { 9U, 9U, 9U }, { 0U, 0U, 0U } });
+    EXPECT_DOUBLE_EQ(fraction_above(frame, 8.0), 0.5);
+}
+
+// The lit level is strict; a pixel's own luma as the threshold holds whatever a fused multiply-add rounds.
+TEST(GoldenMetrics, FractionAboveLeavesAPixelAtTheThresholdOut)
+{
+    EXPECT_DOUBLE_EQ(kFrameLitLevel, 8.0);
+    const std::vector<uint8_t> frame = row_frame({ { 8U, 8U, 8U }, { 9U, 9U, 9U } });
+    EXPECT_DOUBLE_EQ(fraction_above(frame, luminance_of(frame, 0U)), 0.5);
+}
+
+TEST(GoldenMetrics, FrameStructureOfAFlatGreyFrameIsLitButUniform)
+{
+    const FrameStructure structure = frame_structure(flat_frame(128U));
+    EXPECT_DOUBLE_EQ(structure.stddev, 0.0);
+    EXPECT_EQ(structure.buckets, 1U);
+    EXPECT_TRUE(structure.is_lit());
+    EXPECT_FALSE(structure.has_structure());
+    EXPECT_FALSE(structure.has_variety());
+    EXPECT_FALSE(structure.passes());
+}
+
+TEST(GoldenMetrics, FrameStructureOfABlackFrameIsDark)
+{
+    const FrameStructure structure = frame_structure(flat_frame(0U));
+    EXPECT_DOUBLE_EQ(structure.lit_fraction, 0.0);
+    EXPECT_FALSE(structure.is_lit());
+}
+
+TEST(GoldenMetrics, FrameStructureOfAGreyRampPassesEveryCheck)
+{
+    const FrameStructure structure = frame_structure(grey_ramp_frame());
+    EXPECT_NEAR(structure.mean, 127.5, 1e-9);
+    EXPECT_NEAR(structure.stddev, 73.90027, 1e-4);
+    // Levels 9 to 255, and 8 when a fused multiply-add rounds its luma a hair above 8.
+    EXPECT_GE(structure.lit_fraction, 247.0 / 256.0);
+    EXPECT_LE(structure.lit_fraction, 248.0 / 256.0);
+    EXPECT_TRUE(structure.passes());
+}
+
+// The thresholds are strict, as RendersNonBlankFrame's EXPECT_GT and the PowerShell -le have them.
+TEST(GoldenMetrics, FrameStructureFailsAtEachThresholdItself)
+{
+    FrameStructure at_threshold{ 100.0, 2.0, 0.05, 8U };
+    EXPECT_FALSE(at_threshold.has_structure());
+    EXPECT_FALSE(at_threshold.is_lit());
+    EXPECT_FALSE(at_threshold.has_variety());
+    at_threshold = FrameStructure{ 100.0, 2.001, 0.0501, 9U };
+    EXPECT_TRUE(at_threshold.passes());
+}
+
+TEST(GoldenMetrics, RendererMeanRatioHoldsInsideItsClosedRange)
+{
+    EXPECT_TRUE(renderer_mean_ratio_holds(0.5));
+    EXPECT_TRUE(renderer_mean_ratio_holds(4.0));
+    EXPECT_FALSE(renderer_mean_ratio_holds(0.499));
+    EXPECT_FALSE(renderer_mean_ratio_holds(4.001));
+    // A black C++ frame cannot hide a lit Rust one behind a division by zero.
+    const FrameStructure black{};
+    const FrameStructure lit{ 100.0, 40.0, 0.9, 200U };
+    EXPECT_DOUBLE_EQ(renderer_mean_ratio(black, lit), 10.0);
+    EXPECT_FALSE(renderer_mean_ratio_holds(renderer_mean_ratio(black, lit)));
+    EXPECT_DOUBLE_EQ(renderer_mean_ratio(lit, black), 0.0);
 }

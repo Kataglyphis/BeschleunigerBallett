@@ -51,16 +51,26 @@ TEST(GoldenRender, RendersNonBlankFrame)
     ASSERT_EQ(frame.size(), static_cast<size_t>(width) * static_cast<size_t>(height) * 4U)
       << "Captured buffer size does not match the reported extent.";
 
-    const double stddev = luminance_stddev(frame);
-    const double lit_fraction = fraction_above(frame, 8.0);
-    const size_t buckets = distinct_luminance_buckets(frame);
+    // The renderer comparisons grade this very frame beside the Rust renderer's (gpu-golden-testing.md).
+    if (const auto png = Kataglyphis::environmentVariable("KATAGLYPHIS_GRADED_FRAME_PNG"); png && !png->empty()) {
+        EXPECT_NE(stbi_write_png(png->c_str(),
+                    static_cast<int>(width),
+                    static_cast<int>(height),
+                    4,
+                    frame.data(),
+                    static_cast<int>(width) * 4),
+          0)
+          << "Failed to write " << *png;
+    }
 
-    EXPECT_GT(stddev, 2.0) << "Frame is essentially uniform (luminance stddev " << stddev
-                           << "); the render graph likely produced a blank image.";
-    EXPECT_GT(lit_fraction, 0.05) << "Only " << (lit_fraction * 100.0)
-                                  << "% of pixels are non-black; the frame looks empty.";
-    EXPECT_GT(buckets, 8U) << "Only " << buckets
-                           << " distinct luminance levels present; the frame looks like a flat fill.";
+    const FrameStructure structure = frame_structure(frame);
+    EXPECT_GT(structure.stddev, kFrameMinStddev)
+      << "Frame is essentially uniform (luminance stddev " << structure.stddev
+      << "); the render graph likely produced a blank image.";
+    EXPECT_GT(structure.lit_fraction, kFrameMinLitFraction)
+      << "Only " << (structure.lit_fraction * 100.0) << "% of pixels are non-black; the frame looks empty.";
+    EXPECT_GT(structure.buckets, kFrameMinBuckets)
+      << "Only " << structure.buckets << " distinct luminance levels present; the frame looks like a flat fill.";
 }
 
 // The registry replaced a hard-wired record_commands; a frame must still record the passes in its old order.

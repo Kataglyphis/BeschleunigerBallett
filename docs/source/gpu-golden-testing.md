@@ -306,6 +306,42 @@ cargo test -p kataglyphis_webgpu_renderer
 
 A clean run has zero `SKIP: no GPU` lines in the output.
 
+## The two renderers' frames, compared
+
+The C++ and the Rust renderer frame and light Dinosaurs differently, so their frames are compared
+structurally, not pixel by pixel (that waits for `BACKLOG.md`'s shared view file). `GoldenMetrics.hpp`
+holds the one verdict: Rec. 709 luma of the stored bytes, each luminance bucket the nearest level
+(`luminance_bucket`: a floor put 62 grey levels a bucket low), and a frame passes with a luma
+standard deviation above 2, more than 5 % of its pixels above level 8 and more than 8 buckets
+(`FrameStructure`); with both frames, the Rust mean must lie within 0.5 to 4 times the C++ mean.
+`GoldenRender.RendersNonBlankFrame` grades its frame with it and, given
+`KATAGLYPHIS_GRADED_FRAME_PNG=<file>`, writes that frame.
+
+- **Linux CI** (`static-analysis`, both arches, its last step):
+  `scripts/linux/compare-renderer-pixels.sh --require-frames` runs RendersNonBlankFrame through
+  `run-ctest.sh --virtual-display` (so a skip, a `SYNC-HAZARD` or a `VUID-` fails it), OxidANT's
+  `obj2gltf` and `headless_render` (1200x768, its own orbit camera) with the cargo build the Rust
+  tests left, then `compareRendererFrames` (`Test/commit/tools/`, built with the commit suite), which
+  reads both PNGs and grades them through `RendererFrameVerdict.hpp`. Exit 0 passed, 1 a check or a
+  capture failed, 2 no frame at all (never a pass). A capture that exits non-zero fails the run, and
+  `--require-frames` fails a missing frame too: llvmpipe is always there, as exit 2 is fatal on a
+  Windows host with a GPU. `scripts/linux/tests/test-compare-renderer-pixels.sh` (Script suites)
+  pins these verdicts over stubbed captures. Both PNGs upload as `renderer-frames-<arch>`. On
+  aarch64 llvmpipe (2026-11-28): C++ mean 116.9, standard deviation 55.9, 237 buckets; Rust 218.2,
+  29.9, 227 (its orbit camera stands among the skeletons); ratio 1.87.
+- **aarch64 runs the Rust half at 128-bit vectors and without Mesa's shader cache.** At the image's
+  256 bits llvmpipe draws OxidANT's frame as blocks of noise, which the verdict passes, as
+  `run-cargo-tests.sh` also avoids. A 128-bit `headless_render` after the 256-bit golden segfaulted
+  on the golden's cache entries
+  ([hub `failure-modes.md`](https://github.com/Kataglyphis/ANTfrastructure/blob/develop/docs/failure-modes.md#llvmpipe-segfaults-at-one-vector-width-on-a-shader-cache-another-width-wrote)).
+- **Windows**: `Compare-RendererPixels.ps1` keeps its modes (`-SkipCpp`, `-SkipRust`,
+  `-ValidationOnly`), thresholds, messages and exit codes. Its `Get-FrameMetrics` and
+  `Test-FrameStructure` live in `Compare-Renderer.Common.psm1` and compute the same luma and buckets
+  (Rec. 601 luma and banker's rounding before), and its C++ capture is RendersNonBlankFrame's frame.
+- **Tests**: `GoldenMetrics.*` pin the weights, the bucket rule, the strict thresholds and lit
+  level and the ratio, `RendererFrameVerdict.*` the lines and exit codes, and the Pester suite's
+  Rec. 709, grey-ramp and lit-level cases the PowerShell copy.
+
 ## Shared Slang kernels against one vector file
 
 `Integration.SharedSlangKernelsMeetTheirVectors` (`sharedShaderVectorsSuite.cpp`, plan X3, 2026-11-21) is

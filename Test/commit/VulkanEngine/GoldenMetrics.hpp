@@ -52,6 +52,109 @@ inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t 
     return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
 
+// Mean Rec. 709 luma of an RGBA8 capture over a square around (cx, cy).
+inline double
+  mean_luminance_in_square(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
+{
+    double sum = 0.0;
+    size_t count = 0;
+    for (uint32_t y = cy - half; y < cy + half; ++y) {
+        for (uint32_t x = cx - half; x < cx + half; ++x) {
+            sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : 0.0;
+}
+
+// The one bucket rule, Compare-RendererPixels.ps1's too: the nearest level, as a floor puts 62 greys a level low.
+inline size_t luminance_bucket(double luma)
+{ return static_cast<size_t>(std::floor(std::clamp(luma, 0.0, 255.0) + 0.5)); }
+
+// Mean luminance over the whole frame, on a 0..255 scale.
+inline double mean_luminance(const std::vector<uint8_t> &rgba)
+{
+    const size_t pixel_count = rgba.size() / 4U;
+    if (pixel_count == 0U) { return 0.0; }
+
+    double sum = 0.0;
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) { sum += luminance_of(rgba, pixel); }
+    return sum / static_cast<double>(pixel_count);
+}
+
+// Over the pixel count, not one less, as the PowerShell copy divides.
+inline double luminance_stddev(const std::vector<uint8_t> &rgba)
+{
+    const size_t pixel_count = rgba.size() / 4U;
+    if (pixel_count < 2U) { return 0.0; }
+
+    const double mean = mean_luminance(rgba);
+    double accumulated = 0.0;
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        const double delta = luminance_of(rgba, pixel) - mean;
+        accumulated += delta * delta;
+    }
+    return std::sqrt(accumulated / static_cast<double>(pixel_count));
+}
+
+inline double fraction_above(const std::vector<uint8_t> &rgba, double threshold)
+{
+    const size_t pixel_count = rgba.size() / 4U;
+    if (pixel_count == 0U) { return 0.0; }
+
+    size_t hits = 0;
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        if (luminance_of(rgba, pixel) > threshold) { ++hits; }
+    }
+    return static_cast<double>(hits) / static_cast<double>(pixel_count);
+}
+
+// A blank or single-colour frame collapses to a handful of buckets.
+inline size_t distinct_luminance_buckets(const std::vector<uint8_t> &rgba)
+{
+    std::vector<bool> seen(256, false);
+    const size_t pixel_count = rgba.size() / 4U;
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) { seen[luminance_bucket(luminance_of(rgba, pixel))] = true; }
+    return static_cast<size_t>(std::count(seen.begin(), seen.end(), true));
+}
+
+// RendersNonBlankFrame's verdict; Compare-RendererPixels.ps1 and compareRendererFrames hold both renderers to it.
+inline constexpr double kFrameMinStddev = 2.0;
+inline constexpr double kFrameLitLevel = 8.0;
+inline constexpr double kFrameMinLitFraction = 0.05;
+inline constexpr size_t kFrameMinBuckets = 8U;
+// Generous: the pipelines and framings differ, so only a blank or degenerate frame leaves it.
+inline constexpr double kRendererMeanRatioMin = 0.5;
+inline constexpr double kRendererMeanRatioMax = 4.0;
+
+struct FrameStructure
+{
+    double mean = 0.0;
+    double stddev = 0.0;
+    double lit_fraction = 0.0;
+    size_t buckets = 0;
+
+    [[nodiscard]] bool has_structure() const { return stddev > kFrameMinStddev; }
+    [[nodiscard]] bool is_lit() const { return lit_fraction > kFrameMinLitFraction; }
+    [[nodiscard]] bool has_variety() const { return buckets > kFrameMinBuckets; }
+    [[nodiscard]] bool passes() const { return has_structure() && is_lit() && has_variety(); }
+};
+
+inline FrameStructure frame_structure(const std::vector<uint8_t> &rgba)
+{
+    return FrameStructure{ mean_luminance(rgba),
+        luminance_stddev(rgba),
+        fraction_above(rgba, kFrameLitLevel),
+        distinct_luminance_buckets(rgba) };
+}
+
+// Rust's mean over C++'s; a black C++ frame reads 10, out of range, as in the PowerShell copy.
+inline double renderer_mean_ratio(const FrameStructure &cpp, const FrameStructure &rust)
+{ return cpp.mean > 0.0 ? rust.mean / cpp.mean : 10.0; }
+
+inline bool renderer_mean_ratio_holds(double ratio)
+{ return ratio >= kRendererMeanRatioMin && ratio <= kRendererMeanRatioMax; }
+
 // Fraction of `crop` whose colour moves more than 5 levels on any channel between `a` and `b`.
 inline double
   swung_fraction(const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t /*h*/, Crop crop)

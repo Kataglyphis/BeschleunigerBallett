@@ -10,6 +10,8 @@ Describe 'Compare-RendererPixels' {
     $script:tmpDir = $tmp.FullName
 
     Add-Type -AssemblyName System.Drawing.Common
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    Import-BuildModule 'Compare-Renderer.Common'
 
     function New-FlatPng {
       # Flat colour: stddev 0 and one bucket, so it must fail as uniform.
@@ -46,6 +48,20 @@ Describe 'Compare-RendererPixels' {
       $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
       $bmp.Dispose()
     }
+    function New-GreyRampPng {
+      # One column per grey level, 0 to 255.
+      param([string]$Path)
+      $bmp = [System.Drawing.Bitmap]::new(256, 2)
+      try {
+        for ($x = 0; $x -lt 256; $x++) {
+          for ($y = 0; $y -lt 2; $y++) { $bmp.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(255, $x, $x, $x)) }
+        }
+        $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
+      } finally {
+        $bmp.Dispose()
+      }
+    }
+
     function Invoke-ComparePixels {
       param([string]$OutDir, [switch]$SkipCpp, [switch]$SkipRust, [switch]$ValidationOnly)
       $scriptArgs = @(
@@ -121,6 +137,42 @@ Describe 'Compare-RendererPixels' {
     ($result.Output -match 'ObjectDisposedException') | Should -Be $false
   }
 
+  # GoldenMetrics.LuminanceWeighsTheChannelsByRec709 pins the C++ side; Rec. 601 reads 149.685.
+  It 'weighs the channels by Rec. 709, as GoldenMetrics.hpp does' {
+    $png = Join-Path $script:tmpDir 'green.png'
+    New-FlatPng -Path $png -Color ([System.Drawing.Color]::FromArgb(255, 0, 255, 0))
+
+    $metrics = Get-FrameMetrics -Path $png
+    $metrics.mean | Should -BeGreaterThan 182.375
+    $metrics.mean | Should -BeLessThan 182.377
+    $metrics.lit_fraction | Should -Be 1.0
+  }
+
+  # GoldenMetrics.FractionAboveLeavesAPixelAtTheThresholdOut's strict level: grey 8 reads exactly 8, which is dark.
+  It 'counts a pixel at the lit level as dark' {
+    $at = Join-Path $script:tmpDir 'grey-8.png'
+    $above = Join-Path $script:tmpDir 'grey-9.png'
+    New-FlatPng -Path $at -Color ([System.Drawing.Color]::FromArgb(255, 8, 8, 8))
+    New-FlatPng -Path $above -Color ([System.Drawing.Color]::FromArgb(255, 9, 9, 9))
+
+    (Get-FrameMetrics -Path $at).lit_fraction | Should -Be 0.0
+    (Get-FrameMetrics -Path $above).lit_fraction | Should -Be 1.0
+  }
+
+  # The one bucket rule, GoldenMetrics.EveryGreyLevelIsItsOwnBucket's: a floor of the luma counts 203 here.
+  It 'puts every grey level in its own bucket' {
+    $png = Join-Path $script:tmpDir 'grey-ramp.png'
+    New-GreyRampPng -Path $png
+
+    $metrics = Get-FrameMetrics -Path $png
+    $metrics.buckets | Should -Be 256
+    $metrics.mean | Should -BeGreaterThan 127.499
+    $metrics.mean | Should -BeLessThan 127.501
+    # Divided by the pixel count, as luminance_stddev divides.
+    $metrics.stddev | Should -BeGreaterThan 73.900
+    $metrics.stddev | Should -BeLessThan 73.901
+  }
+
   It 'exits 2 rather than PASSED when -ValidationOnly finds no frames at all' {
     $outDir = Join-Path $script:tmpDir 'empty-validation'
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
@@ -133,7 +185,7 @@ Describe 'Compare-RendererPixels' {
   It '-ValidationOnly validates a frame it actually finds on disk' {
     $outDir = Join-Path $script:tmpDir 'validation-hit'
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-    # Named like the real DISABLED_DumpsFrameToPng output, not a bare cpp-vulkan.png.
+    # DISABLED_DumpsFrameToPng's name, not the capture's cpp-vulkan.png: validation takes either.
     New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan-shadows-on.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -ValidationOnly

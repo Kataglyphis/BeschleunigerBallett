@@ -80,8 +80,18 @@ using Kataglyphis::Test::GoldenMetrics::GroundShadowPrediction;
 using Kataglyphis::Test::GoldenMetrics::predict_ground_shadow;
 using Kataglyphis::Test::GoldenMetrics::WorldBox;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
+using Kataglyphis::Test::GoldenMetrics::distinct_luminance_buckets;
+using Kataglyphis::Test::GoldenMetrics::fraction_above;
+using Kataglyphis::Test::GoldenMetrics::frame_structure;
+using Kataglyphis::Test::GoldenMetrics::FrameStructure;
+using Kataglyphis::Test::GoldenMetrics::kFrameMinBuckets;
+using Kataglyphis::Test::GoldenMetrics::kFrameMinLitFraction;
+using Kataglyphis::Test::GoldenMetrics::kFrameMinStddev;
 using Kataglyphis::Test::GoldenMetrics::luminance_of;
+using Kataglyphis::Test::GoldenMetrics::luminance_stddev;
+using Kataglyphis::Test::GoldenMetrics::mean_luminance;
 using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
+using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_square;
 using Kataglyphis::Test::GoldenMetrics::panel_free_crop;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
 
@@ -230,55 +240,6 @@ struct EngineHarness
     ~EngineHarness() = default;
 };
 
-// Mean luminance over the whole frame, on a 0..255 scale.
-inline double mean_luminance(const std::vector<uint8_t> &rgba)
-{
-    const size_t pixel_count = rgba.size() / 4U;
-    if (pixel_count == 0U) { return 0.0; }
-
-    double sum = 0.0;
-    for (size_t pixel = 0; pixel < pixel_count; ++pixel) { sum += luminance_of(rgba, pixel); }
-    return sum / static_cast<double>(pixel_count);
-}
-
-inline double luminance_stddev(const std::vector<uint8_t> &rgba)
-{
-    const size_t pixel_count = rgba.size() / 4U;
-    if (pixel_count < 2U) { return 0.0; }
-
-    const double mean = mean_luminance(rgba);
-    double accumulated = 0.0;
-    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
-        const double delta = luminance_of(rgba, pixel) - mean;
-        accumulated += delta * delta;
-    }
-    return std::sqrt(accumulated / static_cast<double>(pixel_count));
-}
-
-inline double fraction_above(const std::vector<uint8_t> &rgba, double threshold)
-{
-    const size_t pixel_count = rgba.size() / 4U;
-    if (pixel_count == 0U) { return 0.0; }
-
-    size_t hits = 0;
-    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
-        if (luminance_of(rgba, pixel) > threshold) { ++hits; }
-    }
-    return static_cast<double>(hits) / static_cast<double>(pixel_count);
-}
-
-// A blank or single-colour frame collapses to a handful of buckets.
-inline size_t distinct_luminance_buckets(const std::vector<uint8_t> &rgba)
-{
-    std::vector<bool> seen(256, false);
-    const size_t pixel_count = rgba.size() / 4U;
-    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
-        const int bucket = std::clamp(static_cast<int>(luminance_of(rgba, pixel)), 0, 255);
-        seen[static_cast<size_t>(bucket)] = true;
-    }
-    return static_cast<size_t>(std::count(seen.begin(), seen.end(), true));
-}
-
 // A solid box floating over a ground plane, built for shadow measurement.
 constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 // One mesh with two primitives, which must load as two meshes.
@@ -422,21 +383,6 @@ inline uint32_t card_column(float world_x, float distance, uint32_t width, uint3
     const float half_width =
       distance * std::tan(glm::radians(45.0F) * 0.5F) * static_cast<float>(width) / static_cast<float>(height);
     return static_cast<uint32_t>((0.5F + 0.5F * world_x / half_width) * static_cast<float>(width));
-}
-
-// Mean Rec. 709 luma of an RGBA8 capture over a square around (cx, cy).
-inline double
-  mean_luminance_in_square(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t cx, uint32_t cy, uint32_t half)
-{
-    double sum = 0.0;
-    size_t count = 0;
-    for (uint32_t y = cy - half; y < cy + half; ++y) {
-        for (uint32_t x = cx - half; x < cx + half; ++x) {
-            sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
-            ++count;
-        }
-    }
-    return count > 0U ? sum / static_cast<double>(count) : 0.0;
 }
 
 // Models/ShadowTest/shadow_rig.obj at the identity transform.

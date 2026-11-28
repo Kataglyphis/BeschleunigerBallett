@@ -22,103 +22,9 @@ Write-Host "Resolution: ${Width}x${Height}" -ForegroundColor Cyan
 Write-Host "Output dir: $OutDir" -ForegroundColor Cyan
 Write-Host ''
 
-# Luminance metrics of a PNG on disk
-function Get-FrameMetrics {
-    param([string]$Path)
-
-    if (-not (Test-Path $Path)) { return $null }
-
-    Add-Type -AssemblyName System.Drawing.Common
-    $img = [System.Drawing.Bitmap]::new($Path)
-    try {
-        $w = $img.Width
-        $h = $img.Height
-        $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
-        $data = $img.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-        try {
-            # Read Stride while locked; after UnlockBits it only works by accident.
-            $stride = [Math]::Abs($data.Stride)
-            $byteCount = $stride * $h
-            $bytes = [byte[]]::new($byteCount)
-            [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $byteCount)
-        } finally {
-            $img.UnlockBits($data)
-        }
-    } finally {
-        $img.Dispose()
-    }
-
-    $total = $w * $h
-    if ($total -eq 0) { return @{ mean = 0.0; stddev = 0.0; buckets = 0; lit_fraction = 0.0 } }
-
-    $sum = 0.0
-    $hist = @{}
-    $lit = 0
-
-    # LockBits with Format32bppArgb gives BGRA byte order per pixel.
-    for ($y = 0; $y -lt $h; $y++) {
-        $rowStart = $y * $stride
-        for ($x = 0; $x -lt $w; $x++) {
-            $i = $rowStart + ($x * 4)
-            $b = $bytes[$i]
-            $g = $bytes[$i + 1]
-            $r = $bytes[$i + 2]
-            # Relative luminance (Rec. 601 luma): L = 0.299*R + 0.587*G + 0.114*B
-            $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b
-            $sum += $lum
-            $bucket = [int][Math]::Clamp([Math]::Round($lum), 0, 255)
-            $hist[$bucket] = $hist.ContainsKey($bucket) ? ($hist[$bucket] + 1) : 1
-            if ($lum -gt 8.0) { $lit++ }
-        }
-    }
-
-    $mean = $sum / $total
-
-    $variance = 0.0
-    for ($y = 0; $y -lt $h; $y++) {
-        $rowStart = $y * $stride
-        for ($x = 0; $x -lt $w; $x++) {
-            $i = $rowStart + ($x * 4)
-            $lum = 0.299 * $bytes[$i + 2] + 0.587 * $bytes[$i + 1] + 0.114 * $bytes[$i]
-            $delta = $lum - $mean
-            $variance += $delta * $delta
-        }
-    }
-    $stddev = [Math]::Sqrt($variance / $total)
-
-    return @{
-        mean         = $mean
-        stddev       = $stddev
-        buckets      = $hist.Count
-        lit_fraction = $lit / $total
-    }
-}
-
-function Test-FrameStructure {
-    param([Parameter(Mandatory)][string]$Label, [Parameter(Mandatory)][hashtable]$Metrics)
-
-    $passed = $true
-    # These thresholds match the GoldenRender tests.
-    if ($Metrics.stddev -le 2.0) {
-        Write-Host "FAIL [$Label] Frame is essentially uniform (stddev $($Metrics.stddev))." -ForegroundColor Red
-        $passed = $false
-    } else {
-        Write-Host "OK   [$Label] Frame has structure (stddev $($Metrics.stddev))." -ForegroundColor Green
-    }
-    if ($Metrics.lit_fraction -le 0.05) {
-        Write-Host "FAIL [$Label] Frame is too dark (lit $($Metrics.lit_fraction * 100)% of pixels)." -ForegroundColor Red
-        $passed = $false
-    } else {
-        Write-Host "OK   [$Label] Frame is well-lit (lit $($Metrics.lit_fraction * 100)%)." -ForegroundColor Green
-    }
-    if ($Metrics.buckets -le 8) {
-        Write-Host "FAIL [$Label] Too few luminance buckets ($($Metrics.buckets))." -ForegroundColor Red
-        $passed = $false
-    } else {
-        Write-Host "OK   [$Label] Good luminance variety ($($Metrics.buckets) buckets)." -ForegroundColor Green
-    }
-    return $passed
-}
+# Get-FrameMetrics and Test-FrameStructure: GoldenMetrics.hpp's verdict, which compare-renderer-pixels.sh applies too.
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule 'Compare-Renderer.Common'
 
 # Target paths (validation mode may override them)
 $cppPng = Join-Path $OutDir 'cpp-vulkan.png'
@@ -130,8 +36,9 @@ $rustMetrics = $null
 if ($ValidationOnly) {
     Write-Host '== Validation-only mode (CI) ==' -ForegroundColor Cyan
     Write-Host 'Skipping GPU-dependent capture. Checking for pre-existing frames...' -ForegroundColor Yellow
-    $existingPngs = Get-ChildItem (Join-Path $OutDir '*.png') -ErrorAction SilentlyContinue
-    if ($existingPngs) {
+    # An array even for one frame: Resolve-BuildModule.ps1 left strict mode on, where a lone file has no Count.
+    $existingPngs = @(Get-ChildItem (Join-Path $OutDir '*.png') -ErrorAction SilentlyContinue)
+    if ($existingPngs.Count -gt 0) {
         Write-Host "Found $($existingPngs.Count) existing frame(s) to validate." -ForegroundColor Green
         $cppCandidate = $existingPngs |
             Where-Object { $_.Name -match '^cpp-vulkan' -and $_.Name -notmatch 'delta|noise|golden-order|singletap' } |
@@ -155,25 +62,22 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
         Write-Host 'WARNING: commitTestSuite.exe not found. Build clangcl-debug first.' -ForegroundColor Yellow
         Write-Host 'Skipping C++ capture.' -ForegroundColor Yellow
     } else {
-        # DISABLED_DumpsFrameToPng writes the frame only when KATAGLYPHIS_FRAME_DUMP is set.
-        $env:KATAGLYPHIS_FRAME_DUMP = Join-Path $OutDir 'cpp-vulkan'
+        # The golden writes the frame it graded; a stale one would pass as this run's.
+        Remove-Item -LiteralPath $cppPng -Force -ErrorAction SilentlyContinue
+        $env:KATAGLYPHIS_GRADED_FRAME_PNG = $cppPng
+        Push-Location $RepoRoot
         try {
-            & $suite --gtest_filter=GoldenRender.DISABLED_DumpsFrameToPng --gtest_also_run_disabled_tests 2>&1 | Out-Null
+            & $suite --gtest_filter=GoldenRender.RendersNonBlankFrame 2>&1 | Out-Null
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "WARNING: Frame capture test exited with code $LASTEXITCODE" -ForegroundColor Yellow
             }
         } finally {
-            $env:KATAGLYPHIS_FRAME_DUMP = ''
+            Pop-Location
+            $env:KATAGLYPHIS_GRADED_FRAME_PNG = ''
         }
 
-        # Skip the delta/noise outputs the test writes beside the render.
-        $captured = Get-ChildItem (Join-Path $OutDir 'cpp-vulkan*.png') |
-            Where-Object { $_.Name -notmatch 'delta|noise|golden-order|singletap' } |
-            Sort-Object LastWriteTime -Descending |
-            Select-Object -First 1
-        if ($captured) {
-            Write-Host "C++ captured: $($captured.FullName)" -ForegroundColor Green
-            $cppPng = $captured.FullName
+        if (Test-Path $cppPng) {
+            Write-Host "C++ captured: $cppPng" -ForegroundColor Green
         } else {
             Write-Host 'C++ captured no frame (likely no GPU).' -ForegroundColor Yellow
         }
@@ -188,8 +92,6 @@ if (-not $SkipRust -and -not $ValidationOnly) {
 
     # Convert Dinosaurs OBJ -> glTF (shared helper, reuses cached version)
     $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
-    . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-    Import-BuildModule 'Compare-Renderer.Common'
     Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf
     Push-Location (Join-Path $RepoRoot 'third_party\OxidANT')
     try {

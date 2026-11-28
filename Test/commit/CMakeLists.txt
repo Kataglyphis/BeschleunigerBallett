@@ -11,3 +11,14 @@ if(NOT
 endif()
 
 add_subdirectory(VulkanEngine)
+
+# The goldens' frame verdict over two PNGs, for compare-renderer-pixels.sh; no engine, so it builds in seconds.
+add_executable(compareRendererFrames tools/compareRendererFrames.cpp)
+target_include_directories(compareRendererFrames PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/VulkanEngine)
+target_link_libraries(
+  compareRendererFrames
+  PRIVATE myproject_options
+          myproject_warnings
+          glm
+          stb)
+set_target_properties(compareRendererFrames PROPERTIES CXX_SCAN_FOR_MODULES OFF COMPILE_WARNING_AS_ERROR ON)

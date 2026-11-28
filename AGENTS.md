@@ -593,7 +593,13 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   the two renderer comparisons in validation-only mode, where both exit 2 when they found nothing to
   check (a warning on a GPU-less runner, never a pass); `Compare-PerfBaseline.ps1` is not in CI at
   all. The pixel comparison applies one structural verdict to each available renderer; preserve
-  its three thresholds, renderer-specific messages, and failure exit code.
+  its three thresholds, renderer-specific messages, and failure exit code. That verdict is
+  `GoldenMetrics.hpp`'s (Rec. 709 luma, nearest-level buckets), which the PowerShell module mirrors;
+  Linux CI applies it for real in the `static-analysis` job, where `compare-renderer-pixels.sh`
+  renders Dinosaurs with both renderers on llvmpipe and `compareRendererFrames` grades the two
+  PNGs; llvmpipe is always there, so a failed capture or a missing frame fails the step
+  (`--require-frames`), as exit 2 does on a Windows host with a GPU
+  ([`gpu-golden-testing.md`](docs/source/gpu-golden-testing.md#the-two-renderers-frames-compared)).
 - **GPU pass budgets** are per host and never gated in CI: `scripts/windows/Test-GpuTimingBudget.ps1
   -HostProfile <name>` checks a `KATAGLYPHIS_GPU_TIMING_JSON` dump (`-TimingPath`, or it runs
   `-SuitePath`'s `RendersNonBlankFrame`) against that host's entry in

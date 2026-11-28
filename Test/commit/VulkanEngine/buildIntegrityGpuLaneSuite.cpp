@@ -240,6 +240,15 @@ TEST(BuildIntegrity, LinuxGpuRunsRequireTheGpuBeforeTheirVirtualDisplay)
     EXPECT_TRUE(requires_gpu_before(*riscv, 0, *riscv_display, true))
       << riscv_path.string() << " must export KATAGLYPHIS_REQUIRE_GPU=1 at top level before the GPU shard's xvfb-run";
 
+    // The renderer comparison's C++ frame is a golden's: through the branch above, or a skip leaves no frame unnoticed.
+    const fs::path pixels_path = scripts_dir / "compare-renderer-pixels.sh";
+    const auto pixels = readFileLines(pixels_path);
+    ASSERT_TRUE(pixels.has_value()) << "could not open " << pixels_path.string();
+    EXPECT_FALSE(first_shell_line_with(*pixels, 0, "xvfb-run").has_value())
+      << pixels_path.string() << " runs an xvfb-run of its own, past run-ctest.sh's skip and log gates";
+    EXPECT_TRUE(first_shell_line_with(*pixels, 0, R"(run-ctest.sh" --virtual-display)").has_value())
+      << pixels_path.string() << " must capture the C++ frame through run-ctest.sh --virtual-display";
+
     const fs::path cargo_path = scripts_dir / "run-cargo-tests.sh";
     const auto cargo = readFileLines(cargo_path);
     ASSERT_TRUE(cargo.has_value()) << "could not open " << cargo_path.string();

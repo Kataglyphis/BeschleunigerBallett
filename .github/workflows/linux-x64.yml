@@ -73,6 +73,8 @@ jobs:
         run: bash scripts/linux/tests/test-uv-sync-project.sh
       - name: The throwing-filesystem row on a planted tree
         run: bash scripts/linux/tests/test-filesystem-pattern.sh
+      - name: compare-renderer-pixels.sh's verdict over stubbed captures
+        run: bash scripts/linux/tests/test-compare-renderer-pixels.sh
 
   build-x64:
     if: ${{ github.event_name != 'schedule' && !inputs.gui-sweep && !inputs.gpu-av }}

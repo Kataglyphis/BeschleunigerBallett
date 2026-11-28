@@ -14,9 +14,12 @@ It uses the hub's pinned Gallery installer and reports complexity; `analyzer-str
 preserves this repo's current advisory analyzer policy while parse failures stay fatal.
 
 `Compare-RendererPixels.ps1` checks C++ and Rust frames with the same structural verdict:
-standard deviation above 2, more than 5% lit pixels, and more than eight luminance buckets.
+standard deviation above 2, more than 5% lit pixels, and more than eight luminance buckets, of
+Rec. 709 luma with nearest-level buckets, as `GoldenMetrics.hpp` and Linux CI's
+`compareRendererFrames` grade them.
 The local Pester suite runs generated PNGs through both renderer paths and checks their labels,
-messages and exit codes; it does not exercise GPU capture.
+messages, exit codes, the luma weights, the bucket rule and the strict lit level; it does not
+exercise GPU capture.
 
 The `Compare-PerfBaseline` Pester suite uses ANTfrastructure's `New-TestDir -Prefix` for its
 temporary baseline fixtures and `Remove-TestDir` in `AfterAll` for suite-scoped cleanup.
@@ -176,11 +179,11 @@ with `-Werror` too; its fuzz targets skip themselves, as they need ASan.
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 313 -->
+<!-- format-drift-denominator: 316 -->
 
-**0 of 313** own sources under `Src/` and `Test/` differ from `.clang-format`
-(0 of 314 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
-2026-11-27), since the sweep in commit
+**0 of 316** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 317 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
+2026-11-28), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM
 commit `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin`
 in `:latest`, the version `:winamd64` ships as `C:\llvm-patched`) over the 217

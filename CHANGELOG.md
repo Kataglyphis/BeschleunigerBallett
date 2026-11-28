@@ -110,8 +110,27 @@ the GitHub releases themselves.
   `ScreenshotRegionUnit` and `FlySpeedUnit`, `StudioWidgetsUnit`'s log slider, and
   `BuildIntegrity.TheFlySpeedTakesOxidantsDefaultAndRange`, `TheEditorsShortcutKeysAreTheRustEditors`,
   `GettingStartedListsTheEditorsKeys` and `EveryFlagIsInAFileHelpLists`.
+- Linux CI compares the two renderers' frames (plan X1). The `static-analysis` job's last step,
+  `scripts/linux/compare-renderer-pixels.sh --require-frames`, renders Dinosaurs on llvmpipe with
+  `GoldenRender.RendersNonBlankFrame` (through `run-ctest.sh --virtual-display`) and with OxidANT's `headless_render`,
+  and `compareRendererFrames` grades both PNGs with `GoldenMetrics.hpp`'s verdict: a luma standard deviation above 2,
+  more than 5 % of the pixels above level 8, more than 8 luminance buckets, and the Rust mean within 0.5 to 4 times
+  the C++ mean. Its exit codes are `Compare-RendererPixels.ps1`'s; a capture that fails, or leaves no frame, fails
+  the step, and both frames upload as `renderer-frames-<arch>`. `RendersNonBlankFrame` writes the frame it graded to
+  `KATAGLYPHIS_GRADED_FRAME_PNG`. On aarch64 llvmpipe both pass (C++ mean 116.9, Rust 218.2, ratio 1.87). There the
+  Rust half runs at 128-bit vectors without Mesa's shader cache: at the image's 256 bits it draws noise, which the
+  verdict passes, and the cache, keyed on no vector width, hands it the golden's 256-bit shaders, on which it
+  segfaulted (the hub's `failure-modes.md` has the trap).
 
 ### Changed
+
+- One rule for the frame metrics. The whole-frame luma metrics moved from the golden harness into `GoldenMetrics.hpp`
+  beside `FrameStructure`, the thresholds `RendersNonBlankFrame` grades with. A luminance bucket is the nearest level
+  in C++ and PowerShell alike: the goldens truncated, which put 62 of the 256 grey levels a bucket low, and
+  `Compare-RendererPixels.ps1` rounded halves to even; its luma moves from Rec. 601 to the goldens' Rec. 709. Its
+  metrics live in `Compare-Renderer.Common.psm1`, and its C++ capture is `RendersNonBlankFrame`'s frame (6 frames)
+  instead of `DISABLED_DumpsFrameToPng`'s (50). Tests: 10 `GoldenMetrics` and 5 `RendererFrameVerdict` CPU tests, two
+  Pester cases (Rec. 709 and the grey ramp's 256 buckets).
 
 - The 12 Pester suites under `scripts/windows/tests` speak Pester 5 and run under 6.2.0, the hub's `:latest` copy;
   `windows-x64.yml`'s two Pester steps and `submodule-pins.yml` pin 6.2.0 instead of 3.4.0.
