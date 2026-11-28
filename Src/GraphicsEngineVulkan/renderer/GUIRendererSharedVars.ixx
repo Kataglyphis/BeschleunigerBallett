@@ -220,6 +220,12 @@ struct GUIRendererSharedVars
     // On, as the Rust renderer and the browser present; a toggle rebuilds the swapchain, whose present mode is fixed.
     bool vsync = true;
 
+    // OxidANT's RenderScale: the scene targets' share of the output per side, which post upsamples to the output.
+    float render_scale = 1.0F;
+    // The app's AutoRenderScale moves render_scale toward the target; the renderer only reads the scale.
+    bool render_scale_auto = false;
+    float render_scale_target_fps = 60.0F;
+
     // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
     // with stale comments claiming 64/32); changing either mid-run resets the
     // accumulation history - a mean over two different estimators is biased.

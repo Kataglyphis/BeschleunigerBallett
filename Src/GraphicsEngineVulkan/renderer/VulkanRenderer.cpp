@@ -73,6 +73,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.instance;
+import kataglyphis.vulkan.render_scale;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.render_stage_registry;
 import kataglyphis.vulkan.scene_ubo;
@@ -139,7 +140,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     // The drawn raster path's targets only; a switch to the other path frees them.
     std::ignore = allocateRasterPathTargets();
     // Before the shared sets' first write, which binds its occlusion.
-    ssaoStage.init(device, &vulkanSwapChain, graphics_command_pool.get());
+    ssaoStage.init(device, &vulkanSwapChain, graphics_command_pool.get(), sceneExtent());
     bindSsaoDepths();
 
     clouds.init(device,
@@ -154,14 +155,14 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *in_wi
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
     fxaaStage.init(device, &vulkanSwapChain);
-    bloomStage.init(device, &vulkanSwapChain, graphics_command_pool.get());
+    bloomStage.init(device, &vulkanSwapChain, graphics_command_pool.get(), sceneExtent());
 
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorResources();
 
         std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
             raytracingDescriptors.getLayout() };
-        raytracingStage.init(device, layouts, &vulkanSwapChain);
+        raytracingStage.init(device, layouts);
         pathTracing.init(device, layouts);
         createPathTracingAccumulationResources();
         createTracedDepthResources();
@@ -208,7 +209,9 @@ void Kataglyphis::VulkanRenderer::updateUniforms([[maybe_unused]] Scene *scene_d
     const auto &scene_viewport = settings.renderer.scene_viewport;
     const ViewportFraction viewport =
       sanitizeViewportFraction(scene_viewport.x0, scene_viewport.y0, scene_viewport.x1, scene_viewport.y1);
-    float const aspect_ratio = viewportAspectRatio(extent.width, extent.height, viewport);
+    // The output's: a scaled scene's rounded sides would stretch the image post fills the output with.
+    const vk::Extent2D output_extent = outputExtent();
+    float const aspect_ratio = viewportAspectRatio(output_extent.width, output_extent.height, viewport);
 
     // Clamped here: tests and config loads write the settings too. Readers use get_fov(), not the settings value.
     camera_data->set_fov(std::clamp(sceneSettings.camera_fov, kMinCameraFov, kMaxCameraFov));
@@ -301,7 +304,34 @@ void Kataglyphis::VulkanRenderer::bindSsaoDepths()
     }
 }
 
-void Kataglyphis::VulkanRenderer::updateSceneExtent() { sceneTargetExtent = vulkanSwapChain.getSwapChainExtent(); }
+void Kataglyphis::VulkanRenderer::updateSceneExtent()
+{
+    const vk::Extent2D output_extent = outputExtent();
+    const ScaledExtent scaled = renderScaleExtent(frameSettings.renderer, output_extent.width, output_extent.height);
+    sceneTargetExtent = vk::Extent2D{ scaled.width, scaled.height };
+}
+
+bool Kataglyphis::VulkanRenderer::applyRenderScale()
+{
+    const vk::Extent2D output_extent = outputExtent();
+    const ScaledExtent scaled = renderScaleExtent(frameSettings.renderer, output_extent.width, output_extent.height);
+    if (vk::Extent2D{ scaled.width, scaled.height } == sceneTargetExtent) { return true; }
+    // Frames in flight read every scene target the resize recreates; Auto changes the scale once a second at most.
+    vk::Result idle = device->getLogicalDevice().waitIdle();
+    if (device_loss_simulated) { idle = vk::Result::eErrorDeviceLost; }
+    if (idle != vk::Result::eSuccess) {
+        endRunOnVulkanError("Failed to wait for the device before a render-scale change!", idle);
+        return false;
+    }
+    updateSceneExtent();
+    renderStages.resize(RenderStageResize{ .sceneExtent = sceneExtent(),
+      .outputExtent = output_extent,
+      .imageCount = vulkanSwapChain.getNumberSwapChainImages() });
+    updateAllDescriptorSets();
+    // Every depth image the clouds can read was just recreated.
+    bindCloudSceneDepth();
+    return true;
+}
 
 void Kataglyphis::VulkanRenderer::createSceneColor()
 {
@@ -405,6 +435,10 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(const RenderSettings
     if (settings.renderer.pathTracingRestartRequested) { pathTracingAccumulatedSamples = 0; }
     handleScreenshotRequest(settings.renderer);
     ensureRasterPathTargets();
+    if (!applyRenderScale()) {
+        feedback = output;
+        return;
+    }
     handleVsyncChange(settings.renderer);
 
     handleShadowResolutionChange(sceneSettings);
@@ -652,12 +686,12 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[1].timedPass = GpuTimedPass::Main;
     built_in[1].record = [this](const RenderStageFrame &frame) { recordMainStage(frame); };
     // The scene colour, the drawn raster path's targets and the traced ones follow the new scene extent.
-    built_in[1].resize = [this](const RenderStageResize &) {
+    built_in[1].resize = [this](const RenderStageResize &resize) {
         createSceneColor();
-        rasterizer.recreateFrameResources(sceneExtent(), graphics_command_pool.get());
-        deferredRasterizer.recreateFrameResources(sceneExtent());
+        rasterizer.recreateFrameResources(resize.sceneExtent, graphics_command_pool.get());
+        deferredRasterizer.recreateFrameResources(resize.sceneExtent);
         // Half the new extent; updateAllDescriptorSets rebinds its occlusion in the shared sets afterwards.
-        ssaoStage.recreateFrameResources(graphics_command_pool.get());
+        ssaoStage.recreateFrameResources(graphics_command_pool.get(), resize.sceneExtent);
         bindSsaoDepths();
         // The accumulation history is extent-sized; recreating it also resets the frame counter.
         if (device->supportsHardwareAcceleratedRRT()) {
@@ -695,8 +729,8 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[2].labelColor = std::array{ 0.80F, 0.85F, 0.95F, 1.0F };
     built_in[2].enabled = [this](const RenderStageFrame &) { return frameSettings.scene.clouds_enabled; };
     built_in[2].record = [this](const RenderStageFrame &frame) { recordCloudsStage(frame); };
-    built_in[2].resize = [this](const RenderStageResize &) {
-        clouds.recreateFrameResources(graphics_command_pool.get(), sceneExtent().width, sceneExtent().height);
+    built_in[2].resize = [this](const RenderStageResize &resize) {
+        clouds.recreateFrameResources(graphics_command_pool.get(), resize.sceneExtent.width, resize.sceneExtent.height);
     };
     built_in[2].shaderHotReload = [this] { clouds.shaderHotReload(sharedRenderDescriptors.getLayout()); };
 
@@ -743,9 +777,9 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[9].record = [this](const RenderStageFrame &frame) {
         bloomStage.recordCommands(frame.commandBuffer, frame.imageIndex, frameSettings.scene.clouds_enabled);
     };
-    // The half-resolution targets follow the swapchain's extent, the bright pass's sets its image count.
-    built_in[9].resize = [this](const RenderStageResize &) {
-        bloomStage.recreateFrameResources(graphics_command_pool.get());
+    // The half-resolution targets follow the scene extent, the bright pass's sets the swapchain's image count.
+    built_in[9].resize = [this](const RenderStageResize &resize) {
+        bloomStage.recreateFrameResources(graphics_command_pool.get(), resize.sceneExtent);
     };
     built_in[9].shaderHotReload = [this] { bloomStage.shaderHotReload(); };
 
@@ -767,7 +801,7 @@ void Kataglyphis::VulkanRenderer::registerBuiltInStages()
     built_in[6].record = [this](const RenderStageFrame &frame) {
         fxaaStage.recordCommands(frame.commandBuffer, frame.imageIndex, screenshotHook(frame));
     };
-    // The intermediates follow the swapchain's extent and image count.
+    // The intermediate follows the output's extent, never the render scale's.
     built_in[6].resize = [this](const RenderStageResize &) { fxaaStage.recreateFrameResources(); };
     built_in[6].shaderHotReload = [this] { fxaaStage.shaderHotReload(); };
 
@@ -846,6 +880,11 @@ void Kataglyphis::VulkanRenderer::drawFrameImpl()
 
     // Before a resize, which recreates the targets that exist: drawFrame's settings may name the other raster path.
     ensureRasterPathTargets();
+    // drawFrame's settings may carry another scale than updateStateDueToUserInput's, as a test's do.
+    if (!applyRenderScale()) {
+        end_imgui_frame_if_needed();
+        return;
+    }
 
     // Checked last: checkChangedFramebufferSize() clears the flag, so a blocked recreate would lose the resize.
     if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty() && checkChangedFramebufferSize()) {
@@ -1094,8 +1133,9 @@ bool Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    renderStages.resize(
-      RenderStageResize{ .extent = vulkanSwapChain.getSwapChainExtent(), .imageCount = newImageCount });
+    renderStages.resize(RenderStageResize{ .sceneExtent = sceneExtent(),
+      .outputExtent = vulkanSwapChain.getSwapChainExtent(),
+      .imageCount = newImageCount });
 
     // A new image count re-provisions every per-image resource, not just the descriptor pools.
     if (newImageCount != oldImageCount) {
@@ -1232,7 +1272,8 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     const RenderStageFrame frame{
         .commandBuffer = commandBuffer,
         .imageIndex = image_index,
-        .extent = vulkanSwapChain.getSwapChainExtent(),
+        .sceneExtent = sceneExtent(),
+        .outputExtent = vulkanSwapChain.getSwapChainExtent(),
         .swapchainImage = swap_chain_image.getImage(),
         .swapchainImageView = swap_chain_image.getImageView(),
         .swapchainFormat = vulkanSwapChain.getSwapChainFormat(),
@@ -1447,6 +1488,7 @@ void Kataglyphis::VulkanRenderer::recordPostStage(const RenderStageFrame &frame)
       post_descriptor_sets,
       frameSettings.scene.clouds_enabled,
       frameBloomStrength(frameSettings.renderer),
+      frame.sceneExtent != frame.outputExtent,
       fxaa_filters ? &fxaaStage.getIntermediate() : nullptr,
       fxaa_filters ? Kataglyphis::VulkanRendererInternals::BeforeGuiHook{} : screenshotHook(frame));
 }
@@ -1457,8 +1499,8 @@ auto Kataglyphis::VulkanRenderer::screenshotHook(const RenderStageFrame &frame)
     if (!screenshotCapture.isArmed()) { return {}; }
     const auto &viewport = frameSettings.renderer.scene_viewport;
     // The part of the image the docks leave the scene, which the projection centres on, as the shot.
-    const ViewportPixels pixels = viewportPixels(frame.extent.width,
-      frame.extent.height,
+    const ViewportPixels pixels = viewportPixels(frame.outputExtent.width,
+      frame.outputExtent.height,
       sanitizeViewportFraction(viewport.x0, viewport.y0, viewport.x1, viewport.y1));
     const vk::Rect2D region{ vk::Offset2D{ static_cast<int32_t>(pixels.x), static_cast<int32_t>(pixels.y) },
         vk::Extent2D{ pixels.width, pixels.height } };
@@ -1640,7 +1682,8 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     if (mode == 1) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
         gpuTiming.writeTimestamp(commandBuffer, GpuTimedPass::RayTrace, true);
-        raytracingStage.recordCommands(commandBuffer, sceneColor.getVulkanImage(), raytracing_descriptor_sets);
+        raytracingStage.recordCommands(
+          commandBuffer, sceneColor.getVulkanImage(), sceneExtent(), raytracing_descriptor_sets);
         // Where the primary ray missed, tracedDepth is 1 and the target's alpha 0: the sky fills those pixels.
         skyBox.recordTracedDraw(
           commandBuffer, image_index, sceneColor.getImage(), sceneColor.getImageView(), sceneExtent());
@@ -1721,6 +1764,7 @@ auto Kataglyphis::VulkanRenderer::sceneTargetFootprint() -> SceneTargetFootprint
     };
     SceneTargetFootprint footprint{};
     footprint.extent = sceneExtent();
+    footprint.outputExtent = vulkanSwapChain.getSwapChainExtent();
     footprint.color = group(std::array{ sceneColor.getImage() });
     footprint.forward = group(rasterizer.frameTargetImages());
     footprint.deferred = group(deferredRasterizer.frameTargetImages());
@@ -1802,11 +1846,12 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         postDescriptors.writeImage(
           i, 0, sceneColor.getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, postStage.getOffscreenSampler());
+        // Post's clamped sampler: a render-scaled frame filters the clouds up with the scene.
         postDescriptors.writeImage(i,
           1,
           clouds.getCloudOutputTexture()->getImageView(),
           vk::ImageLayout::eGeneral,
-          clouds.getCloudOutputTexture()->getSampler());
+          postStage.getOffscreenSampler());
         postDescriptors.writeBuffer(i,
           2,
           exposureStage.exposureBuffer(),

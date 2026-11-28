@@ -6,20 +6,6 @@ import kataglyphis.vulkan.renderer;
 
 using namespace Kataglyphis::TestSupport::GoldenRender;
 
-namespace {
-
-// Half extents are Scale x 10 in volumetric_clouds.slang, so a test names the box it wants and the density.
-void place_cloud_box(GUISceneSharedVars &vars, glm::vec3 centre, glm::vec3 half_extents, float density)
-{
-    vars.cloud_density_multiplier = density;
-    for (int axis = 0; axis < 3; ++axis) {
-        vars.cloud_mesh_offset[axis] = centre[axis];
-        vars.cloud_mesh_scale[axis] = half_extents[axis] / 10.0F;
-    }
-}
-
-}// namespace
-
 // A cross-frame hazard shows as a hang, not a pixel; see docs/source/clouds.md § Queue ownership and barriers.
 TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
 {

@@ -11,10 +11,14 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.fxaa_stage;
@@ -363,5 +367,122 @@ TEST(Integration, SceneTargetsAreOneSetOfTheDrawnRasterPath)
         expect_targets_of(RasterizationMode::Deferred, "path traced with deferred picked");
         renderer_vars.pathTracing = false;
     }
+    ASSERT_FALSE(engine.renderer->hasDeviceLost());
+}
+
+// Every scene target follows the render scale in every mode, the output's stay, and the path tracer starts over.
+TEST(Integration, SceneTargetsFollowTheRenderScale)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedEnvVar rig("KATAGLYPHIS_MODEL_OVERRIDE", "Models/ShadowTest/shadow_rig.obj");
+    EditorEngine engine;
+    auto &renderer_vars = engine.settings.renderer;
+    auto &scene_vars = engine.settings.scene;
+    // Bloom and SSAO draw at half the scene extent, so both run.
+    renderer_vars.bloom_strength = 0.6F;
+    renderer_vars.ssao_strength = 0.7F;
+
+    // Each path's targets at full scale, which a scaled group is measured against: no format or alignment is assumed.
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    run_frames(engine, 2, "forward at full scale");
+    const Kataglyphis::SceneTargetFootprint full_forward = engine.renderer->sceneTargetFootprint();
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    run_frames(engine, 2, "deferred at full scale");
+    const Kataglyphis::SceneTargetFootprint full_deferred = engine.renderer->sceneTargetFootprint();
+    ASSERT_EQ(full_forward.extent, full_forward.outputExtent);
+    ASSERT_GT(full_forward.forward.images, 0U);
+    ASSERT_GT(full_deferred.deferred.images, 0U);
+    ASSERT_GT(full_forward.clouds.images, 0U);
+
+    const auto expect_scaled = [&engine](
+                                 float scale, const Kataglyphis::SceneTargetFootprint &full, const std::string &when) {
+        const vk::Extent2D output = engine.renderer->outputExtent();
+        ASSERT_EQ(output, full.outputExtent) << when;
+        const auto side = [scale](uint32_t length) {
+            return std::max<uint32_t>(1U, static_cast<uint32_t>(std::lround(static_cast<float>(length) * scale)));
+        };
+        const vk::Extent2D scene{ side(output.width), side(output.height) };
+        ASSERT_EQ(engine.renderer->sceneExtent(), scene) << when;
+        const Kataglyphis::SceneTargetFootprint footprint = engine.renderer->sceneTargetFootprint();
+        EXPECT_EQ(footprint.extent, scene) << when;
+        EXPECT_EQ(footprint.outputExtent, output) << when;
+        const double share = (static_cast<double>(scene.width) * static_cast<double>(scene.height))
+                             / (static_cast<double>(output.width) * static_cast<double>(output.height));
+        // A group left at the output's extent keeps its full-scale bytes: 4x the scaled ones at 0.5, 1.8x at 0.75.
+        const auto expect_group = [&when](const char *name,
+                                    const Kataglyphis::SceneTargetGroup &scaled,
+                                    const Kataglyphis::SceneTargetGroup &unscaled,
+                                    double expected_share) {
+            EXPECT_EQ(scaled.images, unscaled.images) << when << ": " << name;
+            const double expected = expected_share * static_cast<double>(unscaled.bytes);
+            EXPECT_NEAR(static_cast<double>(scaled.bytes),
+              expected,
+              0.05 * expected + 65536.0 * static_cast<double>(scaled.images))
+              << when << ": " << name << " hold " << scaled.bytes << " B of " << unscaled.bytes << " at full scale";
+        };
+        expect_group("the HDR target", footprint.color, full.color, share);
+        expect_group("the forward depths", footprint.forward, full.forward, share);
+        expect_group("the G-buffer and its depth", footprint.deferred, full.deferred, share);
+        expect_group("the traced history and depth", footprint.traced, full.traced, share);
+        expect_group("bloom's and SSAO's half targets", footprint.post, full.post, share);
+        expect_group("the clouds' full and half targets", footprint.clouds, full.clouds, share);
+        expect_group("FXAA's intermediate, the output's", footprint.fxaa, full.fxaa, 1.0);
+    };
+
+    renderer_vars.render_scale = 0.5F;
+    run_frames(engine, 2, "deferred at half scale");
+    expect_scaled(0.5F, full_deferred, "deferred at half scale");
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    run_frames(engine, 2, "forward at half scale");
+    expect_scaled(0.5F, full_forward, "forward at half scale");
+
+    // The clouds march the scaled depth and post filters them up through its sampler; their resize runs drawn.
+    scene_vars.clouds_enabled = true;
+    run_frames(engine, 2, "forward with clouds at half scale");
+    const std::vector<std::string> recorded = engine.renderer->renderStageRegistry().lastRecorded();
+    EXPECT_NE(std::find(recorded.begin(), recorded.end(), "clouds"), recorded.end()) << "the clouds did not draw";
+    expect_scaled(0.5F, full_forward, "forward with clouds at half scale");
+
+    // A new scale resizes every scene target without a swapchain recreation.
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    renderer_vars.render_scale = 0.75F;
+    run_frames(engine, 2, "deferred with clouds at three quarters");
+    expect_scaled(0.75F, full_deferred, "deferred with clouds at three quarters");
+
+    // A swapchain recreation keeps the scale.
+    engine.renderer->recreateSwapChain();
+    run_frames(engine, 1, "deferred with clouds at three quarters, recreated");
+    expect_scaled(0.75F, full_deferred, "deferred with clouds at three quarters after a swapchain recreation");
+    scene_vars.clouds_enabled = false;
+
+    if (engine.renderer->supportsHardwareRaytracing()) {
+        renderer_vars.rasterizationMode = RasterizationMode::Forward;
+        renderer_vars.render_scale = 0.5F;
+        renderer_vars.raytracing = true;
+        run_frames(engine, 2, "ray traced at half scale");
+        ASSERT_TRUE(engine.feedback.tracingReady) << "the shadow rig has no TLAS";
+        expect_scaled(0.5F, full_forward, "ray traced at half scale");
+
+        // One path per pixel and frame: the history's length is measured, not the image.
+        renderer_vars.pathTracingSamplesPerPixel = 1;
+        renderer_vars.pathTracingMaxBounces = 1;
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = true;
+        run_frames(engine, 3, "path traced at half scale");
+        expect_scaled(0.5F, full_forward, "path traced at half scale");
+        EXPECT_EQ(engine.feedback.pathTracingAccumulatedSamples, 3U);
+        // Another extent is another image: the running mean starts over, though camera and settings stayed.
+        renderer_vars.render_scale = 0.75F;
+        run_frames(engine, 1, "path traced at three quarters");
+        expect_scaled(0.75F, full_forward, "path traced at three quarters");
+        EXPECT_EQ(engine.feedback.pathTracingAccumulatedSamples, 1U)
+          << "the path tracer kept averaging a history of another extent";
+        renderer_vars.pathTracing = false;
+    }
+
+    renderer_vars.render_scale = 1.0F;
+    run_frames(engine, 1, "back at full scale");
+    EXPECT_EQ(engine.renderer->sceneExtent(), engine.renderer->outputExtent());
     ASSERT_FALSE(engine.renderer->hasDeviceLost());
 }

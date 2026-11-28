@@ -353,6 +353,16 @@ inline bool is_disabled_sky(const std::vector<uint8_t> &rgba, size_t pixel)
     return rgba[base] <= 2U && rgba[base + 1U] <= 2U && std::abs(static_cast<int>(rgba[base + 2U]) - 188) <= 2;
 }
 
+// Half extents are Scale x 10 in volumetric_clouds.slang, so a test names the box it wants and the density.
+inline void place_cloud_box(GUISceneSharedVars &vars, glm::vec3 centre, glm::vec3 half_extents, float density)
+{
+    vars.cloud_density_multiplier = density;
+    for (int axis = 0; axis < 3; ++axis) {
+        vars.cloud_mesh_offset[axis] = centre[axis];
+        vars.cloud_mesh_scale[axis] = half_extents[axis] / 10.0F;
+    }
+}
+
 // Pixels whose 3x3 neighbourhood is all `mask`, so an edge a traced pass samples differently drops out.
 inline std::vector<bool> eroded(const std::vector<bool> &mask, uint32_t w, uint32_t h)
 {

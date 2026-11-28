@@ -12,7 +12,6 @@ export module kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.image;
-import kataglyphis.vulkan.swapchain;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class Raytracing
@@ -24,14 +23,14 @@ class Raytracing
     Raytracing &operator=(const Raytracing &) = delete;
 
     void init(const std::shared_ptr<VulkanDevice> &in_device,
-      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-      VulkanSwapChain *swapchain);
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
-    // Leaves renderImage in eGeneral, alpha 1 where a primary ray hit, for SkyBox::recordTracedDraw to fill the rest.
+    // Traces `extent`, the scene's; leaves renderImage in eGeneral, alpha 1 where a ray hit, for the sky to fill.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
+      vk::Extent2D extent,
       std::span<const vk::DescriptorSet> descriptorSets);
 
     void cleanUp();
@@ -40,7 +39,6 @@ class Raytracing
 
   private:
     std::shared_ptr<VulkanDevice> device{ nullptr };
-    VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipeline_layout{};

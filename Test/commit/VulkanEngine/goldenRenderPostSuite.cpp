@@ -72,6 +72,71 @@ Prediction
     return result;
 }
 
+// Mean luminance of each `block` x `block` square, row by row: the picture two frames of one view share at any scale.
+std::vector<double> block_luminance(const std::vector<uint8_t> &rgba, uint32_t width, uint32_t height, uint32_t block)
+{
+    std::vector<double> means;
+    for (uint32_t by = 0; by + block <= height; by += block) {
+        for (uint32_t bx = 0; bx + block <= width; bx += block) {
+            double sum = 0.0;
+            for (uint32_t y = by; y < by + block; ++y) {
+                for (uint32_t x = bx; x < bx + block; ++x) {
+                    sum += luminance_of(rgba, static_cast<size_t>(y) * width + x);
+                }
+            }
+            means.push_back(sum / static_cast<double>(block * block));
+        }
+    }
+    return means;
+}
+
+// Mean largest-channel change of each `block` x `block` square between two captures of one view, row by row.
+std::vector<double> block_change(const std::vector<uint8_t> &a,
+  const std::vector<uint8_t> &b,
+  uint32_t width,
+  uint32_t height,
+  uint32_t block)
+{
+    std::vector<double> means;
+    for (uint32_t by = 0; by + block <= height; by += block) {
+        for (uint32_t bx = 0; bx + block <= width; bx += block) {
+            double sum = 0.0;
+            for (uint32_t y = by; y < by + block; ++y) {
+                for (uint32_t x = bx; x < bx + block; ++x) {
+                    sum += channel_delta(a, b, static_cast<size_t>(y) * width + x);
+                }
+            }
+            means.push_back(sum / static_cast<double>(block * block));
+        }
+    }
+    return means;
+}
+
+// Mean absolute difference of two equally long series.
+double mean_difference(const std::vector<double> &a, const std::vector<double> &b)
+{
+    double difference = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i) { difference += std::abs(a[i] - b[i]); }
+    return a.empty() ? 0.0 : difference / static_cast<double>(a.size());
+}
+
+// Pearson's correlation of two equally long series; 0 when either is flat.
+double correlation(const std::vector<double> &a, const std::vector<double> &b)
+{
+    const double n = static_cast<double>(a.size());
+    const double mean_a = std::accumulate(a.begin(), a.end(), 0.0) / n;
+    const double mean_b = std::accumulate(b.begin(), b.end(), 0.0) / n;
+    double cross = 0.0;
+    double var_a = 0.0;
+    double var_b = 0.0;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        cross += (a[i] - mean_a) * (b[i] - mean_b);
+        var_a += (a[i] - mean_a) * (a[i] - mean_a);
+        var_b += (b[i] - mean_b) * (b[i] - mean_b);
+    }
+    return var_a > 0.0 && var_b > 0.0 ? cross / std::sqrt(var_a * var_b) : 0.0;
+}
+
 double median(std::vector<double> values)
 {
     if (values.empty()) { return std::nan(""); }
@@ -507,4 +572,109 @@ TEST(GoldenRender, SsaoDarkensTheAmbientLightAndNeverTheDirectLight)
         EXPECT_EQ(brightened, 0U) << name << ": SSAO brightened pixels, which only darkening may do";
         EXPECT_FALSE(harness.renderer->hasDeviceLost()) << name;
     }
+}
+
+// Post filters a half-scale scene and its clouds up to the output: the full-scale picture, softer, in every mode.
+TEST(GoldenRender, HalfRenderScaleDrawsTheFullScalePictureInEveryMode)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    const ScopedValidationErrorCounter validation;
+    auto &renderer_vars = harness.useForwardRaster();
+    // Both draw at half the scene extent, so a target left at the output's shows too.
+    renderer_vars.bloom_strength = 0.6F;
+    renderer_vars.ssao_strength = 0.7F;
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const auto capture_at = [&](float scale) {
+        renderer_vars.render_scale = scale;
+        harness.render_frames(SETTLE_FRAMES);
+        return harness.capture_frame(width, height);
+    };
+    struct Mode
+    {
+        const char *name;
+        RasterizationMode path;
+        bool traced;
+    };
+    // 24-pixel squares: the half-scale frame's pixels are filtered, its picture is not moved or cropped.
+    constexpr uint32_t kBlock = 24U;
+    std::vector<Mode> modes = { { "forward", RasterizationMode::Forward, false },
+        { "deferred", RasterizationMode::Deferred, false } };
+    if (harness.renderer->supportsHardwareRaytracing()) {
+        modes.push_back({ "ray traced", RasterizationMode::Forward, true });
+    }
+    for (const Mode &mode : modes) {
+        renderer_vars.rasterizationMode = mode.path;
+        renderer_vars.raytracing = mode.traced;
+        const std::vector<uint8_t> full = capture_at(1.0F);
+        ASSERT_FALSE(full.empty()) << mode.name;
+        const uint32_t full_width = width;
+        const uint32_t full_height = height;
+        const std::vector<uint8_t> half = capture_at(0.5F);
+        ASSERT_EQ(harness.renderer->sceneExtent(), (vk::Extent2D{ (full_width + 1U) / 2U, (full_height + 1U) / 2U }))
+          << mode.name;
+        ASSERT_EQ(width, full_width) << mode.name << ": the frame is the output's, not the scene's";
+        ASSERT_EQ(height, full_height) << mode.name;
+        ASSERT_EQ(half.size(), full.size()) << mode.name;
+
+        EXPECT_GT(luminance_stddev(half), 5.0) << mode.name << ": the half-scale frame is flat";
+        EXPECT_GT(distinct_luminance_buckets(half), 32U) << mode.name;
+        EXPECT_NE(half, full) << mode.name << ": the scale changed nothing";
+
+        const std::vector<double> full_blocks = block_luminance(full, width, height, kBlock);
+        const std::vector<double> half_blocks = block_luminance(half, width, height, kBlock);
+        const double difference = mean_difference(full_blocks, half_blocks);
+        const double structure = correlation(full_blocks, half_blocks);
+        GTEST_LOG_(INFO) << mode.name << ": squares differ by " << difference << " levels, correlation " << structure;
+        EXPECT_LT(difference, 4.0) << mode.name << ": the half-scale picture is not the full-scale one";
+        EXPECT_GT(structure, 0.97) << mode.name << ": the half-scale picture is moved, cropped or missing";
+        EXPECT_FALSE(harness.renderer->hasDeviceLost()) << mode.name;
+    }
+
+    // The HDR target post reads is the scene's own size.
+    renderer_vars.raytracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.render_scale = 0.5F;
+    harness.render_frames(SETTLE_FRAMES);
+    uint32_t hdr_width = 0;
+    uint32_t hdr_height = 0;
+    const std::vector<float> hdr = harness.capture_hdr_frame(hdr_width, hdr_height);
+    EXPECT_EQ((vk::Extent2D{ hdr_width, hdr_height }), harness.renderer->sceneExtent());
+    EXPECT_EQ(hdr.size(), static_cast<std::size_t>(hdr_width) * hdr_height * 4U);
+
+    // The clouds reach post through its sampler too: at half scale they change the frame where they do at full.
+    auto &scene_vars = harness.settings.scene;
+    scene_vars.skybox_enabled = false;
+    scene_vars.cloud_coverage_threshold = 0.3F;
+    // Behind the slab, where the half-resolution cloud golden puts them: cloud in the sky all around it.
+    place_cloud_box(scene_vars, glm::vec3(0.0F, 9.0F, -20.0F), glm::vec3(40.0F, 6.0F, 4.0F), 1.0F);
+    const auto cloud_change = [&](float scale) {
+        scene_vars.clouds_enabled = false;
+        const std::vector<uint8_t> off = capture_at(scale);
+        scene_vars.clouds_enabled = true;
+        const std::vector<uint8_t> on = capture_at(scale);
+        EXPECT_EQ(on.size(), off.size());
+        return on.size() == off.size() ? block_change(off, on, width, height, kBlock) : std::vector<double>{};
+    };
+    const std::vector<double> full_clouds = cloud_change(1.0F);
+    const std::vector<double> half_clouds = cloud_change(0.5F);
+    ASSERT_EQ(half_clouds.size(), full_clouds.size());
+    const auto clouded = static_cast<std::size_t>(
+      std::count_if(full_clouds.begin(), full_clouds.end(), [](double change) { return change > 5.0; }));
+    const double cloud_difference = mean_difference(full_clouds, half_clouds);
+    const double cloud_structure = correlation(full_clouds, half_clouds);
+    GTEST_LOG_(INFO) << "clouds: " << clouded << " of " << full_clouds.size()
+                     << " squares clouded, the change differs by " << cloud_difference << " levels, correlation "
+                     << cloud_structure;
+    ASSERT_GT(clouded, full_clouds.size() / 10U) << "the clouds change too little of the frame to judge";
+    EXPECT_LT(cloud_difference, 4.0) << "the half-scale clouds are not the full-scale ones";
+    EXPECT_GT(cloud_structure, 0.9) << "the half-scale clouds are moved, cropped or missing";
+    EXPECT_FALSE(harness.renderer->hasDeviceLost());
+    EXPECT_EQ(validation.errorCount(), 0) << "the scale changes raised validation errors";
 }

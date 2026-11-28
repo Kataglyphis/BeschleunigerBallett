@@ -358,7 +358,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
           alignof(PushConstantPathTracing) },
         { "PushConstantPost_std430",
           { { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
-            { "bloom_strength", offsetof(PushConstantPost, bloom_strength) } },
+            { "bloom_strength", offsetof(PushConstantPost, bloom_strength) },
+            { "scene_scaled", offsetof(PushConstantPost, scene_scaled) } },
           sizeof(PushConstantPost),
           alignof(PushConstantPost) },
         // OxidANT's ssao.slang, which SsaoStage fills from SsaoUniforms.hpp.

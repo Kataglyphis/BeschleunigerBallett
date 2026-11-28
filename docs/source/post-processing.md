@@ -1,8 +1,8 @@
 # Post-processing
 
-What the C++ engine does around the HDR target: SSAO before the scene is lit, then exposure, auto exposure,
-bloom and the tonemap between the scene passes and the swapchain, with the Rust WebGPU renderer's shaders, buffers
-and defaults. Everything here is **shipped** behaviour; open work lives in `BACKLOG.md`.
+What the C++ engine does around the HDR target: the render scale it is drawn at, SSAO before the scene is lit,
+then exposure, auto exposure, bloom and the tonemap between the scene passes and the swapchain, with the Rust WebGPU
+renderer's shaders, buffers and defaults. Everything here is **shipped** behaviour; open work lives in `BACKLOG.md`.
 
 ## Pipeline shape
 
@@ -26,14 +26,14 @@ and taps `common/bloom_filter.slang`. Both modules' vector files, `tests/vectors
 ## The scene targets
 
 One set serves every frame in flight, as the Rust renderer's `RenderTargets` does, never one per swapchain image,
-all at `VulkanRenderer::sceneExtent()`, the one scene extent (the swapchain's, until a render scale):
+all at `VulkanRenderer::sceneExtent()`, the one scene extent: the swapchain's at the render scale (below):
 
 | Target | Format | B/px | Exists |
 | --- | --- | --- | --- |
 | scene HDR (`sceneColor`) | RGBA16F | 8 | always: every mode draws into it, post, bloom and the histogram read it |
 | forward depth, SSAO prepass depth | D32 | 8 | while the forward path is picked |
 | G-buffer normal, albedo, material, its depth | RGBA16F, RGBA8 sRGB, RGBA16F, D32 | 24 | while the deferred path is picked |
-| FXAA intermediate | the swapchain's | 4 | always |
+| FXAA intermediate | the swapchain's, at the output's extent | 4 | always |
 | path-traced history, traced depth | RGBA32F, R32F | 20 | on a device with ray tracing |
 | bloom's two, SSAO's two | RGBA16F, R8, at half the extent | 4.5 | always |
 | clouds, full and half resolution | RGBA16F | 10 | always |
@@ -54,6 +54,44 @@ all at `VulkanRenderer::sceneExtent()`, the one scene extent (the swapchain's, u
 - `VulkanRenderer::sceneTargetFootprint()` sums `vkGetImageMemoryRequirements` by row of this table;
   `Integration.SceneTargetsAreOneSetOfTheDrawnRasterPath` pins one HDR target and one FXAA intermediate, and the
   absent path, across switches, a swapchain recreation and the traced modes.
+
+## The render scale
+
+The scene renders at a share of the output, OxidANT's `RenderScale` (`kataglyphis_render_core::render_scale`), which
+both renderers read through the same code: the C++ engine through the bridge's `render_scale.rs`
+(`renderer/RenderScale.ixx`), so the rule, the ranges and the Auto controller exist once.
+
+| Setting | Default | Range | What it does |
+| --- | --- | --- | --- |
+| Render scale (`render_scale`) | 1 | 0.25 to 1 | each side of the output times it, rounded, at least 1 texel; a NaN is 1 |
+| Auto scale (`render_scale_auto`) | off | | the app's `AutoRenderScale` moves the scale toward the target |
+| Target (`render_scale_target_fps`) | 60 FPS | 20 to 144 | the frame rate Auto aims at |
+
+- **Every scene target and scene pass takes the scaled extent**: the HDR target, the raster paths', the traced ones
+  (the ray-tracing and path-tracing dispatches), the clouds', and bloom's and SSAO's at half of it. Post, FXAA, the
+  editor, the frame capture and F12 stay at the output's; the HDR and bloom captures read the scene's targets, at
+  their sizes. `updateSceneExtent()` derives it from the swapchain's;
+  `RenderStageFrame` and `RenderStageResize` carry both extents.
+- **Post filters the scene up**: at full scale it fetches texels 1:1, as before; below it the HDR target and the
+  clouds are sampled bilinearly through post's clamped sampler, as Rust's `tonemap.slang` upsamples. The projection
+  takes the output's aspect, so a rounded side never stretches the picture, and SSAO's texel lookup the scene's.
+- **A new scale resizes the scene stages**, as a swapchain recreation does, after an idle wait: `applyRenderScale`
+  runs where the raster-path switch does, in `updateStateDueToUserInput` and before `drawFrame` records. The path
+  tracer's history is extent-sized, so its mean starts over.
+- **Auto is the app's**, as in Rust: `App::run` hands `AutoRenderScale` each frame's clock and writes the scale it
+  returns. It steers raster frames only and none while a model loads, measuring the GPU's top-level passes where
+  timestamps exist, else the median of the last 15 frame times, raw as Rust's `FrameHistory` records them (the
+  camera's step caps at 100 ms); OxidANT's `AutoScaler` decides (steps of 0.05, at most
+  one change a second and 40 frames, down by the root of the over-run, up after 2 s of headroom).
+- The Renderer tab holds Rust's three rows and its `Renders W × H of W × H.` line; the viewport chip shows the
+  scene's own size and percentage below full scale (`renderScaleSummary`, `renderScaleChipText`).
+  `BuildIntegrity.TheRenderScaleRowsAndTextsAreTheRustEditors` holds the rows, hover texts, bindings and both texts
+  to OxidANT's editor.
+- `Integration.SceneTargetsFollowTheRenderScale` holds every target group's bytes at 0.5 and 0.75 to the scene's
+  share of its full-scale footprint, the FXAA intermediate's to the output's, across both raster paths, the clouds, a
+  swapchain recreation and the traced modes, and the path tracer's restart;
+  `GoldenRender.HalfRenderScaleDrawsTheFullScalePictureInEveryMode` grades a half-scale frame of the output's size
+  against the full-scale one in 24-pixel squares, forward, deferred and ray traced, and the clouds' change to it.
 
 ## The exposure buffer
 
@@ -77,7 +115,7 @@ composited radiance by `exposure_scale`, `exp2`, before ACES; nothing reads it b
 
 ## Bloom
 
-`renderer/BloomStage.cpp`, at half the swapchain's extent rounded down (`postHalfExtent`, OxidANT's `post_half`), into
+`renderer/BloomStage.cpp`, at half the scene extent rounded down (`postHalfExtent`, OxidANT's `post_half`), into
 two RGBA16F targets with one linear clamp-to-edge sampler:
 
 - **Bright pass**: the HDR target sampled at the half-resolution texel's centre, the 2x2 average, with the clouds
@@ -89,9 +127,9 @@ two RGBA16F targets with one linear clamp-to-edge sampler:
   and no further, and keeps it.
 - **Composite**: post samples the output bilinearly at the pixel's uv and adds it times the strength to the exposed
   radiance before ACES, as `tonemap.slang` does; at strength 0 the stage does not record and post skips the read.
-- Both targets start black and sampleable, cleared once at creation and after every swapchain recreation, since
-  post binds the output on every frame. Each pass's barriers discard the target it overwrites after the previous
-  frame's reads.
+- Both targets start black and sampleable, cleared once at creation and on every resize (a swapchain recreation or
+  a new render scale), since post binds the output on every frame. Each pass's barriers discard the target it
+  overwrites after the previous frame's reads.
 
 ## SSAO
 

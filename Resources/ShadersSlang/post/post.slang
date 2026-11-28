@@ -16,6 +16,8 @@ struct PushConstantPost
 {
     uint clouds_enabled;
     float bloom_strength;
+    // 1 when a render scale sized the scene targets apart from the swapchain, which post then filters up.
+    uint scene_scaled;
 };
 [[vk::push_constant]] PushConstantPost pc_post;
 
@@ -37,18 +39,24 @@ VsOut vs_main(uint vid : SV_VulkanVertexID)
     return r;
 }
 
+// Texel fetches at full scale, where filtering made coverage fractional at every edge; bilinear taps below it.
+float4 post_input(Sampler2D source, VsOut In)
+{
+    if (bool(pc_post.scene_scaled))
+        return source.SampleLevel(In.uv, 0.0);
+    return source.Load(int3(int2(In.svPosition.xy), 0));
+}
+
 [shader("fragment")]
 float4 fs_main(VsOut In) : SV_Target
 {
-    // Texel fetches: both inputs map 1:1 onto the swapchain, and filtering made coverage fractional at every edge.
-    int3 texel = int3(int2(In.svPosition.xy), 0);
     // The sky is in the HDR target already, so every texel is opaque radiance.
-    float3 color = noisyTxt.Load(texel).rgb;
+    float3 color = post_input(noisyTxt, In).rgb;
 
     if (bool(pc_post.clouds_enabled))
     {
         // Premultiplied-over in linear HDR, over geometry and sky alike.
-        float4 cloud = cloudTxt.Load(texel);
+        float4 cloud = post_input(cloudTxt, In);
         color = cloud.rgb + color * (1.0 - cloud.a);
     }
 

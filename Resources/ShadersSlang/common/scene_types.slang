@@ -118,5 +118,5 @@ struct SceneUBO
     float4 cloudAmbientTop;
     float4 cloudAmbientBottom;
     float4 iblParams; // x: 1 when the skybox's baked maps light the scene, y: the prefiltered map's top mip
-    float4 screenOcclusion; // x: SSAO strength (0 off), yz: 1 / the swapchain's extent
+    float4 screenOcclusion; // x: SSAO strength (0 off), yz: 1 / the scene extent
 };

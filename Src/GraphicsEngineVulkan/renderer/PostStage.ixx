@@ -37,6 +37,7 @@ class PostStage
       std::span<const vk::DescriptorSet> descriptorSets,
       bool cloudsEnabled,
       float bloomStrength,
+      bool sceneScaled,
       Kataglyphis::Texture *fxaaInput = nullptr,
       const BeforeGuiHook &beforeGui = {});
     void cleanUp();

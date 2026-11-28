@@ -27,6 +27,7 @@ import kataglyphis.vulkan.command_line;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.gui_scene_shared_vars;
+import kataglyphis.vulkan.render_scale;
 
 using namespace Kataglyphis::TestSupport::BuildIntegrity;
 
@@ -560,6 +561,88 @@ TEST(BuildIntegrity, PathTracingTakesTheRustTracersPlanDefaultsAndRows)
       std::regex(
         R"re(ImGui::Button\("Restart accumulation"[^{]*\{\s*guiRendererSharedVars\.pathTracingRestartRequested = true;)re")))
       << "the editor's Restart accumulation button does not request pathTracingRestartRequested";
+}
+
+// Rust's render_scale() rows, their hover texts, bindings and disabled states, and its two texts with values filled in.
+TEST(BuildIntegrity, TheRenderScaleRowsAndTextsAreTheRustEditors)
+{
+    const fs::path editor =
+      repoRoot() / "third_party" / "OxidANT" / "crates" / "webgpu_renderer" / "src" / "ui" / "editor";
+    if (!sourceExists(editor)) { GTEST_SKIP() << "the OxidANT submodule is not checked out here"; }
+    const auto inspector = readFileText(editor / "inspector" / "renderer.rs");
+    const auto chip = readFileText(editor / "chip.rs");
+    const auto gui = readFileText(repoRoot() / "Src" / "GraphicsEngineVulkan" / "gui" / "GUI.cpp");
+    ASSERT_TRUE(inspector && chip && gui) << "could not read the editors' sources";
+    const auto section_of = [](const std::string &text, const std::string &head) {
+        const std::size_t start = text.find(head);
+        return start == std::string::npos ? std::string{} : text.substr(start, text.find("\n}", start) - start);
+    };
+    const std::string rows = section_of(*inspector, "fn render_scale(");
+    ASSERT_FALSE(rows.empty()) << "renderer.rs has no render_scale() section - the scan broke";
+
+    const std::regex row(R"re(property_row\(\s*ui,\s*"([^"]+)",\s*Some\("([^"]+)"\))re");
+    const auto literal = [](const std::string &text) {
+        return std::regex_replace(text, std::regex(R"([.^$|()\[\]{}*+?\\])"), R"(\$&)");
+    };
+    std::vector<std::string> labels;
+    for (auto it = std::sregex_iterator(rows.begin(), rows.end(), row); it != std::sregex_iterator(); ++it) {
+        labels.push_back((*it)[1].str());
+        const std::regex cpp_row(
+          "studioPropertyLabel\\(\\s*\"" + literal(labels.back()) + "\",\\s*\"" + literal((*it)[2].str()) + "\"\\)");
+        EXPECT_TRUE(std::regex_search(*gui, cpp_row)) << "the Renderer tab has no '" << labels.back()
+                                                      << "' row with the Rust hover text '" << (*it)[2].str() << "'";
+    }
+    EXPECT_EQ(labels, (std::vector<std::string>{ "Render scale", "Auto scale", "Target" }))
+      << "renderer.rs's render_scale() changed its rows - the scan or this list needs updating";
+
+    // Auto greys the scale out and the target in, in both editors; each row writes its own setting at Rust's format.
+    EXPECT_TRUE(std::regex_search(rows, std::regex(R"re(enabled_ui\(ui, !scale\.auto,[^}]*"Render scale")re")));
+    EXPECT_TRUE(std::regex_search(rows, std::regex(R"re(enabled_ui\(ui, scale\.auto,[^}]*"Target")re")));
+    EXPECT_TRUE(std::regex_search(rows, std::regex(R"re(RENDER_SCALE_RANGE\)\.decimals\(2\))re")));
+    EXPECT_TRUE(
+      std::regex_search(rows, std::regex(R"re(TARGET_FPS_RANGE\)\s*\.decimals\(0\)\s*\.suffix\(" FPS"\))re")));
+    EXPECT_TRUE(std::regex_search(*gui,
+      std::regex(
+        R"re(studioBeginDisabled\(guiRendererSharedVars\.render_scale_auto\);\s*studioPropertyLabel\("Render scale",\s*"[^"]*"\);\s*studioSlider\("[^"]*",\s*&guiRendererSharedVars\.render_scale,\s*ranges\.minScale,\s*ranges\.maxScale,\s*"%\.2f"\);)re")))
+      << "the Render scale row does not slide render_scale over Rust's range, greyed out under Auto";
+    EXPECT_TRUE(std::regex_search(*gui,
+      std::regex(
+        R"re("Auto scale",\s*"[^"]*"\);\s*studioToggle\("[^"]*",\s*&guiRendererSharedVars\.render_scale_auto\);)re")))
+      << "the Auto scale row does not toggle render_scale_auto";
+    EXPECT_TRUE(std::regex_search(*gui,
+      std::regex(
+        R"re(studioBeginDisabled\(!guiRendererSharedVars\.render_scale_auto\);\s*studioPropertyLabel\("Target",\s*"[^"]*"\);\s*studioSlider\("[^"]*",\s*&guiRendererSharedVars\.render_scale_target_fps,\s*ranges\.minTargetFps,\s*ranges\.maxTargetFps,\s*"%\.0f FPS"\);)re")))
+      << "the Target row does not slide render_scale_target_fps over Rust's range, live only under Auto";
+
+    // Rust's format strings with the C++ helpers' values: a reworded or reordered text fails here.
+    const auto filled = [](std::string format, const std::map<std::string, std::string> &values) {
+        for (const auto &[name, value] : values) {
+            for (std::size_t at = format.find("{" + name + "}"); at != std::string::npos;
+              at = format.find("{" + name + "}")) {
+                format.replace(at, name.size() + 2U, value);
+            }
+        }
+        return format;
+    };
+    const std::map<std::string, std::string> values = {
+        { "inner_w", "1200" }, { "inner_h", "675" }, { "width", "1600" }, { "height", "900" }, { "percent", "75" }
+    };
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars scaled{};
+    scaled.render_scale = 0.75F;
+    const Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars full{};
+    const std::regex format(R"re(format!\(\s*"([^"]+)")re");
+    std::smatch match;
+    ASSERT_TRUE(std::regex_search(rows, match, format)) << "render_scale() formats no Renders line - the scan broke";
+    EXPECT_EQ(filled(match[1].str(), values), Kataglyphis::renderScaleSummary(scaled, 1600, 900));
+    const std::string extent_text = section_of(*chip, "fn extent_text(");
+    std::vector<std::string> chip_formats;
+    for (auto it = std::sregex_iterator(extent_text.begin(), extent_text.end(), format); it != std::sregex_iterator();
+      ++it) {
+        chip_formats.push_back((*it)[1].str());
+    }
+    ASSERT_EQ(chip_formats.size(), 2U) << "chip.rs's extent_text() changed its formats - the scan broke";
+    EXPECT_EQ(filled(chip_formats[0], values), Kataglyphis::renderScaleChipText(full, 1600, 900));
+    EXPECT_EQ(filled(chip_formats[1], values), Kataglyphis::renderScaleChipText(scaled, 1600, 900));
 }
 
 // The fly speed is OxidANT's (render_core's fly_speed.rs, which both renderers' framing fits to a scene).

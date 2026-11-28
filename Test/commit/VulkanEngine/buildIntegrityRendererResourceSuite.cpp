@@ -588,3 +588,37 @@ TEST(BuildIntegrity, SceneTargetsAreNotMadePerSwapchainImage)
     EXPECT_EQ(body.find("getNumberSwapChainImages"), std::string::npos)
       << "createSceneColor counts the HDR target out per swapchain image";
 }
+
+// A render scale sizes the scene passes apart from the swapchain, so none of them may read its extent.
+TEST(BuildIntegrity, ScenePassesTakeTheSceneExtentNeverTheSwapchains)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 9> kScenePasses = {
+        "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
+        "Src/GraphicsEngineVulkan/renderer/PathTracing.cpp",
+        "Src/GraphicsEngineVulkan/renderer/BloomStage.cpp",
+        "Src/GraphicsEngineVulkan/renderer/SsaoStage.cpp",
+        "Src/GraphicsEngineVulkan/renderer/ExposureStage.cpp",
+        "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
+        "Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp",
+    };
+    for (const char *relative_path : kScenePasses) {
+        const auto contents = readFileText(repo_root / relative_path);
+        ASSERT_TRUE(contents.has_value()) << "missing " << relative_path;
+        EXPECT_EQ(contents->find("getSwapChainExtent"), std::string::npos)
+          << relative_path << " reads the swapchain's extent; a scene pass draws at VulkanRenderer::sceneExtent()";
+    }
+
+    const fs::path renderer_path = repo_root / "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
+    const auto renderer = readFileText(renderer_path);
+    ASSERT_TRUE(renderer.has_value()) << "could not open " << renderer_path.string();
+    const auto update = function_body_span(*renderer, "Kataglyphis::VulkanRenderer::updateSceneExtent");
+    ASSERT_TRUE(update.has_value()) << "VulkanRenderer::updateSceneExtent was not found";
+    EXPECT_NE(
+      renderer->substr(update->first, update->second - update->first).find("renderScaleExtent("), std::string::npos)
+      << "the scene extent must come from the swapchain's through OxidANT's render scale";
+}

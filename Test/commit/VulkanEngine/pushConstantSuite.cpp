@@ -80,7 +80,8 @@ TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
 {
     EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 0U);
     EXPECT_EQ(offsetof(PushConstantPost, bloom_strength), 4U);
-    EXPECT_EQ(sizeof(PushConstantPost), 8U);
+    EXPECT_EQ(offsetof(PushConstantPost, scene_scaled), 8U);
+    EXPECT_EQ(sizeof(PushConstantPost), 12U);
 }
 
 // Mirrored in raytracing/rt_types.slang.

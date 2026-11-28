@@ -913,7 +913,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster-1` to `raster-4`: every GPU test in no other shard (111 today, two of them disabled), every fourth
+  - `raster-1` to `raster-4`: every GPU test in no other shard (113 today, two of them disabled), every fourth
     by ctest number in each (`-I k,,4`, which intersects with the filter), 90 min per test. As one `raster`
     job they passed GitHub's 6 h job limit (run 45969392334: 64 of 95 in 5.7 h of tests). Split in three (run
     46021554231, 95 tests) the jobs took 2 h 50, 3 h 42 and 4 h 46, the slowest on a runner 1.4-1.8x slower
@@ -1152,6 +1152,9 @@ OFF, so none of them fetches Kompute's `fmt`.
   the drawn raster path's exist (`ensureRasterPathTargets`). A pass's first barrier on one therefore
   waits out every stage the previous frame used it in, and its size is `VulkanRenderer::sceneExtent()`,
   the one scene extent ([`post-processing.md`](docs/source/post-processing.md#the-scene-targets)).
+  A scene pass takes that extent, never the swapchain's: the render scale sets it apart from the output,
+  where only post, FXAA, the frame capture and F12 draw, and the projection takes the output's aspect
+  ([`post-processing.md`](docs/source/post-processing.md#the-render-scale)).
 - Buffer/image memory goes through VMA (allocator owned by `VulkanDevice`);
   `VulkanBuffer`/`VulkanImage` are move-only with destructor release (`cleanUp()` remains for
   explicit early teardown and is idempotent).

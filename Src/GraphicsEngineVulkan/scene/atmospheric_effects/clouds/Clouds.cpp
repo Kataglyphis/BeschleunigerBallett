@@ -92,7 +92,7 @@ void Clouds::createTextures(vk::CommandPool commandPool)
 
 void Clouds::createFrameTextures(vk::CommandPool commandPool)
 {
-    // Full resolution: one cloud texel per swapchain pixel, matching the scene depth it reads.
+    // Full resolution: one cloud texel per scene pixel, matching the scene depth it reads.
     cloudOutputTexture =
       createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
     // Both exist at every setting, so switching half resolution rewrites no descriptor.

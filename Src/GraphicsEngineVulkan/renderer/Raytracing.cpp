@@ -23,16 +23,13 @@ module kataglyphis.vulkan.raytracing;
 
 import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.shader_helper;
-import kataglyphis.vulkan.swapchain;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::init(const std::shared_ptr<VulkanDevice> &in_device,
-  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-  VulkanSwapChain *swapchain)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;
-    this->vulkanSwapChain = swapchain;
 
     createPCRange();
     createGraphicsPipeline(descriptorSetLayouts);
@@ -49,6 +46,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
   VulkanImage &renderImage,
+  vk::Extent2D extent,
   std::span<const vk::DescriptorSet> descriptorSets)
 {
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
@@ -99,13 +97,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
-    if (!this->vulkanSwapChain) {
-        spdlog::error("Raytracing::recordCommands: VulkanSwapChain is null");
-        return;
-    }
-    const vk::Extent2D &swap_chain_extent = this->vulkanSwapChain->getSwapChainExtent();
-    commandBuffer.traceRaysKHR(
-      rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
+    commandBuffer.traceRaysKHR(rgen_region, miss_region, hit_region, call_region, extent.width, extent.height, 1);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()

@@ -273,7 +273,7 @@ The history resets whenever its premises die:
 | Quality sliders changed (different estimator = biased mean) | same |
 | White furnace toggled, or its radiance or surface changed | same |
 | The editor's Restart accumulation | `updateStateDueToUserInput` |
-| Swapchain resize (extent-sized image is recreated) | `recreateSwapChain` |
+| Swapchain resize or a new render scale (extent-sized image is recreated) | `recreateSwapChain`, `applyRenderScale` |
 | AS rebuilt - model load/reload OR GUI transform moved the traced world | `updateRaytracingDescriptorSets` |
 
 The AS-rebuild trigger was found the hard way: without it, the mean kept

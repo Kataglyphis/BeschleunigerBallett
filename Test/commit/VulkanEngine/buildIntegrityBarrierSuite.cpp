@@ -390,8 +390,9 @@ TEST(BuildIntegrity, TheOverwritingPostPassNeitherLoadsNorClears)
     ASSERT_TRUE(post_slang_text_opt.has_value()) << "missing " << post_slang_path.string();
     const std::string &post_slang_text = *post_slang_text_opt;
 
+    // One fetch through post_input, which texel-fetches at full scale and filters a render-scaled scene up.
     std::size_t sample_count = 0;
-    for (const std::string needle : { "noisyTxt.Sample", "noisyTxt.Load" }) {
+    for (const std::string needle : { "noisyTxt.Sample", "noisyTxt.Load", "post_input(noisyTxt" }) {
         std::size_t pos = 0;
         while ((pos = post_slang_text.find(needle, pos)) != std::string::npos) {
             ++sample_count;
@@ -400,5 +401,7 @@ TEST(BuildIntegrity, TheOverwritingPostPassNeitherLoadsNorClears)
     }
     EXPECT_EQ(sample_count, 1U)
       << post_slang_path.string() << " samples noisyTxt " << sample_count
-      << " time(s) in fs_main - expected exactly one fetch into a float4, with .rgb/.a taken from it";
+      << " time(s) in fs_main - expected exactly one post_input fetch into a float4, with .rgb/.a taken from it";
+    EXPECT_NE(post_slang_text.find("post_input(noisyTxt"), std::string::npos)
+      << post_slang_path.string() << " no longer reads the HDR target through post_input";
 }

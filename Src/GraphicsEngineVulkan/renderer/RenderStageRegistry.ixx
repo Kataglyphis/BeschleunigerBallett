@@ -22,7 +22,9 @@ struct RenderStageFrame
 {
     vk::CommandBuffer commandBuffer{};
     uint32_t imageIndex = 0;
-    vk::Extent2D extent{};
+    // The scene passes draw at the render-scaled scene extent; post, FXAA and the swapchain image at the output's.
+    vk::Extent2D sceneExtent{};
+    vk::Extent2D outputExtent{};
     vk::Image swapchainImage{};
     vk::ImageView swapchainImageView{};
     vk::Format swapchainFormat = vk::Format::eUndefined;
@@ -32,7 +34,8 @@ struct RenderStageFrame
 
 struct RenderStageResize
 {
-    vk::Extent2D extent{};
+    vk::Extent2D sceneExtent{};
+    vk::Extent2D outputExtent{};
     uint32_t imageCount = 0;
 };
 
@@ -69,7 +72,7 @@ struct RenderStage
     std::function<void(const RenderStageFrame &)> record;
     // Runs instead of record on a frame enabled() turned down.
     std::function<void(const RenderStageFrame &)> recordSkipped;
-    // After a swapchain recreation, for the extent-sized resources.
+    // After a swapchain recreation or a render-scale change, for the extent-sized resources.
     std::function<void(const RenderStageResize &)> resize;
     std::function<void()> shaderHotReload;
 };

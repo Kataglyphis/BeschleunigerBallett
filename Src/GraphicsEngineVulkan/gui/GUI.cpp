@@ -37,6 +37,7 @@ import kataglyphis.shared.imgui.widgets;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.oxidant_diagnostics;
 import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.render_scale;
 import kataglyphis.vulkan.window;
 import kataglyphis.vulkan.scene_config;
 
@@ -1320,6 +1321,34 @@ void GUI::renderSkyInspector()
     studioEndDisabled();
 }
 
+// Rust's render-scale rows: the scene's share of the output, by hand or steered toward a frame rate.
+void GUI::renderRenderScaleRows()
+{
+    const Kataglyphis::RenderScaleRanges ranges = Kataglyphis::renderScaleRanges();
+    if (beginStudioProperties("##render_scale", propertyLabelWidth())) {
+        studioBeginDisabled(guiRendererSharedVars.render_scale_auto);
+        studioPropertyLabel("Render scale", "The scene's resolution against the viewport; the tonemap upsamples it");
+        studioSlider("##render_scale", &guiRendererSharedVars.render_scale, ranges.minScale, ranges.maxScale, "%.2f");
+        studioEndDisabled();
+        studioPropertyLabel(
+          "Auto scale", "Lowers the scale while frames miss the target and raises it while they have room");
+        studioToggle("##render_scale_auto", &guiRendererSharedVars.render_scale_auto);
+        studioBeginDisabled(!guiRendererSharedVars.render_scale_auto);
+        studioPropertyLabel("Target", "The frame rate Auto aims at");
+        studioSlider("##render_scale_target_fps",
+          &guiRendererSharedVars.render_scale_target_fps,
+          ranges.minTargetFps,
+          ranges.maxTargetFps,
+          "%.0f FPS");
+        studioEndDisabled();
+        endStudioProperties();
+    }
+    const ImGuiIO &io = ImGui::GetIO();
+    const auto width = static_cast<uint32_t>(io.DisplaySize.x * io.DisplayFramebufferScale.x);
+    const auto height = static_cast<uint32_t>(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+    mutedWrappedText(Kataglyphis::renderScaleSummary(guiRendererSharedVars, width, height).c_str());
+}
+
 void GUI::renderRenderInspector()
 {
     const int mode = displayedRenderMode();
@@ -1330,6 +1359,8 @@ void GUI::renderRenderInspector()
         mutedWrappedText(renderMode() != 0 ? "Your pick starts once a model has loaded; Raster cancels it."
                                            : "Ray and path tracing start once a model has loaded.");
     }
+
+    renderRenderScaleRows();
 
     studioBeginDisabled(mode != 0);
     if (beginStudioProperties("##raster", propertyLabelWidth())) {
@@ -1546,15 +1577,13 @@ void GUI::renderViewportOverlay(float sceneX0, float sceneY0, float sceneX1, flo
           "Raster  \xC2\xB7  %s",
           (guiRendererSharedVars.rasterizationMode == RasterizationMode::Deferred) ? "Deferred" : "Forward");
     }
-    std::array<char, 32> extent{};
-    std::snprintf(extent.data(),
-      extent.size(),
-      "%d \xC3\x97 %d",
-      static_cast<int>((sceneX1 - sceneX0) * io.DisplayFramebufferScale.x),
-      static_cast<int>((sceneY1 - sceneY0) * io.DisplayFramebufferScale.y));
+    // Rust's chip: the scene's own size and its percentage under a render scale.
+    const auto viewport_width = static_cast<uint32_t>((sceneX1 - sceneX0) * io.DisplayFramebufferScale.x);
+    const auto viewport_height = static_cast<uint32_t>((sceneY1 - sceneY0) * io.DisplayFramebufferScale.y);
+    const std::string extent = Kataglyphis::renderScaleChipText(guiRendererSharedVars, viewport_width, viewport_height);
 
     const ImVec2 label_size = ImGui::CalcTextSize(label.data());
-    const float extent_width = ImGui::CalcTextSize(extent.data()).x;
+    const float extent_width = ImGui::CalcTextSize(extent.c_str()).x;
     const float dot = ImGui::GetFontSize() * 0.5F;
     const float chip_height = ImGui::GetFrameHeight();
     const float chip_width = style.FramePadding.x * 2.0F + dot + style.ItemInnerSpacing.x + label_size.x
@@ -1578,7 +1607,7 @@ void GUI::renderViewportOverlay(float sceneX0, float sceneY0, float sceneX1, flo
     x += dot + style.ItemInnerSpacing.x;
     drawList->AddText(ImVec2(x, text_y), ImGui::GetColorU32(studio_palette::kText), label.data());
     x += label_size.x + style.ItemSpacing.x * 1.5F;
-    drawList->AddText(ImVec2(x, text_y), ImGui::GetColorU32(studio_palette::kTextMuted), extent.data());
+    drawList->AddText(ImVec2(x, text_y), ImGui::GetColorU32(studio_palette::kTextMuted), extent.c_str());
 }
 
 void GUI::renderFloatingWindows()

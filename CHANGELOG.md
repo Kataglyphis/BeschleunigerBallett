@@ -14,6 +14,19 @@ the GitHub releases themselves.
 
 ### Added
 
+- Render scale with Rust's Auto controller (plan C6 step 2, OxidANT pin `98ca856`): the scene renders at 0.25 to 1
+  of the output per side (default 1) and post filters it up, bilinearly below full scale, as the Rust tonemap does;
+  post, FXAA, the editor, the frame capture and F12 stay at the output's size, and the HDR and bloom captures read
+  the scene's targets. Every scene target and pass follows the scale, the clouds' too,
+  the ray-tracing dispatch and bloom's and SSAO's half-resolution targets included, which still read the swapchain's
+  extent before; a new scale resizes them as a swapchain recreation does, and the path tracer's mean starts over.
+  OxidANT's `render_scale` moved into the bridge's `kataglyphis_render_core` with no new crate, so the extent rule,
+  the editor's ranges and the `AutoScaler` exist once: the app steers the scale toward a target frame rate (default
+  60 FPS, 20 to 144) from the GPU's pass times, else the median of the raw frame times, as Rust records them, on
+  raster frames only. The Renderer tab has
+  Rust's Render scale, Auto scale and Target rows, and the viewport chip shows the scene's size and percentage.
+  `Integration.SceneTargetsFollowTheRenderScale` and `GoldenRender.HalfRenderScaleDrawsTheFullScalePictureInEveryMode`
+  cover the targets, the modes, the restart and the picture.
 - `EXT_meshopt_compression` (plan N4, OxidANT pin `354ea61`): OxidANT's loader decodes gltfpack's `-c` and `-cc`
   output for both renderers, in safe Rust and with no new crate (the bridge stays at 62 runtime packages): the
   attribute codec's version 0, the triangle and index codecs and the octahedral, quaternion and exponential filters,

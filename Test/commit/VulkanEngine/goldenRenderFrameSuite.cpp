@@ -136,7 +136,7 @@ TEST(GoldenRender, StageAddedFromOutsideTheRendererDrawsAfterPost)
           vk::AttachmentLoadOp::eClear,
           vk::AttachmentStoreOp::eStore,
           vk::ClearValue{ vk::ClearColorValue{ std::array{ 1.0F, 0.0F, 1.0F, 1.0F } } }) };
-        frame.commandBuffer.beginRendering(Kataglyphis::buildRenderingInfo(frame.extent, colour, nullptr));
+        frame.commandBuffer.beginRendering(Kataglyphis::buildRenderingInfo(frame.outputExtent, colour, nullptr));
         frame.commandBuffer.endRendering();
         Kataglyphis::recordImageBarrier(frame.commandBuffer,
           Kataglyphis::buildImageMemoryBarrier(frame.swapchainImage,
@@ -149,7 +149,7 @@ TEST(GoldenRender, StageAddedFromOutsideTheRendererDrawsAfterPost)
     };
     overlay.resize = [&resizes, &resized_to](const Kataglyphis::RenderStageResize &resize) {
         ++resizes;
-        resized_to = resize.extent;
+        resized_to = resize.outputExtent;
     };
     ASSERT_EQ(harness.renderer->addRenderStage(std::move(overlay)), Kataglyphis::RenderStageRegistry::AddResult::Added);
 

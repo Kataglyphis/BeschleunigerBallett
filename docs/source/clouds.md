@@ -222,9 +222,10 @@ resolution against 25-26 ms at half plus 14-17 ms of upsample, 58 % less in all.
 ## Resource lifecycle
 
 - **`recreateFrameResources(commandPool, width, height)`** (called from
-  `VulkanRenderer` on swapchain resize, the `clouds` stage's `resize` hook) recreates
-  `cloudOutputTexture` and `cloudHalfTexture` at the new extent and rewrites both in all three
-  sets; the noise volume is content, not a frame resource, and stays untouched.
+  `VulkanRenderer` on a swapchain resize or a new render scale, the `clouds` stage's `resize`
+  hook) recreates `cloudOutputTexture` and `cloudHalfTexture` at the new scene extent and
+  rewrites both in all three sets; the noise volume is content, not a frame resource, and stays
+  untouched.
 - **`shaderHotReload(sharedLayout)`** destroys and recreates all three compute
   pipelines but deliberately does **not** call `dispatchNoiseGeneration`
   again: descriptor sets and both textures stay untouched, so a shader edit

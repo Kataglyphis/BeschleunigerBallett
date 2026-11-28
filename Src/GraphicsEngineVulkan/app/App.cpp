@@ -6,6 +6,7 @@ module;
 
 #include <format>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "spdlog/spdlog.h"
@@ -19,6 +20,7 @@ import kataglyphis.shared.frontend.frame_input;
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.render_scale;
 import kataglyphis.vulkan.render_settings;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
@@ -61,6 +63,8 @@ auto Kataglyphis::App::run(const AppOptions &options) -> int
       vulkan_renderer.swapChainFormat(),
       vulkan_renderer.swapChainImageCount());
     gui->setUserSelectionForRRT(vulkan_renderer.supportsHardwareRaytracing());
+    // The app steers the scale, as Rust's does; the renderer only reads it.
+    Kataglyphis::AutoRenderScale auto_render_scale;
 
     while (!window->get_should_close()) {
         // poll all events incoming from user
@@ -82,6 +86,13 @@ auto Kataglyphis::App::run(const AppOptions &options) -> int
 
         // Finally draw the frame with the updated state
         vulkan_renderer.drawFrame(settings, feedback);
+
+        // The next frame's updateStateDueToUserInput resizes the scene targets to a new scale.
+        if (const std::optional<float> scale = auto_render_scale.update(
+              settings.renderer, feedback, vulkan_renderer.isModelLoadPending(), settings.time_seconds);
+          scale.has_value()) {
+            settings.renderer.render_scale = *scale;
+        }
     }
 
     return Kataglyphis::appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());

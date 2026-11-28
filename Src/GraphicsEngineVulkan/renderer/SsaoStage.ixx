@@ -33,9 +33,12 @@ class SsaoStage
     SsaoStage &operator=(const SsaoStage &) = delete;
 
     // The pool records the one-off clear that leaves the occlusion white and sampleable before any frame runs SSAO.
-    void init(const std::shared_ptr<VulkanDevice> &in_device, VulkanSwapChain *swap_chain, vk::CommandPool commandPool);
-    // After a swapchain recreation: the targets follow its extent, the sets and uniforms its image count.
-    void recreateFrameResources(vk::CommandPool commandPool);
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
+      VulkanSwapChain *swap_chain,
+      vk::CommandPool commandPool,
+      vk::Extent2D sceneExtent);
+    // The targets at half the scene extent, the sets and uniforms at the swapchain's image count.
+    void recreateFrameResources(vk::CommandPool commandPool, vk::Extent2D sceneExtent);
     void bindDepth(SsaoDepthSource source, vk::ImageView depthView);
     void shaderHotReload();
 
@@ -73,7 +76,7 @@ class SsaoStage
     vk::Pipeline occlusionPipeline{};
     vk::Pipeline blurPipeline{};
 
-    void createFrameResources(vk::CommandPool commandPool);
+    void createFrameResources(vk::CommandPool commandPool, vk::Extent2D sceneExtent);
     void releaseFrameResources();
     void createPipelines();
     void destroyPipelines();

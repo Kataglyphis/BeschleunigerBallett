@@ -42,9 +42,12 @@ class BloomStage
     BloomStage &operator=(const BloomStage &) = delete;
 
     // The pool records the one-off clear that leaves both targets sampleable and black before any frame blooms.
-    void init(const std::shared_ptr<VulkanDevice> &in_device, VulkanSwapChain *swap_chain, vk::CommandPool commandPool);
-    // After a swapchain recreation: the targets follow its extent, the bright pass's sets and buffers its image count.
-    void recreateFrameResources(vk::CommandPool commandPool);
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
+      VulkanSwapChain *swap_chain,
+      vk::CommandPool commandPool,
+      vk::Extent2D sceneExtent);
+    // The targets at half the scene extent, the bright pass's sets and buffers at the swapchain's image count.
+    void recreateFrameResources(vk::CommandPool commandPool, vk::Extent2D sceneExtent);
     // The bright pass's inputs for one swapchain image: its HDR target, the clouds and the exposure buffer.
     void bindInputs(uint32_t imageIndex, vk::ImageView hdrView, vk::ImageView cloudView, vk::Buffer exposure);
     void shaderHotReload();
@@ -82,7 +85,7 @@ class BloomStage
     vk::Pipeline blurHorizontalPipeline{};
     vk::Pipeline blurVerticalPipeline{};
 
-    void createFrameResources(vk::CommandPool commandPool);
+    void createFrameResources(vk::CommandPool commandPool, vk::Extent2D sceneExtent);
     void releaseFrameResources();
     void createPipelines();
     void destroyPipelines();

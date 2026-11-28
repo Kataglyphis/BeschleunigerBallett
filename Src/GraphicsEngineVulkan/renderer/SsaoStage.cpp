@@ -73,7 +73,8 @@ Kataglyphis::VulkanRendererInternals::SsaoStage::SsaoStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::SsaoStage::init(const std::shared_ptr<VulkanDevice> &in_device,
   VulkanSwapChain *swap_chain,
-  vk::CommandPool commandPool)
+  vk::CommandPool commandPool,
+  vk::Extent2D sceneExtent)
 {
     device = in_device;
     vulkanSwapChain = swap_chain;
@@ -87,13 +88,14 @@ void Kataglyphis::VulkanRendererInternals::SsaoStage::init(const std::shared_ptr
       vk::BorderColor::eFloatOpaqueWhite);
     sampler = vkCheck(device->getLogicalDevice().createSampler(sampler_info), "Failed to create the SSAO sampler!");
 
-    createFrameResources(commandPool);
+    createFrameResources(commandPool, sceneExtent);
     createPipelines();
 }
 
-void Kataglyphis::VulkanRendererInternals::SsaoStage::createFrameResources(vk::CommandPool commandPool)
+void Kataglyphis::VulkanRendererInternals::SsaoStage::createFrameResources(vk::CommandPool commandPool,
+  vk::Extent2D sceneExtent)
 {
-    extent = postHalfExtent(vulkanSwapChain->getSwapChainExtent());
+    extent = postHalfExtent(sceneExtent);
     imageCount = vulkanSwapChain->getNumberSwapChainImages();
 
     const vk::ImageUsageFlags usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
@@ -169,10 +171,11 @@ void Kataglyphis::VulkanRendererInternals::SsaoStage::releaseFrameResources()
     blurred.reset();
 }
 
-void Kataglyphis::VulkanRendererInternals::SsaoStage::recreateFrameResources(vk::CommandPool commandPool)
+void Kataglyphis::VulkanRendererInternals::SsaoStage::recreateFrameResources(vk::CommandPool commandPool,
+  vk::Extent2D sceneExtent)
 {
     releaseFrameResources();
-    createFrameResources(commandPool);
+    createFrameResources(commandPool, sceneExtent);
 }
 
 void Kataglyphis::VulkanRendererInternals::SsaoStage::createPipelines()

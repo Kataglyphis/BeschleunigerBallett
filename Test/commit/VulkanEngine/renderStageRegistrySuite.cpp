@@ -119,14 +119,15 @@ TEST(RenderStageRegistry, ResizeAndReloadReachEveryStageThatHasTheHook)
     ASSERT_EQ(registry.add(std::move(record_only)), AddResult::Added);
     ASSERT_EQ(registry.add(loggingStage("early", 10, log)), AddResult::Added);
 
-    registry.resize(RenderStageResize{ .extent = vk::Extent2D{ 64, 32 }, .imageCount = 3 });
+    registry.resize(RenderStageResize{
+      .sceneExtent = vk::Extent2D{ 32, 16 }, .outputExtent = vk::Extent2D{ 64, 32 }, .imageCount = 3 });
     registry.shaderHotReload();
 
     const std::vector<std::string> expected = { "resize early", "resize late", "reload early", "reload late" };
     EXPECT_EQ(log, expected);
 }
 
-TEST(RenderStageRegistry, ResizeHandsTheNewExtentToTheStage)
+TEST(RenderStageRegistry, ResizeHandsBothNewExtentsToTheStage)
 {
     RenderStageRegistry registry;
     RenderStageResize seen{};
@@ -136,8 +137,10 @@ TEST(RenderStageRegistry, ResizeHandsTheNewExtentToTheStage)
     stage.resize = [&seen](const RenderStageResize &resize) { seen = resize; };
     ASSERT_EQ(registry.add(std::move(stage)), AddResult::Added);
 
-    registry.resize(RenderStageResize{ .extent = vk::Extent2D{ 640, 360 }, .imageCount = 4 });
-    EXPECT_EQ(seen.extent, (vk::Extent2D{ 640, 360 }));
+    registry.resize(RenderStageResize{
+      .sceneExtent = vk::Extent2D{ 320, 180 }, .outputExtent = vk::Extent2D{ 640, 360 }, .imageCount = 4 });
+    EXPECT_EQ(seen.sceneExtent, (vk::Extent2D{ 320, 180 }));
+    EXPECT_EQ(seen.outputExtent, (vk::Extent2D{ 640, 360 }));
     EXPECT_EQ(seen.imageCount, 4U);
 }
 

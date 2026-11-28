@@ -44,7 +44,7 @@ struct SceneUBO
     vec4 cloudAmbientBottom;
     // x: 1 when the skybox's baked maps light the scene (AmbientMaps), y: the prefiltered map's top mip.
     vec4 iblParams;
-    // x: SSAO strength (0 off), yz: 1 / the swapchain's extent, the occlusion's uv at a fragment.
+    // x: SSAO strength (0 off), yz: 1 / the scene extent, the occlusion's uv at a fragment.
     vec4 screenOcclusion;
 };
 }// namespace Kataglyphis::VulkanRendererInternals

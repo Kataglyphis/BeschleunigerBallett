@@ -61,6 +61,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
   std::span<const vk::DescriptorSet> descriptorSets,
   bool cloudsEnabled,
   float bloomStrength,
+  bool sceneScaled,
   Kataglyphis::Texture *fxaaInput,
   const BeforeGuiHook &beforeGui)
 {
@@ -91,6 +92,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
     PushConstantPost pc_post{};
     pc_post.clouds_enabled = cloudsEnabled ? 1u : 0u;
     pc_post.bloom_strength = bloomStrength;
+    pc_post.scene_scaled = sceneScaled ? 1u : 0u;
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
       0,
@@ -151,8 +153,9 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSamp
 {
     const bool aniso = device->supportsSamplerAnisotropy();
 
+    // Clamped: a render-scaled scene is filtered up, and a repeating edge tap would blend in the opposite border.
     vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
-      vk::SamplerAddressMode::eRepeat,
+      vk::SamplerAddressMode::eClampToEdge,
       0.0F,
       aniso,
       resolveMaxAnisotropy(aniso, device->maxSamplerAnisotropy()),

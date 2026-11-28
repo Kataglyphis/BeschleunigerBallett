@@ -70,6 +70,7 @@ class GUI
     void renderModelInspector();
     void renderSkyInspector();
     void renderRenderInspector();
+    void renderRenderScaleRows();
     void renderProfilerTab();
     void renderVisibilityTab();
     void renderViewportOverlay(float sceneX0, float sceneY0, float sceneX1, float sceneY1);

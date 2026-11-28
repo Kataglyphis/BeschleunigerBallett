@@ -66,13 +66,16 @@ struct SceneTargetGroup
 // What the extent-sized targets hold right now; instrumentation for the tests and the memory measurement.
 struct SceneTargetFootprint
 {
+    // The scene extent, the render scale's share of the output's.
     vk::Extent2D extent{};
+    vk::Extent2D outputExtent{};
     // The HDR target every mode draws into and post reads.
     SceneTargetGroup color;
     // The forward path's depth and SSAO prepass depth.
     SceneTargetGroup forward;
     // The G-buffer and its depth.
     SceneTargetGroup deferred;
+    // At the output's extent, as post's target is.
     SceneTargetGroup fxaa;
     // The path tracer's history and the traced depth, on a device with ray tracing.
     SceneTargetGroup traced;
@@ -185,8 +188,10 @@ class VulkanRenderer
     bool recreateSwapChain();
     void reprovisionPerImageResources();
 
-    // The extent every scene target is sized at and the scene passes draw at; the swapchain's, until a render scale.
+    // The extent every scene target is sized at and the scene passes draw at: the render scale's share of the output.
     [[nodiscard]] vk::Extent2D sceneExtent() const { return sceneTargetExtent; }
+    // The swapchain's, which post, FXAA, the editor and the captures but the HDR one draw at.
+    [[nodiscard]] vk::Extent2D outputExtent() const { return vulkanSwapChain.getSwapChainExtent(); }
     // Test and measurement instrumentation: one set of scene targets, and only the drawn raster path's.
     [[nodiscard]] SceneTargetFootprint sceneTargetFootprint();
 
@@ -283,9 +288,11 @@ class VulkanRenderer
     // The one rule post and the fxaa stage decide this frame's target by.
     [[nodiscard]] bool fxaaFiltersFrame(const RenderStageFrame &frame) const;
 
-    // The scene extent: set from the swapchain's in updateSceneExtent, read by every scene target's creation.
+    // The swapchain's extent at the settings' render scale, set in updateSceneExtent; every scene target takes it.
     vk::Extent2D sceneTargetExtent{};
     void updateSceneExtent();
+    // Resizes every scene stage when the render scale gives another extent; false when the device failed its idle wait.
+    [[nodiscard]] bool applyRenderScale();
     // The HDR target every mode draws into and post, bloom and the histogram read; one for all frames in flight.
     Texture sceneColor;
     void createSceneColor();
