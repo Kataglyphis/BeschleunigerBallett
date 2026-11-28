@@ -214,5 +214,45 @@
     "replace": "return *home / app;",
     "test": "bash scripts/linux/tests/test-install-paths.sh",
     "why": "Without XDG variables the cache goes to ~/.cache and the logs to ~/.local/state."
+  },
+  {
+    "id": "gpu-timing.restart-arms-load-frame",
+    "target": "Src/GraphicsEngineVulkan/renderer/GpuTimingExportTotals.hpp",
+    "find": "        slice_holds_load.assign(slice_holds_load.size(), false);\n        load_frame_pending = true;",
+    "replace": "        slice_holds_load.assign(slice_holds_load.size(), false);",
+    "test": "bash scripts/linux/tests/test-gpu-timing-export.sh",
+    "why": "New geometry's first frame compiles its pipelines on llvmpipe (Forward 1070 ms against 525-545); a restart that marks nothing keeps it in every budget dump."
+  },
+  {
+    "id": "gpu-timing.load-mark-taken-once",
+    "target": "Src/GraphicsEngineVulkan/renderer/GpuTimingExportTotals.hpp",
+    "find": "slice_holds_load[imageIndex] = std::exchange(load_frame_pending, false);",
+    "replace": "slice_holds_load[imageIndex] = load_frame_pending;",
+    "test": "bash scripts/linux/tests/test-gpu-timing-export.sh",
+    "why": "Only the first slice recorded after a restart holds the load frame; a mark that stays armed drops every later frame from the dump."
+  },
+  {
+    "id": "gpu-timing.load-slice-stays-out",
+    "target": "Src/GraphicsEngineVulkan/renderer/GpuTimingExportTotals.hpp",
+    "find": "        if (sliceHoldsLoad(imageIndex)) { return; }\n",
+    "replace": "",
+    "test": "bash scripts/linux/tests/test-gpu-timing-export.sh",
+    "why": "The dump must leave out the load frame's slice even when a mailbox chain reads another image back first."
+  },
+  {
+    "id": "gpu-timing.discard-rearms-load-frame",
+    "target": "Src/GraphicsEngineVulkan/renderer/GpuTimingExportTotals.hpp",
+    "find": "        if (slice_holds_load[imageIndex]) { load_frame_pending = true; }\n",
+    "replace": "",
+    "test": "bash scripts/linux/tests/test-gpu-timing-export.sh",
+    "why": "A recording the benchmark never submits compiles nothing, so the next recorded frame is still the load frame."
+  },
+  {
+    "id": "gpu-timing.restart-clears-totals",
+    "target": "Src/GraphicsEngineVulkan/renderer/GpuTimingExportTotals.hpp",
+    "find": "        sum_ms.fill(0.0);\n        samples.fill(0U);\n        frames = 0;\n",
+    "replace": "",
+    "test": "bash scripts/linux/tests/test-gpu-timing-export.sh",
+    "why": "About 240 sky-only frames drawn while Dinosaurs parses once outweighed its six frames in the dump; a restart must drop them."
   }
 ]

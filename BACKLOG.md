@@ -286,14 +286,6 @@ New in both:
 - [b] `Shared` **Coverage-preserving MASK mips** (M, plan X11; after the texture ingest).
 - [b] `Assets` **The full Rust settings schema as cxx shared structs** (L, plan B10; when the view file
   needs it).
-- [ ] `CI` **Budget llvmpipe's GPU passes from a build without ASan** (S). Phase 5 found the 0.5 s G-buffer
-  was the Debug build's ASan: its interceptors slow llvmpipe's mesh passes 7-9 times (Profile: Forward 76 ms,
-  GBuffer 66, ShadowCascades 180; the same binary with ASan preloaded 557, 539, 1600), and the validation
-  layer adds nothing. The `wsl-aarch64-llvmpipe` budget still comes from Debug dumps on a warm Mesa cache (a
-  cold cache fails its Forward bound). Take it from the Profile perf rig instead, or say in the entry that it
-  measures ASan. The export after `GpuTimingSubsystem::restart()` also holds the load frame (on llvmpipe the
-  frame that compiles the pass), and `RendersNonBlankFrame` leaves about three slices for the dump: skip the
-  first slice after a restart, or draw more frames before it (Phase 5 review).
 - [ ] `C++` **Why the shadow cascades dominate the llvmpipe frame** (S). In Profile on llvmpipe ShadowCascades
   takes about 180 ms against Forward's 76: the four cascade views redo the vertex work. Measure per cascade
   and the vertex share before a host budgets the pass; a geometry-shader or multiview pass, or culling per
@@ -405,7 +397,7 @@ No decision of the 2026-11-18 plan, its Phase 2 or the review's follow-up or Pha
   RX 9070 XT host the file is named for.
 - **[P3] Add the RX 9070 XT to `Test/perf/baselines/gpu-timing-budgets.json`.** Its only
   profile is the aarch64 WSL llvmpipe one; record five `RendersNonBlankFrame` dumps from the
-  `clangcl-profile` suite on the host and add an entry by the rule the existing one records.
+  `clangcl-profile` suite on the host and add an entry by the rule the existing one records, its `build` named.
 
 ## Recurring validation runs
 

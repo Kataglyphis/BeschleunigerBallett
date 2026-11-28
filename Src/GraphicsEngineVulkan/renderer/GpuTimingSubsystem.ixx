@@ -11,6 +11,7 @@ module;
 #include <vulkan/vulkan.hpp>
 
 #include "common/EnvironmentVariable.hpp"
+#include "renderer/GpuTimingExportTotals.hpp"
 #include "spdlog/spdlog.h"
 
 export module kataglyphis.vulkan.gpu_timing;
@@ -117,19 +118,24 @@ class GpuTimingSubsystem
         }
         gpu_timing_query_pool = pool_result.value;
         query_pool_device = device.getLogicalDevice();
-        gpu_timing_pass_mask.assign(imageCount, 0U);
-        gpu_timing_slice_recorded.assign(imageCount, false);
+        sizeSlices(imageCount);
     }
 
-    // New geometry: the averages and the export restart, and slices recorded before it are never read.
+    // One slice per swapchain image, none recorded yet; create() calls it once the pool exists.
+    void sizeSlices(uint32_t imageCount)
+    {
+        gpu_timing_pass_mask.assign(imageCount, 0U);
+        gpu_timing_slice_recorded.assign(imageCount, false);
+        gpu_timing_export.resizeSlices(imageCount);
+    }
+
+    // New geometry: averages and export restart, older slices are never read, and the export skips the load frame's.
     void restart(FrontendShared::GpuTimings &timings)
     {
         for (float &pass_ms : timings.pass_ms) { pass_ms = -1.0F; }
         for (auto &average : gpu_pass_averages) { average.reset(); }
         gpu_timing_slice_recorded.assign(gpu_timing_slice_recorded.size(), false);
-        gpu_timing_export_sum_ms.fill(0.0);
-        gpu_timing_export_samples.fill(0U);
-        gpu_timing_export_frames = 0;
+        gpu_timing_export.restart();
     }
 
     void destroy()
@@ -140,6 +146,7 @@ class GpuTimingSubsystem
         }
         gpu_timing_pass_mask.clear();
         gpu_timing_slice_recorded.clear();
+        gpu_timing_export.resizeSlices(0U);
     }
 
     // Reads back the previous results of imageIndex's slice (never waits) and
@@ -169,7 +176,8 @@ class GpuTimingSubsystem
 
         const uint32_t recorded_passes = gpu_timing_pass_mask[imageIndex];
         constexpr double NANOSECONDS_PER_MILLISECOND = 1.0e6;
-        bool frame_has_export_sample = false;
+        ExportTotals::SliceMs export_slice_ms{};
+        export_slice_ms.fill(-1.0);
 
         for (int pass = 0; pass < FrontendShared::GPU_TIMED_PASS_COUNT; pass++) {
             if ((recorded_passes & (1U << static_cast<uint32_t>(pass))) == 0U) {
@@ -206,16 +214,17 @@ class GpuTimingSubsystem
             // skipped via gpu_timing_slice_recorded, i.e. the first 3 frames of a
             // triple-buffered run measure nothing, and the availability bits catch
             // any result the GPU has not finished).
-            gpu_timing_export_sum_ms[static_cast<size_t>(pass)] += pass_ms_raw;
-            gpu_timing_export_samples[static_cast<size_t>(pass)]++;
-            frame_has_export_sample = true;
+            export_slice_ms[static_cast<size_t>(pass)] = pass_ms_raw;
         }
 
-        if (frame_has_export_sample) { gpu_timing_export_frames++; }
+        // The GUI keeps the load frame's slice, which rolls out of its window; a dump would hold it for good.
+        gpu_timing_export.addSlice(imageIndex, export_slice_ms);
     }
 
-    using PassSums = std::array<double, FrontendShared::GPU_TIMED_PASS_COUNT>;
-    using PassSamples = std::array<uint64_t, FrontendShared::GPU_TIMED_PASS_COUNT>;
+    using ExportTotals =
+      VulkanRendererInternals::GpuTimingExportTotals<static_cast<size_t>(FrontendShared::GPU_TIMED_PASS_COUNT)>;
+    using PassSums = ExportTotals::PassSums;
+    using PassSamples = ExportTotals::PassSamples;
 
     // The KATAGLYPHIS_GPU_TIMING_JSON document; "nested_in" names each nested pass's parent for frame sums.
     [[nodiscard]] static nlohmann::json
@@ -253,8 +262,10 @@ class GpuTimingSubsystem
         const std::optional<std::string> out_path = environmentVariable("KATAGLYPHIS_GPU_TIMING_JSON");
         if (!out_path.has_value() || out_path->empty()) { return; }
 
-        const nlohmann::json dump = timingExport(
-          gpu_timing_export_sum_ms, gpu_timing_export_samples, gpu_timing_export_frames, gpu_timings_supported);
+        const nlohmann::json dump = timingExport(gpu_timing_export.sums(),
+          gpu_timing_export.sampleCounts(),
+          gpu_timing_export.framesMeasured(),
+          gpu_timings_supported);
 
         // ofstream reports failure via the stream state, never throws by default -
         // which is the only option anyway with exceptions disabled project-wide.
@@ -271,9 +282,11 @@ class GpuTimingSubsystem
         }
         spdlog::info("GPU timing export: wrote {} ({} frames measured, timestamps supported: {}).",
           *out_path,
-          gpu_timing_export_frames,
+          gpu_timing_export.framesMeasured(),
           gpu_timings_supported);
     }
+
+    [[nodiscard]] const ExportTotals &exportTotals() const { return gpu_timing_export; }
 
     [[nodiscard]] vk::QueryPool queryPool() const { return gpu_timing_query_pool; }
     [[nodiscard]] uint32_t queriesPerImage() const { return QUERIES_PER_IMAGE; }
@@ -318,6 +331,7 @@ class GpuTimingSubsystem
         if (imageIndex >= gpu_timing_pass_mask.size()) { return; }
         gpu_timing_pass_mask[imageIndex] = mask;
         gpu_timing_slice_recorded[imageIndex] = true;
+        gpu_timing_export.sliceRecorded(imageIndex);
     }
 
     // For a slice whose recording was never submitted: its queries hold nothing to read back.
@@ -326,6 +340,7 @@ class GpuTimingSubsystem
         if (imageIndex >= gpu_timing_pass_mask.size()) { return; }
         gpu_timing_pass_mask[imageIndex] = 0U;
         gpu_timing_slice_recorded[imageIndex] = false;
+        gpu_timing_export.sliceDiscarded(imageIndex);
     }
 
   private:
@@ -353,8 +368,6 @@ class GpuTimingSubsystem
     // wants a short smoothed window, the export wants the true mean over every
     // measured frame. Deliberately not reset on swapchain recreation - the
     // queries restart, the run's statistics do not - only by restart().
-    PassSums gpu_timing_export_sum_ms{};
-    PassSamples gpu_timing_export_samples{};
-    uint64_t gpu_timing_export_frames{ 0 };
+    ExportTotals gpu_timing_export;
 };
 }// namespace Kataglyphis

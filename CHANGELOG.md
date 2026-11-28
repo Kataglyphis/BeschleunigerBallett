@@ -86,6 +86,21 @@ the GitHub releases themselves.
 
 ### Fixed
 
+- The `KATAGLYPHIS_GPU_TIMING_JSON` export leaves out the load frame, the first frame recorded after new geometry
+  arrives: on llvmpipe it compiles the scene's pipelines (Forward 1070 ms against 525-545), and it was one of the
+  three frames a `RendersNonBlankFrame` dump holds. `renderer/GpuTimingExportTotals.hpp` marks the slice that frame
+  records, not the first one read back, which a mailbox chain may hand back from another image; a recording the
+  benchmark never submits passes the mark on. The editor's average keeps the frame until it leaves its 32-frame
+  window. `gpu-timing-budgets.json`'s `wsl-aarch64-llvmpipe` entry names its `build`, Debug with ASan and UBSan,
+  whose interceptors slow llvmpipe's mesh passes 7-9 times, and `Test-GpuTimingBudget.ps1` prints it, so a Profile
+  dump checked against that budget shows why it passes. On aarch64 llvmpipe in the CI image the 30 frames of
+  `GoldenRender.GpuTimingJsonDumpIsWrittenAndSane` dump 26 (31 recorded, four swapchain images, the load frame
+  out), and a cold Mesa cache dumps Forward 796 ms against 792 and 1031 warm, though its run takes 53 s against
+  32-34. `GpuTimingExportUnit.TheDumpLeavesOutTheSliceTheLoadFrameRecorded`,
+  `GpuTimingExportUnit.ARecordingNeverSubmittedLeavesTheLoadFrameToTheNextOne` and
+  `GpuTimingUnit.RestartMarksTheSliceTheNextFrameRecords` run fake timing sequences, `test-gpu-timing-export.sh`
+  runs three against the header alone as the test of five `gpu-timing.*` mutation recipes, each of which bites, and
+  two Pester cases hold the `build` field.
 - The profiling job's gcc build takes two units at a time too (`--mb-per-job 6500`): on arm64 run 46036623338
   (1721d469) lost its runner at 619 of 625 steps with `VulkanRenderer.ixx` compiling, at the default three jobs.
 - The riscv64 lane's `raster` GPU shard is four, `raster-1` to `raster-4`, each every fourth of its tests by ctest

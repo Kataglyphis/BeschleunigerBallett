@@ -399,9 +399,12 @@ The single home for these instrument cautions; `docs/source/cpp-renderer-improve
   about 240 sky-only frames a Debug run draws while Dinosaurs parses outweighed its six frames of
   the scene, so Forward read 8-15 ms on llvmpipe against about 540 ms per frame of the scene. On
   llvmpipe a pass's first frame also compiles its pipeline (the deferred G-buffer 1.2 s, its
-  lighting 1.4 s, once), so a short average right after a mode switch overstates it. And on
-  llvmpipe a Debug (ASan) timing is mostly ASan: its interceptors slow llvmpipe's vertex path 7-9
-  times (Forward 76 ms in `linux-profile-clang`, 557 ms with the ASan runtime preloaded into it).
+  lighting 1.4 s, once), so a short average right after a mode switch overstates it. The export
+  therefore leaves out the load frame, the first frame recorded after new geometry arrives, which
+  compiles the scene's pipelines; the editor's average keeps it until it leaves the 32-frame window.
+  And on llvmpipe a Debug (ASan) timing is mostly ASan: its interceptors slow llvmpipe's vertex
+  path 7-9 times (Forward 76 ms in `linux-profile-clang`, 557 ms with the ASan runtime preloaded
+  into it). So each entry of `Test/perf/baselines/gpu-timing-budgets.json` names its `build`.
 - **For a radiance bound, read the HDR target.** `EngineHarness::capture_hdr_frame` arms
   `VulkanRenderer::requestHdrCapture`, which copies the RGBA16F target post just read, as linear
   floats. ACES squeezes everything above about 1 into the last few 8-bit levels, so a ratio or an

@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Runs the real script against temp dumps and budgets; one case reads the checked-in budget file.
+# Runs the real script against temp dumps and budgets; two cases read the checked-in budget file.
 BeforeAll {
   Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function New-TestDir, Remove-TestDir -ErrorAction Stop
 }
@@ -27,11 +27,13 @@ Describe 'Test-GpuTimingBudget' {
       param([string]$TimingPath, [string]$BudgetPath, [string]$HostProfile = 'test-host')
       $scriptArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
         '-TimingPath', $TimingPath, '-BudgetPath', $BudgetPath, '-HostProfile', $HostProfile)
-      & pwsh @scriptArgs | Out-Null
+      $script:lastBudgetOutput = & pwsh @scriptArgs | Out-String
       return $LASTEXITCODE
     }
     # Main 8 of 10 ms (0.8), Post 2 (0.2).
     $script:passes = @{ Main = 8.0; Post = 2.0 }
+    $script:checkedInBudget = Get-Content -LiteralPath (Join-Path $script:repoRoot 'Test\perf\baselines\gpu-timing-budgets.json') -Raw |
+      ConvertFrom-Json -AsHashtable
   }
 
   AfterAll {
@@ -90,13 +92,27 @@ Describe 'Test-GpuTimingBudget' {
     Invoke-Budget -TimingPath $dump -BudgetPath $budget | Should -Be 2
   }
 
+  It 'prints the build the host profile was measured on' {
+    $dump = New-Dump -Name 'build-dump.json' -Passes $script:passes
+    $budget = New-JsonFile -Name 'build-budget.json' -Content @{ hosts = @{ 'test-host' = @{
+          build = 'Debug with ASan'; max_ms = @{ Main = 9.0 } } } }
+    Invoke-Budget -TimingPath $dump -BudgetPath $budget | Should -Be 0
+    $script:lastBudgetOutput | Should -Match 'Budgeted build: Debug with ASan'
+  }
+
+  It 'names the build of every checked-in host profile, since ASan alone slows llvmpipe 7-9 times' {
+    $hosts = $script:checkedInBudget.hosts
+    $hosts.Count | Should -BeGreaterThan 0
+    $unnamed = @($hosts.Keys | Where-Object { -not $hosts[$_]['build'] })
+    ($unnamed -join ', ') | Should -Be ''
+  }
+
   It 'budgets only passes the renderer exports, in every checked-in host profile' {
     $source = Get-Content -LiteralPath (Join-Path $script:repoRoot 'Src\GraphicsEngineVulkan\renderer\GUIRendererSharedVars.ixx') -Raw
     $table = [regex]::Match($source, 'GPU_TIMED_PASS_EXPORT_NAMES\s*=\s*std::to_array<[^>]*>\s*\(\{([^}]*)\}\)')
     $table.Success | Should -Be $true
     $exported = @([regex]::Matches($table.Groups[1].Value, '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value })
-    $budget = Get-Content -LiteralPath (Join-Path $script:repoRoot 'Test\perf\baselines\gpu-timing-budgets.json') -Raw |
-      ConvertFrom-Json -AsHashtable
+    $budget = $script:checkedInBudget
     $budget.hosts.Count | Should -BeGreaterThan 0
     $unknown = @(foreach ($hostBudget in $budget.hosts.Values) {
         foreach ($section in @('max_ms', 'max_share')) {

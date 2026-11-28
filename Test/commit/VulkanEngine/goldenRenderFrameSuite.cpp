@@ -481,8 +481,8 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
     EXPECT_GT(dump["frames_measured"].get<std::uint64_t>(), 0U)
       << "Timestamps are supported but no frame produced a valid sample: " << dump.dump(2);
     // About 240 sky-only frames before Dinosaurs arrived once outweighed its six, so Forward read 60 times too cheap.
-    EXPECT_LE(dump["frames_measured"].get<std::uint64_t>(), static_cast<std::uint64_t>(LOADED_FRAMES) + 1U)
-      << "the dump counted frames drawn before the model arrived (the load frame is the one extra): " << dump.dump(2);
+    EXPECT_LE(dump["frames_measured"].get<std::uint64_t>(), static_cast<std::uint64_t>(LOADED_FRAMES))
+      << "the dump counted frames drawn before the model arrived, or the load frame: " << dump.dump(2);
 
     // These are bracketed every frame, so absence means broken accumulation, not a disabled feature.
     for (const char *always_recorded : { "Main", "Forward", "Post" }) {

@@ -90,6 +90,8 @@ if ($frameMs -gt 0.0) {
 }
 
 Write-Host ("Host profile '{0}', {1} frames measured, {2:N4} ms over the top-level timed passes" -f $HostProfile, $dump.frames_measured, $frameMs)
+# A Debug+ASan budget passes a Profile dump without proving anything, so the reader must see which build it fits.
+Write-Host "Budgeted build: $($hostBudget['build'])"
 $absolute = Test-PassBudget -Measured $passes -Limits $hostBudget['max_ms'] -Unit 'ms'
 $relative = Test-PassBudget -Measured $shares -Limits $hostBudget['max_share'] -Unit 'share'
 

@@ -1,10 +1,14 @@
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include <gtest/gtest.h>
+
+#include "renderer/GpuTimingExportTotals.hpp"
 
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
@@ -12,6 +16,47 @@ import kataglyphis.vulkan.gui_renderer_shared_vars;
 namespace {
 using Kataglyphis::GpuTimingSubsystem;
 namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
+using OnePassTotals = Kataglyphis::VulkanRendererInternals::GpuTimingExportTotals<1>;
+
+// Each frame reads its image's last slice back, as readTimings does, then records its own, as endFrame does.
+class FakeTimingSequence
+{
+  public:
+    explicit FakeTimingSequence(size_t images) : slice_ms_(images, -1.0) { totals_.resizeSlices(images); }
+
+    void restart()
+    {
+        totals_.restart();
+        slice_ms_.assign(slice_ms_.size(), -1.0);
+    }
+
+    void frame(size_t image, double ms)
+    {
+        if (slice_ms_[image] >= 0.0) { totals_.addSlice(image, { slice_ms_[image] }); }
+        slice_ms_[image] = ms;
+        totals_.sliceRecorded(image);
+    }
+
+    // recordCommandsUnsubmittedForBenchmark: recorded, never submitted, so nothing reads it back.
+    void recordUnsubmitted(size_t image)
+    {
+        totals_.sliceRecorded(image);
+        totals_.sliceDiscarded(image);
+        slice_ms_[image] = -1.0;
+    }
+
+    [[nodiscard]] double meanMs() const
+    {
+        const uint64_t samples = totals_.sampleCounts()[0];
+        return samples == 0U ? -1.0 : totals_.sums()[0] / static_cast<double>(samples);
+    }
+
+    [[nodiscard]] uint64_t framesMeasured() const { return totals_.framesMeasured(); }
+
+  private:
+    OnePassTotals totals_;
+    std::vector<double> slice_ms_;
+};
 }// namespace
 
 TEST(GpuTimingUnit, AverageConvergesToMean)
@@ -55,6 +100,30 @@ TEST(GpuTimingUnit, RestartClearsEveryPublishedReading)
     GpuTimingSubsystem subsystem;
     subsystem.restart(timings);
     for (const float pass_ms : timings.pass_ms) { EXPECT_EQ(pass_ms, -1.0F); }
+}
+
+// A restart that marked no slice, or the wrong one, would leave the load frame's compile in every budget dump.
+TEST(GpuTimingUnit, RestartMarksTheSliceTheNextFrameRecords)
+{
+    FrontendShared::GpuTimings timings;
+    GpuTimingSubsystem subsystem;
+    subsystem.sizeSlices(3U);
+    subsystem.setPassRecordedMask(0U, 1U);
+    EXPECT_FALSE(subsystem.exportTotals().sliceHoldsLoad(0U)) << "no geometry arrived, so no frame is its load frame";
+
+    subsystem.restart(timings);
+    subsystem.setPassRecordedMask(2U, 1U);
+    subsystem.setPassRecordedMask(0U, 1U);
+    EXPECT_TRUE(subsystem.exportTotals().sliceHoldsLoad(2U)) << "the first slice recorded after restart() is the load";
+    EXPECT_FALSE(subsystem.exportTotals().sliceHoldsLoad(0U));
+
+    // The benchmark's recording never reaches the GPU, so the load frame is still to come.
+    subsystem.restart(timings);
+    subsystem.setPassRecordedMask(2U, 1U);
+    subsystem.clearPassRecordedMask(2U);
+    subsystem.setPassRecordedMask(1U, 1U);
+    EXPECT_FALSE(subsystem.exportTotals().sliceHoldsLoad(2U));
+    EXPECT_TRUE(subsystem.exportTotals().sliceHoldsLoad(1U));
 }
 
 // A zero-filled or mismatched pass table compiles fine but yields a null name or a silent 0.000 ms.
@@ -132,6 +201,34 @@ TEST(GpuTimingExportUnit, TheExportNamesEachMeasuredNestedPassesParent)
     EXPECT_FALSE(dump["nested_in"].contains("Post")) << "a top-level pass names no parent";
     EXPECT_FALSE(dump["nested_in"].contains("GBuffer")) << "an unmeasured pass stays out of the export";
     EXPECT_FALSE(dump["passes"].contains("GBuffer")) << "an unmeasured pass stays out of the export";
+}
+
+// On llvmpipe the load frame compiles the pass inside it (Forward 1070 ms, then 525-545): a dump kept it for good.
+TEST(GpuTimingExportUnit, TheDumpLeavesOutTheSliceTheLoadFrameRecorded)
+{
+    FakeTimingSequence run(3U);
+    for (const size_t image : { 0U, 1U, 2U, 0U }) { run.frame(image, 9.0); }
+    run.restart();
+
+    // A mailbox chain may hand image 1 back first; image 0 holds the load frame and comes back third.
+    constexpr std::array<size_t, 8> ORDER{ 0U, 1U, 2U, 1U, 2U, 0U, 1U, 2U };
+    for (size_t frame = 0; frame < ORDER.size(); ++frame) { run.frame(ORDER[frame], frame == 0U ? 1000.0 : 500.0); }
+
+    // Five slices came back: the sky-only frames went with the restart and the load frame stays out.
+    EXPECT_EQ(run.framesMeasured(), 4U);
+    EXPECT_DOUBLE_EQ(run.meanMs(), 500.0);
+}
+
+TEST(GpuTimingExportUnit, ARecordingNeverSubmittedLeavesTheLoadFrameToTheNextOne)
+{
+    FakeTimingSequence run(2U);
+    run.restart();
+    run.recordUnsubmitted(0U);
+    run.frame(1U, 1000.0);
+    for (const size_t image : { 0U, 1U, 0U }) { run.frame(image, 500.0); }
+
+    EXPECT_EQ(run.framesMeasured(), 1U) << "the load frame came after the unsubmitted recording";
+    EXPECT_DOUBLE_EQ(run.meanMs(), 500.0);
 }
 
 TEST(GpuTimingExportUnit, AnUnmeasuredRunStillWritesEmptyTables)
