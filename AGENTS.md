@@ -891,7 +891,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 130 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 132 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`

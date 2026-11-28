@@ -176,10 +176,10 @@ with `-Werror` too; its fuzz targets skip themselves, as they need ASan.
 
 ## Known state (2026-10-06)
 
-<!-- format-drift-denominator: 307 -->
+<!-- format-drift-denominator: 313 -->
 
-**0 of 307** own sources under `Src/` and `Test/` differ from `.clang-format`
-(0 of 308 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
+**0 of 313** own sources under `Src/` and `Test/` differ from `.clang-format`
+(0 of 314 with `scripts/riscv64/fp16_helpers.c`; clang-format 23.1.5,
 2026-11-27), since the sweep in commit
 `fb246fbcdae20e0d513c3133455c180f2faecd40`. It ran clang-format **23.1.1** (LLVM
 commit `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, `/usr/local/llvm-target/bin`
