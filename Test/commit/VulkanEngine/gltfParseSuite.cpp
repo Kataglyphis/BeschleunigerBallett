@@ -63,9 +63,10 @@ std::size_t chainBytes(const Kataglyphis::ParsedTexture &texture)
     return bytes;
 }
 
-// The first texel of an RGBA8 chain's level `level`, past the levels above it.
+// The first texel of an RGBA8 chain's level `level`, past the levels above it; none past its levels.
 std::vector<unsigned char> firstTexelOfLevel(const Kataglyphis::ParsedTexture &texture, uint32_t level)
 {
+    if (level >= texture.levelCount || level >= 32U) { return {}; }
     std::size_t offset = 0;
     for (uint32_t above = 0; above < level; ++above) {
         offset +=
@@ -436,16 +437,44 @@ TEST(GltfParseUnit, AOneLevelBcKtx2IsCompletedWhereDecodedAndKeptWhereSampled)
     ASSERT_EQ(decoded.getTextures().size(), 1U);
     const Kataglyphis::ParsedTexture &rgba8 = decoded.getTextures()[0];
     EXPECT_EQ(rgba8.format, Kataglyphis::ChainFormat::Rgba8);
-    EXPECT_EQ(rgba8.levelCount, fullChainLevels(rgba8.width, rgba8.height)) << "8x8 decoded, the rest halved";
+    ASSERT_EQ(rgba8.levelCount, fullChainLevels(rgba8.width, rgba8.height)) << "8x8 decoded, the rest halved";
     EXPECT_EQ(rgba8.data.size(), chainBytes(rgba8));
     EXPECT_EQ(firstTexelOfLevel(rgba8, rgba8.levelCount - 1U), firstTexelOfLevel(rgba8, 0)) << "a solid image";
 
     Kataglyphis::GltfLoader sampled;
     ASSERT_TRUE(sampled.parseCpu(
       path, Kataglyphis::GltfLoadOptions{ .blocks = { .bc = true, .etc2 = false, .astc = false, .maxSide = 16384 } }));
-    const Kataglyphis::ParsedTexture &blocks = sampled.getTextures().at(0);
+    ASSERT_EQ(sampled.getTextures().size(), 1U);
+    const Kataglyphis::ParsedTexture &blocks = sampled.getTextures()[0];
     EXPECT_EQ(blocks.format, Kataglyphis::ChainFormat::Bc1);
     EXPECT_EQ(blocks.levelCount, 1U) << "blocks keep the file's one level";
+}
+
+// BC5 has no sRGB variant, so a colour slot's BC5 reads linear on every device: decoded and halved so, or sampled.
+TEST(GltfParseUnit, ABc5Ktx2InAColourSlotReadsLinearWhereDecodedAndWhereSampled)
+{
+    const std::string path = oxidantGltfFixture("cube_ktx2_bc5_base_colour.gltf");
+    Kataglyphis::GltfLoader decoded;
+    ASSERT_TRUE(decoded.parseCpu(path));
+    ASSERT_EQ(decoded.getTextures().size(), 1U);
+    ASSERT_EQ(decoded.getTextureSrgbFlags().size(), 1U);
+    EXPECT_EQ(decoded.getTextureSrgbFlags()[0], 0) << "uploaded UNORM, as its blocks would be";
+    const Kataglyphis::ParsedTexture &rgba8 = decoded.getTextures()[0];
+    EXPECT_EQ(rgba8.format, Kataglyphis::ChainFormat::Rgba8);
+    ASSERT_EQ(rgba8.levelCount, 4U) << "the file's 8x8 and 4x4, then 2x2 and 1x1 halved";
+    EXPECT_EQ(rgba8.data.size(), chainBytes(rgba8));
+    EXPECT_EQ(firstTexelOfLevel(rgba8, 1), (std::vector<unsigned char>{ 255, 192, 0, 255 })) << "the file's level";
+    EXPECT_EQ(firstTexelOfLevel(rgba8, 2), (std::vector<unsigned char>{ 128, 192, 0, 255 }))
+      << "the red checker halved linearly; sRGB halving gives 188";
+
+    Kataglyphis::GltfLoader sampled;
+    ASSERT_TRUE(sampled.parseCpu(
+      path, Kataglyphis::GltfLoadOptions{ .blocks = { .bc = true, .etc2 = false, .astc = false, .maxSide = 16384 } }));
+    ASSERT_EQ(sampled.getTextures().size(), 1U);
+    ASSERT_EQ(sampled.getTextureSrgbFlags().size(), 1U);
+    EXPECT_EQ(sampled.getTextureSrgbFlags()[0], 0);
+    EXPECT_EQ(sampled.getTextures()[0].format, Kataglyphis::ChainFormat::Bc5);
+    EXPECT_EQ(sampled.getTextures()[0].levelCount, 2U) << "blocks keep the file's levels";
 }
 
 // The corrupt image gets no slot, and the valid image's material is renumbered onto slot 0 instead of slot 1.

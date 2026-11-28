@@ -158,15 +158,19 @@ the GitHub releases themselves.
 
 ### Fixed
 
-- Both renderers build a texture's mip chain the same way (OxidANT pin `2d97f01`). A Basis KTX2 whose base is
+- Both renderers build a texture's mip chain the same way (OxidANT pin `8d3c2dc`). A Basis KTX2 whose base is
   not whole 4x4 blocks keeps the file's levels in the Rust renderer too, where it box-filtered level 0; a decoded
   BC chain shorter than full is completed down to 1x1 there too, as the C++ engine's loader completes it; a block
-  chain keeps the file's levels in both. The Rust renderer's chain is now `levels::ktx2_chain`'s for every KTX2
-  fixture under six device support sets, which a unit test compares. An animated WebP, which `EXT_texture_webp`
-  asks not to be, decodes to its first frame in both and logs a warning. The Rust renderer's CPU chain budget no
-  longer counts a level the chain shares with the scene's image. `GltfParseUnit` holds the C++ side:
-  `APartialBlockBasisArrivesAsTheFilesLevelsOnEveryDevice`, `AOneLevelBcKtx2IsCompletedWhereDecodedAndKeptWhereSampled`,
-  and the round trip's facts for the animated WebP's first frame.
+  chain keeps the file's levels in both. A BC5 in a colour slot now reads linear in the C++ engine when it is
+  decoded too, as its blocks read on a device with BC and as the Rust renderer reads it: BC5 has no sRGB variant,
+  and the engine halved and uploaded it as sRGB, so it looked different on a device without BC. The Rust
+  renderer's chain and colour space are now `levels::ktx2_chain`'s for every KTX2 fixture under six device support
+  sets, which a unit test compares. An animated WebP, which `EXT_texture_webp` asks not to be, decodes to its first
+  frame in both and logs a warning. The Rust renderer's CPU chain budget no longer counts a level the chain shares
+  with the scene's image. The C++ side: `GltfParseUnit.APartialBlockBasisArrivesAsTheFilesLevelsOnEveryDevice`,
+  `GltfParseUnit.AOneLevelBcKtx2IsCompletedWhereDecodedAndKeptWhereSampled`,
+  `GltfParseUnit.ABc5Ktx2InAColourSlotReadsLinearWhereDecodedAndWhereSampled`, and the facts
+  `OxidantFixtures/GltfFixtureRoundTrip` checks for the animated WebP's first frame.
 - A device loss first seen by a swapchain recreation's idle wait (a resize, or a present out of date, while the GPU
   hangs) ends the run as a failure and rebuilds nothing. The wait's result was dropped, and the recreation went on
   into `vkCreateSwapchainKHR`, whose failure aborts.
