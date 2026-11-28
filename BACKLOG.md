@@ -128,6 +128,15 @@ C++ catches up:
   `current_path().string()` abort the engine when a file under `Resources/Models`, or the working directory, has a
   name the ANSI code page cannot hold. Route them through `Shared::narrowPath` and skip with a warning, as the drop
   and the command line do since C9.
+- [ ] `C++` **Choose the adapter in the editor, a CPU device included** (M, owner request). Rust's Renderer tab
+  lists every adapter with its class, marks the one in use, and Use restarts the viewer on another (`adapter.rs`,
+  with `--adapter` and `KATAGLYPHIS_ADAPTER` matching a name substring). C++ only shows the device it picked (status
+  bar, About), and `--gpu auto|dedicated|integrated` cannot pick a CPU device. List every physical device in the
+  Renderer tab with its type (discrete, integrated, CPU such as llvmpipe or lavapipe) and, for one the renderer
+  cannot use, why (no `dynamicRendering`, no `synchronization2`, ...). Take `--adapter` and `KATAGLYPHIS_ADAPTER`
+  with Rust's matching, and restart on a pick as Rust does, the argument replaced; switching the device in-process
+  can come later. Tests: the matching against Rust's cases, the list on llvmpipe (one CPU device, in use), the
+  restart's arguments. The web demo keeps its hint, since a browser picks the adapter itself.
 - [b] `C++` **See the device-loss breadcrumbs on a marker GPU** (S, follows C10; **waits for a host run**). No CI
   device lists `VK_AMD_buffer_marker`, `VK_NV_device_diagnostic_checkpoints` or `VK_EXT_device_fault`, so the
   marker writes, their readback, the bottom-marker analysis and the fault query never ran. On the RX 9070 XT the
@@ -241,9 +250,8 @@ New in both:
   (control bytes, 1-bit groups, u16 delta and u32 xor channels) and the COLOR filter, beside N4's EXT decoder in
   `kataglyphis_assets::meshopt_codec`, its reference streams from meshoptimizer's own encoder as in
   `meshopt_codec_reference.json`.
-- [ ] `C++` **Editor parity, part 2: adapter by name, orbit and wheel zoom, one key table** (M, plan C9).
-  `--adapter` or `KATAGLYPHIS_ADAPTER` by name substring with the list in the Renderer tab; orbit and
-  zoom with Rust's constants; one table drives the handlers and the key panel.
+- [ ] `C++` **Editor parity, part 2: orbit and wheel zoom, one key table** (M, plan C9). Orbit and zoom with
+  Rust's constants; one table drives the handlers and the key panel. The adapter choice is its own P2 item.
 - [ ] `CI` **A parity ledger of the GPU tests** (M, plan X18). `Test/parity-ledger.json` maps each of the
   95 C++ GPU tests to its Rust twin or a reason; BuildIntegrity fails on an unmapped test or a stale row.
 - [ ] `Shared` **Rotate the photo sky with the sun's azimuth** (M, plan X19), on by default in both renderers
