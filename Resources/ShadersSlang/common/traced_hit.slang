@@ -77,7 +77,7 @@ TracedSurface traced_surface(uint objIndex, uint primitiveID, float2 bary, float
     {
         int textureId = resolve_texture_slot(obj, material);
         // Explicit LOD: compute and closesthit have no derivatives, so an implicit-LOD .Sample() fails SPIR-V validation.
-        albedo = base_color(material, textures[NonUniformResourceIndex(textureId)].SampleLevel(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(texCoords, material), 0.0).xyz);
+        albedo = base_color(material, textures[material_texture_index(textureId)].SampleLevel(textureSamplers[material_texture_index(textureId)], base_color_uv(texCoords, material), 0.0).xyz);
     }
     else
     {

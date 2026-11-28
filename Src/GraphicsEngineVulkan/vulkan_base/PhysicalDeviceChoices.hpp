@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -141,6 +142,51 @@ constexpr const char *
     if (dynamicRendering != VK_TRUE) { return "the dynamicRendering feature"; }
     if (synchronization2 != VK_TRUE) { return "the synchronization2 feature"; }
     return nullptr;
+}
+
+// How material shaders index textures[]; None when the device lacks the dynamic indexing both variants need.
+enum class MaterialTextureIndexing : std::uint8_t { NonUniform, Uniform, None };
+
+// forceUniform lets a device with both features draw the twins, so llvmpipe's goldens can create and compare them.
+constexpr auto materialTextureIndexingFor(const vk::PhysicalDeviceFeatures &core,
+  const vk::PhysicalDeviceVulkan12Features &features12,
+  bool forceUniform = false) -> MaterialTextureIndexing
+{
+    if (core.shaderSampledImageArrayDynamicIndexing != VK_TRUE) { return MaterialTextureIndexing::None; }
+    if (forceUniform || features12.shaderSampledImageArrayNonUniformIndexing != VK_TRUE) {
+        return MaterialTextureIndexing::Uniform;
+    }
+    return MaterialTextureIndexing::NonUniform;
+}
+
+// The one log line device selection writes about the choice.
+constexpr auto materialTextureIndexingLogLine(MaterialTextureIndexing indexing) -> const char *
+{
+    switch (indexing) {
+    case MaterialTextureIndexing::NonUniform:
+        return "Material shaders: non-uniform texture indexing";
+    case MaterialTextureIndexing::Uniform:
+        return "Material shaders: the uniform-index variant, without shaderSampledImageArrayNonUniformIndexing (a "
+               "slot varying within one draw may sample the wrong texture)";
+    case MaterialTextureIndexing::None:
+    default:
+        return "Material shaders: no valid variant, as the device lacks shaderSampledImageArrayDynamicIndexing, "
+               "which every textures[] index needs; the uniform-index variant loads outside the device's features";
+    }
+}
+
+// "<stem>.<entry>.spv" becomes "<stem>_uniform_index.<entry>.spv"; None takes it too, as it needs fewer features.
+inline auto materialShaderPath(std::string_view spvPath, MaterialTextureIndexing indexing) -> std::string
+{
+    constexpr std::string_view kExtension = ".spv";
+    std::string path(spvPath);
+    if (indexing == MaterialTextureIndexing::NonUniform || !path.ends_with(kExtension)) { return path; }
+    const std::size_t entryEnd = path.size() - kExtension.size();
+    const std::size_t entryDot = entryEnd == 0 ? std::string::npos : path.rfind('.', entryEnd - 1);
+    // npos + 1 wraps to 0: a bare file name starts the string.
+    const std::size_t nameStart = path.find_last_of("/\\") + 1;
+    if (entryDot == std::string::npos || entryDot <= nameStart) { return path; }
+    return path.insert(entryDot, "_uniform_index");
 }
 
 // Clamped per VUID-VkSamplerCreateInfo-anisotropyEnable-01071; a fixed 16x keeps texture quality equal across GPUs.

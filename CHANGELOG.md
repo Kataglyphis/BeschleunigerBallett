@@ -110,6 +110,23 @@ the GitHub releases themselves.
   `ScreenshotRegionUnit` and `FlySpeedUnit`, `StudioWidgetsUnit`'s log slider, and
   `BuildIntegrity.TheFlySpeedTakesOxidantsDefaultAndRange`, `TheEditorsShortcutKeysAreTheRustEditors`,
   `GettingStartedListsTheEditorsKeys` and `EveryFlagIsInAFileHelpLists`.
+- Material shaders for a device without `shaderSampledImageArrayNonUniformIndexing` (plan C15). Every material module
+  declared `SampledImageArrayNonUniformIndexing`, which is invalid usage on such a device. Every texture subscript now
+  goes through `material_texture_index`, which reads the link-time constant `kUniformTextureIndex`. The new
+  `rasterizer_uniform_index.slang`, `deferred_uniform_index.slang` and `shadow_map_uniform_index.slang` include their
+  base under `KATAGLYPHIS_UNIFORM_TEXTURE_INDEX`, and the manifest compiles them beside it into SPIR-V without
+  `NonUniformResourceIndex`. `VulkanDevice` picks the set from both sampled-image indexing features once and logs it;
+  without `shaderSampledImageArrayDynamicIndexing` neither set is valid, and it logs a warning naming that feature.
+  `KATAGLYPHIS_FORCE_UNIFORM_TEXTURE_INDEX` picks the twins on a device that has both. The forward, transparent,
+  prepass, G-buffer and both shadow pipelines load `materialShaderPath`'s choice. The default modules are
+  byte-identical to before. In a twin, a slot that varies within one draw (an OBJ shape with several materials) may
+  sample the wrong texture. The Raspberry Pi 5 still cannot load the twins: `vulkaninfo` on V3D 7.1.7 with Mesa 26.2.7
+  reports `shaderInt64`, `shaderSampledImageArrayDynamicIndexing`, `descriptorIndexing`, `runtimeDescriptorArray` and
+  `descriptorBindingPartiallyBound` false, and 16 sampled images and 24 samplers per stage against 128 slots; a
+  `BACKLOG.md` item holds the rest. `PhysicalDeviceChoicesUnit.*`,
+  `BuildIntegrity.UniformIndexTwinsWrapTheirBaseAndEveryMaterialPipelinePicksOne`,
+  `BuildIntegrity.UniformIndexTwinsDeclareNoNonUniformIndexing` and
+  `GoldenRender.UniformIndexTwinsDrawTheDefaultFramesWhenEachDrawHasOneMaterial`, which draws the twins on llvmpipe.
 
 ### Changed
 

@@ -13,6 +13,13 @@ import punctual_lights;
 import screen_occlusion;
 import surface_lighting;
 
+// Defined by rasterizer_uniform_index.slang, the build for a device without non-uniform indexing.
+#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)
+export static const bool kUniformTextureIndex = true;
+#else
+export static const bool kUniformTextureIndex = false;
+#endif
+
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
 [vk::binding(globalUBO_BINDING, 0)] ConstantBuffer<GlobalUBO> globalUBO;
@@ -53,7 +60,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        float4 baseSample = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material));
+        float4 baseSample = textures[material_texture_index(textureId)].Sample(textureSamplers[material_texture_index(textureId)], base_color_uv(In.texCoords, material));
         sampledAlpha *= baseSample.a;
         albedo = base_color(material, baseSample.xyz);
     }
@@ -108,7 +115,7 @@ void fs_depth_prepass(RasterVsOut In, uint primitiveID : SV_PrimitiveID)
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        sampledAlpha *= textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material)).a;
+        sampledAlpha *= textures[material_texture_index(textureId)].Sample(textureSamplers[material_texture_index(textureId)], base_color_uv(In.texCoords, material)).a;
     }
     if (material_masked_out(material, sampledAlpha)) discard;
 }

@@ -291,14 +291,18 @@ New in both:
   without ray tracing runs the raster path at all**). The RT pipeline stays as the showcase and the A/B
   against ray query (owner 2026-11-19), so step 1, the ray-query kernel, is dropped.
 - [b] `C++` **Runtime-sized texture descriptor arrays** (L, plan C15; **waits for a host run**).
-  `PARTIALLY_BOUND` with a capacity from the device limits; the fixed 128 slots stay as the fallback, so
-  the Raspberry Pi 5 stays a target (owner 2026-11-19).
-- [ ] `C++` **Material shaders for a device without non-uniform indexing** (M, plan C15). Since 2026-11-19
-  every material module wraps its index in `NonUniformResourceIndex` and so declares
-  `SampledImageArrayNonUniformIndexing`, which a device without `shaderSampledImageArrayNonUniformIndexing`
-  (v3dv on the Pi 5) rejects at module creation. Owner 2026-11-19: keep the Pi; compile a variant without
-  the decoration, select it when the feature is missing, and say so in one log line at device selection.
-  A unit test of the selection and a BuildIntegrity check that both variants exist.
+  `PARTIALLY_BOUND` with a capacity from the device limits; the fixed 128 slots stay as the fallback (owner
+  2026-11-19). That fallback does not keep the Raspberry Pi 5 a target: v3dv offers 16 sampled images per
+  stage and no `descriptorBindingPartiallyBound` (next item).
+- [ ] `C++` **Material shaders the Raspberry Pi 5 can load** (L, plan C15 step 2; the owner keeps the Pi as a
+  target, 2026-11-19). The uniform-index twins are not enough. `vulkaninfo` on the Pi 5 (V3D 7.1.7, Mesa 26.2.7)
+  reports `shaderInt64` false, though every twin declares `Int64`; `shaderSampledImageArrayDynamicIndexing`
+  false, so no variable `textures[]` index is valid and the selection logs `None`; 16 sampled images and 24
+  samplers per stage against `MAX_TEXTURE_COUNT` 128; and `descriptorIndexing`, `runtimeDescriptorArray` and
+  `descriptorBindingPartiallyBound` false. Three steps: material modules without `Int64` (find what emits it
+  first); sampling with a constant index or one texture per draw, such as a descriptor set per draw, instead of
+  a dynamic index; and at most 16 sampled images per stage on such a device. Then a run of the forward path on
+  a Pi 5 under the validation layer.
 - [b] `Shared` **HDR output and a grading LUT** (L, plan N2; after the tonemapper choice).
 - [b] `Shared` **PCSS with an angular sun, cascade blending, contact shadows** (plan N3; after one shared
   cascade selection; contact shadows need a forward depth prepass).

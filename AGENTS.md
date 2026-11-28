@@ -891,7 +891,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
 - **What runs:** every Debug test but three, against the image's riscv64 Vulkan loader, GLFW and
   Rust cxx bridge; the GUI input sweep is excluded everywhere and two goldens are disabled. A
   push runs the CPU tests (658 of them in run 38165366757: 523 s of ctest, 32 min end to end),
-  the weekly shards the 132 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
+  the weekly shards the 133 runnable GPU tests. Measured 2026-10-01 on a 32-core host: 13 min end to end
   from a cold build at `-j8`, of which ctest is 415 s (serial, as in the x64 lane).
 - **The GPU suites run weekly, in shards** (owner decision 2026-10-06). `Integration.` and
   `GoldenRender.` run serially (`-j1`) under `xvfb-run` with the `libkata_fp16_helpers.so`
@@ -913,7 +913,7 @@ the host, builds the `linux-riscv64-cross` preset (Debug,
   dispatch's `only-shards` input (comma-separated names from that list) keeps only the shards it
   names, and a name off the list fails the step before any shard starts. `RISCV64_GPU_SHARD` picks
   the shard inside the container:
-  - `raster-1` to `raster-4`: every GPU test in no other shard (111 today, two of them disabled), every fourth
+  - `raster-1` to `raster-4`: every GPU test in no other shard (112 today, two of them disabled), every fourth
     by ctest number in each (`-I k,,4`, which intersects with the filter), 90 min per test. As one `raster`
     job they passed GitHub's 6 h job limit (run 45969392334: 64 of 95 in 5.7 h of tests). Split in three (run
     46021554231, 95 tests) the jobs took 2 h 50, 3 h 42 and 4 h 46, the slowest on a runner 1.4-1.8x slower

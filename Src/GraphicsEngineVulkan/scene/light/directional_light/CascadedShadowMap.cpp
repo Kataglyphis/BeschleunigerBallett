@@ -6,6 +6,7 @@ module;
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/SceneUBO.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -230,9 +231,9 @@ void CascadedShadowMap::buildGraphicsPipeline()
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
 
     // No geometry stage: under multiview the vertex shader picks the cascade matrix by SV_ViewID.
-    ShaderStagePair stages{
-        device, slang_spv_dir + "shadow_map.shadow_vs_main.spv", slang_spv_dir + "shadow_map.shadow_fs_main.spv"
-    };
+    ShaderStagePair stages{ device,
+        slang_spv_dir + "shadow_map.shadow_vs_main.spv",
+        materialShaderPath(slang_spv_dir + "shadow_map.shadow_fs_main.spv", device->materialTextureIndexing()) };
 
     const ShadowCasterVertexInput vertexInput = shadowCasterVertexInput();
 

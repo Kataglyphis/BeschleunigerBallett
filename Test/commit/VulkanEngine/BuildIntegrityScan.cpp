@@ -40,15 +40,19 @@ void collect_import_closure(const fs::path &slang_root,
     if (!lines) { return; }
 
     static const std::regex import_pattern(R"(^\s*(?:__exported\s+)?import\s+([A-Za-z_][A-Za-z0-9_]*)\s*;)");
+    // A *_uniform_index twin compiles its base through the preprocessor, so the base and its imports are the twin's.
+    static const std::regex include_pattern(R"re(^\s*#include\s+"([A-Za-z0-9_.]+\.slang)")re");
     for (const auto &raw_line : *lines) {
         const std::string line = strip_line_comment(raw_line);
         std::smatch match;
-        if (!std::regex_search(line, match, import_pattern)) { continue; }
+        const bool included = std::regex_search(line, match, include_pattern);
+        if (!included && !std::regex_search(line, match, import_pattern)) { continue; }
 
         const std::string identifier = match[1].str();
         std::error_code error;
-        fs::path resolved = slang_root / "common" / (identifier + ".slang");
-        if (!sourceExists(resolved, error)) { resolved = source.parent_path() / (identifier + ".slang"); }
+        fs::path resolved =
+          included ? source.parent_path() / identifier : slang_root / "common" / (identifier + ".slang");
+        if (!included && !sourceExists(resolved, error)) { resolved = source.parent_path() / (identifier + ".slang"); }
         if (!sourceExists(resolved, error)) { continue; }// unresolvable import: the compiler's problem, not this gate's
 
         resolved = shaderSourcePath(resolved);
@@ -137,6 +141,9 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
         if (!emits_spirv) { continue; }
 
         data.vulkan_spirv_sources.insert(source);
+        const auto entry_it = row.find("entry");
+        if (entry_it == row.end() || !entry_it->is_string()) { return std::nullopt; }
+        data.spirv_entries.emplace(source, entry_it->get<std::string>());
         const std::size_t slash = source.find('/');
         if (slash != std::string::npos && slash > 0) { data.engine_spirv_subdirs.insert(source.substr(0, slash)); }
     }

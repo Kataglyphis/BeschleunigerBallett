@@ -14,6 +14,13 @@ import hdr_safe;
 import punctual_lights;
 import screen_occlusion;
 
+// Defined by deferred_uniform_index.slang, the build for a device without non-uniform indexing.
+#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)
+export static const bool kUniformTextureIndex = true;
+#else
+export static const bool kUniformTextureIndex = false;
+#endif
+
 // Deferred geometry pass (writes the G-buffer) and lighting pass.
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
@@ -57,7 +64,7 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
-        texColor = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.texCoords, material));
+        texColor = textures[material_texture_index(textureId)].Sample(textureSamplers[material_texture_index(textureId)], base_color_uv(In.texCoords, material));
         if (material_masked_out(material, texColor.a * In.fragmentColor.a * alphaTexSample)) discard;
         texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }

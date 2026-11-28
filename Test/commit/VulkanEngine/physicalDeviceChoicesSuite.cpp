@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 import kataglyphis.vulkan.queue_family_indices;
@@ -145,6 +146,88 @@ TEST(PhysicalDeviceChoicesUnit, ADeviceOfferingNoDiagnosticsRequestsNoExtensionF
     EXPECT_FALSE(none.deviceFault);
     EXPECT_TRUE(Kataglyphis::deviceDiagnosticExtensions(none).empty());
     EXPECT_STREQ(Kataglyphis::breadcrumbBackendName(none.backend), "none");
+}
+
+TEST(PhysicalDeviceChoicesUnit, MaterialShadersTakeTheUniformTwinExactlyWhenNonUniformSampledImageIndexingIsMissing)
+{
+    using Kataglyphis::MaterialTextureIndexing;
+    using Kataglyphis::materialTextureIndexingFor;
+    vk::PhysicalDeviceFeatures dynamic{};
+    dynamic.shaderSampledImageArrayDynamicIndexing = VK_TRUE;
+    vk::PhysicalDeviceVulkan12Features offered{};
+    offered.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    EXPECT_EQ(materialTextureIndexingFor(dynamic, offered), MaterialTextureIndexing::NonUniform);
+    EXPECT_EQ(materialTextureIndexingFor(dynamic, offered, true), MaterialTextureIndexing::Uniform)
+      << "the goldens' knob must load the twins on a device that has both features";
+
+    // Other descriptor-indexing bits do not stand in for the sampled-image one; descriptorIndexing would imply it.
+    vk::PhysicalDeviceVulkan12Features others{};
+    others.runtimeDescriptorArray = VK_TRUE;
+    others.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
+    others.shaderStorageBufferArrayNonUniformIndexing = VK_TRUE;
+    others.shaderStorageImageArrayNonUniformIndexing = VK_TRUE;
+    others.descriptorBindingPartiallyBound = VK_TRUE;
+    EXPECT_EQ(materialTextureIndexingFor(dynamic, others), MaterialTextureIndexing::Uniform);
+    EXPECT_EQ(
+      materialTextureIndexingFor(dynamic, vk::PhysicalDeviceVulkan12Features{}), MaterialTextureIndexing::Uniform);
+}
+
+TEST(PhysicalDeviceChoicesUnit, ADeviceWithoutDynamicSampledImageIndexingHasNoValidMaterialVariant)
+{
+    using Kataglyphis::MaterialTextureIndexing;
+    using Kataglyphis::materialTextureIndexingFor;
+    // v3dv's shape (V3D 7.1, Mesa 26.2): every descriptor-indexing bit and dynamic sampled-image indexing are false.
+    const vk::PhysicalDeviceFeatures v3dv{};
+    const vk::PhysicalDeviceVulkan12Features v3dv12{};
+    EXPECT_EQ(materialTextureIndexingFor(v3dv, v3dv12), MaterialTextureIndexing::None);
+    EXPECT_EQ(materialTextureIndexingFor(v3dv, v3dv12, true), MaterialTextureIndexing::None)
+      << "the knob must not hide a device that cannot take either variant";
+
+    // Non-uniform indexing alone does not help: a non-uniform index is a variable index first.
+    vk::PhysicalDeviceVulkan12Features nonUniformOnly{};
+    nonUniformOnly.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    EXPECT_EQ(materialTextureIndexingFor(v3dv, nonUniformOnly), MaterialTextureIndexing::None);
+
+    // The nearest variant still loads, so the device runs what its driver tolerates.
+    EXPECT_EQ(Kataglyphis::materialShaderPath("rasterizer/rasterizer.fs_main.spv", MaterialTextureIndexing::None),
+      "rasterizer/rasterizer_uniform_index.fs_main.spv");
+}
+
+TEST(PhysicalDeviceChoicesUnit, TheUniformTwinKeepsTheDirectoryAndEntryAndSuffixesTheStem)
+{
+    using Kataglyphis::materialShaderPath;
+    constexpr auto kUniform = Kataglyphis::MaterialTextureIndexing::Uniform;
+    const std::string dir = "Resources/ShadersSlang/build/spirv/";
+    EXPECT_EQ(materialShaderPath(dir + "rasterizer/rasterizer.fs_main.spv", kUniform),
+      dir + "rasterizer/rasterizer_uniform_index.fs_main.spv");
+    EXPECT_EQ(materialShaderPath(dir + "rasterizer/shadows/shadow_map.shadow_fs_main.spv", kUniform),
+      dir + "rasterizer/shadows/shadow_map_uniform_index.shadow_fs_main.spv");
+    // Only the entry follows the last dot, so a dotted stem keeps its dots.
+    EXPECT_EQ(
+      materialShaderPath("raytrace.rchit.rchit_main.spv", kUniform), "raytrace.rchit_uniform_index.rchit_main.spv");
+    EXPECT_EQ(
+      materialShaderPath(dir + "rasterizer/rasterizer.fs_main.spv", Kataglyphis::MaterialTextureIndexing::NonUniform),
+      dir + "rasterizer/rasterizer.fs_main.spv");
+    // Not "<stem>.<entry>.spv": left alone, so the load names the file asked for instead of a third one.
+    EXPECT_EQ(materialShaderPath("build.v2/rasterizer.spv", kUniform), "build.v2/rasterizer.spv");
+    EXPECT_EQ(materialShaderPath("rasterizer/.fs_main.spv", kUniform), "rasterizer/.fs_main.spv");
+    EXPECT_EQ(materialShaderPath("rasterizer/rasterizer.fs_main.wgsl", kUniform), "rasterizer/rasterizer.fs_main.wgsl");
+    EXPECT_EQ(materialShaderPath(".spv", kUniform), ".spv");
+}
+
+TEST(PhysicalDeviceChoicesUnit, EachMaterialChoiceLogsTheFeatureItLacks)
+{
+    using Kataglyphis::MaterialTextureIndexing;
+    using Kataglyphis::materialTextureIndexingLogLine;
+    const std::string_view non_uniform = materialTextureIndexingLogLine(MaterialTextureIndexing::NonUniform);
+    const std::string_view uniform = materialTextureIndexingLogLine(MaterialTextureIndexing::Uniform);
+    const std::string_view none = materialTextureIndexingLogLine(MaterialTextureIndexing::None);
+    EXPECT_NE(uniform.find("shaderSampledImageArrayNonUniformIndexing"), std::string_view::npos);
+    EXPECT_EQ(non_uniform.find("shaderSampledImageArrayNonUniformIndexing"), std::string_view::npos);
+    EXPECT_NE(none.find("shaderSampledImageArrayDynamicIndexing"), std::string_view::npos);
+    EXPECT_NE(none.find("no valid variant"), std::string_view::npos);
+    EXPECT_EQ(uniform.find("no valid variant"), std::string_view::npos);
+    EXPECT_NE(uniform, non_uniform);
 }
 
 TEST(QueueFamilyIndicesUnit, CreatesNoQueueOnTheComputeFamily)

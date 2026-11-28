@@ -3,6 +3,9 @@ import rt_types;
 import material_fetch;
 import alpha_test;
 
+// No uniform twin: a device without non-uniform indexing gets no ray tracing (VulkanDevice.cpp).
+export static const bool kUniformTextureIndex = false;
+
 // Also runs for the shadow ray, whose payload is a `bool`, so it must never write `payload`.
 
 [shader("anyhit")]

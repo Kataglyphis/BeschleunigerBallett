@@ -19,6 +19,7 @@
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 
 module kataglyphis.vulkan.deferred_rasterizer;
 
@@ -159,9 +160,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
-    ShaderStagePair geomStages{
-        device, slang_spv_dir + "deferred.geometry_vs_main.spv", slang_spv_dir + "deferred.geometry_fs_main.spv"
-    };
+    ShaderStagePair geomStages{ device,
+        slang_spv_dir + "deferred.geometry_vs_main.spv",
+        materialShaderPath(slang_spv_dir + "deferred.geometry_fs_main.spv", device->materialTextureIndexing()) };
 
     vk::VertexInputBindingDescription bindingDescription;
     bindingDescription.binding = 0;

@@ -6,6 +6,7 @@ module;
 #include "common/RenderingHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -189,9 +190,9 @@ void PunctualShadowMaps::buildGraphicsPipeline()
 {
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
     // The cascades' fragment entry: the same alpha test, so a masked caster cuts out alike for the sun and the lights.
-    ShaderStagePair stages{
-        device, slang_spv_dir + "shadow_map.cube_shadow_vs_main.spv", slang_spv_dir + "shadow_map.shadow_fs_main.spv"
-    };
+    ShaderStagePair stages{ device,
+        slang_spv_dir + "shadow_map.cube_shadow_vs_main.spv",
+        materialShaderPath(slang_spv_dir + "shadow_map.shadow_fs_main.spv", device->materialTextureIndexing()) };
     const ShadowCasterVertexInput vertexInput = shadowCasterVertexInput();
 
     vk::PushConstantRange pushConstantRange{};

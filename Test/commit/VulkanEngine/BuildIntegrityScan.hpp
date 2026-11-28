@@ -42,7 +42,7 @@ void collect_import_closure(const fs::path &slang_root,
   std::set<fs::path> &visited,
   std::set<fs::path> &closure);
 
-// Every .slang file `source` transitively imports, excluding itself; common/ wins over the importer's own directory.
+// Every .slang file `source` transitively imports or #includes, excluding itself; common/ wins over its own directory.
 std::set<fs::path> import_closure(const fs::path &slang_root, const fs::path &source);
 
 // Newest mtime in the import closure and its file, so callers can name the stale import; false if the closure is empty.
@@ -66,6 +66,8 @@ struct ShaderManifestData
 {
     // Enabled rows targeting spirv (paths relative to Resources/ShadersSlang/): what the C++ renderer consumes.
     std::set<std::string> vulkan_spirv_sources;
+    // The same rows as (file, entry), one "<stem>.<entry>.spv" each.
+    std::set<std::pair<std::string, std::string>> spirv_entries;
     // The build/spirv/ subdirectories; every other shader directory is WGSL-only and never scanned for SPIR-V.
     std::set<std::string> engine_spirv_subdirs;
     // Every enabled row's .slang path whatever its target, so no Slang entry point goes unaccounted for.

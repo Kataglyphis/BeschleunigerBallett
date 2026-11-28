@@ -42,6 +42,8 @@ class VulkanDevice
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
     bool supportsImageCubeArray() const { return deviceSupportsImageCubeArray; };
     bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; };
+    // Picked once from the two sampled-image indexing features; material pipelines load materialShaderPath's choice.
+    MaterialTextureIndexing materialTextureIndexing() const { return deviceMaterialTextureIndexing; };
     // VkPhysicalDeviceLimits::maxSamplerAnisotropy - the ceiling a sampler's
     // maxAnisotropy may request without violating
     // VUID-VkSamplerCreateInfo-anisotropyEnable-01071.
@@ -100,6 +102,7 @@ class VulkanDevice
     bool deviceSupportsDepthClamp = false;
     bool deviceSupportsImageCubeArray = false;
     bool deviceSupportsSamplerAnisotropy = false;
+    MaterialTextureIndexing deviceMaterialTextureIndexing = MaterialTextureIndexing::NonUniform;
     float deviceMaxSamplerAnisotropy = 1.0F;
     BlockSupport blockSupport{};
     uint32_t maxMultiviewViewCount = 0;

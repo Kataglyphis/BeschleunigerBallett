@@ -9,6 +9,9 @@ import surface_lighting;
 import trace_constants;
 import traced_hit;
 
+// No uniform twin: a device without non-uniform indexing gets no ray tracing (VulkanDevice.cpp).
+export static const bool kUniformTextureIndex = false;
+
 [vk::binding(sceneUBO_BINDING, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 
 [vk::binding(TLAS_BINDING, 1)] RaytracingAccelerationStructure TLAS;

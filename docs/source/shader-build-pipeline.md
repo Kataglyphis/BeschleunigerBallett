@@ -171,6 +171,86 @@ regeneration on Linux. The pinned hub's `versions.env` names
 slangc `2026.13.1`, above the floor. Whether the published
 `:latest` carries this SDK was not checked here.
 
+## Uniform-index twins for a device without non-uniform indexing
+
+Every `textures[]` and `textureSamplers[]` subscript goes through
+`material_texture_index` in `common/material_textures.slang`, which returns
+`NonUniformResourceIndex(slot)`. For that slangc declares `ShaderNonUniform`
+and `SampledImageArrayNonUniformIndexing`. On a device without
+`shaderSampledImageArrayNonUniformIndexing` such a module is invalid usage,
+which the validation layer reports when the module is created. So each raster
+material shader has a twin without the decoration:
+
+- `material_texture_index` reads the link-time constant `kUniformTextureIndex`
+  (`extern static const bool`). Every entry module that imports
+  `material_textures` exports it. `rasterizer.slang`, `deferred.slang` and
+  `shadow_map.slang` export `true` under `#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)`,
+  `false` otherwise; an importer without the export fails to link (slangc
+  `E45001 unresolved external symbol`). Linking folds the select, so the 21
+  default SPIR-V modules are byte-identical to the direct
+  `NonUniformResourceIndex` form (slangc 2026.17).
+- The twin `<stem>_uniform_index.slang` beside its base is two lines,
+  `#define KATAGLYPHIS_UNIFORM_TEXTURE_INDEX` and `#include "<stem>.slang"`:
+  the hub driver passes slangc no `-D`, so the define lives in a source file.
+  Its manifest rows (forward's `fs_main` and `fs_depth_prepass`, the G-buffer's
+  `geometry_fs_main`, the shadow casters' `shadow_fs_main`) emit
+  `<stem>_uniform_index.<entry>.spv` like any other row. The vertex entries and
+  `lighting_fs_main` never index the arrays and need no twin.
+- `raytrace.rchit`, `raytrace.rahit` and `path_tracing` export `false` and have
+  no twin: without the feature `VulkanDevice.cpp` turns hardware ray tracing off,
+  and both traced modes with it.
+- `VulkanDevice` calls `materialTextureIndexingFor` once at device creation and
+  logs the choice in one line. Each material pipeline loads
+  `materialShaderPath(path, device->materialTextureIndexing())`
+  (`vulkan_base/PhysicalDeviceChoices.hpp`), which names the twin on such a
+  device and the base everywhere else.
+- A variable index into `textures[]` needs `shaderSampledImageArrayDynamicIndexing`,
+  uniform or not. Without it neither variant is valid. The choice is then
+  `None`, logged as a warning that names the missing feature, and the twin
+  loads as the variant that needs fewer features.
+- `KATAGLYPHIS_FORCE_UNIFORM_TEXTURE_INDEX` picks the twin on a device that has
+  both features, so a golden on llvmpipe can create and draw it.
+
+The twin is not exact. Its slot comes from the draw's object and the
+triangle's material (`fetch_material(obj, primitiveID)`). A draw whose
+triangles use different materials, such as an OBJ shape with several, may
+sample the wrong texture there. That is the cost of keeping such a device as
+a target.
+
+### What v3dv on the Raspberry Pi 5 offers
+
+The twins alone do not make the Pi 5 a target. `vulkaninfo` there (V3D 7.1.7,
+Mesa 26.2.7) reports four limits the material shaders exceed:
+
+| What the material shaders need | What v3dv reports |
+| --- | --- |
+| `shaderInt64`, as every twin declares `Int64` | false |
+| `shaderSampledImageArrayDynamicIndexing`, for any variable `textures[]` index | false |
+| 128 sampled images and 128 samplers per stage (`MAX_TEXTURE_COUNT`) | 16 and 24 (`maxPerStageDescriptorSampledImages`, `maxPerStageDescriptorSamplers`) |
+| `descriptorIndexing`, `runtimeDescriptorArray`, `descriptorBindingPartiallyBound` | all false |
+
+So the selection reports `None` on the Pi. `BACKLOG.md` holds the rest: modules
+without `Int64`, sampling without a dynamic index, and at most 16 sampled
+images per stage. The twins also keep `Geometry` and
+`PhysicalStorageBufferAddresses`, which v3dv offers as `geometryShader` and
+`bufferDeviceAddress`.
+
+### Tests
+
+`PhysicalDeviceChoicesUnit.*` covers the selection, v3dv's feature shape and
+the file name. `BuildIntegrity.UniformIndexTwinsWrapTheirBaseAndEveryMaterialPipelinePicksOne`
+checks the twin's two lines and the base's export. It also checks that `= true`
+appears only under the define, and every `.spv` literal of a twinned shader
+under `Src/`. `BuildIntegrity.UniformIndexTwinsDeclareNoNonUniformIndexing`
+reads the compiled SPIR-V. A twin must declare neither capability nor
+decoration. Every other module that samples `textures[]`, the traced ones
+included, must declare both. A raster shader that declares the capability
+without a twin fails, so a new material fragment entry needs its twin row.
+`GoldenRender.UniformIndexTwinsDrawTheDefaultFramesWhenEachDrawHasOneMaterial`
+forces the twins on llvmpipe. Their six pipelines must be created and draw
+without a validation error. A rig with a MASK and a BLEND card, forward and
+deferred, must draw byte-identical to the default shaders.
+
 ## Fast shader iteration
 
 Edit a `.slang` file, then recompile:

@@ -6,69 +6,79 @@ import gltf_material;
 
 // Ray tracing callers must use the `_lod0` helpers. See docs/source/shader-sharing.md § What is wired today.
 
-// Indexed only through NonUniformResourceIndex: triangles of one draw, rays and bounces each pick their own slot.
+// Indexed only through material_texture_index: triangles of one draw, rays and bounces each pick their own slot.
 [vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 [vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
+
+// Every entry module exports it; true only in a *_uniform_index twin, for a device without non-uniform indexing.
+extern static const bool kUniformTextureIndex;
+
+// Linking folds it to the bare slot or NonUniformResourceIndex, whose capability not every device offers.
+[ForceInline]
+int material_texture_index(int slot)
+{
+    return kUniformTextureIndex ? slot : NonUniformResourceIndex(slot);
+}
 
 // map_d cut-out slot; callers guard alphaTextureID >= 0 because the miss-case default differs per call site.
 float sample_alpha_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[NonUniformResourceIndex(alphaTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(alphaTexId)], alpha_uv(texCoords, material), 0.0).r;
+    return textures[material_texture_index(alphaTexId)].SampleLevel(textureSamplers[material_texture_index(alphaTexId)], alpha_uv(texCoords, material), 0.0).r;
 }
 
 float sample_alpha(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int alphaTexId = resolve_texture_slot(obj, material.alphaTextureID);
-    return textures[NonUniformResourceIndex(alphaTexId)].Sample(textureSamplers[NonUniformResourceIndex(alphaTexId)], alpha_uv(texCoords, material)).r;
+    return textures[material_texture_index(alphaTexId)].Sample(textureSamplers[material_texture_index(alphaTexId)], alpha_uv(texCoords, material)).r;
 }
 
 float3 sample_normal_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-    return textures[NonUniformResourceIndex(normalTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(normalTexId)], normal_uv(texCoords, material), 0.0).xyz;
+    return textures[material_texture_index(normalTexId)].SampleLevel(textureSamplers[material_texture_index(normalTexId)], normal_uv(texCoords, material), 0.0).xyz;
 }
 
 float3 sample_normal(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
-    return textures[NonUniformResourceIndex(normalTexId)].Sample(textureSamplers[NonUniformResourceIndex(normalTexId)], normal_uv(texCoords, material)).xyz;
+    return textures[material_texture_index(normalTexId)].Sample(textureSamplers[material_texture_index(normalTexId)], normal_uv(texCoords, material)).xyz;
 }
 
 float4 sample_metallic_roughness_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-    return textures[NonUniformResourceIndex(metallicRoughnessTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material), 0.0);
+    return textures[material_texture_index(metallicRoughnessTexId)].SampleLevel(textureSamplers[material_texture_index(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material), 0.0);
 }
 
 float4 sample_metallic_roughness(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int metallicRoughnessTexId = resolve_texture_slot(obj, material.metallicRoughnessTextureID);
-    return textures[NonUniformResourceIndex(metallicRoughnessTexId)].Sample(textureSamplers[NonUniformResourceIndex(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material));
+    return textures[material_texture_index(metallicRoughnessTexId)].Sample(textureSamplers[material_texture_index(metallicRoughnessTexId)], metallic_roughness_uv(texCoords, material));
 }
 
 float3 sample_emissive_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-    return textures[NonUniformResourceIndex(emissiveTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(emissiveTexId)], emissive_uv(texCoords, material), 0.0).xyz;
+    return textures[material_texture_index(emissiveTexId)].SampleLevel(textureSamplers[material_texture_index(emissiveTexId)], emissive_uv(texCoords, material), 0.0).xyz;
 }
 
 float3 sample_emissive(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
-    return textures[NonUniformResourceIndex(emissiveTexId)].Sample(textureSamplers[NonUniformResourceIndex(emissiveTexId)], emissive_uv(texCoords, material)).xyz;
+    return textures[material_texture_index(emissiveTexId)].Sample(textureSamplers[material_texture_index(emissiveTexId)], emissive_uv(texCoords, material)).xyz;
 }
 
 float sample_occlusion_lod0(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int occlusionTexId = resolve_texture_slot(obj, material.occlusionTextureID);
-    return textures[NonUniformResourceIndex(occlusionTexId)].SampleLevel(textureSamplers[NonUniformResourceIndex(occlusionTexId)], occlusion_uv(texCoords, material), 0.0).r;
+    return textures[material_texture_index(occlusionTexId)].SampleLevel(textureSamplers[material_texture_index(occlusionTexId)], occlusion_uv(texCoords, material), 0.0).r;
 }
 
 float sample_occlusion(ObjectDescription obj, ObjMaterial material, float4 texCoords)
 {
     int occlusionTexId = resolve_texture_slot(obj, material.occlusionTextureID);
-    return textures[NonUniformResourceIndex(occlusionTexId)].Sample(textureSamplers[NonUniformResourceIndex(occlusionTexId)], occlusion_uv(texCoords, material)).r;
+    return textures[material_texture_index(occlusionTexId)].Sample(textureSamplers[material_texture_index(occlusionTexId)], occlusion_uv(texCoords, material)).r;
 }
 
 // How much of the sky reaches the point; 1 without an occlusion map.

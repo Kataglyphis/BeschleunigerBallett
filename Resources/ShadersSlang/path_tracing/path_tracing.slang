@@ -11,6 +11,9 @@ import sky_model;
 import trace_constants;
 import traced_hit;
 
+// No uniform twin: a device without non-uniform indexing gets no ray tracing (VulkanDevice.cpp).
+export static const bool kUniformTextureIndex = false;
+
 // Ray-query path tracer over OxidANT's path_integrator.slang, SPIR-V only (WebGPU has no ray query). See docs/source/path-tracing.md.
 
 struct PushConstantPathTracing

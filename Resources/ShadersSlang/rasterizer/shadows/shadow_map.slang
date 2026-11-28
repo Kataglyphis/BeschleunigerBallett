@@ -4,6 +4,13 @@ import material_rules;
 import base_color;
 import material_textures;
 
+// Defined by shadow_map_uniform_index.slang, the build for a device without non-uniform indexing.
+#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)
+export static const bool kUniformTextureIndex = true;
+#else
+export static const bool kUniformTextureIndex = false;
+#endif
+
 // Single-pass layered cascades: SV_ViewID is the cascade index.
 
 [vk::binding(1, 1)] ConstantBuffer<float4x4[CASCADE_COUNT]> lightSpaceMatrices;
@@ -75,7 +82,7 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
         if (material.textureID >= 0)
         {
             int textureId = resolve_texture_slot(obj, material);
-            float alpha = textures[NonUniformResourceIndex(textureId)].Sample(textureSamplers[NonUniformResourceIndex(textureId)], base_color_uv(In.fragUV, material)).a;
+            float alpha = textures[material_texture_index(textureId)].Sample(textureSamplers[material_texture_index(textureId)], base_color_uv(In.fragUV, material)).a;
             if (material_masked_out(material, alpha * In.fragAlpha * alphaTexSample)) discard;
         }
         else

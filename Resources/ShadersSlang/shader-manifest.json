@@ -125,6 +125,23 @@
       ]
     },
     {
+      "_comment": "fs_main and fs_depth_prepass without NonUniformResourceIndex, which a device lacking shaderSampledImageArrayNonUniformIndexing loads.",
+      "file": "rasterizer/rasterizer_uniform_index.slang",
+      "entry": "fs_main",
+      "stage": "fragment",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
+      "file": "rasterizer/rasterizer_uniform_index.slang",
+      "entry": "fs_depth_prepass",
+      "stage": "fragment",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
       "_comment": "Deferred geometry + lighting (SPIR-V only).",
       "file": "deferred/deferred.slang",
       "entry": "geometry_vs_main",
@@ -158,6 +175,15 @@
       ]
     },
     {
+      "_comment": "geometry_fs_main without NonUniformResourceIndex, which a device lacking shaderSampledImageArrayNonUniformIndexing loads.",
+      "file": "deferred/deferred_uniform_index.slang",
+      "entry": "geometry_fs_main",
+      "stage": "fragment",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
       "_comment": "Cascaded shadow map (SPIR-V only).",
       "file": "rasterizer/shadows/shadow_map.slang",
       "entry": "shadow_vs_main",
@@ -179,6 +205,15 @@
       "file": "rasterizer/shadows/shadow_map.slang",
       "entry": "cube_shadow_vs_main",
       "stage": "vertex",
+      "targets": [
+        "spirv"
+      ]
+    },
+    {
+      "_comment": "shadow_fs_main without NonUniformResourceIndex, which a device lacking shaderSampledImageArrayNonUniformIndexing loads.",
+      "file": "rasterizer/shadows/shadow_map_uniform_index.slang",
+      "entry": "shadow_fs_main",
+      "stage": "fragment",
       "targets": [
         "spirv"
       ]

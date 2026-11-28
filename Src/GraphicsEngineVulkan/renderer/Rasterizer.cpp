@@ -21,6 +21,7 @@
 #include "common/ViewportHelper.hpp"
 
 #include "common/Utilities.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 
 module kataglyphis.vulkan.rasterizer;
 
@@ -53,9 +54,9 @@ auto Kataglyphis::VulkanRendererInternals::buildTransparentScenePipeline(const s
 {
     // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
-    ShaderStagePair stages{
-        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv"
-    };
+    ShaderStagePair stages{ device,
+        slang_spv_dir + "rasterizer.vs_main.spv",
+        materialShaderPath(slang_spv_dir + "rasterizer.fs_main.spv", device->materialTextureIndexing()) };
 
     vk::VertexInputBindingDescription binding_description;
     binding_description.binding = 0;
@@ -365,9 +366,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     // Relative path: the engine runs from the repo root.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
-    ShaderStagePair stages{
-        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv"
-    };
+    ShaderStagePair stages{ device,
+        slang_spv_dir + "rasterizer.vs_main.spv",
+        materialShaderPath(slang_spv_dir + "rasterizer.fs_main.spv", device->materialTextureIndexing()) };
 
     vk::VertexInputBindingDescription binding_description;
     binding_description.binding = 0;
@@ -396,9 +397,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
 
     transparent_pipeline = buildTransparentScenePipeline(device, pipeline_layout, OFFSCREEN_FORMAT, depth_format);
 
-    ShaderStagePair prepass_stages{
-        device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_depth_prepass.spv"
-    };
+    ShaderStagePair prepass_stages{ device,
+        slang_spv_dir + "rasterizer.vs_main.spv",
+        materialShaderPath(slang_spv_dir + "rasterizer.fs_depth_prepass.spv", device->materialTextureIndexing()) };
     prepass_pipeline =
       PipelineBuilder()
         .setShaderStages({ prepass_stages.stages().begin(), prepass_stages.stages().end() })

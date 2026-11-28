@@ -391,6 +391,14 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
     deviceSupportsImageCubeArray = available_features2.features.imageCubeArray == VK_TRUE;
     deviceSupportsSamplerAnisotropy = available_features2.features.samplerAnisotropy == VK_TRUE;
+    // A test knob: llvmpipe has both indexing features, and only this makes it create and draw the twins.
+    const bool forceUniformTextureIndex = environmentFlag("KATAGLYPHIS_FORCE_UNIFORM_TEXTURE_INDEX");
+    deviceMaterialTextureIndexing =
+      materialTextureIndexingFor(available_features2.features, available_features12, forceUniformTextureIndex);
+    spdlog::log(
+      deviceMaterialTextureIndexing == MaterialTextureIndexing::None ? spdlog::level::warn : spdlog::level::info,
+      "{}",
+      materialTextureIndexingLogLine(deviceMaterialTextureIndexing));
     deviceMaxSamplerAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     blockSupport = blockSupportFrom(available_features2.features,
       device_properties.limits.maxImageDimension2D,

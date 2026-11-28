@@ -1,5 +1,7 @@
 // Goldens: emission, texture slots and UVs, alpha masks and blending, and normal maps draw right in every mode.
 
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
+
 #include "GoldenRenderHarness.hpp"
 
 import kataglyphis.vulkan.device;
@@ -1507,4 +1509,105 @@ TEST(GoldenRender, MirroredModelKeepsItsWindingAndNormalMapRelief)
         EXPECT_NEAR(mirrored_mean, upright_mean, 0.1 * upright_mean)
           << mode.name << ": the mirrored card is culled by its reversed winding or its normal map's relief inverts";
     }
+}
+
+namespace {
+
+// What one engine run of the material pipelines drew, picked and logged.
+struct MaterialPipelineRun
+{
+    std::vector<std::vector<uint8_t>> frames;
+    Kataglyphis::MaterialTextureIndexing indexing = Kataglyphis::MaterialTextureIndexing::NonUniform;
+    int validationErrors = 0;
+    bool skipped = false;
+};
+
+// The rig, then a MASK and a BLEND card, each one material per draw; shadowed forward with the prepass, then deferred.
+MaterialPipelineRun render_material_pipelines(const std::string &blendCard, bool forceUniform)
+{
+    MaterialPipelineRun run;
+    ScopedEnvVar force("KATAGLYPHIS_FORCE_UNIFORM_TEXTURE_INDEX", forceUniform ? "1" : "");
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    // Before the harness, so creating the six material pipelines counts too.
+    ScopedValidationErrorCounter validation;
+    {
+        EngineHarness harness;
+        if (!Kataglyphis::TestSupport::frameCaptureAvailable(harness)) {
+            run.skipped = true;
+            return run;
+        }
+        run.indexing = harness.renderer->sharedDevice()->materialTextureIndexing();
+        auto &renderer_vars = harness.useForwardRaster();
+        // fs_depth_prepass's pipeline records only with SSAO on.
+        renderer_vars.ssao_strength = 0.7F;
+        harness.render_frames(WARMUP_FRAMES);
+        uint32_t width = 0;
+        uint32_t height = 0;
+        run.frames.push_back(harness.capture_frame(width, height));
+
+        const glm::mat4 blend_placement =
+          glm::translate(glm::mat4(1.0F), glm::vec3(-5.0F, 4.0F, 15.0F)) * glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+        EXPECT_TRUE(harness.renderer->addModel(MASK_CARD_MODEL, panel_free_card_placement()).has_value())
+          << "adding the MASK card failed";
+        EXPECT_TRUE(harness.renderer->addModel(blendCard, blend_placement).has_value())
+          << "adding the BLEND card failed";
+        for (const RasterizationMode mode : { RasterizationMode::Forward, RasterizationMode::Deferred }) {
+            renderer_vars.rasterizationMode = mode;
+            harness.render_frames(SETTLE_FRAMES);
+            run.frames.push_back(harness.capture_frame(width, height));
+        }
+        EXPECT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost drawing the material pipelines.";
+    }
+    run.validationErrors = validation.errorCount();
+    return run;
+}
+
+}// namespace
+
+// llvmpipe has dynamic indexing, so the twins are valid there; one material per draw keeps each slot uniform.
+TEST(GoldenRender, UniformIndexTwinsDrawTheDefaultFramesWhenEachDrawHasOneMaterial)
+{
+    SKIP_WITHOUT_GPU();
+    using Kataglyphis::MaterialTextureIndexing;
+
+    const auto blend_card =
+      write_gltf_variant(MASK_CARD_MODEL, "kataglyphis_blend_texture_card.gltf", [](nlohmann::json &gltf) {
+          // A texel of its own, so a twin that sampled the MASK card's slot would draw the wrong colour.
+          gltf["images"][0]["uri"] = TILTED_NORMAL_PNG;
+          gltf["materials"][0]["pbrMetallicRoughness"]["baseColorFactor"] = { 1.0, 1.0, 1.0, 0.5 };
+          gltf["materials"][0]["alphaMode"] = "BLEND";
+          gltf["materials"][0].erase("alphaCutoff");
+      });
+    ASSERT_TRUE(blend_card.has_value()) << "could not write the BLEND twin of " << MASK_CARD_MODEL;
+
+    const MaterialPipelineRun defaults = render_material_pipelines(blend_card->string(), false);
+    if (defaults.skipped) { GTEST_SKIP() << "frame capture is unsupported here"; }
+    if (defaults.indexing != MaterialTextureIndexing::NonUniform) {
+        GTEST_SKIP() << "this device has no default material shaders to compare the twins against";
+    }
+    const MaterialPipelineRun twins = render_material_pipelines(blend_card->string(), true);
+    ASSERT_FALSE(twins.skipped);
+    ASSERT_EQ(twins.indexing, MaterialTextureIndexing::Uniform)
+      << "KATAGLYPHIS_FORCE_UNIFORM_TEXTURE_INDEX did not pick the *_uniform_index twins";
+    EXPECT_EQ(defaults.validationErrors, 0) << "the default material pipelines logged an error";
+    EXPECT_EQ(twins.validationErrors, 0) << "creating or drawing the twins' pipelines logged an error";
+
+    constexpr std::array<const char *, 3> kFrames = { "forward before the cards", "forward", "deferred" };
+    ASSERT_EQ(defaults.frames.size(), kFrames.size());
+    ASSERT_EQ(twins.frames.size(), kFrames.size());
+    const auto differing = [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b) {
+        std::size_t count = 0;
+        for (std::size_t pixel = 0; pixel < a.size() / 4U; ++pixel) {
+            if (channel_delta(a, b, pixel) != 0) { ++count; }
+        }
+        return count;
+    };
+    for (std::size_t frame = 0; frame < kFrames.size(); ++frame) {
+        ASSERT_FALSE(defaults.frames[frame].empty()) << kFrames[frame];
+        ASSERT_EQ(twins.frames[frame].size(), defaults.frames[frame].size()) << kFrames[frame];
+        EXPECT_EQ(differing(twins.frames[frame], defaults.frames[frame]), 0U)
+          << kFrames[frame] << ": the twins drew pixels unlike the default material shaders";
+    }
+    // Control: the textured cards reach the compared pixels, so a twin that samples nothing would show.
+    EXPECT_GT(differing(defaults.frames[0], defaults.frames[1]), 200U) << "the cards did not change the frame";
 }

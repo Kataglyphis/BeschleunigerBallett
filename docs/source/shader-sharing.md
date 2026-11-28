@@ -341,6 +341,7 @@ tonemap shader.
 | `compute/clouds.slang` | spirv |
 | `compute/noise_volume.slang` | spirv |
 | `deferred/deferred.slang` | spirv |
+| `deferred/deferred_uniform_index.slang` | spirv |
 | `depth_resolve/depth_resolve.slang` | wgsl |
 | `draw_cull/draw_cull.slang` | wgsl |
 | `forward/forward.slang` | wgsl |
@@ -352,7 +353,9 @@ tonemap shader.
 | `path_tracing/path_tracing.slang` | spirv |
 | `post/post.slang` | spirv |
 | `rasterizer/rasterizer.slang` | spirv |
+| `rasterizer/rasterizer_uniform_index.slang` | spirv |
 | `rasterizer/shadows/shadow_map.slang` | spirv |
+| `rasterizer/shadows/shadow_map_uniform_index.slang` | spirv |
 | `raytracing/raytrace.rahit.slang` | spirv |
 | `raytracing/raytrace.rchit.slang` | spirv |
 | `raytracing/raytrace.rgen.slang` | spirv |

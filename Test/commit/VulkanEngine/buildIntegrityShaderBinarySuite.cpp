@@ -61,7 +61,12 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
     return false;
 }
 
+constexpr uint32_t kOpName = 5;
 constexpr uint32_t kOpEntryPoint = 15;
+constexpr uint32_t kOpCapability = 17;
+constexpr uint32_t kDecorationNonUniform = 5300;
+constexpr uint32_t kCapabilityShaderNonUniform = 5301;
+constexpr uint32_t kCapabilitySampledImageArrayNonUniformIndexing = 5307;
 
 // Implicit-LOD sampling needs derivatives, defined only in Fragment; OpImageQueryLod is left out, legal in GLCompute.
 const std::set<uint32_t> kImplicitLodImageOpcodes = {
@@ -102,11 +107,15 @@ std::string spirv_execution_model_name(uint32_t model)
     }
 }
 
-// A module's execution model (every .spv here has one entry point) and the distinct opcodes it uses.
+// A module's execution model (every .spv here has one entry point), the distinct opcodes and capabilities it uses.
 struct SpirvEntryPointInfo
 {
     uint32_t execution_model = 0;
     std::set<uint32_t> opcodes_present;
+    std::set<uint32_t> capabilities;
+    std::size_t non_uniform_decorations = 0;
+    // material_textures.slang's array survived dead-code elimination, so the entry samples textures[].
+    bool names_material_textures = false;
 };
 
 std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &spv_path)
@@ -137,6 +146,17 @@ std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &
             found_entry_point = true;
         }
         info.opcodes_present.insert(opcode);
+        if (opcode == kOpCapability && word_count >= 2) { info.capabilities.insert(words[pos + 1]); }
+        if (opcode == kOpDecorate && word_count >= 3 && words[pos + 2] == kDecorationNonUniform) {
+            ++info.non_uniform_decorations;
+        }
+        if (opcode == kOpName && word_count >= 3) {
+            // A literal string: NUL-terminated and padded to whole words after the target id.
+            std::string name((word_count - 2U) * sizeof(uint32_t), '\0');
+            std::memcpy(name.data(), &words[pos + 2], name.size());
+            name.erase(std::min(name.find('\0'), name.size()));
+            if (name == "textures") { info.names_material_textures = true; }
+        }
 
         pos += word_count;
     }
@@ -235,7 +255,7 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
                                << joinViolations(stale);
 }
 
-// ssao's closure must not hold material_fetch; rasterizer's reaches scene_types only through material_fetch.
+// ssao's closure lacks material_fetch, rasterizer's reaches scene_types through it, and an #include counts.
 TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
 {
     const fs::path slang_root = slangRoot();
@@ -260,6 +280,82 @@ TEST(BuildIntegrity, ImportClosureFollowsOnlyRealImports)
     const auto scene_types_closure = relative_closure(slang_root / "common" / "scene_types.slang");
     EXPECT_TRUE(scene_types_closure.contains("common/shared_constants.slang"))
       << "an `__exported import` must count as an import";
+
+    const auto twin_closure = relative_closure(slang_root / "rasterizer" / "rasterizer_uniform_index.slang");
+    EXPECT_TRUE(twin_closure.contains("rasterizer/rasterizer.slang")) << "an `#include` must count as an import";
+    EXPECT_TRUE(twin_closure.contains("common/material_textures.slang"))
+      << "the included base's imports must be the twin's too";
+}
+
+// Only a *_uniform_index twin samples textures[] without NonUniform; rays, bounces and draws pick their own slot.
+TEST(BuildIntegrity, UniformIndexTwinsDeclareNoNonUniformIndexing)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path spirv_root = spirvRoot();
+    ASSERT_TRUE(sourceExists(spirv_root)) << "missing " << spirv_root.string() << " - shaders have not been compiled";
+
+    const auto &manifest = shader_manifest();
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    static const std::string kTwinSuffix = "_uniform_index";
+    const auto spirv_of = [&spirv_root](const fs::path &file, const std::string &entry) {
+        return spirv_root / file.parent_path() / (file.stem().string() + "." + entry + ".spv");
+    };
+    std::vector<std::string> violations;
+    std::size_t twins = 0;
+    std::size_t sampling = 0;
+    for (const auto &[file, entry] : manifest->spirv_entries) {
+        const fs::path source(file);
+        const std::string label = file + " " + entry;
+        const auto info = parse_spirv_entry_point_info(spirv_of(source, entry));
+        if (source.stem().string().ends_with(kTwinSuffix)) {
+            ++twins;
+            if (!info) {
+                violations.push_back(label + ": no compiled SPIR-V");
+            } else if (info->capabilities.contains(kCapabilitySampledImageArrayNonUniformIndexing)
+                       || info->capabilities.contains(kCapabilityShaderNonUniform)
+                       || info->non_uniform_decorations > 0) {
+                violations.push_back(label + ": still declares non-uniform indexing");
+            }
+            const std::string base_stem = source.stem().string();
+            const fs::path base =
+              source.parent_path() / (base_stem.substr(0, base_stem.size() - kTwinSuffix.size()) + ".slang");
+            const auto base_info = parse_spirv_entry_point_info(spirv_of(base, entry));
+            // Control: a twin of a base that never declared the capability is dead weight, or this parser finds none.
+            if (!base_info || !base_info->capabilities.contains(kCapabilitySampledImageArrayNonUniformIndexing)) {
+                violations.push_back(label + ": its base " + base.generic_string()
+                                     + " does not declare SampledImageArrayNonUniformIndexing");
+            }
+            continue;
+        }
+        if (!info) { continue; }
+        const bool declares = info->capabilities.contains(kCapabilitySampledImageArrayNonUniformIndexing);
+        if (info->names_material_textures) {
+            ++sampling;
+            // VUID-RuntimeSpirv-NonUniform-06274: a slot that varies across invocations needs the decoration.
+            if (!declares || info->non_uniform_decorations == 0) {
+                violations.push_back(label + ": samples textures[] without NonUniformResourceIndex");
+            }
+        }
+        if (!declares) { continue; }
+        // Without the feature VulkanDevice.cpp turns hardware RT off, and with it ray tracing and path tracing.
+        const bool ray_tracing_stage = info->execution_model >= 5313 && info->execution_model <= 5318;
+        if (ray_tracing_stage || file.starts_with("path_tracing/")) { continue; }
+        const std::string twin =
+          (source.parent_path() / (source.stem().string() + kTwinSuffix + ".slang")).generic_string();
+        if (!manifest->spirv_entries.contains({ twin, entry })) {
+            violations.push_back(label + ": declares SampledImageArrayNonUniformIndexing and has no " + twin + " row");
+        }
+    }
+
+    // Control: forward's two fragment entries, the G-buffer's and the shadow casters'.
+    EXPECT_GE(twins, 4U) << "found only " << twins << " *_uniform_index rows in shader-manifest.json";
+    // Control: the four twinned bases, closest-hit, any-hit and the path tracer; none means the OpNames were stripped.
+    EXPECT_GE(sampling, 7U) << "found only " << sampling << " non-twin SPIR-V module(s) naming textures";
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " shader(s) that sample textures[] with the wrong indexing for their device:"
+                                    << joinViolations(violations);
 }
 
 // Implicit LOD needs derivatives, which only Fragment has; outside it the sample is illegal and can lose the device.

@@ -212,6 +212,13 @@ TEST(BuildIntegrity, EveryMaterialTextureIndexIsNonUniform)
     const fs::path slang_root = slangRoot();
     ASSERT_TRUE(sourceExists(slang_root)) << "missing " << slang_root.string();
 
+    // The one wrapper: NonUniformResourceIndex everywhere but in the uniform-index twins.
+    const auto owner = readFileText(slang_root / "common" / "material_textures.slang");
+    ASSERT_TRUE(owner.has_value()) << "could not open common/material_textures.slang";
+    const std::string helper = extract_function_body(*owner, "int material_texture_index(int slot)");
+    EXPECT_NE(helper.find("kUniformTextureIndex ? slot : NonUniformResourceIndex(slot)"), std::string::npos)
+      << "material_texture_index no longer returns NonUniformResourceIndex(slot) unless kUniformTextureIndex is set";
+
     static const std::regex kIndex(R"(\b(textures|textureSamplers)\[([^\]]*)\])");
     std::vector<std::string> violations;
     std::size_t wrapped = 0;
@@ -229,7 +236,7 @@ TEST(BuildIntegrity, EveryMaterialTextureIndexIsNonUniform)
             for (auto it = std::sregex_iterator(line.begin(), line.end(), kIndex); it != std::sregex_iterator(); ++it) {
                 const std::string subscript = (*it)[2].str();
                 if (subscript == "MAX_TEXTURE_COUNT") { continue; }
-                if (subscript.starts_with("NonUniformResourceIndex(")) {
+                if (subscript.starts_with("material_texture_index(")) {
                     ++wrapped;
                     continue;
                 }
@@ -238,11 +245,131 @@ TEST(BuildIntegrity, EveryMaterialTextureIndexIsNonUniform)
         }
     }
 
-    // Control: the 14 sample sites index both arrays, so a renamed array cannot pass this by matching nothing.
-    EXPECT_GE(wrapped, 28U) << "found only " << wrapped << " NonUniformResourceIndex-wrapped texture indices";
+    // Control: the 16 sample sites index both arrays, so a renamed array cannot pass this by matching nothing.
+    EXPECT_GE(wrapped, 32U) << "found only " << wrapped << " material_texture_index-wrapped texture indices";
     EXPECT_TRUE(violations.empty()) << violations.size()
-                                    << " textures[]/textureSamplers[] index(es) without NonUniformResourceIndex:"
+                                    << " textures[]/textureSamplers[] index(es) without material_texture_index:"
                                     << joinViolations(violations);
+}
+
+// A device without non-uniform indexing loads the *_uniform_index twins: each its base under the define, per pipeline.
+TEST(BuildIntegrity, UniformIndexTwinsWrapTheirBaseAndEveryMaterialPipelinePicksOne)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path slang_root = slangRoot();
+    const auto &manifest = shader_manifest();
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    // Line pairs, not one string: a CRLF checkout must read the same.
+    const auto has_line_pair = [](const fs::path &path, const std::string &first, const std::string &second) {
+        const auto lines = readFileLines(path);
+        if (!lines) { return false; }
+        for (std::size_t index = 0; index + 1 < lines->size(); ++index) {
+            if ((*lines)[index] == first && (*lines)[index + 1] == second) { return true; }
+        }
+        return false;
+    };
+
+    static const std::string kTwinSuffix = "_uniform_index.slang";
+    std::vector<std::string> violations;
+    std::set<std::string> twinned;// "<base stem>.<entry>", the file names the C++ loads
+    for (const auto &[file, entry] : manifest->spirv_entries) {
+        if (!file.ends_with(kTwinSuffix)) { continue; }
+        const std::string base_file = file.substr(0, file.size() - kTwinSuffix.size()) + ".slang";
+        const fs::path base(base_file);
+        twinned.insert(base.stem().string() + "." + entry);
+        if (!manifest->spirv_entries.contains({ base_file, entry })) {
+            violations.push_back(file + " " + entry + ": " + base_file + " has no row with that entry");
+        }
+        if (!has_line_pair(slang_root / file,
+              "#define KATAGLYPHIS_UNIFORM_TEXTURE_INDEX",
+              "#include \"" + base.filename().string() + "\"")) {
+            violations.push_back(file + ": does not define KATAGLYPHIS_UNIFORM_TEXTURE_INDEX and then include "
+                                 + base.filename().string());
+        }
+        if (!has_line_pair(slang_root / base_file,
+              "#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)",
+              "export static const bool kUniformTextureIndex = true;")) {
+            violations.push_back(base_file + ": does not export kUniformTextureIndex = true under the define, so "
+                                 + file + " compiles the base unchanged");
+        }
+    }
+    // Control: forward's two fragment entries, the G-buffer's and the shadow casters'.
+    ASSERT_GE(twinned.size(), 4U) << "found only " << twinned.size() << " *_uniform_index rows in shader-manifest.json";
+
+    // A bare `= true` drops NonUniform from a module every device loads, the traced ones included.
+    std::size_t exports = 0;
+    std::error_code source_error;
+    for (const auto &shader_path : shaderSourceFiles(slang_root, source_error)) {
+        if (source_error) { break; }
+        const auto lines = readFileLines(shader_path);
+        if (!lines) { continue; }
+        for (std::size_t index = 0; index < lines->size(); ++index) {
+            if ((*lines)[index].find("kUniformTextureIndex = ") == std::string::npos) { continue; }
+            ++exports;
+            const bool guarded = index > 0 && (*lines)[index - 1] == "#if defined(KATAGLYPHIS_UNIFORM_TEXTURE_INDEX)";
+            if ((*lines)[index].find("kUniformTextureIndex = true;") != std::string::npos && !guarded) {
+                violations.push_back(fs::relative(shader_path, slang_root, source_error).generic_string() + ":"
+                                     + std::to_string(index + 1)
+                                     + ": exports kUniformTextureIndex = true outside the twins' #if");
+            }
+        }
+    }
+    // Control: rasterizer, deferred and shadow_map export both values; closest-hit, any-hit and the path tracer false.
+    EXPECT_GE(exports, 9U) << "found only " << exports << " kUniformTextureIndex export(s) under "
+                           << slang_root.string();
+
+    // A twinned literal outside materialShaderPath( loads the non-uniform module on every device.
+    static const std::regex kSpvLiteral(R"re("(?:[^"]*/)?([A-Za-z0-9_.]+)\.spv")re");
+    static const std::set<std::string> kSourceExtensions = { ".cpp", ".ixx", ".hpp", ".h" };
+    static const std::string kPickCall = "materialShaderPath(";
+    std::size_t routed = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(repo_root / "Src", error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || !kSourceExtensions.contains(it->path().extension().string())) { continue; }
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        const std::string relative = fs::relative(it->path(), repo_root).generic_string();
+        for (std::size_t index = 0; index < lines->size(); ++index) {
+            const std::string line = strip_line_comment((*lines)[index]);
+            for (auto match = std::sregex_iterator(line.begin(), line.end(), kSpvLiteral);
+              match != std::sregex_iterator();
+              ++match) {
+                const std::string name = (*match)[1].str();
+                // Picked only as the call's first argument: nothing between its paren and the literal ends it.
+                const std::string before = line.substr(0, static_cast<std::size_t>(match->position()));
+                const std::size_t call = before.rfind(kPickCall);
+                const bool picked = call != std::string::npos
+                                    && before.find_first_of(",()", call + kPickCall.size()) == std::string::npos;
+                const std::string where = relative + ":" + std::to_string(index + 1) + ": " + name + ".spv";
+                if (picked) {
+                    ++routed;
+                    if (!twinned.contains(name)) {
+                        violations.push_back(where + " goes through materialShaderPath but has no twin row");
+                    }
+                } else if (twinned.contains(name)) {
+                    violations.push_back(where + " is loaded without materialShaderPath");
+                }
+            }
+        }
+    }
+    // Control: forward, transparent, prepass, G-buffer, cascades and punctual cubes.
+    EXPECT_GE(routed, 6U) << "found only " << routed << " materialShaderPath( call(s) under Src/";
+
+    const auto device = readFileText(repo_root / "Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp");
+    ASSERT_TRUE(device.has_value()) << "could not open VulkanDevice.cpp";
+    EXPECT_NE(
+      device->find(
+        "materialTextureIndexingFor(available_features2.features, available_features12, forceUniformTextureIndex);"),
+      std::string::npos)
+      << "VulkanDevice.cpp no longer picks the material shaders from the queried sampled-image indexing features";
+    EXPECT_NE(device->find("materialTextureIndexingLogLine(deviceMaterialTextureIndexing)"), std::string::npos)
+      << "VulkanDevice.cpp no longer logs which material shaders it picked";
+
+    EXPECT_TRUE(violations.empty()) << violations.size()
+                                    << " uniform-index twin violation(s):" << joinViolations(violations);
 }
 
 // Indexing a sampled-image array by a variable is valid only with shaderSampledImageArrayDynamicIndexing enabled.
