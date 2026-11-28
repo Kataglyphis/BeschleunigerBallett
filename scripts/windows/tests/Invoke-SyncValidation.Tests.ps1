@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# -LogFixturePath exercises the real exit-code logic without a GPU. Pester 3.4.0: `Should Be`, not `Should -Be`.
+# -LogFixturePath exercises the real exit-code logic without a GPU.
 
 Describe 'Invoke-SyncValidation' {
 
@@ -23,7 +23,7 @@ Describe 'Invoke-SyncValidation' {
     )
 
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $script:scriptPath -LogFixturePath $logPath | Out-Null
-    $LASTEXITCODE | Should Not Be 0
+    $LASTEXITCODE | Should -Not -Be 0
   }
 
   It 'exits non-zero when the log contains a VUID' {
@@ -35,7 +35,7 @@ Describe 'Invoke-SyncValidation' {
     )
 
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $script:scriptPath -LogFixturePath $logPath | Out-Null
-    $LASTEXITCODE | Should Not Be 0
+    $LASTEXITCODE | Should -Not -Be 0
   }
 
   It 'exits zero when the log has neither a SYNC-HAZARD nor a VUID' {
@@ -46,12 +46,12 @@ Describe 'Invoke-SyncValidation' {
     )
 
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $script:scriptPath -LogFixturePath $logPath | Out-Null
-    $LASTEXITCODE | Should Be 0
+    $LASTEXITCODE | Should -Be 0
   }
 
   It 'throws when the fixture log does not exist' {
     $missingPath = Join-Path $script:tmpDir 'does-not-exist.log'
     & pwsh -NoProfile -ExecutionPolicy Bypass -File $script:scriptPath -LogFixturePath $missingPath | Out-Null
-    $LASTEXITCODE | Should Not Be 0
+    $LASTEXITCODE | Should -Not -Be 0
   }
 }

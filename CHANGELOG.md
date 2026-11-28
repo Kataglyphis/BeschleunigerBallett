@@ -52,6 +52,13 @@ the GitHub releases themselves.
 
 ### Changed
 
+- The 12 Pester suites under `scripts/windows/tests` speak Pester 5 and run under 6.2.0, the hub's `:latest` copy;
+  `windows-x64.yml`'s two Pester steps and `submodule-pins.yml` pin 6.2.0 instead of 3.4.0.
+  `Should Be` and its kin take their dashed forms, and file- and block-level setup moved into `BeforeAll`, which Pester
+  5 and 6 run after discovering a file; what it sets for the tests is a `$script:` variable. `Resolve-BuildModule`'s
+  missing-module case uses `Should -Throw -PassThru`, which 3.4.0 could not. All 78 tests pass under 6.2.0 locally,
+  three runs in a row, as under 3.4.0 before, and the hub's lint gate finds no trap and no analyzer warning.
+
 - One set of C++ scene targets for every frame in flight (plan C6 step 1). The HDR target, the G-buffer and FXAA's
   intermediate were one per swapchain image, and both raster paths' targets always existed; now one HDR target
   serves forward, deferred, ray and path tracing, and only the picked raster path's depth or G-buffer exists, made

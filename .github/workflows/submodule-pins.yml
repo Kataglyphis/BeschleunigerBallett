@@ -21,5 +21,5 @@ jobs:
     name: submodule pins sit at their recorded, restorable commits
     uses: Kataglyphis/ANTfrastructure/.github/workflows/submodule-pins.yml@develop
     with:
-      # Explicit although it is the hub default: 5.x loses per-failure diagnostics and 6.x rejects -Quiet.
-      pester-version: '3.4.0'
+      # Pinned so a hub default change cannot move the lane.
+      pester-version: '6.2.0'

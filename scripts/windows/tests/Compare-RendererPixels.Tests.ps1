@@ -1,6 +1,6 @@
 #requires -Version 7.0
 
-# Runs the real script against generated fixture PNGs. Pester 3.4.0: `Should Be`, not `Should -Be`.
+# Runs the real script against generated fixture PNGs.
 
 Describe 'Compare-RendererPixels' {
 
@@ -46,23 +46,22 @@ Describe 'Compare-RendererPixels' {
       $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
       $bmp.Dispose()
     }
+    function Invoke-ComparePixels {
+      param([string]$OutDir, [switch]$SkipCpp, [switch]$SkipRust, [switch]$ValidationOnly)
+      $scriptArgs = @(
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
+        '-OutDir', $OutDir
+      )
+      if ($SkipCpp) { $scriptArgs += '-SkipCpp' }
+      if ($SkipRust) { $scriptArgs += '-SkipRust' }
+      if ($ValidationOnly) { $scriptArgs += '-ValidationOnly' }
+      $out = & pwsh @scriptArgs 2>&1
+      return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
+    }
   }
 
   AfterAll {
     Remove-Item -LiteralPath $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-  }
-
-  function Invoke-ComparePixels {
-    param([string]$OutDir, [switch]$SkipCpp, [switch]$SkipRust, [switch]$ValidationOnly)
-    $scriptArgs = @(
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
-      '-OutDir', $OutDir
-    )
-    if ($SkipCpp) { $scriptArgs += '-SkipCpp' }
-    if ($SkipRust) { $scriptArgs += '-SkipRust' }
-    if ($ValidationOnly) { $scriptArgs += '-ValidationOnly' }
-    $out = & pwsh @scriptArgs 2>&1
-    return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
   }
 
   It 'rejects a flat/uniform frame with exit 1 and mentions stddev' {
@@ -71,8 +70,8 @@ Describe 'Compare-RendererPixels' {
     New-FlatPng -Path (Join-Path $outDir 'cpp-vulkan.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
-    $result.ExitCode | Should Be 1
-    ($result.Output -match 'stddev') | Should Be $true
+    $result.ExitCode | Should -Be 1
+    ($result.Output -match 'stddev') | Should -Be $true
   }
 
   It 'passes structural checks for a frame with real luminance variety' {
@@ -81,7 +80,7 @@ Describe 'Compare-RendererPixels' {
     New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
   }
 
   It 'checks uniformity, darkness and bucket count for both labeled renderers' {
@@ -91,11 +90,11 @@ Describe 'Compare-RendererPixels' {
     New-FlatPng -Path (Join-Path $outDir 'rust-webgpu.png') -Color ([System.Drawing.Color]::Black)
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
-    $result.ExitCode | Should Be 1
+    $result.ExitCode | Should -Be 1
     foreach ($label in @('C\+\+', 'Rust')) {
-      ($result.Output -match "FAIL \[$label\] Frame is essentially uniform") | Should Be $true
-      ($result.Output -match "FAIL \[$label\] Frame is too dark") | Should Be $true
-      ($result.Output -match "FAIL \[$label\] Too few luminance buckets") | Should Be $true
+      ($result.Output -match "FAIL \[$label\] Frame is essentially uniform") | Should -Be $true
+      ($result.Output -match "FAIL \[$label\] Frame is too dark") | Should -Be $true
+      ($result.Output -match "FAIL \[$label\] Too few luminance buckets") | Should -Be $true
     }
   }
 
@@ -106,11 +105,11 @@ Describe 'Compare-RendererPixels' {
     New-FlatPng -Path (Join-Path $outDir 'rust-webgpu.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
-    $result.ExitCode | Should Be 1
-    ($result.Output -match 'OK   \[C\+\+\] Frame has structure') | Should Be $true
-    ($result.Output -match 'FAIL \[C\+\+\]') | Should Be $false
-    ($result.Output -match 'FAIL \[Rust\] Frame is essentially uniform') | Should Be $true
-    ($result.Output -match 'FAIL \[Rust\] Too few luminance buckets') | Should Be $true
+    $result.ExitCode | Should -Be 1
+    ($result.Output -match 'OK   \[C\+\+\] Frame has structure') | Should -Be $true
+    ($result.Output -match 'FAIL \[C\+\+\]') | Should -Be $false
+    ($result.Output -match 'FAIL \[Rust\] Frame is essentially uniform') | Should -Be $true
+    ($result.Output -match 'FAIL \[Rust\] Too few luminance buckets') | Should -Be $true
   }
 
   It 'does not throw when computing metrics for a captured frame (regression: use-after-dispose)' {
@@ -119,7 +118,7 @@ Describe 'Compare-RendererPixels' {
     New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -SkipCpp -SkipRust
-    ($result.Output -match 'ObjectDisposedException') | Should Be $false
+    ($result.Output -match 'ObjectDisposedException') | Should -Be $false
   }
 
   It 'exits 2 rather than PASSED when -ValidationOnly finds no frames at all' {
@@ -127,8 +126,8 @@ Describe 'Compare-RendererPixels' {
     New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 
     $result = Invoke-ComparePixels -OutDir $outDir -ValidationOnly
-    $result.ExitCode | Should Be 2
-    ($result.Output -match 'PIXEL COMPARISON PASSED') | Should Be $false
+    $result.ExitCode | Should -Be 2
+    ($result.Output -match 'PIXEL COMPARISON PASSED') | Should -Be $false
   }
 
   It '-ValidationOnly validates a frame it actually finds on disk' {
@@ -138,7 +137,7 @@ Describe 'Compare-RendererPixels' {
     New-StructuredPng -Path (Join-Path $outDir 'cpp-vulkan-shadows-on.png')
 
     $result = Invoke-ComparePixels -OutDir $outDir -ValidationOnly
-    $result.ExitCode | Should Be 0
-    ($result.Output -match 'Found 1 existing frame') | Should Be $true
+    $result.ExitCode | Should -Be 0
+    ($result.Output -match 'Found 1 existing frame') | Should -Be $true
   }
 }

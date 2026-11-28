@@ -1,48 +1,51 @@
 #requires -Version 7.0
 # This checks the MSIX wiring and license payload, not pixels in a built MSIX.
-Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') `
-  -Function ConvertTo-TestScriptAst, Get-TestAstCommands, Get-TestCommandArguments, Get-ScriptFunctionDefinition, `
-  Assert-Throws, New-TestZipFile, New-TestDir, Remove-TestDir -ErrorAction Stop
-Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\modules\WindowsMsiLicense.Common.psm1') -ErrorAction Stop
-
-function Assert-MsixSource([System.Management.Automation.Language.Ast]$Ast) {
-  $commands = @{}
-  foreach ($name in 'Invoke-MsixPackage', 'Invoke-BuildStep', 'Assert-MsixLicenseContents') {
-    $commands[$name] = @(Get-TestAstCommands -Ast $Ast -Name $name)
-  }
-  $calls = $commands['Invoke-MsixPackage']
-  if ($calls.Count -ne 1) { throw 'Expected one MSIX packaging call' }
-  $bindings = Get-TestCommandArguments -Command $calls[0]
-  if ($bindings.ContainsKey('GenerateTransparentLogos')) { throw 'MSIX logo must not be transparent' }
-  if ($bindings.LogoPath -ne "(Join-Path `$workspacePath 'images\logo.png')") { throw 'Expected the project logo' }
-  $steps = @($commands['Invoke-BuildStep'] | Where-Object { $_.Extent.Text.Contains("-StepName 'MSIX packaging'") })
-  if ($steps.Count -ne 1 -or -not (Get-TestCommandArguments -Command $steps[0]).ContainsKey('Critical')) { throw 'MSIX packaging must be a critical build step' }
-  $packages = $calls
-  $checks = $commands['Assert-MsixLicenseContents']
-  if ($packages.Count -ne 1 -or $checks.Count -ne 1 -or $checks[0].Extent.StartOffset -le $packages[0].Extent.EndOffset) { throw 'MSIX must be checked after packaging' }
-  $bindings = Get-TestCommandArguments -Command $checks[0]
-  if ($bindings.Path -ne '$msixOutPath' -or $bindings.WorkspacePath -ne '$workspacePath' -or $bindings.BuildPath -ne '$buildPathClangRelease') {
-    throw 'MSIX license check must use the finished artifact, project sources and release build'
+BeforeAll {
+  Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') `
+    -Function ConvertTo-TestScriptAst, Get-TestAstCommands, Get-TestCommandArguments, Get-ScriptFunctionDefinition, `
+    Assert-Throws, New-TestZipFile, New-TestDir, Remove-TestDir -ErrorAction Stop
+  Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\modules\WindowsMsiLicense.Common.psm1') -ErrorAction Stop
+  function Assert-MsixSource([System.Management.Automation.Language.Ast]$Ast) {
+    $commands = @{}
+    foreach ($name in 'Invoke-MsixPackage', 'Invoke-BuildStep', 'Assert-MsixLicenseContents') {
+      $commands[$name] = @(Get-TestAstCommands -Ast $Ast -Name $name)
+    }
+    $calls = $commands['Invoke-MsixPackage']
+    if ($calls.Count -ne 1) { throw 'Expected one MSIX packaging call' }
+    $bindings = Get-TestCommandArguments -Command $calls[0]
+    if ($bindings.ContainsKey('GenerateTransparentLogos')) { throw 'MSIX logo must not be transparent' }
+    if ($bindings.LogoPath -ne "(Join-Path `$workspacePath 'images\logo.png')") { throw 'Expected the project logo' }
+    $steps = @($commands['Invoke-BuildStep'] | Where-Object { $_.Extent.Text.Contains("-StepName 'MSIX packaging'") })
+    if ($steps.Count -ne 1 -or -not (Get-TestCommandArguments -Command $steps[0]).ContainsKey('Critical')) { throw 'MSIX packaging must be a critical build step' }
+    $packages = $calls
+    $checks = $commands['Assert-MsixLicenseContents']
+    if ($packages.Count -ne 1 -or $checks.Count -ne 1 -or $checks[0].Extent.StartOffset -le $packages[0].Extent.EndOffset) { throw 'MSIX must be checked after packaging' }
+    $bindings = Get-TestCommandArguments -Command $checks[0]
+    if ($bindings.Path -ne '$msixOutPath' -or $bindings.WorkspacePath -ne '$workspacePath' -or $bindings.BuildPath -ne '$buildPathClangRelease') {
+      throw 'MSIX license check must use the finished artifact, project sources and release build'
+    }
   }
 }
 
 Describe 'MSIX project logo wiring' {
-  $source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Build-Windows.ps1') -Raw
+  BeforeAll {
+    $script:source = Get-Content -LiteralPath (Join-Path $PSScriptRoot '..\Build-Windows.ps1') -Raw
+  }
 
-  It 'passes the project logo to the shared packager' { Assert-MsixSource (ConvertTo-TestScriptAst -Text $source) }
+  It 'passes the project logo to the shared packager' { Assert-MsixSource (ConvertTo-TestScriptAst -Text $script:source) }
 
   It 'rejects the former transparent logo option' {
-    $mutant = $source.Replace("-LogoPath (Join-Path `$workspacePath 'images\logo.png')", '-GenerateTransparentLogos')
-    if ($mutant -eq $source) { throw 'transparent logo mutation did not apply' }
+    $mutant = $script:source.Replace("-LogoPath (Join-Path `$workspacePath 'images\logo.png')", '-GenerateTransparentLogos')
+    if ($mutant -eq $script:source) { throw 'transparent logo mutation did not apply' }
     Assert-Throws -Body { Assert-MsixSource (ConvertTo-TestScriptAst -Text $mutant) } -MessagePattern 'transparent'
   }
 
   It 'requires a critical step and checks the finished MSIX' {
-    Assert-MsixSource (ConvertTo-TestScriptAst -Text $source)
+    Assert-MsixSource (ConvertTo-TestScriptAst -Text $script:source)
     $call = 'Assert-MsixLicenseContents -Path $msixOutPath -WorkspacePath $workspacePath -BuildPath $buildPathClangRelease'
-    Assert-Throws -Body { Assert-MsixSource (ConvertTo-TestScriptAst -Text ($source.Replace($call, "Write-Output 'removed'"))) } -MessagePattern 'MSIX must be checked'
+    Assert-Throws -Body { Assert-MsixSource (ConvertTo-TestScriptAst -Text ($script:source.Replace($call, "Write-Output 'removed'"))) } -MessagePattern 'MSIX must be checked'
     $step = "Invoke-BuildStep -Context `$context -StepName 'MSIX packaging' -Critical -Script"
-    Assert-Throws -Body { Assert-MsixSource (ConvertTo-TestScriptAst -Text ($source.Replace($step, "Invoke-BuildOptional -Context `$context -Name 'MSIX packaging' -Script"))) } -MessagePattern 'critical build step'
+    Assert-Throws -Body { Assert-MsixSource (ConvertTo-TestScriptAst -Text ($script:source.Replace($step, "Invoke-BuildOptional -Context `$context -Name 'MSIX packaging' -Script"))) } -MessagePattern 'critical build step'
   }
 
   It 'rejects each missing or altered original license in a real ZIP-shaped MSIX' {

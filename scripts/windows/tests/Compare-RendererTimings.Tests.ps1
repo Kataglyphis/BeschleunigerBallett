@@ -1,7 +1,9 @@
 #requires -Version 7.0
 
-# Fixture sources, not the live engine ones, so the parser sees known input. Pester 3.4.0: `Should Be`, not `Should -Be`.
-Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function ConvertTo-TestScriptAst, Get-TestAstCommands -ErrorAction Stop
+# Fixture sources, not the live engine ones, so the parser sees known input.
+BeforeAll {
+  Import-Module (Join-Path $PSScriptRoot '..\..\..\third_party\ANTfrastructure\windows\scripts\tests\TestHarness.psm1') -Function ConvertTo-TestScriptAst, Get-TestAstCommands -ErrorAction Stop
+}
 
 Describe 'Compare-RendererTimings' {
 
@@ -60,39 +62,37 @@ impl TimedPass {
 
     $script:emptyFixturePath = Join-Path $script:tmpDir 'empty.rs'
     'this file has no TimedPass::name() in it at all' | Set-Content -Path $script:emptyFixturePath
+    function Invoke-PrintExpectedPasses {
+      param([string]$CppPassSourcePath, [string]$RustPassSourcePath)
+      $scriptArgs = @(
+        '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
+        '-PrintExpectedPasses',
+        '-CppPassSourcePath', $CppPassSourcePath,
+        '-RustPassSourcePath', $RustPassSourcePath
+      )
+      $out = & pwsh @scriptArgs 2>&1
+      return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
+    }
+    function Assert-SharedTimingConversion {
+      param([string]$Text)
+      $ast = ConvertTo-TestScriptAst -Text $Text
+      $imports = @(Get-TestAstCommands -Ast $ast -Name 'Import-BuildModule' | Where-Object { $_.Extent.Text -match "'Compare-Renderer\.Common'" })
+      $converts = @(Get-TestAstCommands -Ast $ast -Name 'Convert-DinosaursObjToGltf')
+      $cargoCalls = @(Get-TestAstCommands -Ast $ast -Name 'cargo')
+      $timingRuns = @($cargoCalls | Where-Object { $_.Extent.Text -match 'dump_gpu_timings' })
+      $inlineConversions = @($cargoCalls | Where-Object { $_.Extent.Text -match 'obj2gltf' })
+      if ($imports.Count -ne 1 -or $converts.Count -ne 1 -or $timingRuns.Count -ne 1 -or $inlineConversions.Count -ne 0) {
+        throw 'Timing comparison must use the shared scene converter once and keep one timing run.'
+      }
+      if ($imports[0].Extent.StartOffset -ge $converts[0].Extent.StartOffset -or
+          $converts[0].Extent.StartOffset -ge $timingRuns[0].Extent.StartOffset) {
+        throw 'The shared converter must load and run before GPU timing.'
+      }
+    }
   }
 
   AfterAll {
     Remove-Item -LiteralPath $script:tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-  }
-
-  function Invoke-PrintExpectedPasses {
-    param([string]$CppPassSourcePath, [string]$RustPassSourcePath)
-    $scriptArgs = @(
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $script:scriptPath,
-      '-PrintExpectedPasses',
-      '-CppPassSourcePath', $CppPassSourcePath,
-      '-RustPassSourcePath', $RustPassSourcePath
-    )
-    $out = & pwsh @scriptArgs 2>&1
-    return @{ ExitCode = $LASTEXITCODE; Output = ($out -join "`n") }
-  }
-
-  function Assert-SharedTimingConversion {
-    param([string]$Text)
-    $ast = ConvertTo-TestScriptAst -Text $Text
-    $imports = @(Get-TestAstCommands -Ast $ast -Name 'Import-BuildModule' | Where-Object { $_.Extent.Text -match "'Compare-Renderer\.Common'" })
-    $converts = @(Get-TestAstCommands -Ast $ast -Name 'Convert-DinosaursObjToGltf')
-    $cargoCalls = @(Get-TestAstCommands -Ast $ast -Name 'cargo')
-    $timingRuns = @($cargoCalls | Where-Object { $_.Extent.Text -match 'dump_gpu_timings' })
-    $inlineConversions = @($cargoCalls | Where-Object { $_.Extent.Text -match 'obj2gltf' })
-    if ($imports.Count -ne 1 -or $converts.Count -ne 1 -or $timingRuns.Count -ne 1 -or $inlineConversions.Count -ne 0) {
-      throw 'Timing comparison must use the shared scene converter once and keep one timing run.'
-    }
-    if ($imports[0].Extent.StartOffset -ge $converts[0].Extent.StartOffset -or
-        $converts[0].Extent.StartOffset -ge $timingRuns[0].Extent.StartOffset) {
-      throw 'The shared converter must load and run before GPU timing.'
-    }
   }
 
   It 'uses the shared cached scene conversion before timing and rejects an omitted call' {
@@ -100,57 +100,57 @@ impl TimedPass {
     Assert-SharedTimingConversion -Text $source
     $call = 'Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf'
     $mutant = $source.Replace($call, '')
-    ($mutant -ne $source) | Should Be $true
+    ($mutant -ne $source) | Should -Be $true
     $failed = $false
     try { Assert-SharedTimingConversion -Text $mutant } catch { $failed = $true }
-    $failed | Should Be $true
+    $failed | Should -Be $true
   }
 
   It 'derives the four C++ pass names from GPU_TIMED_PASS_EXPORT_NAMES' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
+    ($json.Cpp -join ',') | Should -Be 'Clouds,ShadowCascades,Main,Post'
   }
 
   It 'derives the four C++ pass names from the std::array GPU_TIMED_PASS_EXPORT_NAMES form' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppArrayFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
+    ($json.Cpp -join ',') | Should -Be 'Clouds,ShadowCascades,Main,Post'
   }
 
   It 'derives Rust pass names that contain Tonemap and do not contain Post' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Rust -contains 'Tonemap') | Should Be $true
-    ($json.Rust -contains 'Post') | Should Be $false
+    ($json.Rust -contains 'Tonemap') | Should -Be $true
+    ($json.Rust -contains 'Post') | Should -Be $false
   }
 
   It 'excludes OcclusionCull from the derived Rust required list' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Rust -contains 'OcclusionCull') | Should Be $false
+    ($json.Rust -contains 'OcclusionCull') | Should -Be $false
   }
 
   It 'excludes the light shadow, deferred, histogram, cloud, tracer and FXAA passes a forward timing run never records' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
     foreach ($pass in @('PunctualShadows', 'GBuffer', 'DeferredLighting', 'Histogram', 'Clouds', 'RayTrace', 'PathTrace', 'Fxaa')) {
-      ($json.Rust -contains $pass) | Should Be $false
+      ($json.Rust -contains $pass) | Should -Be $false
     }
-    ($json.Rust -join ',') | Should Be 'ShadowCascades,Main,Forward,Bloom,Ssao,ExposureReduce,Tonemap,DrawCull'
+    ($json.Rust -join ',') | Should -Be 'ShadowCascades,Main,Forward,Bloom,Ssao,ExposureReduce,Tonemap,DrawCull'
   }
 
   It 'requires the Rust Main scope, which spans the scene draw as the C++ one does' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Rust -contains 'Main') | Should Be $true
-    ($json.Cpp -contains 'Main') | Should Be $true
+    ($json.Rust -contains 'Main') | Should -Be $true
+    ($json.Cpp -contains 'Main') | Should -Be $true
   }
 
   It 'excludes the C++ CloudUpsample, PunctualShadows and Fxaa passes, which only some scenes record' {
@@ -167,9 +167,9 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
 });
 '@ | Set-Content -Path $fixture
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Post'
+    ($json.Cpp -join ',') | Should -Be 'Clouds,ShadowCascades,Main,Post'
   }
 
   It 'requires the C++ Forward scope but not the deferred or traced ones, which a forward run never records' {
@@ -190,21 +190,21 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
 });
 '@ | Set-Content -Path $fixture
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $fixture -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Forward,Post'
+    ($json.Cpp -join ',') | Should -Be 'Clouds,ShadowCascades,Main,Forward,Post'
   }
 
   It 'requires DrawCull, which every forward frame with draws records' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
-    $result.ExitCode | Should Be 0
+    $result.ExitCode | Should -Be 0
     $json = $result.Output | ConvertFrom-Json
-    ($json.Rust -contains 'DrawCull') | Should Be $true
+    ($json.Rust -contains 'DrawCull') | Should -Be $true
   }
 
   It 'exits non-zero when a source file parses to zero pass names' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:emptyFixturePath
-    $result.ExitCode | Should Not Be 0
+    $result.ExitCode | Should -Not -Be 0
   }
 
   It 'passes -ValidationOnly when JSON is missing an optional pass but has every required one' {
@@ -235,7 +235,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
       '-RustPassSourcePath', $script:rustFixturePath
     )
     & pwsh @scriptArgs | Out-Null
-    $LASTEXITCODE | Should Be 0
+    $LASTEXITCODE | Should -Be 0
   }
 
   It 'fails -ValidationOnly when JSON is missing a required pass' {
@@ -266,7 +266,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
       '-RustPassSourcePath', $script:rustFixturePath
     )
     & pwsh @scriptArgs | Out-Null
-    $LASTEXITCODE | Should Not Be 0
+    $LASTEXITCODE | Should -Not -Be 0
   }
 
   It 'fails -ValidationOnly on a Rust dump from before Main, whose scopes the C++ ones do not match' {
@@ -297,7 +297,7 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
       '-RustPassSourcePath', $script:rustFixturePath
     )
     & pwsh @scriptArgs | Out-Null
-    $LASTEXITCODE | Should Not Be 0
+    $LASTEXITCODE | Should -Not -Be 0
   }
 
   It 'exits 2 under -ValidationOnly when neither JSON exists, so an empty run never reads as a pass' {
@@ -311,6 +311,6 @@ inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const ch
       '-RustPassSourcePath', $script:rustFixturePath
     )
     & pwsh @scriptArgs | Out-Null
-    $LASTEXITCODE | Should Be 2
+    $LASTEXITCODE | Should -Be 2
   }
 }

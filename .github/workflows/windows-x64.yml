@@ -63,16 +63,16 @@ jobs:
         # Rooted: the hub harness resolves a relative -ScriptPath against the hub, not this checkout.
         run: pwsh -NoProfile -File third_party/ANTfrastructure/shared/windows/tests/Test-CmakeUvProjectWiring.ps1 -ScriptPath (Join-Path $PWD 'scripts/windows/Build-Windows.ps1') -CommandName Invoke-CmakeFormatStep
 
-      # The suites use Pester 3.4's dash-less `Should Be`, which the runner's Pester 5 cannot parse.
-      - name: Run Pester suites (pinned 3.4.0)
+      # Pinned to the hub's :latest copy, so the runner's own Pester cannot move the lane.
+      - name: Run Pester suites (pinned 6.2.0)
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@develop
         with:
           path: scripts/windows/tests
-          version: '3.4.0'
+          version: '6.2.0'
 
       # The hub's suite over scripts/windows/generated-artifacts.txt; it finds this repo through GITHUB_WORKSPACE.
       - name: Run the hub's generated-artifacts suite
         uses: Kataglyphis/ANTfrastructure/.github/actions/run-pester-suite@develop
         with:
           path: third_party/ANTfrastructure/shared/windows/tests/Repo.GeneratedArtifacts.Tests.ps1
-          version: '3.4.0'
+          version: '6.2.0'

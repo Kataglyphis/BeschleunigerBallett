@@ -605,8 +605,8 @@ on the AMD RX 9070 XT: all four clang-cl builds render (~32 FPS ImGui overlay).
   measured nothing. One profile so far, `wsl-aarch64-llvmpipe` (2026-11-16, re-derived 2026-11-21 when
   the sky moved into Forward and 2026-11-22 when timings started at the model's arrival); a host adds
   its own from five dumps, by the rule its entry records, after a warm-up run on a cold shader cache.
-- **Pester** suites under `scripts/windows/tests/` (Pester 3.4 syntax): the `pester-tests` job of
-  `.github/workflows/windows-x64.yml` runs them with a pinned Pester 3.4.0 whenever that lane runs.
+- **Pester** suites under `scripts/windows/tests/` (Pester 5 syntax): the `pester-tests` job of
+  `.github/workflows/windows-x64.yml` runs them with a pinned Pester 6.2.0 whenever that lane runs.
   **Only suites covering project-specific behaviour belong here**; a suite for an upstream module
   goes upstream with it (2026-08-07). The twelve left cover the module-resolution bootstrap
   (`Resolve-BuildModule`), the preset and shared-config guards (`CMakePresets.Integrity`,
