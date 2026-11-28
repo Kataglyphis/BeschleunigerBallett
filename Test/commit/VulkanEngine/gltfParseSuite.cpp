@@ -63,6 +63,19 @@ std::size_t chainBytes(const Kataglyphis::ParsedTexture &texture)
     return bytes;
 }
 
+// The first texel of an RGBA8 chain's level `level`, past the levels above it.
+std::vector<unsigned char> firstTexelOfLevel(const Kataglyphis::ParsedTexture &texture, uint32_t level)
+{
+    std::size_t offset = 0;
+    for (uint32_t above = 0; above < level; ++above) {
+        offset +=
+          static_cast<std::size_t>(std::max(texture.width >> above, 1U)) * std::max(texture.height >> above, 1U) * 4U;
+    }
+    if (offset + 4U > texture.data.size()) { return {}; }
+    return { texture.data.begin() + static_cast<std::ptrdiff_t>(offset),
+        texture.data.begin() + static_cast<std::ptrdiff_t>(offset + 4U) };
+}
+
 }// namespace
 
 TEST(GltfParseUnit, ParsesACubeWithoutAVulkanDevice)
@@ -386,6 +399,53 @@ TEST(GltfParseUnit, ABasisTextureArrivesAsTheBlocksTheOptionsSample)
         EXPECT_EQ(texture.data.size(), chainBytes(texture));
         EXPECT_TRUE(texture.encoded.empty());
     }
+}
+
+// A 6x6 Basis base is no whole block, so every device gets RGBA8: the file's red, green and blue levels.
+TEST(GltfParseUnit, APartialBlockBasisArrivesAsTheFilesLevelsOnEveryDevice)
+{
+    const std::string path = oxidantGltfFixture("cube_basisu_partial_blocks.gltf");
+    const std::vector<Kataglyphis::BlockSupport> devices = {
+        {},
+        { .bc = true, .etc2 = true, .astc = true, .maxSide = 16384 },
+        { .bc = false, .etc2 = true, .astc = false, .maxSide = 16384 },
+    };
+    const std::vector<std::vector<unsigned char>> levels = {
+        { 255, 0, 0, 255 }, { 0, 255, 0, 255 }, { 0, 0, 255, 255 }
+    };
+    for (const Kataglyphis::BlockSupport &blocks : devices) {
+        Kataglyphis::GltfLoader loader;
+        ASSERT_TRUE(loader.parseCpu(path, Kataglyphis::GltfLoadOptions{ .blocks = blocks }));
+        ASSERT_EQ(loader.getTextures().size(), 1U);
+        const Kataglyphis::ParsedTexture &texture = loader.getTextures()[0];
+        EXPECT_EQ(texture.format, Kataglyphis::ChainFormat::Rgba8) << "bc " << blocks.bc << " etc2 " << blocks.etc2;
+        ASSERT_EQ(texture.levelCount, 3U) << "6x6, 3x3 and 1x1";
+        EXPECT_EQ(texture.data.size(), chainBytes(texture));
+        for (uint32_t level = 0; level < texture.levelCount; ++level) {
+            EXPECT_EQ(firstTexelOfLevel(texture, level), levels[level]) << "level " << level << " bc " << blocks.bc;
+        }
+    }
+}
+
+// A one-level BC1 KTX2 stays one level of blocks where BC samples, else decodes and halves to 1x1 as glTF asks.
+TEST(GltfParseUnit, AOneLevelBcKtx2IsCompletedWhereDecodedAndKeptWhereSampled)
+{
+    const std::string path = oxidantGltfFixture("cube_ktx2_bc1_one_level.gltf");
+    Kataglyphis::GltfLoader decoded;
+    ASSERT_TRUE(decoded.parseCpu(path));
+    ASSERT_EQ(decoded.getTextures().size(), 1U);
+    const Kataglyphis::ParsedTexture &rgba8 = decoded.getTextures()[0];
+    EXPECT_EQ(rgba8.format, Kataglyphis::ChainFormat::Rgba8);
+    EXPECT_EQ(rgba8.levelCount, fullChainLevels(rgba8.width, rgba8.height)) << "8x8 decoded, the rest halved";
+    EXPECT_EQ(rgba8.data.size(), chainBytes(rgba8));
+    EXPECT_EQ(firstTexelOfLevel(rgba8, rgba8.levelCount - 1U), firstTexelOfLevel(rgba8, 0)) << "a solid image";
+
+    Kataglyphis::GltfLoader sampled;
+    ASSERT_TRUE(sampled.parseCpu(
+      path, Kataglyphis::GltfLoadOptions{ .blocks = { .bc = true, .etc2 = false, .astc = false, .maxSide = 16384 } }));
+    const Kataglyphis::ParsedTexture &blocks = sampled.getTextures().at(0);
+    EXPECT_EQ(blocks.format, Kataglyphis::ChainFormat::Bc1);
+    EXPECT_EQ(blocks.levelCount, 1U) << "blocks keep the file's one level";
 }
 
 // The corrupt image gets no slot, and the valid image's material is renumbered onto slot 0 instead of slot 1.

@@ -257,6 +257,20 @@ const std::map<std::string, std::function<void(const GltfLoader &)>> &fixtureFac
               EXPECT_EQ(texture.levelCount, 6U) << "a full RGBA8 chain";
               EXPECT_TRUE(texture.encoded.empty()) << "nothing is left for stb, which reads no WebP";
           } },
+        { "cube_webp_animated.gltf",
+          [](const GltfLoader &loader) {
+              ASSERT_EQ(loader.getTextures().size(), 1U) << "an animated WebP is still the slot";
+              const Kataglyphis::ParsedTexture &texture = loader.getTextures()[0];
+              ASSERT_EQ(texture.width, 16U);
+              ASSERT_GE(texture.data.size(), 16U * 16U * 4U);
+              // The first frame's red left and blue right half, not the green second frame.
+              const auto texel = [&](std::size_t x) {
+                  const auto first = texture.data.begin() + static_cast<std::ptrdiff_t>(x * 4U);
+                  return std::vector<unsigned char>(first, first + 4);
+              };
+              EXPECT_EQ(texel(0), (std::vector<unsigned char>{ 255, 0, 0, 255 }));
+              EXPECT_EQ(texel(15), (std::vector<unsigned char>{ 0, 0, 255, 255 }));
+          } },
         { "cube_webp_fallback.gltf",
           [](const GltfLoader &loader) {
               ASSERT_EQ(loader.getTextures().size(), 1U);

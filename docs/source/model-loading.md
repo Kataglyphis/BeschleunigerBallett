@@ -94,9 +94,14 @@ to the scene before its first load, and the options carry them to the bridge. A 
 payload is transcoded once to BC7, else ETC2, else ASTC 4x4, a BCn KTX2 kept as stored,
 when the base is whole 4x4 blocks and a level of whole blocks fits the side; the chain
 keeps the file's levels, and a colour slot samples the sRGB format (BC5 has none).
-Otherwise the payload is transcoded straight to RGBA8 or decoded, and a chain shorter
-than full is completed by halving its last level. A stored ETC2 or ASTC KTX2 is still
-refused; the core `source` is the fallback whenever the KTX2 fails. PSD and PIC arrive
+Otherwise the payload's own levels are transcoded straight to RGBA8 or decoded (a
+Basis base of partial blocks included), and a chain shorter than full is completed by
+halving its last level, as glTF asks of a texture a mipmapping sampler reads. The
+WebGPU renderer builds the same chain for its adapter (a unit test compares the two
+for every KTX2 fixture). A stored ETC2 or ASTC KTX2 is still
+refused; the core `source` is the fallback whenever the KTX2 fails. An animated WebP,
+which `EXT_texture_webp` asks not to be, decodes to its first frame on a transparent
+canvas, as a browser's `createImageBitmap` takes it, and logs a warning. PSD and PIC arrive
 as the file's bytes with
 `levelCount` 0 for `Texture::createFromMemory`'s stb. An image over 16384x16384
 pixels (`MAX_PIXELS`, read from its header, PSD and PIC included) or in no format
