@@ -166,6 +166,14 @@ New in both:
   loaders read `EXT_meshopt_compression` since N4, so `gltfpack -kv -c` (or `-cc`) can shrink the 61 MB demo GLB.
   A new AssetANT release, its lock line in `docs-build-web.sh`'s fetch, then the demo's load checked in OxidANT's
   web-browser lane.
+- [ ] `Rust` **A mobile view for the WebGPU demo** (M, OxidANT; owner request). The page sets the viewport meta,
+  one finger orbits and two pinch to zoom (`scene/controller.rs`), and below a 320x180 scene view the editor
+  drops its docks (`ui/editor/layout.rs`, the inspector first on the web). On a phone that leaves no library and no
+  inspector, small egui rows for a finger, and a canvas at three times its CSS size. Measure first: screenshots at
+  390x844 and 844x390, DPR 3, with touch, from OxidANT's web-browser lane (headless Chrome's device emulation, in
+  CI only). Then a compact layout below a width (the menu bar in one menu, the docks as overlays opened from it
+  rather than dropped), touch targets of about 44 CSS px, two-finger pan, and the render scale's AutoScaler on by
+  default for such a backing store.
 - [b] `Shared` **A view file shared by both renderers** (L, plan N6; after the settings schema and the
   framing). serde types bridged as `view_to_json`/`view_from_json`, `--view` in both applications and the
   golden dump; it unblocks a per-pixel renderer comparison.
